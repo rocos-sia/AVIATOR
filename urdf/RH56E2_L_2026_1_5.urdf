@@ -1,0 +1,1848 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot name="RH56E2_L_2026_1_5">
+  <link
+    name="l_base_link">
+    <inertial>
+      <origin
+        xyz="-0.00162630839186209 0.000562629486704047 0.0782826838990815"
+        rpy="0 0 0" />
+      <mass
+        value="0.638115692832655" />
+      <inertia
+        ixx="0.000598818638734576"
+        ixy="-1.87721402728399E-06"
+        ixz="-4.35025076731854E-06"
+        iyy="0.000469648299351442"
+        iyz="-6.72838967541838E-08"
+        izz="0.000281460993349068" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/l_base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/l_base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="left_thumb_1">
+    <inertial>
+      <origin
+        xyz="0.0017330432086026 -0.00982857619928376 -0.00584336388605994"
+        rpy="0 0 0" />
+      <mass
+        value="0.00466740407248544" />
+      <inertia
+        ixx="1.81485367853144E-07"
+        ixy="5.10747805618466E-09"
+        ixz="-8.71507446859537E-10"
+        iyy="1.5342000474839E-07"
+        iyz="4.94256275932537E-09"
+        izz="1.57495480731202E-07" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_thumb_1_joint"
+    type="revolute">
+    <origin
+      xyz="0.02101 -0.0269 0.0826"
+      rpy="0 0 0" />
+    <parent
+      link="l_base_link" />
+    <child
+      link="left_thumb_1" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="1.6580627893946132"
+      effort="1"
+      velocity="2" />
+  </joint>
+  <link
+    name="left_thumb_2">
+    <inertial>
+      <origin
+        xyz="0.0295490509739339 0.0118812651168664 0.00594035773316786"
+        rpy="0 0 0" />
+      <mass
+        value="0.0385564917668049" />
+      <inertia
+        ixx="1.01633926234145E-05"
+        ixy="-2.86280002841791E-06"
+        ixz="1.63578309072589E-06"
+        iyy="1.30685458690559E-05"
+        iyz="5.09318132240747E-07"
+        izz="1.91592281253119E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_thumb_2_joint"
+    type="revolute">
+    <origin
+      xyz="0.013438 -0.012862 -0.0076"
+      rpy="1.5708 0 -1.5708" />
+    <parent
+      link="left_thumb_1" />
+    <child
+      link="left_thumb_2" />
+    <axis
+      xyz="0.17365 0 0.98481" />
+    <limit
+      lower="0"
+      upper="0.6195918844579870"
+      effort="1"
+      velocity="2" />
+  </joint>
+  <link
+    name="left_thumb_3">
+    <inertial>
+      <origin
+        xyz="0.0120225705684246 -0.000597295779975485 0.00903834778659192"
+        rpy="0 0 0" />
+      <mass
+        value="0.0134342232166366" />
+      <inertia
+        ixx="1.79859404303318E-06"
+        ixy="-2.05040802550292E-07"
+        ixz="1.24623144023122E-07"
+        iyy="1.26951076485954E-06"
+        iyz="3.73539245508728E-08"
+        izz="2.48056879850076E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_3.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_thumb_3_joint"
+    type="revolute">
+    <origin
+      xyz="0.052954 0.032799 -0.0093372"
+      rpy="0 0 0" />
+    <parent
+      link="left_thumb_2" />
+    <child
+      link="left_thumb_3" />
+    <axis
+      xyz="0.17365 0 0.98481" />
+    <limit
+      lower="0"
+      upper="0.5199615094371426"
+      effort="1"
+      velocity="2" />
+    <mimic
+        joint="left_thumb_2_joint"
+        multiplier="0.8392"
+        offset="0" /> 
+  </joint>
+  <link
+    name="left_thumb_force_sensor_2">
+    <inertial>
+      <origin
+        xyz="-6.77028663608401E-05 0.000236984613847344 -0.000558267314746896"
+        rpy="0 0 0" />
+      <mass
+        value="0.000119024235960818" />
+      <inertia
+        ixx="1.02245147132987E-09"
+        ixy="-6.72186461057385E-13"
+        ixz="-1.14239149003911E-12"
+        iyy="9.9703895049119E-10"
+        iyz="-8.16379454522936E-12"
+        izz="1.9906514552054E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_force_sensor_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_force_sensor_2.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface>  
+    </collision>
+  </link>
+  <joint
+    name="left_thumb_force_sensor_2_joint"
+    type="fixed">
+    <origin
+      xyz="0.0080283 0.016443 0.00982"
+      rpy="0.96257 1.4071 3.0993" />
+    <parent
+      link="left_thumb_3" />
+    <child
+      link="left_thumb_force_sensor_2" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_thumb_4">
+    <inertial>
+      <origin
+        xyz="0.0145525011453524 0.00791337610403681 0.00758836187467251"
+        rpy="0 0 0" />
+      <mass
+        value="0.0226462079486484" />
+      <inertia
+        ixx="2.75516729235754E-06"
+        ixy="-5.26702073965441E-07"
+        ixz="-3.19947231258766E-08"
+        iyy="1.46375998381781E-06"
+        iyz="9.31806583756546E-08"
+        izz="2.57930545668711E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_4.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_4.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_thumb_4_joint"
+    type="revolute">
+    <origin
+      xyz="0.01865 0.013373 -0.0022731"
+      rpy="0 0 0" />
+    <parent
+      link="left_thumb_3" />
+    <child
+      link="left_thumb_4" />
+    <axis
+      xyz="0.17365 0 0.98481" />
+    <limit
+      lower="0"
+      upper="0.4632857049084941"
+      effort="1"
+      velocity="2" />
+    <mimic
+        joint="left_thumb_3_joint"
+        multiplier="0.891"
+        offset="0" />  
+  </joint>
+  <link
+    name="left_thumb_force_sensor_3">
+    <inertial>
+      <origin
+        xyz="2.75155277108113E-07 0.000696644789683717 -0.000425123283601309"
+        rpy="0 0 0" />
+      <mass
+        value="0.000169894176021864" />
+      <inertia
+        ixx="3.91695563569899E-09"
+        ixy="-3.84881369546011E-15"
+        ixz="2.56832047428663E-13"
+        iyy="1.41883437204732E-09"
+        iyz="-1.72956740679058E-10"
+        izz="5.29524834856028E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_force_sensor_3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_force_sensor_3.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_thumb_force_sensor_3_joint"
+    type="fixed">
+    <origin
+      xyz="0.0076349 0.020486 0.0088094"
+      rpy="0.64092 1.3963 -3.1415" />
+    <parent
+      link="left_thumb_4" />
+    <child
+      link="left_thumb_force_sensor_3" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_thumb_force_sensor_4">
+    <inertial>
+      <origin
+        xyz="1.53421438310944E-06 -0.000421608116505406 -0.000751976730520569"
+        rpy="0 0 0" />
+      <mass
+        value="1.66991074236564E-05" />
+      <inertia
+        ixx="2.2577332779412E-11"
+        ixy="2.52363008433667E-15"
+        ixz="-5.30005584936107E-15"
+        iyy="2.30774417460483E-11"
+        iyz="1.74406833632397E-13"
+        izz="4.31637280809456E-11" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_force_sensor_4.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_force_sensor_4.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_thumb_force_sensor_4_joint"
+    type="fixed">
+    <origin
+      xyz="0.018831 0.027914 0.0068352"
+      rpy="1.7521 1.3962 -3.1401" />
+    <parent
+      link="left_thumb_4" />
+    <child
+      link="left_thumb_force_sensor_4" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_thumb_force_sensor_1">
+    <inertial>
+      <origin
+        xyz="-0.000315253413178715 8.00831279867964E-05 -0.000511444693418045"
+        rpy="0 0 0" />
+      <mass
+        value="0.000234351522411044" />
+      <inertia
+        ixx="6.82585459105814E-09"
+        ixy="1.33330535752005E-11"
+        ixz="-9.24067412635455E-12"
+        iyy="2.91720696731401E-09"
+        iyz="-1.79692153239032E-10"
+        izz="9.68920415325709E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_force_sensor_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_thumb_force_sensor_1.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_thumb_force_sensor_1_joint"
+    type="fixed">
+    <origin
+      xyz="0.023412 0.033251 0.0070079"
+      rpy="1.1285 1.3976 3.1383" />
+    <parent
+      link="left_thumb_2" />
+    <child
+      link="left_thumb_force_sensor_1" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_index_1">
+    <inertial>
+      <origin
+        xyz="0.00219464981664165 0.0127400599495743 -0.0066496043262512"
+        rpy="0 0 0" />
+      <mass
+        value="0.0182944233697246" />
+      <inertia
+        ixx="3.05512988079815E-06"
+        ixy="-1.98266619953812E-07"
+        ixz="-1.89430070847582E-11"
+        iyy="1.48574007368608E-06"
+        iyz="1.39735224308606E-10"
+        izz="3.17180961650614E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_index_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_index_1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_index_1_joint"
+    type="revolute">
+    <origin
+      xyz="0.00056467 -0.038679 0.1564"
+      rpy="1.6057 0 0" />
+    <parent
+      link="l_base_link" />
+    <child
+      link="left_index_1" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="1.3700834628155487"
+      effort="1"
+      velocity="2" />
+  </joint>
+  <link
+    name="left_index_2">
+    <inertial>
+      <origin
+        xyz="-0.000533234130448354 0.0253408344101742 -0.00609265139584095"
+        rpy="0 0 0" />
+      <mass
+        value="0.0250395040688091" />
+      <inertia
+        ixx="5.70111083936356E-06"
+        ixy="-1.02162225576374E-06"
+        ixz="1.12873270002236E-09"
+        iyy="1.00026290921879E-06"
+        iyz="7.52519227383297E-09"
+        izz="5.78763886247728E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_index_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_index_2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_index_2_joint"
+    type="revolute">
+    <origin
+      xyz="0.0034259 0.032596 -0.00055"
+      rpy="0 0 0" />
+    <parent
+      link="left_index_1" />
+    <child
+      link="left_index_2" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="1.4855814987308995"
+      effort="1"
+      velocity="2" />
+    <mimic
+        joint="left_index_1_joint"
+        multiplier="1.0843"
+        offset="0" />  
+  </joint>
+  <link
+    name="left_index_force_sensor_2">
+    <inertial>
+      <origin
+        xyz="-0.000722888601652677 0.000206469730359343 3.92383751229852E-06"
+        rpy="0 0 0" />
+      <mass
+        value="0.000255748193489171" />
+      <inertia
+        ixx="7.12568463704211E-09"
+        ixy="-3.05164404828753E-11"
+        ixz="-1.50421802801933E-12"
+        iyy="2.43957953886823E-09"
+        iyz="-8.64189585165953E-11"
+        izz="4.79877681662901E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_index_force_sensor_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_index_force_sensor_2.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_index_force_sensor_2_joint"
+    type="fixed">
+    <origin
+      xyz="0.0081655 0.037446 -0.0060795"
+      rpy="-0.037141 0 -0.34877" />
+    <parent
+      link="left_index_2" />
+    <child
+      link="left_index_force_sensor_2" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_index_force_sensor_3">
+    <inertial>
+      <origin
+        xyz="2.48711721271E-05 -0.000345284190154005 -0.00133798868664646"
+        rpy="0 0 0" />
+      <mass
+        value="6.79653902597574E-05" />
+      <inertia
+        ixx="1.31976080328047E-10"
+        ixy="-5.65097777115734E-12"
+        ixz="-7.80108678693101E-13"
+        iyy="2.53434465829729E-10"
+        iyz="9.12174680584237E-12"
+        izz="2.80536891506849E-10" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_index_force_sensor_3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_index_force_sensor_3.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_index_force_sensor_3_joint"
+    type="fixed">
+    <origin
+      xyz="0.0086237 0.052572 -0.0060954"
+      rpy="-1.5708 1.5252 -0.87237" />
+    <parent
+      link="left_index_2" />
+    <child
+      link="left_index_force_sensor_3" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_index_force_sensor_1">
+    <inertial>
+      <origin
+        xyz="-4.39980863042866E-06 0.000116492429617504 -0.000567426247583509"
+        rpy="0 0 0" />
+      <mass
+        value="0.000202794475942539" />
+      <inertia
+        ixx="3.38062498899262E-09"
+        ixy="5.06878020530749E-11"
+        ixz="2.18895973501375E-13"
+        iyy="1.96425205496786E-09"
+        iyz="-5.52626408642349E-12"
+        izz="5.28129594144109E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_index_force_sensor_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_index_force_sensor_1.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_index_force_sensor_1_joint"
+    type="fixed">
+    <origin
+      xyz="0.012046 0.019649 -0.006651"
+      rpy="-1.5708 1.5351 -1.3587" />
+    <parent
+      link="left_index_1" />
+    <child
+      link="left_index_force_sensor_1" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_middle_1">
+    <inertial>
+      <origin
+        xyz="0.00219464961598496 0.0127400600036559 -0.00664960428412459"
+        rpy="0 0 0" />
+      <mass
+        value="0.0182944237783795" />
+      <inertia
+        ixx="3.05512995032133E-06"
+        ixy="-1.98266616840753E-07"
+        ixz="-1.89243197758357E-11"
+        iyy="1.4857400884278E-06"
+        iyz="1.39716002217448E-10"
+        izz="3.17180970412157E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_middle_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_middle_1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_middle_1_joint"
+    type="revolute">
+    <origin
+      xyz="0.00056467 -0.0171 0.157"
+      rpy="1.5708 0 0" />
+    <parent
+      link="l_base_link" />
+    <child
+      link="left_middle_1" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="1.3700834628155487"
+      effort="1"
+      velocity="2" />
+  </joint>
+  <link
+    name="left_middle_2">
+    <inertial>
+      <origin
+        xyz="9.24128075453223E-05 0.0270345097293878 -0.00610058727791135"
+        rpy="0 0 0" />
+      <mass
+        value="0.027154082634411" />
+      <inertia
+        ixx="6.98377038010038E-06"
+        ixy="-1.22380960657828E-06"
+        ixz="1.52999213307187E-11"
+        iyy="1.10788470411365E-06"
+        iyz="2.42823763960085E-11"
+        izz="7.09976879343183E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_middle_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_middle_2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_middle_2_joint"
+    type="revolute">
+    <origin
+      xyz="0.0034259 0.032596 -0.00055"
+      rpy="0 0 0" />
+    <parent
+      link="left_middle_1" />
+    <child
+      link="left_middle_2" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="1.4855814987308995"
+      effort="1"
+      velocity="2" />
+    <mimic
+        joint="left_middle_1_joint"
+        multiplier="1.0843"
+        offset="0" />
+  </joint>
+  <link
+    name="left_middle_force_sensor_2">
+    <inertial>
+      <origin
+        xyz="6.77351601363618E-07 2.94313228522414E-05 -0.00072242577690862"
+        rpy="0 0 0" />
+      <mass
+        value="0.000262573593923136" />
+      <inertia
+        ixx="5.0414876593695E-09"
+        ixy="1.87053180724862E-13"
+        ixz="-1.92198399985159E-14"
+        iyy="2.56777987860703E-09"
+        iyz="3.47150600091307E-12"
+        izz="7.4945783734838E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_middle_force_sensor_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_middle_force_sensor_2.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_middle_force_sensor_2_joint"
+    type="fixed">
+    <origin
+      xyz="0.009086 0.040962 -0.0061003"
+      rpy="0.12266 1.5708 -0.25019" />
+    <parent
+      link="left_middle_2" />
+    <child
+      link="left_middle_force_sensor_2" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_middle_force_sensor_3">
+    <inertial>
+      <origin
+        xyz="-8.06940799735756E-08 -0.0003654446987576 -0.00127684015310653"
+        rpy="0 0 0" />
+      <mass
+        value="6.64914272946078E-05" />
+      <inertia
+        ixx="1.27227716200643E-10"
+        ixy="-8.96643675670042E-15"
+        ixz="-8.77104798522454E-15"
+        iyy="2.43691020872271E-10"
+        iyz="7.61276541492833E-12"
+        izz="2.75875028961866E-10" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_middle_force_sensor_3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_middle_force_sensor_3.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_middle_force_sensor_3_joint"
+    type="fixed">
+    <origin
+      xyz="0.0098294 0.056051 -0.0061006"
+      rpy="-0.67435 1.5708 0" />
+    <parent
+      link="left_middle_2" />
+    <child
+      link="left_middle_force_sensor_3" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_middle_force_sensor_1">
+    <inertial>
+      <origin
+        xyz="-2.38805233365724E-07 0.000116575254247631 -0.000567426157039266"
+        rpy="0 0 0" />
+      <mass
+        value="0.000202794522112893" />
+      <inertia
+        ixx="3.38243621902089E-09"
+        ixy="2.8461471131091E-14"
+        ixz="2.15581663034088E-14"
+        iyy="1.96244127906416E-09"
+        iyz="-5.53035966626096E-12"
+        izz="5.28129636598912E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_middle_force_sensor_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_middle_force_sensor_1.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_middle_force_sensor_1_joint"
+    type="fixed">
+    <origin
+      xyz="0.012046 0.019649 -0.006651"
+      rpy="-1.6995 1.5708 -1.4874" />
+    <parent
+      link="left_middle_1" />
+    <child
+      link="left_middle_force_sensor_1" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_ring_1">
+    <inertial>
+      <origin
+        xyz="0.00219465071036216 0.0127400598729399 -0.00664960488600086"
+        rpy="0 0 0" />
+      <mass
+        value="0.018294421561901" />
+      <inertia
+        ixx="3.0551291320996E-06"
+        ixy="-1.98266506341903E-07"
+        ixz="-1.91654207598195E-11"
+        iyy="1.48574005110073E-06"
+        iyz="1.39890240458808E-10"
+        izz="3.17180870739628E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_ring_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_ring_1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_ring_1_joint"
+    type="revolute">
+    <origin
+      xyz="0.00056467 0.0045302 0.15683"
+      rpy="1.5184 0 0" />
+    <parent
+      link="l_base_link" />
+    <child
+      link="left_ring_1" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="1.3700834628155487"
+      effort="1"
+      velocity="2" />
+  </joint>
+  <link
+    name="left_ring_2">
+    <inertial>
+      <origin
+        xyz="-0.000533232960767516 0.0253408197805297 -0.00609266275844661"
+        rpy="0 0 0" />
+      <mass
+        value="0.0250394550123085" />
+      <inertia
+        ixx="5.7011091818526E-06"
+        ixy="-1.02162147369316E-06"
+        ixz="1.12756694457282E-09"
+        iyy="1.00026236298366E-06"
+        iyz="7.53021172658877E-09"
+        izz="5.78763688254949E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_ring_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_ring_2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_ring_2_joint"
+    type="revolute">
+    <origin
+      xyz="0.0034259 0.032596 -0.00055"
+      rpy="0 0 0" />
+    <parent
+      link="left_ring_1" />
+    <child
+      link="left_ring_2" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="1.4855814987308995"
+      effort="1"
+      velocity="2" />
+    <mimic
+        joint="left_ring_1_joint"
+        multiplier="1.0843"
+        offset="0" />
+  </joint>
+  <link
+    name="left_ring_force_sensor_2">
+    <inertial>
+      <origin
+        xyz="1.52347834280198E-05 0.000205944196193575 -0.000722888366235894"
+        rpy="0 0 0" />
+      <mass
+        value="0.000255748190883573" />
+      <inertia
+        ixx="4.79445247031313E-09"
+        ixy="-1.32856442478855E-10"
+        ixz="-1.3313809296116E-12"
+        iyy="2.44390356832212E-09"
+        iyz="-3.05245098011255E-11"
+        izz="7.12568419691048E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_ring_force_sensor_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_ring_force_sensor_2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_ring_force_sensor_2_joint"
+    type="fixed">
+    <origin
+      xyz="0.0081655 0.037446 -0.0060795"
+      rpy="1.5708 1.5151 1.222" />
+    <parent
+      link="left_ring_2" />
+    <child
+      link="left_ring_force_sensor_2" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_ring_force_sensor_3">
+    <inertial>
+      <origin
+        xyz="-1.45503633877109E-05 -0.000345866624280766 -0.00133798467497642"
+        rpy="0 0 0" />
+      <mass
+        value="6.79657640763805E-05" />
+      <inertia
+        ixx="1.322695544894E-10"
+        ixy="8.21009588139984E-12"
+        ixz="2.62880413947154E-13"
+        iyy="2.53144232335949E-10"
+        iyz="9.15096907492791E-12"
+        izz="2.80539797218937E-10" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_ring_force_sensor_3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_ring_force_sensor_3.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_ring_force_sensor_3_joint"
+    type="fixed">
+    <origin
+      xyz="0.0086237 0.052572 -0.0060954"
+      rpy="1.5708 1.5025 2.2692" />
+    <parent
+      link="left_ring_2" />
+    <child
+      link="left_ring_force_sensor_3" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_ring_force_sensor_1">
+    <inertial>
+      <origin
+        xyz="6.00203522110876E-06 0.000116421389707869 -0.000567426346245452"
+        rpy="0 0 0" />
+      <mass
+        value="0.000202794434376475" />
+      <inertia
+        ixx="3.37837011170989E-09"
+        ixy="-7.5878752969164E-11"
+        ixz="-2.74580424573246E-13"
+        iyy="1.96650618264838E-09"
+        iyz="-5.52393138080224E-12"
+        izz="5.28129521919659E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_ring_force_sensor_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_ring_force_sensor_1.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_ring_force_sensor_1_joint"
+    type="fixed">
+    <origin
+      xyz="0.012046 0.019649 -0.006651"
+      rpy="1.5708 1.5172 1.7829" />
+    <parent
+      link="left_ring_1" />
+    <child
+      link="left_ring_force_sensor_1" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_little_1">
+    <inertial>
+      <origin
+        xyz="0.00219465215955104 0.0127400596467725 -0.00664960556534566"
+        rpy="0 0 0" />
+      <mass
+        value="0.0182944186286727" />
+      <inertia
+        ixx="3.05512819504631E-06"
+        ixy="-1.98266402388765E-07"
+        ixz="-1.943900936914E-11"
+        iyy="1.48573998671982E-06"
+        iyz="1.40097636081239E-10"
+        izz="3.1718075619136E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_little_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_little_1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_little_1_joint"
+    type="revolute">
+    <origin
+      xyz="0.000564666676608427 0.025916086514562 0.153652298734666"
+      rpy="1.46607657167525 0 0" />
+    <parent
+      link="l_base_link" />
+    <child
+      link="left_little_1" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="1.3700834628155487"
+      effort="1"
+      velocity="2" />
+  </joint>
+  <link
+    name="left_little_2">
+    <inertial>
+      <origin
+        xyz="-0.00142963521345348 0.0206394357966418 -0.00609976777725474"
+        rpy="0 0 0" />
+      <mass
+        value="0.0193773130913926" />
+      <inertia
+        ixx="3.09665348269306E-06"
+        ixy="-6.00039238752325E-07"
+        ixz="-6.36276589983993E-11"
+        iyy="7.18658498679386E-07"
+        iyz="-6.8352270598847E-11"
+        izz="3.10645497130527E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_little_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_little_2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_little_2_joint"
+    type="revolute">
+    <origin
+      xyz="0.0034259 0.032596 -0.00055"
+      rpy="0 0 0" />
+    <parent
+      link="left_little_1" />
+    <child
+      link="left_little_2" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="0"
+      upper="1.4855814987308995"
+      effort="1"
+      velocity="2" />
+    <mimic
+        joint="left_little_1_joint"
+        multiplier="1.0843"
+        offset="0" /> 
+  </joint>
+  <link
+    name="left_little_force_sensor_2">
+    <inertial>
+      <origin
+        xyz="-1.80617030004493E-05 -0.000118388090762644 -0.00077372286599571"
+        rpy="0 0 0" />
+      <mass
+        value="0.00028024674848609" />
+      <inertia
+        ixx="5.3604473912048E-09"
+        ixy="-2.90383767216199E-10"
+        ixz="4.21250471348435E-12"
+        iyy="2.78880843363607E-09"
+        iyz="3.60559684736731E-11"
+        izz="8.00957473963413E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_little_force_sensor_2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_little_force_sensor_2.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_little_force_sensor_2_joint"
+    type="fixed">
+    <origin
+      xyz="0.00645136106946357 0.0276831973860534 -0.00611719269601713"
+      rpy="1.57079632679489 1.45969392220978 1.22888814143765" />
+    <parent
+      link="left_little_2" />
+    <child
+      link="left_little_force_sensor_2" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_little_force_sensor_3">
+    <inertial>
+      <origin
+        xyz="-6.37037928366002E-05 -0.00043721053135512 -0.00112816117407995"
+        rpy="0 0 0" />
+      <mass
+        value="6.10536670141796E-05" />
+      <inertia
+        ixx="1.11591596284055E-10"
+        ixy="1.48923286911456E-11"
+        ixz="1.18294492348145E-12"
+        iyy="2.17206534673218E-10"
+        iyz="8.07883570931519E-12"
+        izz="2.52052305203824E-10" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_little_force_sensor_3.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_little_force_sensor_3.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_little_force_sensor_3_joint"
+    type="fixed">
+    <origin
+      xyz="0.00639726945590022 0.0427069119558453 -0.00611540980074188"
+      rpy="1.5707963267949 1.43362674619756 2.27608569263426" />
+    <parent
+      link="left_little_2" />
+    <child
+      link="left_little_force_sensor_3" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_little_force_sensor_1">
+    <inertial>
+      <origin
+        xyz="1.22242688666563E-05 0.000115932853490916 -0.000567426208359919"
+        rpy="0 0 0" />
+      <mass
+        value="0.000202794502264302" />
+      <inertia
+        ixx="3.3662161038664E-09"
+        ixy="-1.50896082438854E-10"
+        ixz="-5.69773684986028E-13"
+        iyy="1.97866156369565E-09"
+        iyz="-5.50105749423591E-12"
+        izz="5.28129655313475E-09" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_little_force_sensor_1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_little_force_sensor_1.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_little_force_sensor_1_joint"
+    type="fixed">
+    <origin
+      xyz="0.012046 0.019649 -0.006651"
+      rpy="1.5708 1.4637 1.7829" />
+    <parent
+      link="left_little_1" />
+    <child
+      link="left_little_force_sensor_1" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_plam_force_sensor">
+    <inertial>
+      <origin
+        xyz="-0.000120094006652194 0.000717297696998645 -0.000692889103009742"
+        rpy="0 0 0" />
+      <mass
+        value="0.00240886553361419" />
+      <inertia
+        ixx="1.79237844391669E-07"
+        ixy="-3.62341727516001E-10"
+        ixz="2.06840767979165E-10"
+        iyy="5.01887314145828E-07"
+        iyz="-4.2353787799761E-10"
+        izz="6.80017224272956E-07" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_plam_force_sensor.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_plam_force_sensor.STL" />
+      </geometry>
+      <surface>
+          <friction>
+              <ode>
+                  <mu>0.25</mu>  <!-- 动摩擦系数 -->
+                  <mu2>0.25</mu2> <!-- 静摩擦系数 -->
+              </ode>
+          </friction>
+      </surface> 
+    </collision>
+  </link>
+  <joint
+    name="left_plam_force_sensor_joint"
+    type="fixed">
+    <origin
+      xyz="0.0122962567472441 -0.000368185252603959 0.119601267398173"
+      rpy="1.57079632679489 0 1.5707963267949" />
+    <parent
+      link="l_base_link" />
+    <child
+      link="left_plam_force_sensor" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_plam_casing">
+    <inertial>
+      <origin
+        xyz="-0.028227910864842 -0.000242127035993855 0.0835826421996249"
+        rpy="0 0 0" />
+      <mass
+        value="0.0205046589058927" />
+      <inertia
+        ixx="2.37671048423346E-05"
+        ixy="-1.29072575162348E-08"
+        ixz="-6.43764479926857E-08"
+        iyy="1.27843040563581E-05"
+        iyz="9.82907716155012E-08"
+        izz="1.20351729261164E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_plam_casing.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="../meshes/RH56E2_L/left_plam_casing.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_plam_casing_joint"
+    type="fixed">
+    <origin
+      xyz="0 0 0.031"
+      rpy="0 0 0" />
+    <parent
+      link="l_base_link" />
+    <child
+      link="left_plam_casing" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+</robot>
