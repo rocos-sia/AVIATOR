@@ -1,0 +1,16 @@
+Expected rejection: Lock both handles before MoveWheel
+Expected rejection: Move both TCPs to their handle frames before locking
+Expected rejection: Invalid wheel target or duration
+Expected rejection: Invalid wheel target or duration
+Expected rejection: Invalid wheel target or duration
+Expected rejection: Invalid wheel target or duration
+Expected rejection: Invalid wheel target or duration
+Verified wheel: target=0.87266,0 actual=0.872652,-1.24585e-06
+Verified wheel: target=-0.87266,0 actual=-0.872654,-4.89283e-07
+Verified wheel: target=0,0 actual=-6.17334e-06,-1.12989e-06
+Verified wheel: target=0,-0.16 actual=5.62786e-07,-0.159999
+Verified wheel: target=0,0 actual=1.14641e-06,-2.21777e-06
+Expected rejection: Planned joint speed exceeds limit on axis 4 at sample 5; increase duration or choose another target
+Verified joint 2 left range (deg): 85.4989 .. 94.4996
+Verified joint 2 right range (deg): 85.4989 .. 94.4996
+INTEGRATION PASS
