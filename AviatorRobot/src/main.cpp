@@ -69,11 +69,13 @@ int main(int argc, char **argv) {
                 status();
                 robot.LockHandles();
                 status();
-                for (const auto target : {std::array<double, 3>{.87266, 0, 4},
-                                          {-.87266, 0, 4},
-                                          {0, 0, 4},
-                                          {0, -.165, 4},
-                                          {0, 0, 4}}) {
+                for (const auto target : {std::array<double, 3>{.87266, 0, 3},
+                                          {-.87266, 0, 3},
+                                          {0, 0, 3},
+                                          {0, -.170, 3},
+                                          {.87266, -.170, 8},
+                                          {-.87266, -.170, 8},
+                                          {0, 0, 3}}) {
                     std::cout << "DEMO target angle=" << target[0] << " displacement=" << target[1]
                               << std::endl;
                     robot.MoveWheel(target[0], target[1], target[2]);

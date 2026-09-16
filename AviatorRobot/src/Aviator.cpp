@@ -579,7 +579,7 @@ void Aviator::MoveWheel(double angle, double translation, double duration) {
     const auto f = p.status();
     require(f.locked == 3 && !f.fault, "Lock both handles before MoveWheel");
     require(std::isfinite(angle) && angle >= -.87266 && angle <= .87266 && std::isfinite(translation) &&
-                translation >= -.165 && translation <= 0 && std::isfinite(duration) && duration >= .5 &&
+                translation >= -.170 && translation <= 0 && std::isfinite(duration) && duration >= .5 &&
                 duration <= 120,
             "Invalid wheel target or duration");
     p.cancel = false;
