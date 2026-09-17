@@ -1,14 +1,14 @@
 # AviatorRobot 双臂操纵盘控制
 
 `aviator::Aviator` 管理左右两个 `rocos::Robot`，共用一个 `rocos::Hardware`。
-底层代码直接编译自 `reference/RCMRobot`，上层负责双臂同步、抓取和操纵盘运动。
+底层代码直接编译自 `third_party/rocos_app`（原 RCMRobot 项目），上层负责双臂同步、抓取和操纵盘运动。
 控制程序与 MuJoCo 是独立进程，控制器仅下发双臂 14 轴目标。操纵盘两轴始终
 没有 actuator，通过双臂与把手之间的两组 weld 约束被动运动。
 
 ## 编译和运行
 
 在 AVIATOR 仓库根目录执行。需要 C++17、CMake、Boost、Eigen3、yaml-cpp、
-orocos-kdl、urdfdom、TinyXML/TinyXML2、OpenSSL；其他控制依赖随 RCMRobot 提供。
+orocos-kdl、urdfdom、TinyXML/TinyXML2、OpenSSL；其他控制依赖随 `third_party/rocos_app` 提供。
 可视化另需 GLFW/OpenGL。
 
 ```bash
@@ -182,7 +182,7 @@ cmake --build AviatorRobot/build -j4
 
 驱动数据使用仿真器的 `/ecmN`、`/pd_inputN`、`/pd_outputN`。
 新工程通过 `ROCOS_MUJOCO_BACKEND` 选择其原始 POSIX 布局，避免误用旧 ECM 的
-Boost managed-shared-memory 布局。RCMRobot 原有构建继续使用原后端。
+Boost managed-shared-memory 布局。rocos_app 原有构建继续使用原后端。
 
 `/aviatorN` 是带版本号的抓取命令和状态通道。进程共享互斥锁保护双臂 14 轴的整批目标
 写入与仿真读取；控制器仅使用一个同步周期，两个 Robot 不创建各自的后台运动线程。
