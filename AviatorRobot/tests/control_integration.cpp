@@ -6,6 +6,7 @@
 #include <future>
 #include <iostream>
 #include <limits>
+#include <rocos_mujoco/aviator_protocol.hpp>
 #include <rocos_mujoco/shared_memory_config.hpp>
 #include <thread>
 
@@ -119,7 +120,8 @@ int main(int argc, char **argv) {
         for (const auto target :
              {std::array<double, 3>{.87266, 0, 8}, {-.87266, 0, 16}, {0, 0, 8}, {0, -.16, 8}, {0, 0, 8}}) {
             monitored([&] { robot.MoveWheel(target[0], target[1], target[2]); });
-            f = robot.GetStatus();
+            // 实测轮盘角度/位移来自仿真通道,控制器 GetStatus 返回的是内部跟踪值。
+            f = channel.read();
             std::cout << "Verified wheel: target=" << target[0] << ',' << target[1] << " actual=" << f.angle
                       << ',' << f.displacement << std::endl;
             require(f.locked == 3 && !f.fault, "Lost grasp while moving");

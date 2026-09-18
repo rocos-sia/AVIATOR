@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate the AVIATOR MJCF, binary mesh assets and 14-drive YAML from URDF.
 
-Uses only the Python standard library. Run from any working directory.
-The original URDF and meshes are never modified.
+Run from any working directory. The original URDF and meshes are never modified.
+Requires numpy and scipy to compute the collision convex hulls (generation only).
 """
 
 import copy
@@ -12,6 +12,9 @@ from pathlib import Path
 import shutil
 import struct
 import xml.etree.ElementTree as ET
+
+import numpy as np
+from scipy.spatial import ConvexHull
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -33,6 +36,34 @@ def pose(element):
     return {"pos": origin.get("xyz", "0 0 0"), "quat": numbers([
         cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy,
         cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy])}
+
+
+def quat_to_rpy(w, x, y, z):
+    # pose() 的逆:URDF 固定轴 RPY = Rz(yaw) Ry(pitch) Rx(roll)。
+    sinr_cosp = 2 * (w * x + y * z)
+    cosr_cosp = 1 - 2 * (x * x + y * y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+    sinp = 2 * (w * y - z * x)
+    pitch = math.asin(max(-1.0, min(1.0, sinp)))
+    siny_cosp = 2 * (w * z + x * y)
+    cosy_cosp = 1 - 2 * (y * y + z * z)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+    return roll, pitch, yaw
+
+
+def quat_from_z_to(direction):
+    # 把 +Z 转到单位向量 direction 的单位四元数(wxyz)。
+    x, y, z = direction
+    if z > 1 - 1e-12:
+        return (1.0, 0.0, 0.0, 0.0)
+    if z < -1 + 1e-12:
+        return (0.0, 1.0, 0.0, 0.0)  # 绕 X 转 180°
+    axis = (-y, x, 0.0)
+    norm = math.hypot(axis[0], axis[1])
+    axis = (axis[0] / norm, axis[1] / norm, 0.0)
+    half = math.acos(z) / 2
+    s = math.sin(half)
+    return (math.cos(half), axis[0] * s, axis[1] * s, axis[2] * s)
 
 
 def binary_stl(source, destination):
@@ -60,6 +91,33 @@ def binary_stl(source, destination):
         stream.write(b"AVIATOR: converted from source ASCII STL".ljust(80, b"\0"))
         stream.write(struct.pack("<I", len(triangles)))
         stream.writelines(triangles)
+
+
+def write_convex_hull(source, scale, destination):
+    """Write the scaled convex hull of a binary STL as a new binary STL.
+
+    MuJoCo uses each collision mesh's convex hull (qhull on the raw vertices);
+    replicate that here so Pinocchio sees the same convex polytope instead of
+    a concave mesh mislabelled <convex> (which breaks GJK's support walk).
+    """
+    raw = source.read_bytes()
+    count = struct.unpack_from("<I", raw, 80)[0]
+    vertices = np.array([struct.unpack_from("<9f", raw, 84 + 50 * i + 12) for i in range(count)],
+                        dtype=np.float64).reshape(-1, 3)
+    points = np.unique(np.round(vertices, 6), axis=0) * np.asarray(scale, dtype=np.float64)
+    hull = ConvexHull(points)
+    center = points.mean(axis=0)
+    triangles = []
+    for tri in hull.points[hull.simplices]:
+        p0, p1, p2 = tri
+        normal = np.cross(p1 - p0, p2 - p0)
+        length = float(np.linalg.norm(normal))
+        normal = normal / length if length > 1e-12 else np.zeros(3)
+        if float(normal @ (p0 - center)) < 0.0:  # inward normal -> flip winding
+            normal, p1, p2 = -normal, p2, p1
+        triangles.append(struct.pack("<12fH", *normal, *p0, *p1, *p2, 0))
+    destination.write_bytes(b"AVIATOR convex hull".ljust(80, b"\0") +
+                            struct.pack("<I", len(triangles)) + b"".join(triangles))
 
 
 def collision_parts(path):
@@ -337,7 +395,140 @@ def generate():
         ET.SubElement(ET.SubElement(urdf, "material", name="white"), "color", rgba="1 1 1 1")
     ET.indent(urdf, space="  ")
     ET.ElementTree(urdf).write(control_dir / "aviator_control.urdf", encoding="utf-8", xml_declaration=True)
+    generate_collision_assets(links, joints, grasp, meshes, parts)
     print(f"Generated aviator.xml, {len(meshes)} mesh assets, and 14-drive YAML")
+
+
+def generate_collision_assets(links, joints, grasp, meshes, parts):
+    """导出 Pinocchio 碰撞模型:分片凸网格 + 圆柱/胶囊工具 + SRDF 排除对。
+
+    只保留 <collision>,网格路径用 package://aviator_meshes 并由碰撞后端定位;
+    所有网格标记 <convex>(与 MuJoCo 凸包语义一致),安装柱标记 <capsule>。
+    """
+    robot = ET.Element("robot", name="aviator_collision")
+    meshdir = PROJECT / "model/aviator_meshes"
+
+    def add_collision(link_el, name, origin_xyz, origin_rpy, geometry):
+        collision = ET.SubElement(link_el, "collision", name=name)
+        ET.SubElement(collision, "origin", xyz=origin_xyz, rpy=origin_rpy)
+        collision.append(geometry)
+
+    def mesh_geometry(filename, scale):
+        geometry = ET.Element("geometry")
+        ET.SubElement(geometry, "mesh", filename="package://aviator_meshes/" + filename, scale=scale)
+        return geometry
+
+    convex_names = {}
+    capsule_names = {}
+
+    for link in links.values():
+        name = link.get("name")
+        link_el = ET.SubElement(robot, "link", name=name)
+        convex_names[name] = []
+        capsule_names[name] = []
+        inertial = link.find("inertial")
+        if inertial is not None:
+            link_el.append(copy.deepcopy(inertial))
+        for collision in link.findall("collision"):
+            origin = collision.find("origin")
+            xyz = origin.get("xyz", "0 0 0") if origin is not None else "0 0 0"
+            rpy = origin.get("rpy", "0 0 0") if origin is not None else "0 0 0"
+            mesh = collision.find("geometry/mesh")
+            if mesh is None:
+                continue
+            filename = Path(mesh.get("filename")).name
+            scale = numbers(map(float, mesh.get("scale", "1 1 1").split()))
+            scale_values = tuple(map(float, scale.split()))
+            stem = meshes.get((filename, scale))
+            if stem is None:
+                raise ValueError(f"Collision mesh not registered: {filename}")
+            components = parts.get(stem)
+            if components:
+                for component in components:
+                    hull_name = Path(component).stem + "_ch.stl"
+                    write_convex_hull(meshdir / component, scale_values, meshdir / hull_name)
+                    add_collision(link_el, Path(component).stem, xyz, rpy,
+                                  mesh_geometry(hull_name, "1 1 1"))
+                    convex_names[name].append(Path(component).stem)
+            else:
+                hull_name = Path(filename).stem + "_ch.stl"
+                write_convex_hull(meshdir / filename, scale_values, meshdir / hull_name)
+                add_collision(link_el, Path(filename).stem, xyz, rpy,
+                              mesh_geometry(hull_name, "1 1 1"))
+                convex_names[name].append(Path(filename).stem)
+
+    # 圆柱工具 + 安装柱(胶囊),几何量与 MJCF 生成保持一致。
+    tool = grasp["tool"]
+    radius, length, mass = (float(tool[k]) for k in ("radius", "length", "mass"))
+    mount_radius = float(tool["mount_radius"])
+    stem_length = math.sqrt(sum(v * v for v in tool["position"]))
+    direction = [v / stem_length for v in tool["position"]]
+    w, x, y, z = tool["quaternion"]
+    cylinder_axis = [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]
+    axial = abs(sum(a * b for a, b in zip(direction, cylinder_axis)))
+    support = length / 2 * axial + radius * math.sqrt(max(0, 1 - axial * axial))
+    mount_end = stem_length - support - mount_radius
+    assert mount_end > 0, "Cylinder intersects the flange: increase tool offset"
+    mount_xyz = numbers(mount_end / 2 * v for v in direction)
+    mount_rpy = numbers(quat_to_rpy(*quat_from_z_to(direction)))
+    cylinder_xyz = numbers(tool["position"])
+    cylinder_rpy = numbers(quat_to_rpy(w, x, y, z))
+    for side, suffix in [("left", "L"), ("right", "R")]:
+        link_el = robot.find(f".//link[@name='AR5-5_07{suffix}-W4C4A2_flan_link']")
+        assert link_el is not None, "Missing flange link"
+        mount = ET.Element("geometry")
+        ET.SubElement(mount, "cylinder", radius=numbers([mount_radius]), length=numbers([mount_end]))
+        add_collision(link_el, f"{side}_tool_mount", mount_xyz, mount_rpy, mount)
+        capsule_names[link_el.get("name")].append(f"{side}_tool_mount")
+        cylinder = ET.Element("geometry")
+        ET.SubElement(cylinder, "cylinder", radius=numbers([radius]), length=numbers([length]))
+        add_collision(link_el, f"{side}_grasp_cylinder", cylinder_xyz, cylinder_rpy, cylinder)
+
+    # 标记凸网格与胶囊,供 Pinocchio URDF 解析器构建凸包/胶囊几何。
+    for link_el in robot.findall("link"):
+        name = link_el.get("name")
+        if not convex_names.get(name) and not capsule_names.get(name):
+            continue
+        cc = ET.SubElement(link_el, "collision_checking")
+        for geom_name in convex_names.get(name, []):
+            ET.SubElement(cc, "convex", name=geom_name)
+        for geom_name in capsule_names.get(name, []):
+            ET.SubElement(cc, "capsule", name=geom_name)
+
+    # dummy_link 是 roll/pitch 之间的运动体,补一个微量惯量避免零惯量运动链。
+    dummy = robot.find(".//link[@name='dummy_link']")
+    inertial = ET.SubElement(dummy, "inertial")
+    ET.SubElement(inertial, "origin", rpy="0 0 0", xyz="0 0 0")
+    ET.SubElement(inertial, "mass", value="1e-6")
+    ET.SubElement(inertial, "inertia", ixx="1e-9", ixy="0", ixz="0", iyy="1e-9", iyz="0", izz="1e-9")
+
+    # 原样复制全部关节(parent/child/origin/axis/limit)。
+    for joint in joints.values():
+        robot.append(copy.deepcopy(joint))
+
+    ET.indent(robot, space="  ")
+    ET.ElementTree(robot).write(PROJECT / "model/aviator_collision.urdf", encoding="utf-8", xml_declaration=True)
+
+    # SRDF:镜像 MuJoCo 默认的 mjDSBL_FILTERPARENT —— 直接父子 link 之间不检测碰撞,
+    # 即使凸包在贴合面重叠;再叠加非相邻的结构性排除(轮盘轴承/腕部壳体)。
+    # 用 link 名枚举父子对(而非 Pinocchio 的 parentJoint),因为 Pinocchio 会把 fixed
+    # joint 合并进父体,导致 aircraft/base/link1 的父子关系被压平,parentJoint 无法区分。
+    srdf = ET.Element("robot", name="aviator_collision")
+    has_collision = lambda name: bool(convex_names.get(name)) or bool(capsule_names.get(name))
+    for joint in joints.values():
+        parent = joint.find("parent").get("link")
+        child = joint.find("child").get("link")
+        if has_collision(parent) and has_collision(child):
+            ET.SubElement(srdf, "disable_collisions", link1=parent, link2=child, reason="parent-child")
+    for a, b, reason in [
+        ("aircraft", "steering_wheel", "wheel bearing"),
+        ("AR5-5_07L-W4C4A2_link5", "AR5-5_07L-W4C4A2_link7", "wrist housing"),
+        ("AR5-5_07R-W4C4A2_link5", "AR5-5_07R-W4C4A2_link7", "wrist housing"),
+    ]:
+        ET.SubElement(srdf, "disable_collisions", link1=a, link2=b, reason=reason)
+    ET.indent(srdf, space="  ")
+    ET.ElementTree(srdf).write(PROJECT / "model/aviator_collision.srdf", encoding="utf-8", xml_declaration=True)
+    print("Generated aviator_collision.urdf + aviator_collision.srdf")
 
 
 if __name__ == "__main__":

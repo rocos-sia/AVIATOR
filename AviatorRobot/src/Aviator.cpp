@@ -1,26 +1,25 @@
 #include "aviator/Aviator.hpp"
+#include "aviator/CollisionChecker.hpp"
+#include "aviator/DataLink.hpp"
+#include "aviator/Kinematics.hpp"
+#include "aviator/backend.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
-#include <mujoco/mujoco.h>
+#include <kdl/frames.hpp>
+#include <kdl/framevel.hpp>
 #include <mutex>
-#include <rocos_app/ethercat/hardware.h>
-#include <rocos_app/robot.h>
-#include <semaphore.h>
-#include <signal.h>
-#include <thread>
+#include <stdexcept>
+#include <time.h>
 #include <vector>
 #include <yaml-cpp/yaml.h>
 
 namespace aviator {
-namespace ipc = rocos_mujoco::aviator;
 namespace fs = std::filesystem;
 using Joints = std::array<double, 14>;
-using Feedback = ipc::Feedback;
 namespace {
 void require(bool value, const std::string &error) {
     if (!value)
@@ -28,6 +27,12 @@ void require(bool value, const std::string &error) {
 }
 double smooth(double u) { return u * u * u * (10 + u * (-15 + 6 * u)); }
 constexpr double radians = 3.14159265358979323846 / 180.0;
+// 与协议/仿真一致的单调时钟(CLOCK_MONOTONIC 秒),用于心跳与开环定时。
+double steady_now() {
+    timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
 KDL::Frame frame(const YAML::Node &node) {
     const auto p = node["position"].as<std::vector<double>>();
     const auto q = node["quaternion"].as<std::vector<double>>();
@@ -47,43 +52,28 @@ KDL::Frame frame(const YAML::Node &node) {
 class Aviator::Impl {
   public:
     Impl(const std::string &path, int id) : config_path(fs::absolute(path)), bus(id) {}
-    ~Impl() {
-        cancel = true;
-        running = false;
-        if (heartbeat_thread.joinable())
-            heartbeat_thread.join();
-        if (channel && claimed) {
-            try {
-                ipc::Channel::Guard guard(*channel);
-                channel->data().controller_pid = 0;
-            } catch (...) {
-            }
-        }
-        if (tick != SEM_FAILED)
-            sem_close(tick);
-    }
+    ~Impl() = default;
     fs::path config_path;
     int bus;
     YAML::Node config;
-    std::unique_ptr<ipc::Channel> channel;
-    std::unique_ptr<rocos::Hardware> hardware;
-    std::unique_ptr<rocos::Robot> arms[2];
-    std::unique_ptr<mjModel, decltype(&mj_deleteModel)> model{nullptr, mj_deleteModel};
-    std::unique_ptr<mjData, decltype(&mj_deleteData)> data{nullptr, mj_deleteData};
+    std::unique_ptr<DataLink> link;
+    std::unique_ptr<Kinematics> kinematics;
+    std::unique_ptr<CollisionChecker> collision;
     std::mutex operation;
-    std::atomic<bool> cancel{false}, running{false};
+    std::atomic<bool> cancel{false};
     std::atomic<int> phase{0}; // disconnected, idle, enabled, approaching, aligned, locked, moving, fault
-    std::thread heartbeat_thread;
-    bool claimed = false;
-    sem_t *tick = SEM_FAILED;
-    int joint_ids[14]{};
-    int wheel_ids[2]{};
     KDL::Frame handles[2], tool;
     KDL::Frame wheel_origin;
     double approach_distance = .05, plan_dt = .02, max_speed = .7, tracking = .12;
+    double settle_duration = 1.5;
     double joint2_min = 85 * radians, joint2_max = 95 * radians, joint2_margin = .5 * radians;
     Joints home{}, approach_seed{};
     Joints last_target{};
+    // 轮盘目标(角度,深度)是 MoveWheel 的输入,算法内部跟踪:
+    // MoveWheel 完成后更新为目标;接近完成后同步到后端实测位形。
+    // 初始为 Home 位形 (0,0),与 MJCF 关键帧一致。当前"实测"位形经 grasp() 获取,
+    // 用于接近对准与开环轨迹,而不是用来读回目标。
+    double wheel_angle = 0, wheel_displacement = 0;
 
     void checkElbows(const Joints &q) const {
         for (int side = 0; side < 2; ++side)
@@ -93,56 +83,51 @@ class Aviator::Impl {
                         " joint 2 outside elbow-down range [85, 95] deg");
     }
 
-    Feedback status() {
-        require(channel != nullptr, "Call Init first");
-        auto f = channel->read();
-        require(ipc::monotonicTime() - f.heartbeat < .5, "Simulator feedback timeout");
-        return f;
+    GraspState grasp() {
+        require(link != nullptr, "Call Init first");
+        const auto state = link->graspState();
+        require(steady_now() - state.heartbeat < .5, "Backend feedback timeout");
+        return state;
+    }
+    Status status() {
+        const auto g = grasp();
+        Status s;
+        s.angle = wheel_angle;
+        s.displacement = wheel_displacement;
+        s.position_error[0] = g.position_error[0];
+        s.position_error[1] = g.position_error[1];
+        s.rotation_error[0] = g.rotation_error[0];
+        s.rotation_error[1] = g.rotation_error[1];
+        s.locked = g.locked;
+        s.ready = g.ready;
+        s.fault = g.fault;
+        s.ack = g.ack;
+        s.result = g.result;
+        return s;
     }
     Joints measured() {
         Joints q{};
         for (int side = 0; side < 2; ++side)
             for (int axis = 0; axis < 7; ++axis)
-                q[side * 7 + axis] = arms[side]->getJointPosition(axis);
+                q[side * 7 + axis] = link->getJointPosition(static_cast<Side>(side), axis);
         return q;
     }
     void hold() {
-        if (!hardware || !arms[0] || !arms[1])
+        if (!link)
             return;
         auto q = measured();
-        ipc::Channel::Guard guard(*channel);
-        for (int i = 0; i < 14; ++i)
-            arms[i / 7]->setJointPosition(i % 7, q[i]);
+        link->setJointPositions(q);
         last_target = q;
     }
-    void waitTick() {
-        timespec deadline{};
-        clock_gettime(CLOCK_REALTIME, &deadline);
-        deadline.tv_nsec += 100000000;
-        if (deadline.tv_nsec >= 1000000000) {
-            ++deadline.tv_sec;
-            deadline.tv_nsec -= 1000000000;
-        }
-        while (sem_timedwait(tick, &deadline) != 0) {
-            if (errno == EINTR)
-                continue;
-            throw std::runtime_error("Simulator cycle timeout");
-        }
-    }
-    void command(ipc::Command command) {
-        uint64_t sequence;
-        {
-            ipc::Channel::Guard guard(*channel);
-            auto &shared = channel->data();
-            shared.command = command;
-            sequence = ++shared.request;
-        }
-        const double until = ipc::monotonicTime() + 2;
-        while (ipc::monotonicTime() < until) {
-            const auto f = status();
-            if (f.ack == sequence) {
-                require(f.result == ipc::Result::Ok, "Simulator rejected grasp command (result=" +
-                                                         std::to_string(static_cast<int>(f.result)) + ")");
+    void waitTick() { link->waitTick(); }
+    void command(GraspCommand command) {
+        const uint64_t sequence = link->sendGraspCommand(command);
+        const double until = steady_now() + 2;
+        while (steady_now() < until) {
+            const auto g = grasp();
+            if (g.ack == sequence) {
+                require(g.result == GraspResult::Ok, "Backend rejected grasp command (result=" +
+                                                         std::to_string(static_cast<int>(g.result)) + ")");
                 return;
             }
             waitTick();
@@ -162,38 +147,25 @@ class Aviator::Impl {
         Joints result{};
         for (int side = 0; side < 2; ++side) {
             require(!cancel, "Motion cancelled while solving IK");
-            KDL::JntArray initial(7), output(7);
+            std::array<double, 7> initial{}, output{};
             for (int axis = 0; axis < 7; ++axis)
-                initial(axis) = seed[side * 7 + axis];
-            require(arms[side]->kinematics_.CartToJnt(initial, targets[side], output) >= 0,
+                initial[axis] = seed[side * 7 + axis];
+            require(kinematics->solveIk(static_cast<Side>(side), initial, targets[side], output),
                     std::string(side == 0 ? "Left" : "Right") +
                         " arm IK failed within elbow-down joint 2 limits; target/path is unreachable");
             for (int axis = 0; axis < 7; ++axis)
-                result[side * 7 + axis] = output(axis);
+                result[side * 7 + axis] = output[axis];
         }
         return result;
     }
     void check(const Joints &q, double angle, double translation) {
         checkElbows(q);
-        auto *m = model.get();
-        auto *d = data.get();
-        for (int i = 0; i < 14; ++i) {
-            const int j = joint_ids[i];
-            require(std::isfinite(q[i]) && q[i] >= m->jnt_range[2 * j] && q[i] <= m->jnt_range[2 * j + 1],
+        for (int i = 0; i < 14; ++i)
+            require(std::isfinite(q[i]) &&
+                        q[i] >= kinematics->jointLower(static_cast<Side>(i / 7), i % 7) &&
+                        q[i] <= kinematics->jointUpper(static_cast<Side>(i / 7), i % 7),
                     "Joint limit violation on axis " + std::to_string(i));
-            d->qpos[m->jnt_qposadr[j]] = q[i];
-        }
-        d->qpos[m->jnt_qposadr[wheel_ids[0]]] = angle;
-        d->qpos[m->jnt_qposadr[wheel_ids[1]]] = translation;
-        mj_forward(m, d);
-        for (int c = 0; c < d->ncon; ++c) {
-            const auto &contact = d->contact[c];
-            if (contact.dist < -.001) {
-                throw std::runtime_error(std::string("Planned collision: ") +
-                                         mj_id2name(m, mjOBJ_GEOM, contact.geom1) + " / " +
-                                         mj_id2name(m, mjOBJ_GEOM, contact.geom2));
-            }
-        }
+        collision->check(q, angle, translation);
     }
     struct Sample {
         Joints q;
@@ -210,7 +182,7 @@ class Aviator::Impl {
                 continue;
             for (int axis = 0; axis < 14; ++axis)
                 require(std::abs(path[k].q[axis] - path[k - 1].q[axis]) / dt <=
-                            std::min(max_speed, arms[axis / 7]->getJntVelLimit(axis % 7)),
+                            std::min(max_speed, link->jointVelLimit(static_cast<Side>(axis / 7), axis % 7)),
                         "Planned joint speed exceeds limit on axis " + std::to_string(axis) + " at sample " +
                             std::to_string(k) + "; increase duration or choose another target");
             // Check between IK knots as well as at knots.
@@ -222,32 +194,29 @@ class Aviator::Impl {
         }
     }
     void execute(const Path &path, double duration, bool locked) {
-        const double start = status().time;
+        const double start = steady_now();
         try {
             for (;;) {
                 waitTick();
                 require(!cancel, "Motion stopped");
-                const auto f = status();
-                require(!f.fault, "Simulator grasp fault");
-                require(!locked || f.locked == 3, "Both handles must remain locked");
-                require(arms[0]->IsEnabled() && arms[1]->IsEnabled(), "A drive is no longer enabled");
+                const auto g = grasp();
+                require(!g.fault, "Backend grasp fault");
+                require(!locked || g.locked == 3, "Both handles must remain locked");
+                require(link->isEnabled(Side::Left) && link->isEnabled(Side::Right),
+                        "A drive is no longer enabled");
                 const Joints actual = measured();
                 checkElbows(actual);
                 for (int i = 0; i < 14; ++i)
                     require(std::abs(actual[i] - last_target[i]) < tracking,
                             "Tracking error on axis " + std::to_string(i));
-                const double u = std::clamp((f.time - start) / duration, 0., 1.);
+                const double u = std::clamp((steady_now() - start) / duration, 0., 1.);
                 const double coordinate = u * (path.size() - 1);
                 const auto k = std::min(static_cast<size_t>(coordinate), path.size() - 2);
                 const double fraction = coordinate - k;
                 Joints next{};
                 for (int i = 0; i < 14; ++i)
                     next[i] = path[k].q[i] + fraction * (path[k + 1].q[i] - path[k].q[i]);
-                {
-                    ipc::Channel::Guard guard(*channel);
-                    for (int i = 0; i < 14; ++i)
-                        arms[i / 7]->setJointPosition(i % 7, next[i]);
-                }
+                link->setJointPositions(next);
                 last_target = next;
                 if (u >= 1)
                     break;
@@ -258,36 +227,37 @@ class Aviator::Impl {
             throw;
         }
     }
-    void settle(bool require_ready, double angle = 0, double translation = 0) {
-        const double until = ipc::monotonicTime() + 5;
+    // 等待抓取就绪(接近后的对准确认)。稳定窗口用本地单调时钟,不再依赖仿真时钟。
+    void settleReady() {
+        const double until = steady_now() + 5;
         double stable = 0;
-        while (ipc::monotonicTime() < until) {
+        while (steady_now() < until) {
             waitTick();
             require(!cancel, "Motion stopped");
-            const auto f = status();
-            require(!f.fault, "Grasp fault while settling");
+            const auto g = grasp();
+            require(!g.fault, "Grasp fault while settling");
             checkElbows(measured());
-            bool good = require_ready
-                            ? f.ready != 0
-                            : std::abs(f.angle - angle) < config["wheel_angle_tolerance"].as<double>() &&
-                                  std::abs(f.displacement - translation) <
-                                      config["wheel_translation_tolerance"].as<double>() &&
-                                  f.position_error[0] < .003 && f.position_error[1] < .003 &&
-                                  f.rotation_error[0] < .035 && f.rotation_error[1] < .035 &&
-                                  std::abs(f.velocity[0]) < .01 && std::abs(f.velocity[1]) < .002;
-            if (good) {
+            if (g.ready) {
+                const double now = steady_now();
                 if (stable == 0)
-                    stable = f.time;
-                if (f.time - stable > .15)
+                    stable = now;
+                if (now - stable > .15)
                     return;
             } else
                 stable = 0;
         }
-        const auto f = status();
-        throw std::runtime_error("Settle timeout: wheel=" + std::to_string(f.angle) + "," +
-                                 std::to_string(f.displacement) +
-                                 " grasp errors=" + std::to_string(f.position_error[0]) + "," +
-                                 std::to_string(f.position_error[1]));
+        throw std::runtime_error("Grasp did not become ready");
+    }
+    // 开环驻留:按时间等待运动收尾,统一仿真与真机。期间保留取消/故障/肘部安全检查。
+    void dwell(double seconds) {
+        const double until = steady_now() + seconds;
+        while (steady_now() < until) {
+            waitTick();
+            require(!cancel, "Motion stopped");
+            const auto g = grasp();
+            require(!g.fault, "Grasp fault while settling");
+            checkElbows(measured());
+        }
     }
 };
 
@@ -296,7 +266,7 @@ Aviator::~Aviator() = default;
 void Aviator::Init() {
     auto &p = *impl_;
     std::lock_guard<std::mutex> operation(p.operation);
-    require(!p.channel, "Already initialized");
+    require(!p.link, "Already initialized");
     p.config = YAML::LoadFile(p.config_path.string());
     auto resolve = [&](const char *key) {
         return p.config_path.parent_path() / p.config[key].as<std::string>();
@@ -331,6 +301,7 @@ void Aviator::Init() {
     p.handles[0] = frame(grasp["left"]);
     p.handles[1] = frame(grasp["right"]);
     p.tool = frame(grasp["tool"]);
+    p.wheel_origin = frame(grasp["wheel_origin"]);
     const double cylinder_radius = grasp["tool"]["radius"].as<double>();
     const double cylinder_length = grasp["tool"]["length"].as<double>();
     require(std::isfinite(cylinder_radius) && cylinder_radius > 0 && std::isfinite(cylinder_length) &&
@@ -354,120 +325,45 @@ void Aviator::Init() {
     p.plan_dt = p.config["planning_period"].as<double>();
     p.max_speed = p.config["joint_speed"].as<double>();
     p.tracking = p.config["tracking_tolerance"].as<double>();
+    p.settle_duration = p.config["settle_duration"].as<double>();
     require(std::isfinite(p.plan_dt) && p.plan_dt > 0 && p.plan_dt <= .05 && p.max_speed > 0 &&
-                p.tracking > 0,
+                p.tracking > 0 && std::isfinite(p.settle_duration) && p.settle_duration >= 0,
             "Invalid planning parameters");
-    auto model_path = resolve("model");
-    if (!fs::is_regular_file(model_path))
-        model_path = p.config_path.parent_path().parent_path() / "model/aviator.xml";
-    char error[1024]{};
-    p.model.reset(mj_loadXML(model_path.c_str(), nullptr, error, sizeof(error)));
-    require(p.model != nullptr, std::string("Cannot load planning model: ") + error);
-    p.data.reset(mj_makeData(p.model.get()));
-    require(p.data != nullptr, "Cannot allocate planning data");
-    auto *m = p.model.get();
-    auto *d = p.data.get();
-    require(m->nq == 16 && m->nv == 16, "Expected AVIATOR 16-DOF model");
-    for (int i = 0; i < m->neq; ++i)
-        d->eq_active[i] = 0;
-    mj_forward(m, d);
-    for (int i = 0; i < 14; ++i) {
-        const std::string name =
-            std::string("AR5-5_07") + (i < 7 ? "L" : "R") + "-W4C4A2_joint_" + std::to_string(i % 7 + 1);
-        p.joint_ids[i] = mj_name2id(m, mjOBJ_JOINT, name.c_str());
-        require(p.joint_ids[i] >= 0, "Missing arm joint " + name);
+    auto collision_urdf = resolve("collision_urdf");
+    if (!fs::is_regular_file(collision_urdf))
+        collision_urdf = p.config_path.parent_path().parent_path() / "model/aviator_collision.urdf";
+
+    // 后端工厂:算法只拿到抽象接口,各后端符号隔离在 backend 实现文件里。
+    // 由 config 的 backend 字段选择:mujoco(仿真,默认)/ rokae(真机)。
+    const std::string backend = p.config["backend"].as<std::string>("mujoco");
+    if (backend == "mujoco") {
+        p.link = makeMuJoCoDataLink(resolve("urdf").string(), p.bus);
+    } else if (backend == "rokae") {
+#ifdef AVIATOR_HAVE_ROKAE
+        const auto rk = p.config["rokae"];
+        p.link = makeRokaeDataLink(resolve("urdf").string(),
+                                   rk["left_ip"].as<std::string>(),
+                                   rk["right_ip"].as<std::string>(),
+                                   rk["local_ip"].as<std::string>());
+#else
+        throw std::runtime_error(
+            "Backend 'rokae' requested but this build has no Rokae xCore SDK; rebuild with the "
+            "SDK headers and libraries present (see CMakeLists.txt)");
+#endif
+    } else {
+        throw std::runtime_error("Unknown backend: " + backend);
     }
-    const int home_key = mj_name2id(m, mjOBJ_KEY, "aviator_home");
-    require(home_key >= 0, "Missing aviator_home keyframe; regenerate assets");
-    for (int i = 0; i < 14; ++i)
-        require(std::abs(m->key_qpos[home_key * m->nq + m->jnt_qposadr[p.joint_ids[i]]] - p.home[i]) < 1e-8,
-                "Home config differs from MJCF; regenerate assets");
-    p.wheel_ids[0] = mj_name2id(m, mjOBJ_JOINT, "roll_input_joint");
-    p.wheel_ids[1] = mj_name2id(m, mjOBJ_JOINT, "pitch_input_joint");
-    const int body = mj_name2id(m, mjOBJ_BODY, "steering_wheel");
-    require(body >= 0 && p.wheel_ids[0] >= 0 && p.wheel_ids[1] >= 0, "Missing passive wheel");
-    const auto *r = d->xmat + 9 * body;
-    const auto *x = d->xpos + 3 * body;
-    p.wheel_origin = KDL::Frame(KDL::Rotation(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]),
-                                KDL::Vector(x[0], x[1], x[2]));
-    for (int side = 0; side < 2; ++side) {
-        const auto name = std::string(side == 0 ? "left" : "right");
-        const int site = mj_name2id(m, mjOBJ_SITE, (name + "_handle").c_str());
-        require(site >= 0, "Missing handle site");
-        KDL::Frame actual;
-        const auto *a = d->site_xmat + 9 * site;
-        const auto *b = d->site_xpos + 3 * site;
-        actual = KDL::Frame(KDL::Rotation(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]),
-                            KDL::Vector(b[0], b[1], b[2]));
-        const auto difference = KDL::diff(actual, p.wheel_origin * p.handles[side]);
-        require(difference.vel.Norm() < 1e-8 && difference.rot.Norm() < 1e-8,
-                "Grasp config differs from MJCF; regenerate assets");
-        const int flange = mj_name2id(
-            m, mjOBJ_BODY, (std::string("AR5-5_07") + (side == 0 ? "L" : "R") + "-W4C4A2_flan_link").c_str());
-        const int tcp = mj_name2id(m, mjOBJ_SITE, (name + "_tcp").c_str());
-        const int cylinder = mj_name2id(m, mjOBJ_GEOM, (name + "_grasp_cylinder").c_str());
-        require(flange >= 0 && tcp >= 0 && cylinder >= 0, "Missing cylinder tool");
-        auto pose = [](const mjtNum *r, const mjtNum *p) {
-            return KDL::Frame(KDL::Rotation(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]),
-                              KDL::Vector(p[0], p[1], p[2]));
-        };
-        auto actual_tool = pose(d->xmat + 9 * flange, d->xpos + 3 * flange).Inverse() *
-                           pose(d->site_xmat + 9 * tcp, d->site_xpos + 3 * tcp);
-        auto tool_error = KDL::diff(actual_tool, p.tool);
-        require(tool_error.vel.Norm() < 1e-8 && tool_error.rot.Norm() < 1e-8 &&
-                    m->geom_type[cylinder] == mjGEOM_CYLINDER &&
-                    std::abs(m->geom_size[3 * cylinder] - cylinder_radius) < 1e-9 &&
-                    std::abs(m->geom_size[3 * cylinder + 1] - cylinder_length / 2) < 1e-9,
-                "Cylinder tool config differs from MJCF; regenerate assets");
-    }
-    p.channel = std::make_unique<ipc::Channel>(p.bus);
-    p.status();
-    {
-        ipc::Channel::Guard guard(*p.channel);
-        auto &shared = p.channel->data();
-        require(shared.controller_pid == 0 || (kill(shared.controller_pid, 0) != 0 && errno == ESRCH),
-                "Another AVIATOR controller owns this simulator");
-        shared.controller_pid = getpid();
-        shared.controller_heartbeat = ipc::monotonicTime();
-        p.claimed = true;
-    }
-    auto *bus_config = rocos::SharedMemoryConfig::getInstance(p.bus);
-    require(bus_config->getSlaveNum() == 14, "Expected 14 drive slaves");
-    require(bus_config->getDt() == 1000, "Controller expects a 1000 us simulation cycle");
-    p.hardware = std::make_unique<rocos::Hardware>(resolve("urdf").string(), p.bus);
-    for (int side = 0; side < 2; ++side) {
-        const std::string tip = std::string("AR5-5_07") + (side == 0 ? "L" : "R") + "-W4C4A2_flan_link";
-        p.arms[side] =
-            std::make_unique<rocos::Robot>(p.hardware.get(), resolve("urdf").string(), "aircraft", tip, true);
-        require(p.arms[side]->getJointNum() == 7 && p.arms[side]->GetRobotState() != "ERROR_STATE",
-                "Robot initialization failed");
-        KDL::JntArray lower(7), upper(7);
-        for (int axis = 0; axis < 7; ++axis) {
-            const int joint = p.joint_ids[side * 7 + axis];
-            lower(axis) = m->jnt_range[2 * joint];
-            upper(axis) = m->jnt_range[2 * joint + 1];
-        }
-        // Rebuild TRAC-IK with the task limits, retaining the physical URDF limits.
-        // The inward margin leaves room for servo tracking error at the bounds.
-        lower(1) = p.joint2_min + p.joint2_margin;
-        upper(1) = p.joint2_max - p.joint2_margin;
-        p.arms[side]->kinematics_.setPosLimits(lower, upper);
-        p.arms[side]->kinematics_.Initialize(true);
-    }
-    p.tick = sem_open(("/sync" + std::to_string(p.bus) + "_8").c_str(), 0);
-    require(p.tick != SEM_FAILED, "Cannot open simulation cycle semaphore");
-    p.running = true;
-    p.heartbeat_thread = std::thread([&p] {
-        while (p.running) {
-            try {
-                ipc::Channel::Guard guard(*p.channel);
-                p.channel->data().controller_heartbeat = ipc::monotonicTime();
-            } catch (...) {
-                p.cancel = true;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        }
-    });
+    const double ik_lo = p.joint2_min + p.joint2_margin;
+    const double ik_hi = p.joint2_max - p.joint2_margin;
+    p.kinematics = makeTracIkKinematics(resolve("urdf").string(), ik_lo, ik_hi);
+    ModelGeometry geometry;
+    geometry.handles = {p.handles[0], p.handles[1]};
+    geometry.tool = p.tool;
+    geometry.wheel_origin = p.wheel_origin;
+    geometry.cylinder_radius = cylinder_radius;
+    geometry.cylinder_length = cylinder_length;
+    geometry.home = p.home;
+    p.collision = makePinocchioCollisionChecker(collision_urdf.string(), geometry);
     p.last_target = p.measured();
     p.phase = 1;
 }
@@ -479,33 +375,38 @@ void Aviator::Enable() {
     p.checkElbows(p.measured());
     p.hold();
     for (int side = 0; side < 2; ++side) {
-        if (!p.arms[side]->IsEnabled())
-            require(p.arms[side]->SetEnabled() == 0, "Failed to enable arm");
+        if (!p.link->isEnabled(static_cast<Side>(side)))
+            p.link->enable(static_cast<Side>(side));
     }
-    require(p.arms[0]->IsEnabled() && p.arms[1]->IsEnabled(), "Drive enable acknowledgement failed");
+    require(p.link->isEnabled(Side::Left) && p.link->isEnabled(Side::Right),
+            "Drive enable acknowledgement failed");
     p.phase = p.status().locked ? 5 : 2;
 }
 void Aviator::Disable() {
     auto &p = *impl_;
     std::lock_guard<std::mutex> operation(p.operation);
     require(p.status().locked == 0, "Unlock handles before disabling drives");
-    require(p.arms[0]->SetDisabled() == 0 && p.arms[1]->SetDisabled() == 0, "Failed to disable arms");
+    p.link->disable(Side::Left);
+    p.link->disable(Side::Right);
     p.phase = 1;
 }
 void Aviator::ApproachHandles() {
     auto &p = *impl_;
     std::lock_guard<std::mutex> operation(p.operation);
     const auto f = p.status();
-    require(f.locked == 0 && !f.fault && p.arms[0]->IsEnabled() && p.arms[1]->IsEnabled(),
+    require(f.locked == 0 && !f.fault && p.link->isEnabled(Side::Left) && p.link->isEnabled(Side::Right),
             "Enable both arms and unlock before approach");
     p.cancel = false;
     p.phase = 3;
     try {
         auto start = p.measured();
         p.checkElbows(start);
+        // 接近时对准轮盘"当前"把手位置:轮盘是被动件,仿真里会因重力分量缓慢漂移,
+        // 真机上也可能不在理想零点,故取后端实测位形而非内部目标(0,0)。
+        const auto wheel0 = p.grasp();
         Joints seed = p.approach_seed;
-        const auto goal = p.solve({p.target(0, f.angle, f.displacement, p.approach_distance),
-                                   p.target(1, f.angle, f.displacement, p.approach_distance)},
+        const auto goal = p.solve({p.target(0, wheel0.angle, wheel0.displacement, p.approach_distance),
+                                   p.target(1, wheel0.angle, wheel0.displacement, p.approach_distance)},
                                   seed);
         double duration = p.config["approach_duration"].as<double>();
         require(std::isfinite(duration) && duration >= 1, "Invalid approach duration");
@@ -518,11 +419,12 @@ void Aviator::ApproachHandles() {
             Joints q{};
             for (int i = 0; i < 14; ++i)
                 q[i] = start[i] + s * (goal[i] - start[i]);
-            path.push_back({q, f.angle, f.displacement});
+            path.push_back({q, wheel0.angle, wheel0.displacement});
         }
         p.validate(path, duration);
         p.execute(path, duration, false);
-        const auto now = p.status();
+        // 第二阶段开始前重新读取轮盘位形(第一阶段期间轮盘仍在缓慢漂移)。
+        const auto wheel1 = p.grasp();
         duration = p.config["final_approach_duration"].as<double>();
         require(std::isfinite(duration) && duration >= 1, "Invalid final approach duration");
         steps = static_cast<size_t>(std::ceil(duration / p.plan_dt));
@@ -530,26 +432,32 @@ void Aviator::ApproachHandles() {
         seed = p.measured();
         KDL::Frame from[2];
         for (int side = 0; side < 2; ++side) {
-            KDL::JntArray q(7);
+            std::array<double, 7> q{};
             for (int j = 0; j < 7; ++j)
-                q(j) = seed[side * 7 + j];
-            require(p.arms[side]->kinematics_.JntToCart(q, from[side]) >= 0, "FK failed");
+                q[j] = seed[side * 7 + j];
+            require(p.kinematics->solveFk(static_cast<Side>(side), q, from[side]), "FK failed");
         }
         for (size_t k = 0; k <= steps; ++k) {
             const double s = smooth(double(k) / steps);
             std::array<KDL::Frame, 2> targets;
             for (int side = 0; side < 2; ++side) {
-                const auto end = p.target(side, now.angle, now.displacement);
+                const auto end = p.target(side, wheel1.angle, wheel1.displacement);
                 const auto twist = KDL::diff(from[side], end);
                 targets[side] = KDL::addDelta(from[side], twist, s);
             }
             if (k)
                 seed = p.solve(targets, seed);
-            path.push_back({seed, now.angle, now.displacement});
+            path.push_back({seed, wheel1.angle, wheel1.displacement});
         }
         p.validate(path, duration);
         p.execute(path, duration, false);
-        p.settle(true);
+        p.settleReady();
+        // 接近完成后,把内部跟踪的轮盘目标同步到实测位形,使后续 MoveWheel 从真实位形出发。
+        {
+            const auto w = p.grasp();
+            p.wheel_angle = w.angle;
+            p.wheel_displacement = w.displacement;
+        }
         p.phase = 4;
     } catch (...) {
         p.hold();
@@ -568,8 +476,8 @@ void Aviator::LockHandles() {
                 f.rotation_error[0] < .035 && f.rotation_error[1] < .035,
             "Move both TCPs to their handle frames before locking");
     p.cancel = false;
-    p.settle(true);
-    p.command(ipc::Command::Lock);
+    p.settleReady();
+    p.command(GraspCommand::Lock);
     require(p.status().locked == 3, "Both welds were not acknowledged");
     p.phase = 5;
 }
@@ -591,8 +499,8 @@ void Aviator::MoveWheel(double angle, double translation, double duration) {
         p.checkElbows(seed);
         for (size_t k = 0; k <= steps; ++k) {
             const double s = smooth(double(k) / steps);
-            const double a = f.angle + s * (angle - f.angle),
-                         t = f.displacement + s * (translation - f.displacement);
+            const double a = p.wheel_angle + s * (angle - p.wheel_angle),
+                         t = p.wheel_displacement + s * (translation - p.wheel_displacement);
             if (k)
                 seed = p.solve({p.target(0, a, t), p.target(1, a, t)}, seed);
             path.push_back({seed, a, t});
@@ -601,7 +509,9 @@ void Aviator::MoveWheel(double angle, double translation, double duration) {
         p.phase = 6;
         started = true;
         p.execute(path, duration, true);
-        p.settle(false, angle, translation);
+        p.dwell(p.settle_duration);
+        p.wheel_angle = angle;
+        p.wheel_displacement = translation;
         p.phase = 5;
     } catch (...) {
         if (started)
@@ -615,18 +525,18 @@ void Aviator::UnlockHandles() {
     std::lock_guard<std::mutex> operation(p.operation);
     p.status();
     p.hold();
-    p.command(ipc::Command::Unlock);
+    p.command(GraspCommand::Unlock);
     p.phase = 2;
 }
 void Aviator::ResetFault() {
     auto &p = *impl_;
     std::lock_guard<std::mutex> operation(p.operation);
-    p.command(ipc::Command::ResetFault);
+    p.command(GraspCommand::ResetFault);
     p.cancel = false;
-    p.phase = p.arms[0]->IsEnabled() && p.arms[1]->IsEnabled() ? 2 : 1;
+    p.phase = p.link->isEnabled(Side::Left) && p.link->isEnabled(Side::Right) ? 2 : 1;
 }
 void Aviator::Stop() noexcept { impl_->cancel = true; }
-Feedback Aviator::GetStatus() { return impl_->status(); }
+Status Aviator::GetStatus() { return impl_->status(); }
 std::string Aviator::GetState() const {
     static const char *names[] = {"disconnected", "idle",   "enabled", "approaching",
                                   "aligned",      "locked", "moving",  "stopped/error"};

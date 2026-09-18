@@ -12,3 +12,9 @@ _deps
 CMakeUserPresets.json
 reference/rocos-mujoco/build
 logs/
+xCoreSDK-CPP-main/
+
+# Vendored third-party build artifacts (sources are committed, outputs are not).
+AviatorRobot/third_party/build/
+AviatorRobot/third_party/_install/
+

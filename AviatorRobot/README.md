@@ -3,7 +3,61 @@
 `aviator::Aviator` 管理左右两个 `rocos::Robot`，共用一个 `rocos::Hardware`。
 底层代码直接编译自 `third_party/rocos_app`（原 RCMRobot 项目），上层负责双臂同步、抓取和操纵盘运动。
 控制程序与 MuJoCo 是独立进程，控制器仅下发双臂 14 轴目标。操纵盘两轴始终
-没有 actuator，通过双臂与把手之间的两组 weld 约束被动运动。
+没有 actuator，通过双臂与把手之间的两组 weld 约束被动运动。真机后端通过
+Rokae xCore SDK 直接驱动两个 7 轴机械臂，与仿真共用同一套算法，仅切换配置。
+
+## 整体架构
+
+控制器把「算法」与「后端」彻底解耦：算法层只依赖抽象接口，不引用任何后端私有类型，
+因此同一套规划/跟踪逻辑既能驱动 MuJoCo 仿真，也能驱动 Rokae 真机，仅由配置切换。
+
+```text
+┌─ aviator::Aviator（算法层：状态机 / 规划 / 跟踪）────────────────────────┐
+│  通过后端工厂拿到抽象接口：                                            │
+│   ├─ DataLink          臂 IO + 抓取 IO + 1 ms 节拍                      │
+│   ├─ Kinematics        逆解 / 正解（TRAC-IK）                           │
+│   └─ CollisionChecker  碰撞检查（Pinocchio + hpp-fcl）                 │
+└────────────────────────────────────────────────────────────────────────┘
+        │ 工厂：makeMuJoCoDataLink / makeRokaeDataLink / …（backend.hpp）
+┌─ 后端实现 ──────────────────────────────────────────────────────────────┐
+│ MuJoCoDataLink    ：共享内存 + 信号量，与仿真器进程 IPC                    │
+│ RokaeDataLink     ：Rokae xCore SDK，setControlLoop RT 调度下发          │
+│ aviator_rocos_core：由 third_party/rocos_app 编译（MuJoCo POSIX 后端）  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+- **后端工厂隔离**：算法源文件只 include 抽象接口；MuJoCo / Rokae 头文件只出现在各自的
+  `DataLink_*.cpp` 里。运行时由配置的 `backend` 字段选择后端。
+- **仿真后端**：控制器是独立进程，通过 `rocos_mujoco` 共享内存下发 14 轴目标，用信号量
+  对齐仿真 1 ms 周期；操纵盘无 actuator，靠双臂与把手的 weld 约束被动运动。
+- **真机后端**：两个 7 轴 `xMateErProRobot`，`enable()` 里 `setControlLoop`（SDK RT 线程
+  按 1 ms 节拍回调下发 `JointPosition`）+ `startMove` + `startLoop(false)`；轮盘/夹爪为
+  外部硬件，当前留 TODO 桩（`graspState()` 返回存活心跳、`sendGraspCommand()` 抛错）。
+- **规划与跟踪管线**：20 ms 采样做双臂逆解（TRAC-IK，约束 J2 在 85–95° 肘朝下）→ 逐点查
+  关节限位/速度/碰撞（Pinocchio 分片凸网格 + SRDF 排除对）→ 执行时按 1 ms 插值下发，
+  实时校验肘部约束、跟踪误差（0.12 rad）、后端故障。
+- **演进**：Phase 1 抽出 `DataLink` 抽象与 `MuJoCoDataLink`；Phase 2 碰撞检查从 MuJoCo
+  换成 Pinocchio；Phase 3 新增 `RokaeDataLink` 真机后端。
+
+## 仿真 / 真机切换
+
+切换点只有一个字段：`config/aviator.yaml` 里的 `backend`。
+
+```yaml
+backend: mujoco   # 仿真（默认）
+# backend: rokae # 真机
+rokae:
+  left_ip: 192.168.0.100    # 左臂控制器 IP
+  right_ip: 192.168.0.101   # 右臂控制器 IP
+  local_ip: 192.168.0.1     # 上位机本机 IP（实时数据流用）
+```
+
+`Init()` 读取 `backend`：`mujoco` → `makeMuJoCoDataLink`，`rokae` → `makeRokaeDataLink`
+（后者仅在编译期检测到 Rokae xCore SDK 时可用，否则抛错提示）。
+
+> **注意两份 yaml**：程序优先使用可执行文件旁的 `config/aviator.yaml`（构建时由
+> `aviator_assets` 拷贝到 `build/bin/config/`）。改源文件 `config/aviator.yaml` 后需重新
+> build 才生效；或直接改运行时副本 `build/bin/config/aviator.yaml`，改完立即生效。
 
 ## 编译和运行
 
@@ -28,7 +82,7 @@ cmake --build AviatorRobot/build -j4
 ./reference/rocos-mujoco/build/aviator-visual/bin/rocos_mujoco_sim -v
 ```
 
-终端 2 启动自动演示，约两分钟完成接近、锁定、正反向约 50° 转动、160 mm 推拉、返回和解锁：
+终端 2 启动自动演示，约两分钟完成接近、锁定、正反向约 50° 转动、170 mm 推拉、返回和解锁：
 
 ```bash
 ./AviatorRobot/build/bin/aviatorAppMain --demo
@@ -53,13 +107,33 @@ quit
 
 `wheel` 的参数为绝对转角（rad）、绝对推拉位移（m）、运动时间（s，可省略，默认 4）。
 零位和正方向沿用 `urdf/aviator.urdf`：转角范围 `[-0.87266, 0.87266]`，
-位移范围 `[-0.165, 0]`。合法数值还必须通过双臂的共同可达性、关节位置/速度和
+位移范围 `[-0.170, 0]`。合法数值还必须通过双臂的共同可达性、关节位置/速度和
 碰撞检查，并不保证整个矩形范围都可执行。演示验证的目标为
-`(+0.87266, 0)`、`(-0.87266, 0)`、`(0, 0)`、`(0, -0.16)`、`(0, 0)`。
+`(+0.87266, 0)`、`(-0.87266, 0)`、`(0, 0)`、`(0, -0.17)`、`(0, 0)`。
 `0.87266 rad` 是 URDF 的限位，约等于 50°；转角和推拉组合的整个矩形区域没有逐点验收。
 
 两个进程可通过同一个 `--ecat-id N` 使用另一组共享内存。
 `--config /path/to/aviator.yaml` 可覆盖控制配置。支持从其他工作目录启动。
+
+### 真机运行
+
+真机需要 `backend: rokae` 并配置双臂 IP。CMake 检测到 Rokae xCore SDK 的头文件与预编译库
+（仓库根目录 `xCoreSDK-CPP-main/include` 与 `xCoreSDK-0.7.1-linux-x86_64/lib/Linux/x86_64`，
+二者不纳入版本库）时才会编译 `DataLink_rokae.cpp` 并定义 `AVIATOR_HAVE_ROKAE`，缺失时自动
+跳过、不影响仿真构建。
+
+```bash
+# 编译（rpath 已指向 SDK 库目录，运行时无需额外设置 LD_LIBRARY_PATH）
+cmake --build AviatorRobot/build -j4
+
+# 改 build/bin/config/aviator.yaml：backend: rokae + left_ip/right_ip/local_ip
+
+# 直接运行，无需仿真器
+./AviatorRobot/build/bin/aviatorAppMain --demo
+```
+
+真机后端的轮盘/夹爪为外部硬件，尚未接入（对应 `DataLink_rokae.cpp` 中的 TODO 桩），
+当前仅双臂伺服链路就绪。
 
 ## C++ 接口
 
@@ -191,7 +265,7 @@ Boost managed-shared-memory 布局。rocos_app 原有构建继续使用原后端
 
 通道包含控制器占用和心跳。控制器检测到反馈超时、跟踪误差或失去锁定时停止两臂；
 仿真器检测到锁定误差持续超限或控制器心跳消失时置故障并保持双臂位置。
-该工程目前面向 MuJoCo 仿真联调。
+工程同时支持 MuJoCo 仿真与 Rokae 真机后端，真机后端尚未在硬件上联调。
 
 ## 自动化验证
 
