@@ -50,11 +50,11 @@ set_target_properties(NLopt::nlopt PROPERTIES
   INTERFACE_LINK_LIBRARIES "m"
 )
 
-# Import target "NLopt::nlopt" for configuration ""
-set_property(TARGET NLopt::nlopt APPEND PROPERTY IMPORTED_CONFIGURATIONS NOCONFIG)
+# Import target "NLopt::nlopt" for configuration "Release"
+set_property(TARGET NLopt::nlopt APPEND PROPERTY IMPORTED_CONFIGURATIONS RELEASE)
 set_target_properties(NLopt::nlopt PROPERTIES
-  IMPORTED_LOCATION_NOCONFIG "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot/lib/libnlopt.so.0.11.0"
-  IMPORTED_SONAME_NOCONFIG "libnlopt.so.0"
+  IMPORTED_LOCATION_RELEASE "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot/lib/libnlopt.so.0.11.0"
+  IMPORTED_SONAME_RELEASE "libnlopt.so.0"
   )
 
 # This file does not depend on other imported targets which have

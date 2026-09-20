@@ -1,0 +1,4 @@
+# ninja log v5
+0	296	1789730085471672910	CMakeFiles/hpp-statistics.dir/src/success-bin.cc.o	b533afb4e8646c7
+296	333	1789730085503673833	libhpp-statistics.so	312a859e82381806
+333	341	0	CMakeFiles/install.util	7489a05a04fd1c52

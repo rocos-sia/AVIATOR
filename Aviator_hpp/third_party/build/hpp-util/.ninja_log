@@ -1,0 +1,13 @@
+# ninja log v5
+1	310	1789730083251608891	tests/CMakeFiles/debug.dir/debug.cc.o	6c21cd853f74f5b8
+0	361	1789730083299610276	CMakeFiles/hpp-util.dir/src/indent.cc.o	76e91908b14a914b
+1	372	1789730083311610621	CMakeFiles/hpp-util.dir/src/timer.cc.o	6203ebc2c73a7a5e
+0	394	1789730083335611313	CMakeFiles/hpp-util.dir/src/exception.cc.o	ea362ba7646c4895
+1	403	1789730083343611544	CMakeFiles/hpp-util.dir/src/version.cc.o	51d50a65b573d4c1
+1	968	1789730083907627808	CMakeFiles/hpp-util.dir/src/parser.cc.o	333509970381b307
+0	1091	1789730084031631384	CMakeFiles/hpp-util.dir/src/debug.cc.o	3277315cc54b53e0
+1	1280	1789730084219636805	CMakeFiles/hpp-util.dir/src/factories/sequence.cc.o	cbb1d1c94497e51
+1280	1327	1789730084267638190	libhpp-util.so.9.0.2	437ffad0afc76dac
+1327	1333	1789730084267638190	libhpp-util.so	629a484191f0d03b
+1333	1374	1789730084311639459	tests/debug	2d99fa8e76e6c725
+1374	1387	0	CMakeFiles/install.util	825727cafd81c092

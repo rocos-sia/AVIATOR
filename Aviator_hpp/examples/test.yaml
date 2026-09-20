@@ -1,0 +1,49 @@
+# Aviator 测试配置文件
+
+# URDF 文件路径（相对于此配置文件）
+urdf: ../../config/aviator_control.urdf
+
+# 把手抓取配置
+grasp:
+  # 工具坐标系变换（从法兰到工具末端）
+  tool:
+    position: [0.0, 0.0, 0.15]  # 工具长度 15cm
+    quaternion: [1.0, 0.0, 0.0, 0.0]  # w, x, y, z
+
+  # 左把手位姿（在轮盘坐标系中）
+  left:
+    position: [0.0, -0.2, 0.0]
+    quaternion: [0.7071, 0.0, 0.7071, 0.0]
+
+  # 右把手位姿（在轮盘坐标系中）
+  right:
+    position: [0.0, 0.2, 0.0]
+    quaternion: [0.7071, 0.0, -0.7071, 0.0]
+
+# 姿态配置
+posture:
+  # J2 肘部约束范围（度）
+  joint2_min: 85.0
+  joint2_max: 95.0
+
+  # Home 位置（度）
+  home: [105.7, 90.0, -79.4, 114.7, 8.3, 1.1, 8.2,
+         105.7, 90.0, -79.4, 114.7, 8.3, 1.1, 8.2]
+
+  # 接近种子（度）
+  approach_seed: [100.0, 90.0, -80.0, 115.0, 10.0, 0.0, 10.0,
+                  100.0, 90.0, -80.0, 115.0, 10.0, 0.0, 10.0]
+
+# 几何参数
+geometry:
+  approach_distance: 0.06  # 接近距离（米）
+
+# 接近运动参数
+approach:
+  coarse_duration: 4.0  # 粗接近时长（秒）
+  fine_duration: 2.0    # 精确接近时长（秒）
+
+# 规划参数
+planning:
+  dt: 0.01              # 规划时间步长（秒）
+  settle_duration: 0.5  # 稳定等待时长（秒）

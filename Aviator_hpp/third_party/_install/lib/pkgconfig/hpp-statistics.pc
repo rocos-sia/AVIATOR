@@ -1,0 +1,22 @@
+prefix=${pcfiledir}/../..
+exec_prefix=${pcfiledir}/../..
+libdir=${pcfiledir}/../../lib
+bindir=${pcfiledir}/../../bin
+pkglibdir=${pcfiledir}/../../lib/hpp-statistics
+includedir=${pcfiledir}/../../include
+datarootdir=${pcfiledir}/../../share
+pkgdatarootdir=${pcfiledir}/../../share
+docdir=
+doxygendocdir=
+
+Name: hpp-statistics
+Description: Classes for doing statistics.
+URL: https://github.com/humanoid-path-planner/hpp-statistics
+Version: 9.0.2
+Requires: 
+Conflicts: 
+Libs: -L${libdir}  -lhpp-statistics
+Libs.private: 
+Cflags:  -I${includedir}
+
+

@@ -1,0 +1,23 @@
+prefix=${pcfiledir}/../..
+exec_prefix=${pcfiledir}/../..
+libdir=${pcfiledir}/../../lib
+bindir=${pcfiledir}/../../bin
+pkglibdir=${pcfiledir}/../../lib/hpp-core
+includedir=${pcfiledir}/../../include
+datarootdir=${pcfiledir}/../../share
+pkgdatarootdir=${pcfiledir}/../../share
+docdir=
+doxygendocdir=
+
+Name: hpp-core
+Description: Implement basic classes for canonical path planning for kinematic chains.
+URL: https://github.com/humanoid-path-planner/hpp-core
+Version: 9.0.2
+Requires: 
+Conflicts: 
+Libs: -L${libdir}  -lhpp-core
+Libs.private: 
+Cflags:  -I${includedir}
+
+
+cmake_plugin=/home/sia/Documents/GitHub/AVIATOR/Aviator_hpp/third_party/_install/lib/cmake/hpp-core/hpp-core-plugin.cmake
