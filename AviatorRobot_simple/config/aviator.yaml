@@ -1,0 +1,69 @@
+# Aviator 双臂控制配置。
+# 路径相对于本 YAML 文件所在目录解析；修改后需重启控制程序生效。
+
+# 同一入口 ./build/bin/aviator，按此字段选择 MuJoCo 或 Rokae。
+# 所有路径均相对本文件；真机也复用下面的运动学、碰撞和轨迹参数。
+backend: mujoco
+# backend: rokae
+model: ../model/aviator.xml
+
+rokae:
+  # 只有双臂反馈：轮盘位形使用指令参考，lock/unlock 仅切换软件控制阶段。
+  grasp_mode: open_loop
+  # 真机所有已使能运动/保持都使用关节阻抗；顺序为 J1...J7，单位 Nm/rad。
+  joint_stiffness: [500, 500, 500, 500, 50, 50, 50]
+  # 双臂控制器 IP 与本机（上位机）IP。实时模式收发数据必须设置 local_ip，
+  # 且建议用有线直连以保证网络稳定。
+  left_ip: 192.168.0.100
+  right_ip: 192.168.0.101
+  local_ip: 192.168.0.1
+
+# 控制用 URDF：包含双臂运动链、物理关节限位及 14 个驱动的硬件映射。
+urdf: aviator_control.urdf
+
+# 离线轨迹检查使用的 Pinocchio 碰撞 URDF（由 scripts/generate_aviator.py 导出，
+# 分片凸网格 + 圆柱/胶囊工具 + SRDF 排除对），用于碰撞检查。
+# 构建目录运行时，若此路径不存在，控制器会查找 bin/model/aviator_collision.urdf。
+collision_urdf: ../model/aviator_collision.urdf
+
+# 抓取配置：圆柱工具尺寸、法兰到工具的变换、把手几何及左右抓取位姿。
+# 其中位置/尺寸单位为 m，四元数顺序为 [w, x, y, z]。
+grasp: grasp.json
+
+# 姿态配置：双臂初始角度、接近逆解种子及 J2 范围，角度单位为度。
+# 当前 J2 要求为 85°～95°，规划时向内预留 0.5° 跟踪余量。
+posture: posture.json
+
+# 第一阶段：关节空间运动到预接近位置的基准时长，单位 s，必须 >= 1。
+# 实际时长会根据关节位移和 joint_speed 自动延长，以限制运动速度。
+approach_duration: 4.0
+
+# 第二阶段：从预接近位置沿笛卡尔路径对准把手的时长，单位 s，必须 >= 1。
+# 此阶段不会自动延长时间；若规划速度超限，需要增大此值。
+final_approach_duration: 3.0
+
+# 轨迹规划采样间隔，单位 s，允许范围为 (0, 0.05]；0.02 对应 20 ms。
+# 每个采样点求双臂逆解，并检查关节限位、速度和碰撞；还检查相邻点中点的碰撞。
+# 采样越密，规划计算量越大。底层伺服控制周期独立，为 1 ms。
+planning_period: 0.02
+
+# 各机械臂关节的轨迹规划速度上限，单位 rad/s。
+# 每个关节取本值与 URDF 限位中的较小值；轮盘运动再乘以速度比例 v。
+joint_speed: 1.9
+
+# 执行中的关节跟踪误差阈值，单位 rad；0.12 约为 6.88°。
+# 任一关节实测角度与上一周期目标角度的误差达到此值，会中止运动并保持当前位置。
+tracking_tolerance: 0.12
+
+# 运动结束后的开环驻留时间，单位 s。统一仿真与真机：只按时间等待运动收尾，
+# 不校验轮盘是否停稳；期间保留取消/故障/肘部安全检查。
+settle_duration: 1.5
+
+# v=1 时的轮盘速度上限；MoveWheel 自动协调时间并受各关节速度进一步约束。
+wheel_angular_speed: 0.4   # rad/s
+wheel_linear_speed: 0.08   # m/s
+
+# 在线逆解/碰撞检查周期；关节目标仍通过底层约 1 ms 节拍平滑插值。
+servo_period: 0.02
+# 按实际接收时间计时（即使无头仿真加速）；超时保持当前位置，保留锁定。
+servo_timeout: 0.25

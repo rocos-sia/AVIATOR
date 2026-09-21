@@ -1,0 +1,30 @@
+Internal ctest changing into directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+UpdateCTestConfiguration  from :/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/DartConfiguration.tcl
+Parse Config file:/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/DartConfiguration.tcl
+UpdateCTestConfiguration  from :/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/DartConfiguration.tcl
+Parse Config file:/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/DartConfiguration.tcl
+Test project /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 4
+    Start 4: aviator_realtime
+
+4: Test command: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_realtime_test
+4: Environment variables: 
+4:  LD_BIND_NOW=1
+4: Test timeout computed to be: 600
+4: Realtime active controller: simulation=0.6s wall=0.599323s speed=1.00113x
+4: Realtime after mode switch: simulation=0.601s wall=0.600218s speed=1.0013x
+4: Realtime with 2ms model timestep: simulation=0.6s wall=0.598208s speed=1.003x
+1/1 Test #4: aviator_realtime .................   Passed    3.33 sec
+
+The following tests passed:
+	aviator_realtime
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   3.33 sec

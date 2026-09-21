@@ -1,0 +1,4 @@
+Realtime active controller: simulation=0.6s wall=0.0328517s speed=18.2639x
+Realtime after mode switch: simulation=0.601s wall=0.0377071s speed=15.9386x
+Realtime with 2ms model timestep: simulation=0.6s wall=0.017057s speed=35.1763x
+Realtime simulation ran faster than wall time

@@ -1,0 +1,7 @@
+Camera: left drag rotate | right drag pan | Shift changes drag axis | wheel/middle drag zoom | R reset view | Esc quit
+Left drag rotates camera
+Right drag pans camera
+wheel distance: 3 -> 3.34481
+Wheel and middle drag zoom camera
+R resets camera; physics state unchanged
+Escape closes viewer

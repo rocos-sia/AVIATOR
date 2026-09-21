@@ -1,0 +1,275 @@
+Start testing: Sep 21 15:11 CST
+----------------------------------------------------------
+1/7 Testing: aviator_basic
+1/7 Test: aviator_basic
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_basic_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_basic" start time: Sep 21 15:11 CST
+Output:
+----------------------------------------------------------
+Running basic integration test...
+✓ MuJoCo model loaded
+✓ Loaded keyframe 'aviator_home'
+[Home pose check]
+  nq=16 nv=16 nu=0
+  L J2 = 90 deg
+  R J2 = 90 deg
+  wheel angle = 0 rad, displacement = 0 m
+✓ Home pose matches posture.json and J2 in [85, 95] deg
+✓ DataLink created
+The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.Link AR5-5_07L-W4C4A2_base had 1 children
+Link AR5-5_07L-W4C4A2_link1 had 1 children
+Link AR5-5_07L-W4C4A2_link2 had 1 children
+Link AR5-5_07L-W4C4A2_link3 had 1 children
+Link AR5-5_07L-W4C4A2_link4 had 1 children
+Link AR5-5_07L-W4C4A2_link5 had 1 children
+Link AR5-5_07L-W4C4A2_link6 had 1 children
+Link AR5-5_07L-W4C4A2_link7 had 1 children
+Link AR5-5_07L-W4C4A2_flan_link had 0 children
+Link AR5-5_07R-W4C4A2_base had 1 children
+Link AR5-5_07R-W4C4A2_link1 had 1 children
+Link AR5-5_07R-W4C4A2_link2 had 1 children
+Link AR5-5_07R-W4C4A2_link3 had 1 children
+Link AR5-5_07R-W4C4A2_link4 had 1 children
+Link AR5-5_07R-W4C4A2_link5 had 1 children
+Link AR5-5_07R-W4C4A2_link6 had 1 children
+Link AR5-5_07R-W4C4A2_link7 had 1 children
+Link AR5-5_07R-W4C4A2_flan_link had 0 children
+Link dummy_link had 1 children
+Link steering_wheel had 0 children
+✓ Kinematics solver created
+✓ Collision checker created
+✓ Controller created
+✓ Init successful
+✓ GetStatus: angle=0, locked=0, fault=0
+✓ GetState: INITIALIZED
+
+All basic tests passed!
+<end of output>
+Test time =   1.76 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_basic" end time: Sep 21 15:11 CST
+"aviator_basic" time elapsed: 00:00:01
+----------------------------------------------------------
+
+2/7 Testing: aviator_acceptance
+2/7 Test: aviator_acceptance
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_acceptance_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_acceptance" start time: Sep 21 15:11 CST
+Output:
+----------------------------------------------------------
+The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.=== AviatorRobot_simple 验收测试 ===
+
+Link AR5-5_07L-W4C4A2_base had 1 children
+Link AR5-5_07L-W4C4A2_link1 had 1 children
+Link AR5-5_07L-W4C4A2_link2 had 1 children
+Link AR5-5_07L-W4C4A2_link3 had 1 children
+Link AR5-5_07L-W4C4A2_link4 had 1 children
+Link AR5-5_07L-W4C4A2_link5 had 1 children
+Link AR5-5_07L-W4C4A2_link6 had 1 children
+Link AR5-5_07L-W4C4A2_link7 had 1 children
+Link AR5-5_07L-W4C4A2_flan_link had 0 children
+Link AR5-5_07R-W4C4A2_base had 1 children
+Link AR5-5_07R-W4C4A2_link1 had 1 children
+Link AR5-5_07R-W4C4A2_link2 had 1 children
+Link AR5-5_07R-W4C4A2_link3 had 1 children
+Link AR5-5_07R-W4C4A2_link4 had 1 children
+Link AR5-5_07R-W4C4A2_link5 had 1 children
+Link AR5-5_07R-W4C4A2_link6 had 1 children
+Link AR5-5_07R-W4C4A2_link7 had 1 children
+Link AR5-5_07R-W4C4A2_flan_link had 0 children
+Link dummy_link had 1 children
+Link steering_wheel had 0 children
+[1] 初始化与使能
+  ✓ Init
+  ✓ 未锁定时拒绝 MoveWheel
+  ✓ 未对准时拒绝 LockHandles
+  ✓ Enable
+
+[2] 接近与锁定
+  ✓ ApproachHandles
+  ✓ 接近后抓取点位置误差 < 2 mm — L=1.495409 mm, R=1.495088 mm
+  ✓ 接近后抓取点角度误差 < 0.01 rad — L=0.000010, R=0.000009
+  ✓ LockHandles（两侧 weld 均激活） — locked=3
+
+[3] 操纵盘运动
+  ✓ MoveWheel +50° 转角 实测转角误差 < 0.005 rad — 0.000001 rad
+  ✓ MoveWheel +50° 转角 实测推拉误差 < 1 mm — 0.000026 mm
+  ✓ MoveWheel +50° 转角 内部跟踪变量等于目标
+  ✓ MoveWheel -50° 转角 实测转角误差 < 0.005 rad — 0.000001 rad
+  ✓ MoveWheel -50° 转角 实测推拉误差 < 1 mm — 0.000029 mm
+  ✓ MoveWheel -50° 转角 内部跟踪变量等于目标
+  ✓ MoveWheel 回中 实测转角误差 < 0.005 rad — 0.000001 rad
+  ✓ MoveWheel 回中 实测推拉误差 < 1 mm — 0.000102 mm
+  ✓ MoveWheel 回中 内部跟踪变量等于目标
+  ✓ MoveWheel 推拉 170 mm 实测转角误差 < 0.005 rad — 0.000000 rad
+  ✓ MoveWheel 推拉 170 mm 实测推拉误差 < 1 mm — 0.000704 mm
+  ✓ MoveWheel 推拉 170 mm 内部跟踪变量等于目标
+  ✓ MoveWheel 回中 实测转角误差 < 0.005 rad — 0.000000 rad
+  ✓ MoveWheel 回中 实测推拉误差 < 1 mm — 0.000724 mm
+  ✓ MoveWheel 回中 内部跟踪变量等于目标
+  ✓ J2 每个物理步均在 [85°, 95°] — min=85.498974 max=94.500043
+
+[4] 非法参数保护（已锁定）
+  ✓ 拒绝超出限位的目标
+
+[4] 解锁与失能
+  ✓ UnlockHandles — locked=0
+  ✓ Disable
+
+=== 全部通过 ===
+<end of output>
+Test time =  33.53 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_acceptance" end time: Sep 21 15:11 CST
+"aviator_acceptance" time elapsed: 00:00:33
+----------------------------------------------------------
+
+3/7 Testing: aviator_backend_selection
+3/7 Test: aviator_backend_selection
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_backend_selection_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_backend_selection" start time: Sep 21 15:11 CST
+Output:
+----------------------------------------------------------
+The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.=== 后端选择逻辑测试 ===
+
+[1] 未知 backend
+  ✓ 拒绝未知 backend
+  ✓ 报错里列出可选项（mujoco / rokae） — 未知 backend: 'doesnotexist'（可选: mujoco / rokae）
+
+[2] backend: mujoco 但未提供仿真句柄
+  ✓ 拒绝缺少句柄的 mujoco 后端
+  ✓ 报错指出需要句柄/应从 aviator_sim 启动 — backend: mujoco 需要 mjModel/mjData 句柄；请从 aviator 启动（它会加载模型并传入句柄）
+
+[3] backend: mujoco 且提供仿真句柄
+  ✓ 创建 MuJoCo 后端成功
+
+[4] backend: rokae
+  ✓ 空 IP 配置在联网前被拒绝
+  ✓ 应报告缺少 IP — rokae.left_ip / rokae.right_ip 未配置
+
+[5] Aviator 配置驱动（backend: mujoco）
+Link AR5-5_07L-W4C4A2_base had 1 children
+Link AR5-5_07L-W4C4A2_link1 had 1 children
+Link AR5-5_07L-W4C4A2_link2 had 1 children
+Link AR5-5_07L-W4C4A2_link3 had 1 children
+Link AR5-5_07L-W4C4A2_link4 had 1 children
+Link AR5-5_07L-W4C4A2_link5 had 1 children
+Link AR5-5_07L-W4C4A2_link6 had 1 children
+Link AR5-5_07L-W4C4A2_link7 had 1 children
+Link AR5-5_07L-W4C4A2_flan_link had 0 children
+Link AR5-5_07R-W4C4A2_base had 1 children
+Link AR5-5_07R-W4C4A2_link1 had 1 children
+Link AR5-5_07R-W4C4A2_link2 had 1 children
+Link AR5-5_07R-W4C4A2_link3 had 1 children
+Link AR5-5_07R-W4C4A2_link4 had 1 children
+Link AR5-5_07R-W4C4A2_link5 had 1 children
+Link AR5-5_07R-W4C4A2_link6 had 1 children
+Link AR5-5_07R-W4C4A2_link7 had 1 children
+Link AR5-5_07R-W4C4A2_flan_link had 0 children
+Link dummy_link had 1 children
+Link steering_wheel had 0 children
+  ✓ Init() 按配置建出仿真后端
+  ✓ 状态为 INITIALIZED — INITIALIZED
+  ✓ Enable() 成功 — ENABLED
+
+=== 全部通过 ===
+<end of output>
+Test time =   2.57 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_backend_selection" end time: Sep 21 15:11 CST
+"aviator_backend_selection" time elapsed: 00:00:02
+----------------------------------------------------------
+
+4/7 Testing: aviator_demo
+4/7 Test: aviator_demo
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator" "--demo" "--headless"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_demo" start time: Sep 21 15:11 CST
+Output:
+----------------------------------------------------------
+The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.Link AR5-5_07L-W4C4A2_base had 1 children
+Link AR5-5_07L-W4C4A2_link1 had 1 children
+Link AR5-5_07L-W4C4A2_link2 had 1 children
+Link AR5-5_07L-W4C4A2_link3 had 1 children
+Link AR5-5_07L-W4C4A2_link4 had 1 children
+Link AR5-5_07L-W4C4A2_link5 had 1 children
+Link AR5-5_07L-W4C4A2_link6 had 1 children
+Link AR5-5_07L-W4C4A2_link7 had 1 children
+Link AR5-5_07L-W4C4A2_flan_link had 0 children
+Link AR5-5_07R-W4C4A2_base had 1 children
+Link AR5-5_07R-W4C4A2_link1 had 1 children
+Link AR5-5_07R-W4C4A2_link2 had 1 children
+Link AR5-5_07R-W4C4A2_link3 had 1 children
+Link AR5-5_07R-W4C4A2_link4 had 1 children
+Link AR5-5_07R-W4C4A2_link5 had 1 children
+Link AR5-5_07R-W4C4A2_link6 had 1 children
+Link AR5-5_07R-W4C4A2_link7 had 1 children
+Link AR5-5_07R-W4C4A2_flan_link had 0 children
+Link dummy_link had 1 children
+Link steering_wheel had 0 children
+Backend: mujoco | config: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/config/aviator.yaml"
+Enable -> Approach -> Lock -> wheel +/-50deg -> pull 170mm -> Unlock -> Disable
+Demo completed
+<end of output>
+Test time =  33.51 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_demo" end time: Sep 21 15:12 CST
+"aviator_demo" time elapsed: 00:00:33
+----------------------------------------------------------
+
+5/7 Testing: aviator_open_loop
+5/7 Test: aviator_open_loop
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_open_loop_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_open_loop" start time: Sep 21 15:12 CST
+Output:
+----------------------------------------------------------
+Open-loop phase, references, timing and arm feedback faults passed
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_open_loop" end time: Sep 21 15:12 CST
+"aviator_open_loop" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/7 Testing: aviator_controller_safety
+6/7 Test: aviator_controller_safety
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_controller_safety_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_controller_safety" start time: Sep 21 15:12 CST
+Output:
+----------------------------------------------------------
+Dual-arm enable rollback and invalid planning configuration passed
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_controller_safety" end time: Sep 21 15:12 CST
+"aviator_controller_safety" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/7 Testing: aviator_interactive
+7/7 Test: aviator_interactive
+Command: "/usr/bin/python3.10" "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/tests/test_interactive.py" "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_interactive" start time: Sep 21 15:12 CST
+Output:
+----------------------------------------------------------
+Interactive status/stop during motion and clean exit passed
+<end of output>
+Test time =   2.16 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_interactive" end time: Sep 21 15:12 CST
+"aviator_interactive" time elapsed: 00:00:02
+----------------------------------------------------------
+
+End testing: Sep 21 15:12 CST

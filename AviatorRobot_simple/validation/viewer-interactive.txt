@@ -1,0 +1,1 @@
+Interactive status/stop during motion and clean exit passed

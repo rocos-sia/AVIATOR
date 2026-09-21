@@ -1,0 +1,12 @@
+Internal ctest changing into directory: /tmp/aviator-simple-standalone/build-sim
+Test project /tmp/aviator-simple-standalone/build-sim
+    Start 3: aviator_backend_selection
+1/3 Test #3: aviator_backend_selection ........   Passed    1.86 sec
+    Start 5: aviator_open_loop
+2/3 Test #5: aviator_open_loop ................   Passed    0.00 sec
+    Start 6: aviator_controller_safety
+3/3 Test #6: aviator_controller_safety ........   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 3
+
+Total Test time (real) =   1.88 sec

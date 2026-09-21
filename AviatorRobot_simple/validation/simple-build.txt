@@ -1,0 +1,22 @@
+[  5%] Built target aviator_viewer
+[ 10%] Built target kdl_parser
+[ 16%] Built target aviator_rokae_sdk
+[ 21%] Built target aviator_viewer_test
+[ 27%] Built target aviator_open_loop_test
+[ 37%] Built target trac_ik
+[ 56%] Built target aviator_control
+Consolidate compiler generated dependencies of target aviator_acceptance_test
+[ 62%] Built target aviator_backend_selection_test
+[ 67%] Built target aviator_basic_test
+[ 72%] Built target aviator_acceptance_test
+Consolidate compiler generated dependencies of target aviator_servo_wheel_test
+[ 81%] Built target aviator_realtime_test
+[ 83%] Built target aviator_move_wheel_test
+[ 89%] Built target aviator_servo_wheel_test
+Consolidate compiler generated dependencies of target aviator_controller_safety_test
+[ 91%] Building CXX object CMakeFiles/aviator_controller_safety_test.dir/tests/test_controller_safety.cpp.o
+[ 91%] Built target aviator_assets
+Consolidate compiler generated dependencies of target aviator
+[ 97%] Built target aviator
+[100%] Linking CXX executable bin/aviator_controller_safety_test
+[100%] Built target aviator_controller_safety_test

@@ -1,0 +1,4 @@
+/build*/
+/dist/
+/validation/*.log
+__pycache__/

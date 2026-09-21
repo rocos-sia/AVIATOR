@@ -1,0 +1,25 @@
+The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.Link AR5-5_07L-W4C4A2_base had 1 children
+Link AR5-5_07L-W4C4A2_link1 had 1 children
+Link AR5-5_07L-W4C4A2_link2 had 1 children
+Link AR5-5_07L-W4C4A2_link3 had 1 children
+Link AR5-5_07L-W4C4A2_link4 had 1 children
+Link AR5-5_07L-W4C4A2_link5 had 1 children
+Link AR5-5_07L-W4C4A2_link6 had 1 children
+Link AR5-5_07L-W4C4A2_link7 had 1 children
+Link AR5-5_07L-W4C4A2_flan_link had 0 children
+Link AR5-5_07R-W4C4A2_base had 1 children
+Link AR5-5_07R-W4C4A2_link1 had 1 children
+Link AR5-5_07R-W4C4A2_link2 had 1 children
+Link AR5-5_07R-W4C4A2_link3 had 1 children
+Link AR5-5_07R-W4C4A2_link4 had 1 children
+Link AR5-5_07R-W4C4A2_link5 had 1 children
+Link AR5-5_07R-W4C4A2_link6 had 1 children
+Link AR5-5_07R-W4C4A2_link7 had 1 children
+Link AR5-5_07R-W4C4A2_flan_link had 0 children
+Link dummy_link had 1 children
+Link steering_wheel had 0 children
+Backend: mujoco | config: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/config/aviator.yaml"
+Camera: left drag rotate | right drag pan | Shift changes drag axis | wheel/middle drag zoom | R reset view | Esc quit
+Enable -> Approach -> Lock -> wheel +/-50deg -> pull 170mm -> Unlock -> Disable
+Demo completed
+wall_seconds=93.40 exit=0

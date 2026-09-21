@@ -17,4 +17,4 @@ xCoreSDK-CPP-main/
 # Vendored third-party build artifacts (sources are committed, outputs are not).
 AviatorRobot/third_party/build/
 AviatorRobot/third_party/_install/
-
+AviatorRobot_simple/build

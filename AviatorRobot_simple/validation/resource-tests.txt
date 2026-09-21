@@ -1,0 +1,10 @@
+Internal ctest changing into directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+Test project /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+    Start 1: aviator_basic
+1/2 Test #1: aviator_basic ....................   Passed    1.72 sec
+    Start 3: aviator_backend_selection
+2/2 Test #3: aviator_backend_selection ........   Passed    1.95 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   3.67 sec

@@ -1,0 +1,10 @@
+Internal ctest changing into directory: /tmp/aviator-simple-standalone/build-real
+Test project /tmp/aviator-simple-standalone/build-real
+    Start 1: aviator_open_loop
+1/2 Test #1: aviator_open_loop ................   Passed    0.00 sec
+    Start 2: aviator_controller_safety
+2/2 Test #2: aviator_controller_safety ........   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   0.01 sec
