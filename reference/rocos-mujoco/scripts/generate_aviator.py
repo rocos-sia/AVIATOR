@@ -18,6 +18,18 @@ PROJECT = Path(__file__).resolve().parents[1]
 REPOSITORY = PROJECT.parents[1]
 PASSIVE = {"roll_input_joint", "pitch_input_joint"}
 
+# Two vertical walls flanking the wheel left/right to shrink the reachable
+# workspace. "gap" is the inner-face separation along the cockpit left-right
+# axis (world Y). Sweep it to probe how cockpit clearance limits manipulation
+# authority; regenerate with `python3 scripts/generate_aviator.py` to apply.
+WALLS = {
+    "enabled": True,
+    "gap": 0.54,        # m, inner-face distance between the two walls (tune to narrow)
+    "thickness": 0.03,  # m, wall thickness along the left-right axis
+    "half_span": 0.30,  # m, half side of each square wall plate (X-Z plane)
+    "center": [-0.80, 0.0, -0.03],  # world centre, flanking the elbow/forearm
+}
+
 
 def numbers(values):
     return " ".join(format(v, ".12g") for v in values)
@@ -33,6 +45,15 @@ def pose(element):
     return {"pos": origin.get("xyz", "0 0 0"), "quat": numbers([
         cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy,
         cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy])}
+
+
+def rotate_vector(quat_str, v):
+    """Rotate a vector by a "w x y z" quaternion string (world image)."""
+    w, x, y, z = map(float, quat_str.split())
+    r = [[1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+         [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+         [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]]
+    return [sum(r[i][k] * v[k] for k in range(3)) for i in range(3)]
 
 
 def binary_stl(source, destination):
@@ -102,7 +123,9 @@ def collision_parts(path):
     return files
 
 
-def generate():
+def generate(gap=None, out=None):
+    if gap is not None:
+        WALLS["gap"] = float(gap)
     urdf = ET.parse(REPOSITORY / "urdf/aviator.urdf").getroot()
     links = {link.get("name"): link for link in urdf.findall("link")}
     joints = {joint.get("name"): joint for joint in urdf.findall("joint")}
@@ -205,6 +228,28 @@ def generate():
             add_link(body, joint.find("child").get("link"), joint)
 
     add_link(world, "aircraft")
+    if WALLS["enabled"]:
+        # Left/right axis and centre from the two grasp handles (world frame),
+        # so the walls stay correct even if the wheel orientation changes.
+        wheel = pose(joints["roll_input_joint"])
+        wheel_pos = [float(v) for v in wheel["pos"].split()]
+        lh = [wheel_pos[i] + rotate_vector(wheel["quat"], grasp["left"]["position"])[i] for i in range(3)]
+        rh = [wheel_pos[i] + rotate_vector(wheel["quat"], grasp["right"]["position"])[i] for i in range(3)]
+        axis = [lh[i] - rh[i] for i in range(3)]
+        norm = math.sqrt(sum(a * a for a in axis))
+        assert norm > 1e-9
+        axis = [a / norm for a in axis]
+        centre = WALLS["center"]
+        # Wall centre sits thickness/2 beyond the inner face, so the face-to-face
+        # (inner) clearance is exactly WALLS["gap"].
+        offset = WALLS["gap"] / 2 + WALLS["thickness"] / 2
+        for sign, name in ((1, "aviator_wall_left"), (-1, "aviator_wall_right")):
+            body = ET.SubElement(world, "body", name=name,
+                                 pos=numbers([centre[i] + sign * offset * axis[i] for i in range(3)]),
+                                 zaxis=numbers(axis))
+            ET.SubElement(body, "geom", type="box",
+                          size=numbers([WALLS["half_span"], WALLS["half_span"], WALLS["thickness"] / 2]),
+                          rgba="0.3 0.3 0.35 0.4", contype="1", conaffinity="7", group="0", mass="0")
     tool = grasp["tool"]
     radius, length, mass = (float(tool[k]) for k in ("radius", "length", "mass"))
     assert radius > 0 and length > 0 and mass > 0
@@ -254,6 +299,14 @@ def generate():
         prefix = f"AR5-5_07{side}-W4C4A2_"
         ET.SubElement(contact, "exclude", body1=prefix + "base", body2=prefix + "link1")
         ET.SubElement(contact, "exclude", body1=prefix + "link5", body2=prefix + "link7")
+    if WALLS["enabled"]:
+        # The walls only constrain the moving arm links; they must not interact
+        # with the fixed cockpit structure, wheel or the arm bases they sit beside.
+        for wall in ("aviator_wall_left", "aviator_wall_right"):
+            ET.SubElement(contact, "exclude", body1="aircraft", body2=wall)
+            ET.SubElement(contact, "exclude", body1="steering_wheel", body2=wall)
+            for side in "LR":
+                ET.SubElement(contact, "exclude", body1=wall, body2=f"AR5-5_07{side}-W4C4A2_base")
     # A keyframe changes the initial configuration without changing joint zero
     # references or the URDF/MJCF kinematic correspondence.
     home = {}
@@ -272,7 +325,9 @@ def generate():
     # The existing simulator applies joint forces to configured drivers. The
     # passive wheel joints deliberately have neither actuators nor YAML drivers.
     ET.indent(model, space="  ")
-    ET.ElementTree(model).write(PROJECT / "model/aviator.xml", encoding="utf-8", xml_declaration=True)
+    out_path = Path(out) if out else PROJECT / "model/aviator.xml"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ET.ElementTree(model).write(out_path, encoding="utf-8", xml_declaration=True)
     hardware = ["# Generated by scripts/generate_aviator.py from urdf/aviator.urdf.",
                 "# Left arm: slaves 0..6; right arm: 7..13. Wheel joints are passive.",
                 "# lower/upper/vel/effort are URDF values (rad, rad/s, N*m).",
@@ -341,4 +396,9 @@ def generate():
 
 
 if __name__ == "__main__":
-    generate()
+    import argparse
+    ap = argparse.ArgumentParser(description="Generate AVIATOR MJCF (--gap = inner-face wall clearance in m)")
+    ap.add_argument("--gap", type=float, default=None)
+    ap.add_argument("--out", type=str, default=None, help="override output MJCF path")
+    args = ap.parse_args()
+    generate(gap=args.gap, out=args.out)

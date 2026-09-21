@@ -205,28 +205,22 @@ namespace TRAC_IK
         }
     }
 
-    template <typename T1, typename T2>
-    bool TRAC_IK::runSolver(T1 &solver, T2 &other_solver,
+    template <typename T1>
+    bool TRAC_IK::runSolver(T1 &solver,
                             const KDL::JntArray &q_init,
                             const KDL::Frame &p_in)
     {
         KDL::JntArray q_out;
 
-        double fulltime = maxtime;
         KDL::JntArray seed = q_init;
 
-        boost::posix_time::time_duration timediff;
-        double time_left;
-
-        while (true)
+        // Deterministic: a FIXED number of restarts (no wall-clock budget), so the
+        // RNG stream and the set of explored seeds are identical on every run. With
+        // SolveType::Speed the loop exits as soon as the first solution is found.
+        const int MAX_RESTARTS = 4;
+        for (int r = 0; r < MAX_RESTARTS; r++)
         {
-            timediff = boost::posix_time::microsec_clock::local_time() - start_time;
-            time_left = fulltime - timediff.total_nanoseconds() / 1000000000.0;
-
-            if (time_left <= 0)
-                break;
-
-            solver.setMaxtime(time_left);
+            solver.setMaxtime(maxtime);
 
             int RC = solver.CartToJnt(seed, p_in, q_out, bounds);
             if (RC >= 0)
@@ -278,9 +272,8 @@ namespace TRAC_IK
                 else
                     seed(j) = fRand(lb(j), ub(j));
         }
-        other_solver.abort();
 
-        solver.setMaxtime(fulltime);
+        solver.setMaxtime(maxtime);
 
         return true;
     }
@@ -408,11 +401,13 @@ namespace TRAC_IK
 
         bounds = _bounds;
 
-        task1 = std::thread(&TRAC_IK::runKDL, this, q_init, p_in);
-        task2 = std::thread(&TRAC_IK::runNLOPT, this, q_init, p_in);
-
-        task1.join();
-        task2.join();
+        // Deterministic: run the two solvers sequentially on the calling thread instead
+        // of in two racy spawned threads. The original parallel version aborted the
+        // slower solver from the faster one (a wall-clock race), and the per-solver
+        // random-restart budgets were wall-clock-bounded; both made the result depend on
+        // scheduling. Sequential + fixed restart counts makes the solve reproducible.
+        runKDL(q_init, p_in);
+        runNLOPT(q_init, p_in);
 
         if (solutions.empty())
         {

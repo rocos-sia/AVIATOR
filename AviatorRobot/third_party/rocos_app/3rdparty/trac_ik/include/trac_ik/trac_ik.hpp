@@ -36,6 +36,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <trac_ik/ik_rng.hpp>
 #include <trac_ik/nlopt_ik.hpp>
 
 namespace TRAC_IK
@@ -111,6 +112,14 @@ namespace TRAC_IK
             solvetype = _type;
         }
 
+        // Deterministic random-restart seed for the NEXT CartToJnt() call. The two
+        // internal solver threads (runKDL / runNLOPT) read this and seed their own
+        // thread-local RNG from it, so a given seed always yields the same solution.
+        inline void setSeed(unsigned seed)
+        {
+            seed_ = seed;
+        }
+
     private:
         bool initialized;
         KDL::Chain chain;
@@ -125,8 +134,8 @@ namespace TRAC_IK
 
         boost::posix_time::ptime start_time;
 
-        template <typename T1, typename T2>
-        bool runSolver(T1 &solver, T2 &other_solver,
+        template <typename T1>
+        bool runSolver(T1 &solver,
                        const KDL::JntArray &q_init,
                        const KDL::Frame &p_in);
 
@@ -145,12 +154,13 @@ namespace TRAC_IK
         std::thread task1, task2;
         KDL::Twist bounds;
 
+        unsigned seed_ = 0;
+
         bool unique_solution(const KDL::JntArray &sol);
 
         inline static double fRand(double min, double max)
         {
-            double f = (double)rand() / RAND_MAX;
-            return min + f * (max - min);
+            return ik_frand(min, max);
         }
 
         /* @brief Manipulation metrics and penalties taken from "Workspace
@@ -172,12 +182,17 @@ namespace TRAC_IK
 
     inline bool TRAC_IK::runKDL(const KDL::JntArray &q_init, const KDL::Frame &p_in)
     {
-        return runSolver(*iksolver.get(), *nl_solver.get(), q_init, p_in);
+        // Runs sequentially before runNLOPT; seed the thread-local RNG from seed_
+        // (a distinct stream from the NLOPT solver below).
+        ik_rng_seed(seed_ ^ 0x9E3779B9u);
+        return runSolver(*iksolver.get(), q_init, p_in);
     }
 
     inline bool TRAC_IK::runNLOPT(const KDL::JntArray &q_init, const KDL::Frame &p_in)
     {
-        return runSolver(*nl_solver.get(), *iksolver.get(), q_init, p_in);
+        // Runs sequentially after runKDL.
+        ik_rng_seed(seed_);
+        return runSolver(*nl_solver.get(), q_init, p_in);
     }
 
 }

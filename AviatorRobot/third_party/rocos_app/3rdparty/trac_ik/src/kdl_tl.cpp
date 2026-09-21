@@ -67,14 +67,12 @@ namespace KDL
         if (aborted)
             return -3;
 
-        boost::posix_time::ptime start_time = boost::posix_time::microsec_clock::local_time();
-        boost::posix_time::time_duration timediff;
         q_out = q_init;
         bounds = _bounds;
 
-        double time_left;
-
-        do
+        // Deterministic: fixed iteration cap instead of a wall-clock budget.
+        const int MAX_ITER = 500;
+        for (int iter = 0; iter < MAX_ITER; iter++)
         {
             fksolver.JntToCart(q_out, f);
             delta_twist = diffRelative(p_in, f);
@@ -179,10 +177,7 @@ namespace KDL
             }
 
             q_out = q_curr;
-
-            timediff = boost::posix_time::microsec_clock::local_time() - start_time;
-            time_left = maxtime - timediff.total_nanoseconds() / 1000000000.0;
-        } while (time_left > 0 && !aborted);
+        }
 
         return -3;
     }

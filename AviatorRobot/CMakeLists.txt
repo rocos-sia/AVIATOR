@@ -55,6 +55,16 @@ target_include_directories(aviator_grasp_search PRIVATE "${SIM_DIR}/third_party/
 target_link_libraries(aviator_grasp_search PRIVATE aviator_rocos_core
     "${SIM_DIR}/third_party/mujoco-3.4.0/lib/libmujoco.so.3.4.0")
 
+add_executable(aviator_authority_map tools/authority_map.cpp)
+target_include_directories(aviator_authority_map PRIVATE "${SIM_DIR}/third_party/mujoco-3.4.0/include")
+target_link_libraries(aviator_authority_map PRIVATE aviator_rocos_core
+    "${SIM_DIR}/third_party/mujoco-3.4.0/lib/libmujoco.so.3.4.0")
+
+add_executable(aviator_clearance_trajectory tools/clearance_trajectory.cpp)
+target_include_directories(aviator_clearance_trajectory PRIVATE "${SIM_DIR}/third_party/mujoco-3.4.0/include")
+target_link_libraries(aviator_clearance_trajectory PRIVATE aviator_rocos_core
+    "${SIM_DIR}/third_party/mujoco-3.4.0/lib/libmujoco.so.3.4.0")
+
 add_custom_target(aviator_assets
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/config" "${CMAKE_BINARY_DIR}/bin/config"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin/model"

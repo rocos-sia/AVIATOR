@@ -266,6 +266,12 @@
         </body>
       </body>
     </body>
+    <body name="aviator_wall_left" pos="-0.800308395631 0.269737213437 -0.0180945147262" zaxis="-0.00114220604093 0.999026716432 0.0440943899029">
+      <geom type="box" size="0.3 0.3 0.015" rgba="0.3 0.3 0.35 0.4" contype="1" conaffinity="7" group="0" mass="0" />
+    </body>
+    <body name="aviator_wall_right" pos="-0.799691604369 -0.269737213437 -0.0419054852738" zaxis="-0.00114220604093 0.999026716432 0.0440943899029">
+      <geom type="box" size="0.3 0.3 0.015" rgba="0.3 0.3 0.35 0.4" contype="1" conaffinity="7" group="0" mass="0" />
+    </body>
   </worldbody>
   <equality>
     <weld name="left_grasp" site1="left_tcp" site2="left_handle" active="false" solref="0.005 1" solimp="0.95 0.99 0.001" />
@@ -277,6 +283,14 @@
     <exclude body1="AR5-5_07L-W4C4A2_link5" body2="AR5-5_07L-W4C4A2_link7" />
     <exclude body1="AR5-5_07R-W4C4A2_base" body2="AR5-5_07R-W4C4A2_link1" />
     <exclude body1="AR5-5_07R-W4C4A2_link5" body2="AR5-5_07R-W4C4A2_link7" />
+    <exclude body1="aircraft" body2="aviator_wall_left" />
+    <exclude body1="steering_wheel" body2="aviator_wall_left" />
+    <exclude body1="aviator_wall_left" body2="AR5-5_07L-W4C4A2_base" />
+    <exclude body1="aviator_wall_left" body2="AR5-5_07R-W4C4A2_base" />
+    <exclude body1="aircraft" body2="aviator_wall_right" />
+    <exclude body1="steering_wheel" body2="aviator_wall_right" />
+    <exclude body1="aviator_wall_right" body2="AR5-5_07L-W4C4A2_base" />
+    <exclude body1="aviator_wall_right" body2="AR5-5_07R-W4C4A2_base" />
   </contact>
   <keyframe>
     <key name="aviator_home" qpos="0 0 1.94771630354 1.57079632679 -1.37618323285 2.04981289676 0.156860282066 0.0729290021534 0.156918313879 -1.84860741719 1.57079632679 1.11467509058 1.93698015773 -0.180011079028 0.0687414348287 -0.693679354889" />

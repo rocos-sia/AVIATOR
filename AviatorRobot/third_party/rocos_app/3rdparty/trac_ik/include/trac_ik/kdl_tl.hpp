@@ -33,6 +33,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <kdl/chainfksolverpos_recursive.hpp>
 #include <kdl/chainiksolvervel_pinv.hpp>
+#include <trac_ik/ik_rng.hpp>
 
 namespace TRAC_IK
 {
@@ -101,8 +102,7 @@ namespace KDL
 
         inline static double fRand(double min, double max)
         {
-            double f = (double)rand() / RAND_MAX;
-            return min + f * (max - min);
+            return TRAC_IK::ik_frand(min, max);
         }
     };
 

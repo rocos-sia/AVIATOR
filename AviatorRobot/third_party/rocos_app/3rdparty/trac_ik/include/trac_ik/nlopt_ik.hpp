@@ -32,6 +32,7 @@ OF THE POSSIBILITY OF SUCH DAMAGE.
 #define NLOPT_IK_HPP
 
 #include <trac_ik/kdl_tl.hpp>
+#include <trac_ik/ik_rng.hpp>
 #include <nlopt.hpp>
 
 
@@ -110,8 +111,7 @@ private:
 
   inline static double fRand(double min, double max)
   {
-    double f = (double)rand() / RAND_MAX;
-    return min + f * (max - min);
+    return TRAC_IK::ik_frand(min, max);
   }
 
 

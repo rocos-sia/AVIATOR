@@ -435,9 +435,6 @@ namespace NLOPT_IK
         // Returns -3 if a configuration could not be found within the eps
         // set up in the constructor.
 
-        boost::posix_time::ptime start_time = boost::posix_time::microsec_clock::local_time();
-        boost::posix_time::time_duration diff;
-
         bounds = _bounds;
         q_out = q_init;
 
@@ -454,7 +451,9 @@ namespace NLOPT_IK
             return -3;
         }
 
-        opt.set_maxtime(maxtime);
+        // Deterministic: a fixed evaluation budget (not a wall-clock maxtime) so the
+        // SLSQP solve terminates after the same number of objective evaluations every run.
+        opt.set_maxeval(1000);
 
         double minf; /* the minimum objective value, upon return */
 
@@ -567,18 +566,12 @@ namespace NLOPT_IK
 
         if (!aborted && progress < 0)
         {
-
-            double time_left;
-            diff = boost::posix_time::microsec_clock::local_time() - start_time;
-            time_left = maxtime - diff.total_nanoseconds() / 1000000000.0;
-
-            while (time_left > 0 && !aborted && progress < 0)
+            // Deterministic: a FIXED number of random restarts (no wall-clock budget).
+            const int MAX_RESTARTS = 4;
+            for (int r = 0; r < MAX_RESTARTS && progress < 0; r++)
             {
-
                 for (uint i = 0; i < x.size(); i++)
                     x[i] = fRand(artificial_lower_limits[i], artificial_upper_limits[i]);
-
-                opt.set_maxtime(time_left);
 
                 try
                 {
@@ -590,9 +583,6 @@ namespace NLOPT_IK
 
                 if (progress == -1) // Got NaNs
                     progress = -3;
-
-                diff = boost::posix_time::microsec_clock::local_time() - start_time;
-                time_left = maxtime - diff.total_nanoseconds() / 1000000000.0;
             }
         }
 
