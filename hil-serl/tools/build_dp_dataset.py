@@ -1,0 +1,271 @@
+"""DP CSV -> HIL-SERL demo pkl with calibrated phi_dot_scale (Task 1.4, BLOCKER #11).
+
+Doc: docs/superpowers/plans/2026-09-22-aviator-v01-rl-training.md (Task 1.4)
+
+Reads the full-horizon DP teacher's CSV dumps
+(``data/aviator/dp_demo/traj_<i>.csv``), computes the per-arm action scale
+``phi_dot_scale = max(max|phi_dot*|) * 1.1`` across *all* trajectories, then
+rewrites each trajectory as a HIL-SERL demo ``.pkl`` (a flat list of transition
+dicts) with the actions normalized to ``[-1, 1]`` and the 40-D observation
+assembled to match ``AviatorManifoldEnv`` (incl. the ChunkingWrapper
+``obs_horizon=1`` leading dimension).
+
+Transition dict keys (match ``ReplayBuffer`` / ``record_demos.py``)::
+
+    observations       {"state": (1, 40) float32}
+    next_observations  {"state": (1, 40) float32}
+    actions            (2,) float32   -- normalized a = phi_dot / phi_dot_scale
+    rewards            scalar float32
+    masks              scalar float32 -- 1.0 - dones
+    dones              bool           -- True only on the terminal transition
+
+The CSV stores ``(sin phi, cos phi)`` for the observation and raw ``phi_dot``
+(rad/s) for the action label; the unwrapped ``phi`` never reaches the obs.
+"""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import os
+import pickle
+
+import numpy as np
+
+from examples.experiments.aviator_manifold.reward import reward_fn
+
+__all__ = [
+    "COLUMNS",
+    "read_dp_csv",
+    "compute_phi_dot_scale",
+    "build_obs40",
+    "build_transitions",
+]
+
+# frozen v0.1 constants
+_DT = 0.01
+_LAGS = (2, 5, 10, 20)
+_OBS_DIM = 40
+
+# CSV column names (order defined by record_dp, Task 0.3).
+COLUMNS = [
+    "t", "theta", "s", "theta_dot", "s_dot",
+    "sin_phi_L", "cos_phi_L", "sin_phi_R", "cos_phi_R",
+    "phi_dot_L", "phi_dot_R",
+    "qL1", "qL2", "qL3", "qL4", "qL5", "qL6", "qL7",
+    "qR1", "qR2", "qR3", "qR4", "qR5", "qR6", "qR7",
+    "qdotL1", "qdotL2", "qdotL3", "qdotL4", "qdotL5", "qdotL6", "qdotL7",
+    "qdotR1", "qdotR2", "qdotR3", "qdotR4", "qdotR5", "qdotR6", "qdotR7",
+    "dL", "dR", "d_min",
+    "m_phi_minus_L", "m_phi_minus_R", "m_phi_plus_L", "m_phi_plus_R",
+    "m_q",
+]
+
+
+def read_dp_csv(path: str) -> dict:
+    """Parse a record_dp CSV into a dict of float64 arrays (each length N).
+
+    The first line is a ``# L_phi_L=..,L_phi_R=..`` metadata comment and the
+    second is a header row; both are skipped.
+    """
+    with open(path) as f:
+        lines = f.readlines()
+
+    lphi = {"L_phi_L": None, "L_phi_R": None}
+    for tok in lines[0].lstrip("# ").split(","):
+        if "=" in tok:
+            k, v = tok.split("=")
+            if k.strip() in lphi:
+                lphi[k.strip()] = float(v)
+
+    data = np.array(
+        [line.split(",") for line in lines[2:] if line.strip()],
+        dtype=np.float64,
+    )
+    assert data.shape[1] == len(COLUMNS), (
+        f"{path}: expected {len(COLUMNS)} columns, got {data.shape[1]}"
+    )
+    out = {name: data[:, i] for i, name in enumerate(COLUMNS)}
+    out["L_phi_L"] = lphi["L_phi_L"]
+    out["L_phi_R"] = lphi["L_phi_R"]
+    return out
+
+
+def compute_phi_dot_scale(csv_paths, headroom: float = 1.1) -> dict:
+    """Compute the calibrated action scale across all trajectories.
+
+    Returns ``{"phi_dot_scale": float, "max_abs_phi_dot": [maxL, maxR],
+    "n_trajs": int, "flag_exceeds_nominal": bool}``.
+    """
+    maxL = 0.0
+    maxR = 0.0
+    n = 0
+    for p in csv_paths:
+        d = read_dp_csv(p)
+        maxL = max(maxL, float(np.max(np.abs(d["phi_dot_L"]))))
+        maxR = max(maxR, float(np.max(np.abs(d["phi_dot_R"]))))
+        n += 1
+    scale = max(maxL, maxR) * headroom
+    return {
+        "phi_dot_scale": float(scale),
+        "max_abs_phi_dot": [float(maxL), float(maxR)],
+        "n_trajs": n,
+        "flag_exceeds_nominal": bool(max(maxL, maxR) > 2.0),
+    }
+
+
+def _lag_clamped(x: np.ndarray, t: int, k: int) -> np.ndarray:
+    """x[max(0, t-k)] -- history lag k clamped to the t=0 value."""
+    return x[max(0, t - k)]
+
+
+def build_obs40(data: dict, a: np.ndarray) -> np.ndarray:
+    """Assemble the (N, 40) observation matrix for a single trajectory.
+
+    ``a`` is the (N, 2) normalized action (used for ``a_prev`` and ``hist_a``).
+    The layout matches ``AviatorManifoldEnv._get_obs`` exactly.
+    """
+    n = len(data["t"])
+    theta = data["theta"]
+    s = data["s"]
+    theta_dot = data["theta_dot"]
+    s_dot = data["s_dot"]
+
+    x = np.stack([theta, s], axis=1)              # (N, 2)
+    xdot = np.stack([theta_dot, s_dot], axis=1)   # (N, 2)
+
+    obs = np.zeros((n, _OBS_DIM), dtype=np.float32)
+    for t in range(n):
+        o = np.zeros(_OBS_DIM, dtype=np.float32)
+        o[0:2] = x[t]
+        o[2:4] = xdot[t]
+        o[4:6] = [data["sin_phi_L"][t], data["cos_phi_L"][t]]
+        o[6:8] = [data["sin_phi_R"][t], data["cos_phi_R"][t]]
+        o[8:10] = [data["m_phi_minus_L"][t], data["m_phi_minus_R"][t]]
+        o[10:12] = [data["m_phi_plus_L"][t], data["m_phi_plus_R"][t]]
+        o[12] = data["d_min"][t]
+        o[13] = data["m_q"][t]
+        o[14:16] = a[max(0, t - 1)] if t > 0 else np.zeros(2)   # a_prev
+        idx = 16
+        for k in _LAGS:
+            o[idx:idx + 2] = _lag_clamped(x, t, k)
+            idx += 2
+        for k in _LAGS:
+            o[idx:idx + 2] = _lag_clamped(xdot, t, k)
+            idx += 2
+        for k in _LAGS:
+            o[idx:idx + 2] = _lag_clamped(a, t, k)
+            idx += 2
+        obs[t] = o
+    return obs
+
+
+def build_transitions(data: dict, phi_dot_scale: float, dt: float = _DT) -> list:
+    """Build the list of transition dicts for one trajectory.
+
+    Row ``t`` -> transition ``t``: ``observations = obs[t]``,
+    ``actions = phi_dot[t]/phi_dot_scale``, ``next_observations = obs[t+1]``.
+    The final row (``t == N-1``) is the terminal transition: zero action,
+    ``next_observations = obs[t]``, ``dones = True``.
+    """
+    n = len(data["t"])
+    phi_dot = np.stack([data["phi_dot_L"], data["phi_dot_R"]], axis=1)  # (N, 2)
+    a = phi_dot / phi_dot_scale                                        # (N, 2)
+    obs = build_obs40(data, a)
+
+    x = np.stack([data["theta"], data["s"]], axis=1)                   # (N, 2)
+    m_minus = np.stack([data["m_phi_minus_L"], data["m_phi_minus_R"]], axis=1)
+    m_plus = np.stack([data["m_phi_plus_L"], data["m_phi_plus_R"]], axis=1)
+
+    transitions = []
+    for t in range(n):
+        if t == n - 1:
+            trans = {
+                "observations": {"state": obs[t][None].astype(np.float32)},
+                "actions": np.zeros(2, dtype=np.float32),
+                "next_observations": {"state": obs[t][None].astype(np.float32)},
+                "rewards": np.float32(0.0),
+                "masks": np.float32(0.0),
+                "dones": True,
+            }
+        else:
+            a_prev = phi_dot[t - 1] if t >= 1 else None
+            a_prev2 = phi_dot[t - 2] if t >= 2 else None
+            rew, _ = reward_fn(
+                x[t + 1], phi_dot[t], phi_dot[t], data["d_min"][t + 1],
+                m_minus[t + 1], m_plus[t + 1], data["m_q"][t + 1], None,
+                a_prev=a_prev, a_prev2=a_prev2, dt=dt,
+            )
+            trans = {
+                "observations": {"state": obs[t][None].astype(np.float32)},
+                "actions": a[t].astype(np.float32),
+                "next_observations": {"state": obs[t + 1][None].astype(np.float32)},
+                "rewards": np.float32(rew),
+                "masks": np.float32(1.0),
+                "dones": False,
+            }
+        transitions.append(trans)
+    return transitions
+
+
+def build_dataset(csv_dir: str, out_dir: str, headroom: float = 1.1) -> dict:
+    """Read all CSVs, calibrate phi_dot_scale, write pkls + phi_dot_scale.json.
+
+    Returns the scale manifest dict.
+    """
+    csv_paths = sorted(glob.glob(os.path.join(csv_dir, "traj_*.csv")))
+    assert csv_paths, f"no traj_*.csv found in {csv_dir}"
+
+    scale_manifest = compute_phi_dot_scale(csv_paths, headroom=headroom)
+    phi_dot_scale = scale_manifest["phi_dot_scale"]
+
+    os.makedirs(out_dir, exist_ok=True)
+    for p in csv_paths:
+        data = read_dp_csv(p)
+        transitions = build_transitions(data, phi_dot_scale)
+        stem = os.path.splitext(os.path.basename(p))[0]
+        with open(os.path.join(out_dir, stem + ".pkl"), "wb") as f:
+            pickle.dump(transitions, f)
+
+    with open(os.path.join(out_dir, "phi_dot_scale.json"), "w") as f:
+        json.dump(scale_manifest, f, indent=2)
+
+    return scale_manifest
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--csv-dir", default="data/aviator/dp_demo/",
+                    help="directory of record_dp CSVs")
+    ap.add_argument("--out-dir", default="data/aviator/dp_demo/",
+                    help="directory for pkls + phi_dot_scale.json")
+    ap.add_argument("--check-only", action="store_true",
+                    help="validate CSV -> transition round-trip without writing")
+    args = ap.parse_args()
+
+    if args.check_only:
+        csv_paths = sorted(glob.glob(os.path.join(args.csv_dir, "traj_*.csv")))
+        assert csv_paths, f"no traj_*.csv found in {args.csv_dir}"
+        scale = compute_phi_dot_scale(csv_paths)
+        print(f"phi_dot_scale={scale['phi_dot_scale']:.6g} "
+              f"max_abs_phi_dot={scale['max_abs_phi_dot']} "
+              f"flag={scale['flag_exceeds_nominal']}")
+        for p in csv_paths[:3]:
+            data = read_dp_csv(p)
+            tr = build_transitions(data, scale["phi_dot_scale"])
+            assert len(tr) == len(data["t"])
+            assert tr[0]["observations"]["state"].shape == (1, 40)
+            assert tr[-1]["dones"] is True and not tr[-2]["dones"]
+        print(f"check-only OK: {len(csv_paths)} trajs, "
+              f"round-trip valid on first 3")
+        return
+
+    manifest = build_dataset(args.csv_dir, args.out_dir)
+    print(f"wrote {manifest['n_trajs']} pkls + phi_dot_scale.json to "
+          f"{os.path.abspath(args.out_dir)}")
+    print(json.dumps(manifest, indent=2))
+
+
+if __name__ == "__main__":
+    main()

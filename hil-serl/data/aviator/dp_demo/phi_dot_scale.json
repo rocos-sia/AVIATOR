@@ -1,0 +1,9 @@
+{
+  "phi_dot_scale": 10.450000000000001,
+  "max_abs_phi_dot": [
+    9.5,
+    1.0
+  ],
+  "n_trajs": 99,
+  "flag_exceeds_nominal": true
+}

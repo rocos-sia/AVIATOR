@@ -1,0 +1,5 @@
+
+# regenerated Aviator pipeline intermediates (large; rebuilt by the C++ engine + build_dp_dataset.py)
+data/aviator/manifold_phi/
+data/aviator/dp_demo/*.csv
+data/aviator/dp_demo/*.pkl
