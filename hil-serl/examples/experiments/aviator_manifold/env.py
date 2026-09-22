@@ -91,6 +91,9 @@ class AviatorManifoldEnv(gym.Env):
         self._x = None
         self._phi = None
         self._a_prev = np.zeros(2)
+        # previous *filtered* velocity (rad/s) for the reward's C_a accel term;
+        # kept separate from _a_prev (raw action in [-1,1]) which feeds the obs
+        self._phi_dot_safe_prev = np.zeros(2)
 
         self._hist_x = deque(maxlen=21)
         self._hist_xdot = deque(maxlen=21)
@@ -123,6 +126,7 @@ class AviatorManifoldEnv(gym.Env):
             box["phi_safe_hi"][0],
         )
         self._a_prev = np.zeros(2)
+        self._phi_dot_safe_prev = np.zeros(2)
 
         self._hist_x.clear()
         self._hist_xdot.clear()
@@ -213,8 +217,12 @@ class AviatorManifoldEnv(gym.Env):
             x_next, phi_dot_nom, phi_dot_safe, d_min,
             res_next["m_phi_minus"][0], res_next["m_phi_plus"][0], res_next["m_q"][0],
             self.lookup,
-            a_prev=self._a_prev, a_prev2=None, dt=self.dt,
+            a_prev=self._phi_dot_safe_prev, a_prev2=None, dt=self.dt,
         )
+        # C_a = (phi_dot_safe - a_prev)^2 / dt^2: a_prev must be the previous
+        # *filtered* velocity in rad/s, not the raw action in [-1,1] (mixing the
+        # two made C_a ~1e4 x phi_dot_safe^2 and drowned out every other term).
+        self._phi_dot_safe_prev = phi_dot_safe.copy()
         info.update(rinfo)
         info.update({"d_min": d_min, "max_qdot": max_qdot})
 
