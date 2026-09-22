@@ -30,12 +30,14 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <numeric>
@@ -118,6 +120,108 @@ static unsigned int atlas_seed(size_t idx, int side, unsigned int trial) {
     h *= 0x7FEB352Du;
     h ^= h >> 15;
     return h ? h : 1u;
+}
+
+// ---- Task 0.3: minimal .npz (uncompressed zip) + .npy (float64 C-order) reader ----
+// numpy.savez writes ZIP_STORED entries and version-1 .npy files with `descr='<f8'`,
+// `fortran_order=False`; this reader supports exactly that (no zlib, no general-purpose
+// flag-3 data descriptors, no other dtypes).
+struct NpyArr {
+    std::vector<double> v;       // flattened C-order
+    std::vector<size_t> shape;   // dims
+    size_t total = 0;
+};
+
+static bool npy_load(const std::vector<uint8_t> &raw, NpyArr &out) {
+    if (raw.size() < 10 || std::memcmp(raw.data(), "\x93NUMPY", 6) != 0)
+        return false;
+    uint8_t ver = raw[6];
+    size_t hlen = 0, off = 0;
+    if (ver == 1) {
+        hlen = raw[8] | (raw[9] << 8);
+        off = 10;
+    } else if (ver == 2) {
+        hlen = (size_t)raw[8] | ((size_t)raw[9] << 8) | ((size_t)raw[10] << 16) | ((size_t)raw[11] << 24);
+        off = 12;
+    } else {
+        return false;
+    }
+    if (off + hlen > raw.size())
+        return false;
+    std::string hdr((const char *)raw.data() + off, hlen);
+    if (hdr.find("'<f8'") == std::string::npos)
+        return false;
+    if (hdr.find("'fortran_order': True") != std::string::npos)
+        return false;  // only C-order supported
+    out.shape.clear();
+    size_t sp = hdr.find("'shape':");
+    if (sp == std::string::npos)
+        return false;
+    size_t lp = hdr.find('(', sp);
+    size_t rp = hdr.find(')', lp);
+    if (lp == std::string::npos || rp == std::string::npos)
+        return false;
+    std::string shape_str = hdr.substr(lp + 1, rp - lp - 1);
+    out.total = 1;
+    if (!shape_str.empty()) {
+        size_t start = 0;
+        while (start < shape_str.size()) {
+            size_t comma = shape_str.find(',', start);
+            std::string tok = shape_str.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            size_t a = tok.find_first_not_of(" \t");
+            if (a == std::string::npos)
+                break;  // empty token (trailing comma of a 1-D shape like "(4,)")
+            size_t b = tok.find_last_not_of(" \t");
+            tok = tok.substr(a, b - a + 1);
+            size_t dim = std::strtoull(tok.c_str(), nullptr, 10);
+            out.shape.push_back(dim);
+            out.total *= dim;
+            if (comma == std::string::npos)
+                break;
+            start = comma + 1;
+        }
+    }
+    size_t data_off = off + hlen;
+    size_t nbytes = out.total * 8;
+    if (data_off + nbytes > raw.size())
+        return false;
+    out.v.resize(out.total);
+    std::memcpy(out.v.data(), raw.data() + data_off, nbytes);
+    return true;
+}
+
+// Scan local-file headers only (numpy writes entries in order, no data descriptors for STORED).
+static bool npz_load(const fs::path &p, std::map<std::string, std::vector<uint8_t>> &entries) {
+    std::ifstream f(p, std::ios::binary);
+    if (!f)
+        return false;
+    std::vector<uint8_t> buf((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    f.close();
+    size_t pos = 0, n = buf.size();
+    entries.clear();
+    while (pos + 30 <= n) {
+        uint32_t sig = (uint32_t)buf[pos] | ((uint32_t)buf[pos + 1] << 8) | ((uint32_t)buf[pos + 2] << 16) |
+                       ((uint32_t)buf[pos + 3] << 24);
+        if (sig == 0x06054b50u || sig == 0x02014b50u)  // EOCD / central dir → done
+            break;
+        if (sig != 0x04034b50u)
+            break;
+        uint16_t method = buf[pos + 8] | (buf[pos + 9] << 8);
+        uint32_t csize = (uint32_t)buf[pos + 18] | ((uint32_t)buf[pos + 19] << 8) | ((uint32_t)buf[pos + 20] << 16) |
+                         ((uint32_t)buf[pos + 21] << 24);
+        uint16_t nlen = buf[pos + 26] | (buf[pos + 27] << 8);
+        uint16_t elen = buf[pos + 28] | (buf[pos + 29] << 8);
+        size_t name_off = pos + 30;
+        if (name_off + nlen > n)
+            break;
+        std::string name((const char *)buf.data() + name_off, nlen);
+        size_t data_off = name_off + nlen + elen;
+        if (method != 0 || data_off + csize > n)
+            return false;  // only STORED entries supported
+        entries[name] = std::vector<uint8_t>(buf.begin() + data_off, buf.begin() + data_off + csize);
+        pos = data_off + csize;
+    }
+    return !entries.empty();
 }
 
 // Prebuilt 2-D feasibility atlas (module A output → module C input). Holds the raw
@@ -243,6 +347,7 @@ class ClearanceTrajectory {
     double trace_step = 0.1;
     double dt = 0.02;  // knot spacing (seconds); coarsen for fast static-envelope scans
     int alpha_grid = 201;
+    bool arc_verbose = true;  // per-point self_motion_arc diagnostic prints (off during bulk builds)
     double wall_thickness = 0.03;
     std::vector<int> wall_geoms;
     // Decimated surface point cloud per arm side (body-local coords) + cached wall
@@ -823,7 +928,10 @@ class ClearanceTrajectory {
     bool ik_multi_seed(int side, double theta, double s, const Q &ref, unsigned int seed_base, Q &out) {
         Q q(7);
         ik[side]->setSeed(seed_base);
-        if (ik[side]->CartToJnt(seeds[side], target(side, theta, s), q) >= 0) {
+        // Warm-start from `ref` (the continuation / transported φ=0 config), NOT the static
+        // baseline: this is what makes φ continuous across x. Callers that pass seeds[side]
+        // as `ref` are unchanged.
+        if (ik[side]->CartToJnt(ref, target(side, theta, s), q) >= 0) {
             out = q;
             return true;
         }
@@ -1295,7 +1403,1000 @@ class ClearanceTrajectory {
         return dmax > -0.5;
     }
 
-    // Safe pre-shaped start: the self-motion config at x_0 with d >= d_safe that is
+    // Task 0.1: Walk the 1-D self-motion loop of `side` from q0 (carrying physical phase
+    // from the previous grid point's continuation), accumulating transported phase φ using
+    // the nullspace direction. Fills qs/ds at uniform φ steps. Returns L (loop length),
+    // safe interval [phi_safe_lo, phi_safe_hi], and branch id (0 = closed loop).
+    bool self_motion_arc(int side, const Q &q0, double th, double s,
+                         std::vector<double> &phi, std::vector<Q> &qs, std::vector<double> &ds,
+                         double &L, double &phi_safe_lo, double &phi_safe_hi, int &branch) {
+        phi.clear();
+        qs.clear();
+        ds.clear();
+
+        // Get the nullspace direction at q0 (identity workspace, so n = ∂q/∂φ).
+        set_config(side ? seeds[1 - side] : q0, side ? q0 : seeds[1 - side], th, s);
+        Eigen::Matrix<double, 7, 1> n = self_motion(side);
+        // Normalize n by its ∞-norm so that one nullspace unit ≈ one joint-range fraction.
+        // This makes φ ≈ the arc-length parameter in a range-normalized sense.
+        double n_inf = 0.0;
+        for (int j = 0; j < 7; j++)
+            n_inf = std::max(n_inf, std::fabs(n(j)));
+        if (n_inf < 1e-12) {
+            L = 0;
+            phi_safe_lo = phi_safe_hi = 0;
+            branch = -1;
+            return false;
+        }
+        n /= n_inf;
+
+        // Bidirectional walk parameters. Step size in nullspace units (≈ joint-range fractions).
+        constexpr double arc_step = 0.005;  // 0.005 rad/step -> 0.5 rad/s floor at qmax=1.5
+        constexpr double eps_q = 0.12;     // ‖q_k - q0‖_∞ closure tolerance (rad), matches walk_dir
+        constexpr double delta_away = 0.25;
+        const int min_steps = std::max(10, int(1.5 / arc_step));
+        const int max_steps = int(4.0 * M_PI / arc_step) + 4;
+
+        std::vector<Q> qs_fwd, qs_bwd;
+        std::vector<double> phi_fwd, phi_bwd;
+        std::vector<double> d_fwd, d_bwd;
+        StopReason stop_fwd = StopReason::NONE, stop_bwd = StopReason::NONE;
+        int n_steps_fwd = 0, n_steps_bwd = 0;
+        double closure_fwd = 1e9, closure_bwd = 1e9;
+
+        // --- Forward walk ---
+        {
+            Q cur = q0;
+            qs_fwd.reserve(max_steps);
+            phi_fwd.reserve(max_steps);
+            d_fwd.reserve(max_steps);
+            double phi_cur = 0.0;
+            // Record anchor
+            qs_fwd.push_back(cur);
+            phi_fwd.push_back(0.0);
+            set_config(side ? seeds[1 - side] : cur, side ? cur : seeds[1 - side], th, s);
+            d_fwd.push_back(wall_clearance(side));
+            double max_dev = 0.0;
+            for (int k = 1; k <= max_steps; k++) {
+                set_config(side ? seeds[1 - side] : cur, side ? cur : seeds[1 - side], th, s);
+                auto nn = self_motion(side);
+                // Verify nullspace direction hasn't flipped (bifurcation sign change)
+                double dot = 0.0;
+                for (int j = 0; j < 7; j++)
+                    dot += nn(j) * n(j);
+                if (dot < 0.0)
+                    n *= -1.0;  // flip to stay on the same component
+                Q seed(7);
+                bool clamped = false;
+                for (int j = 0; j < 7; j++) {
+                    double v = cur(j) + arc_step * n(j);
+                    if (v < lower[side](j) || v > upper[side](j)) {
+                        v = std::clamp(v, lower[side](j), upper[side](j));
+                        clamped = true;
+                    }
+                    seed(j) = v;
+                }
+                Q out(7);
+                if (ik[side]->CartToJnt(seed, target_Rh(side, th, s, handle[side].M), out) < 0) {
+                    n_steps_fwd = k - 1;
+                    stop_fwd = clamped ? StopReason::JOINT_LIMIT : StopReason::IK_FAIL;
+                    break;
+                }
+                qs_fwd.push_back(out);
+                phi_cur += arc_step;
+                phi_fwd.push_back(phi_cur);
+                set_config(side ? seeds[1 - side] : out, side ? out : seeds[1 - side], th, s);
+                d_fwd.push_back(wall_clearance(side));
+                double dev = 0.0;
+                for (int j = 0; j < 7; j++)
+                    dev = std::max(dev, std::fabs(out(j) - q0(j)));
+                max_dev = std::max(max_dev, dev);
+                if (k >= min_steps && dev < eps_q && max_dev > delta_away) {
+                    closure_fwd = dev;
+                    n_steps_fwd = k;
+                    stop_fwd = StopReason::LOOP_CLOSED;
+                    break;
+                }
+                if (clamped) {
+                    double prog = 0.0;
+                    for (int j = 0; j < 7; j++)
+                        prog = std::max(prog, std::fabs(out(j) - cur(j)));
+                    if (prog < 0.02) {
+                        n_steps_fwd = k;
+                        stop_fwd = StopReason::JOINT_LIMIT;
+                        break;
+                    }
+                }
+                cur = out;
+            }
+            if (stop_fwd == StopReason::NONE)
+                n_steps_fwd = (int)qs_fwd.size() - 1;
+        }
+
+        // --- Backward walk ---
+        {
+            Q cur = q0;
+            qs_bwd.reserve(max_steps);
+            phi_bwd.reserve(max_steps);
+            d_bwd.reserve(max_steps);
+            double phi_cur = 0.0;
+            // Anchor at phi=0 is shared with forward; don't duplicate.
+            double max_dev = 0.0;
+            for (int k = 1; k <= max_steps; k++) {
+                set_config(side ? seeds[1 - side] : cur, side ? cur : seeds[1 - side], th, s);
+                auto nn = self_motion(side);
+                double dot = 0.0;
+                for (int j = 0; j < 7; j++)
+                    dot += nn(j) * n(j);
+                if (dot < 0.0)
+                    n *= -1.0;
+                Q seed(7);
+                bool clamped = false;
+                for (int j = 0; j < 7; j++) {
+                    double v = cur(j) - arc_step * n(j);
+                    if (v < lower[side](j) || v > upper[side](j)) {
+                        v = std::clamp(v, lower[side](j), upper[side](j));
+                        clamped = true;
+                    }
+                    seed(j) = v;
+                }
+                Q out(7);
+                if (ik[side]->CartToJnt(seed, target_Rh(side, th, s, handle[side].M), out) < 0) {
+                    n_steps_bwd = k - 1;
+                    stop_bwd = clamped ? StopReason::JOINT_LIMIT : StopReason::IK_FAIL;
+                    break;
+                }
+                qs_bwd.push_back(out);
+                phi_cur -= arc_step;
+                phi_bwd.push_back(phi_cur);
+                set_config(side ? seeds[1 - side] : out, side ? out : seeds[1 - side], th, s);
+                d_bwd.push_back(wall_clearance(side));
+                double dev = 0.0;
+                for (int j = 0; j < 7; j++)
+                    dev = std::max(dev, std::fabs(out(j) - q0(j)));
+                max_dev = std::max(max_dev, dev);
+                if (k >= min_steps && dev < eps_q && max_dev > delta_away) {
+                    closure_bwd = dev;
+                    n_steps_bwd = k;
+                    stop_bwd = StopReason::LOOP_CLOSED;
+                    break;
+                }
+                if (clamped) {
+                    double prog = 0.0;
+                    for (int j = 0; j < 7; j++)
+                        prog = std::max(prog, std::fabs(out(j) - cur(j)));
+                    if (prog < 0.02) {
+                        n_steps_bwd = k;
+                        stop_bwd = StopReason::JOINT_LIMIT;
+                        break;
+                    }
+                }
+                cur = out;
+            }
+            if (stop_bwd == StopReason::NONE)
+                n_steps_bwd = (int)qs_bwd.size() - 1;
+        }
+
+        // Check if the loop actually closed (forward and backward met).
+        bool loop_closed = (stop_fwd == StopReason::LOOP_CLOSED || stop_bwd == StopReason::LOOP_CLOSED ||
+                            (stop_fwd == StopReason::JOINT_LIMIT && stop_bwd == StopReason::JOINT_LIMIT));
+        branch = loop_closed ? 0 : 1;
+
+        // Concatenate: backward (reversed) + anchor + forward.
+        // Use the forward direction's total extent to compute L.
+        double phi_fwd_total = phi_fwd.empty() ? 0.0 : phi_fwd.back();
+        double phi_bwd_total = phi_bwd.empty() ? 0.0 : phi_bwd.back();
+        L = phi_fwd_total - phi_bwd_total;  // total loop extent in phase units
+
+        // Build the combined arrays: negative phi first, then anchor at 0, then positive phi.
+        // Backward walk gives negative phi; reverse it so phi increases from most-negative to 0.
+        for (int k = (int)qs_bwd.size() - 1; k >= 1; k--) {  // skip k=0 (anchor, duplicated)
+            qs.push_back(qs_bwd[k]);
+            phi.push_back(phi_bwd[k]);
+            ds.push_back(d_bwd[k]);
+        }
+        // Anchor
+        qs.push_back(q0);
+        phi.push_back(0.0);
+        set_config(side ? seeds[1 - side] : q0, side ? q0 : seeds[1 - side], th, s);
+        ds.push_back(wall_clearance(side));
+        // Forward
+        for (size_t k = 1; k < qs_fwd.size(); k++) {
+            qs.push_back(qs_fwd[k]);
+            phi.push_back(phi_fwd[k]);
+            ds.push_back(d_fwd[k]);
+        }
+
+        // Safe interval = bounding box [min φ, max φ] over all loop configs with d ≥ d_safe.
+        // The safe region can be offset from φ=0 (the continuation seed itself may penetrate),
+        // so "maximal safe interval containing φ=0" is the wrong anchor; the policy and safety
+        // filter operate on the full safe box, and the post-Newton hard shield enforces the
+        // final clearance guarantee.
+        phi_safe_lo = 0.0;
+        phi_safe_hi = 0.0;
+        bool any_safe = false;
+        for (size_t k = 0; k < phi.size(); k++) {
+            if (ds[k] >= d_safe) {
+                if (!any_safe) {
+                    phi_safe_lo = phi[k];
+                    phi_safe_hi = phi[k];
+                    any_safe = true;
+                } else {
+                    phi_safe_lo = std::min(phi_safe_lo, phi[k]);
+                    phi_safe_hi = std::max(phi_safe_hi, phi[k]);
+                }
+            }
+        }
+
+        if (arc_verbose)
+            std::cout << "    self_motion_arc side=" << side << " th=" << std::fixed << std::setprecision(4)
+                      << th * 180 / M_PI << "deg s=" << s * 1e3 << "mm"
+                      << " L=" << L << " n_samples=" << phi.size()
+                      << " safe=[" << phi_safe_lo << "," << phi_safe_hi << "]"
+                      << " branch=" << branch
+                      << " fwd=" << stop_code(stop_fwd) << "(" << n_steps_fwd << ")"
+                      << " bwd=" << stop_code(stop_bwd) << "(" << n_steps_bwd << ")"
+                      << " d_min=" << (ds.empty() ? -1.0 : *std::min_element(ds.begin(), ds.end()))
+                      << "\n";
+
+        return true;
+    }
+
+    // Task 0.1+0.2 (Gate 0): Build the phase-consistent Q(x,φ) manifold. φ is the TRANSPORTED
+    // phase (raw nullspace arc-length units), defined at the anchor (θ=0,s=0) and carried across
+    // the (θ,s) grid by continuation: each grid point's loop walk is IK-seeded from the previous
+    // point's φ=0 config (ik_multi_seed with the previous φ=0 config as reference), so φ keeps the
+    // same physical meaning everywhere. The two arms are mirror-symmetric at the anchor, so a single
+    // global φ grid — the anchor's safe interval [φ_lo,φ_hi] at n_phi uniform raw-φ samples — serves
+    // both arms and every grid point; each point's loop trace is resampled onto it. Cycle-consistency
+    // (neighbor continuity of the transported φ=0 config + self_motion_arc loop closure) is checked;
+    // failures set branch≠0 (excluded from the safe manifold).
+    //
+    // Wavefront (deterministic): Layer 0 = anchor; Layer 1 = ±θ rows at s=0 (sequential chain from
+    // the anchor, because each θ row seeds from its neighbor); Layer 2 = per-θ s-columns (parallel
+    // across θ, sequential within a column because each s step seeds from the previous s).
+    void build_manifold_phi(const fs::path &outdir, int n_threads) {
+        const double th_min = -0.8726646259971648, th_max = 0.8726646259971648;  // ±50°
+        const double s_min = -0.16, s_max = 0.0;                                  // m
+        const int n_theta = 101, n_s = 65, n_phi = 128;
+        const size_t N = size_t(n_theta) * n_s;
+        auto th_at = [&](int i) { return th_min + double(i) * (th_max - th_min) / (n_theta - 1); };
+        auto s_at = [&](int j) { return s_min + double(j) * (s_max - s_min) / (n_s - 1); };
+        auto idx = [&](int i_theta, int i_s) { return size_t(i_s) * n_theta + i_theta; };
+        const int a_i = n_theta / 2;  // anchor i_theta (θ=0)
+        const int a_j = n_s - 1;      // anchor i_s (s=0)
+
+        std::vector<float> qL(N * n_phi * 7, 0.f), qR(N * n_phi * 7, 0.f);
+        std::vector<float> dL(N * n_phi, -1.f), dR(N * n_phi, -1.f);
+        std::vector<float> safe(N * 4, 0.f);        // per-point [lo_L, hi_L, lo_R, hi_R]
+        std::vector<uint8_t> branch(N, 0);           // 0 = cycle-consistent
+        std::vector<double> q0L(N * 7), q0R(N * 7);  // φ=0 config per point (continuation seed)
+        std::vector<double> phi_grid(n_phi);         // global raw-φ grid (anchor safe interval)
+        double L_phi_L = 0, L_phi_R = 0;
+
+        fs::path mdir = outdir / "manifold_phi";
+        fs::create_directories(mdir);
+        auto t0 = std::chrono::steady_clock::now();
+
+        // Resample a self_motion_arc trace (phi,qs,ds, ascending φ) onto the global φ grid.
+        auto resample = [&](const std::vector<double> &phi, const std::vector<Q> &qs,
+                            const std::vector<double> &ds, float *q_out, float *d_out) {
+            size_t m = phi.size();
+            for (int k = 0; k < n_phi; k++) {
+                double tgt = phi_grid[k];
+                if (m == 0) {
+                    for (int j = 0; j < 7; j++) q_out[k * 7 + j] = 0.f;
+                    d_out[k] = -1.f;
+                } else if (tgt <= phi.front()) {
+                    for (int j = 0; j < 7; j++) q_out[k * 7 + j] = float(qs.front()(j));
+                    d_out[k] = float(ds.front());
+                } else if (tgt >= phi.back()) {
+                    for (int j = 0; j < 7; j++) q_out[k * 7 + j] = float(qs.back()(j));
+                    d_out[k] = float(ds.back());
+                } else {
+                    size_t lo = 0, hi = m - 1;
+                    while (hi - lo > 1) {
+                        size_t mid = (lo + hi) / 2;
+                        if (phi[mid] <= tgt) lo = mid; else hi = mid;
+                    }
+                    double t = (tgt - phi[lo]) / (phi[lo + 1] - phi[lo]);
+                    for (int j = 0; j < 7; j++)
+                        q_out[k * 7 + j] = float(qs[lo](j) + t * (qs[lo + 1](j) - qs[lo](j)));
+                    d_out[k] = float(ds[lo] + t * (ds[lo + 1] - ds[lo]));
+                }
+            }
+        };
+
+        // Walk one grid point for one arm, storing φ=0 config / safe interval / branch flag,
+        // and returning the loop trace (phi,qs,ds) for later resampling.
+        double glo = -1e9, ghi = 1e9;  // global φ grid (set at the anchor; clamps per-point safe boxes)
+        auto walk_point = [&](ClearanceTrajectory &run, int side, int i_theta, int i_s, const Q &seed,
+                              size_t p, std::vector<double> &phi, std::vector<Q> &qs,
+                              std::vector<double> &ds, double &L, double &lo, double &hi, int &br) {
+            double th = th_at(i_theta), s = s_at(i_s);
+            Q q0(7);
+            bool reach = run.ik_multi_seed(side, th, s, seed, atlas_seed(p, side, 0), q0);
+            if (!reach)
+                q0 = seed;
+            run.self_motion_arc(side, q0, th, s, phi, qs, ds, L, lo, hi, br);
+            lo = std::max(lo, glo);
+            hi = std::min(hi, ghi);
+            double *q0s = side == 0 ? &q0L[p * 7] : &q0R[p * 7];
+            for (int j = 0; j < 7; j++)
+                q0s[j] = q0(j);
+            safe[p * 4 + side * 2 + 0] = float(lo);
+            safe[p * 4 + side * 2 + 1] = float(hi);
+            if (!reach)
+                branch[p] = 2;
+            else if (br != 0 && branch[p] == 0)
+                branch[p] = uint8_t(br);
+        };
+
+        // ---- Layer 0: anchor (θ=0, s=0) ----
+        {
+            size_t p = idx(a_i, a_j);
+            std::vector<double> phiL, phiR, dsL, dsR;
+            std::vector<Q> qsL, qsR;
+            double LL, LR, loL, hiL, loR, hiR;
+            int brL, brR;
+            walk_point(*this, 0, a_i, a_j, seeds[0], p, phiL, qsL, dsL, LL, loL, hiL, brL);
+            walk_point(*this, 1, a_i, a_j, seeds[1], p, phiR, qsR, dsR, LR, loR, hiR, brR);
+            L_phi_L = LL;
+            L_phi_R = LR;
+            // Global φ grid = union of both arms' anchor safe intervals, EXPANDED by a margin.
+            // At gap=0.51 the safe φ drifts off φ=0 (up to ~±0.35 rad at deep θ) because the
+            // transported continuation seed itself can penetrate; the anchor's own interval
+            // alone clips the safe region at deep angles. The margin keeps the safe φ lookable.
+            const double phi_grid_margin = 0.3;
+            glo = std::min(loL, loR) - phi_grid_margin;
+            ghi = std::max(hiL, hiR) + phi_grid_margin;
+            if (ghi - glo < 1e-6) {
+                std::cerr << "manifold_phi: WARNING anchor safe interval degenerate ["
+                          << glo << "," << ghi << "]\n";
+                ghi = glo + 0.1;
+            }
+            for (int k = 0; k < n_phi; k++)
+                phi_grid[k] = (n_phi > 1) ? glo + (ghi - glo) * double(k) / (n_phi - 1) : glo;
+            resample(phiL, qsL, dsL, &qL[p * n_phi * 7], &dL[p * n_phi]);
+            resample(phiR, qsR, dsR, &qR[p * n_phi * 7], &dR[p * n_phi]);
+            std::cout << "manifold_phi anchor: L_L=" << L_phi_L << " L_R=" << L_phi_R
+                      << " safe_L=[" << loL << "," << hiL << "] safe_R=[" << loR << "," << hiR << "]"
+                      << " phi_grid=[" << phi_grid.front() << "," << phi_grid.back() << "]\n";
+        }
+
+        // ---- Layer 1: ±θ rows at s=0 (sequential chain from the anchor) ----
+        for (int dir = 0; dir < 2; dir++) {
+            int step = dir == 0 ? 1 : -1;
+            for (int i = a_i + step; i >= 0 && i < n_theta; i += step) {
+                size_t p = idx(i, a_j), pp = idx(i - step, a_j);
+                Q seedL(7), seedR(7);
+                for (int j = 0; j < 7; j++) {
+                    seedL(j) = q0L[pp * 7 + j];
+                    seedR(j) = q0R[pp * 7 + j];
+                }
+                std::vector<double> phi, ds;
+                std::vector<Q> qs;
+                double L, lo, hi;
+                int br;
+                walk_point(*this, 0, i, a_j, seedL, p, phi, qs, ds, L, lo, hi, br);
+                resample(phi, qs, ds, &qL[p * n_phi * 7], &dL[p * n_phi]);
+                walk_point(*this, 1, i, a_j, seedR, p, phi, qs, ds, L, lo, hi, br);
+                resample(phi, qs, ds, &qR[p * n_phi * 7], &dR[p * n_phi]);
+            }
+        }
+
+        // ---- Layer 2: per-θ s-columns (parallel across θ, sequential within a column) ----
+        {
+            std::atomic<size_t> next_col{0}, done{0};
+            std::mutex mu;
+            auto worker = [&]() {
+                ClearanceTrajectory run(cfg_path, d_safe, q_margin_target, trace_half, trace_step);
+                run.arc_verbose = false;
+                while (true) {
+                    size_t col = next_col.fetch_add(1, std::memory_order_relaxed);
+                    if (col >= (size_t)n_theta)
+                        break;
+                    int i_theta = int(col);
+                    for (int i_s = a_j - 1; i_s >= 0; i_s--) {
+                        size_t p = idx(i_theta, i_s), pp = idx(i_theta, i_s + 1);
+                        Q seedL(7), seedR(7);
+                        for (int j = 0; j < 7; j++) {
+                            seedL(j) = q0L[pp * 7 + j];
+                            seedR(j) = q0R[pp * 7 + j];
+                        }
+                        std::vector<double> phi, ds;
+                        std::vector<Q> qs;
+                        double L, lo, hi;
+                        int br;
+                        walk_point(run, 0, i_theta, i_s, seedL, p, phi, qs, ds, L, lo, hi, br);
+                        resample(phi, qs, ds, &qL[p * n_phi * 7], &dL[p * n_phi]);
+                        walk_point(run, 1, i_theta, i_s, seedR, p, phi, qs, ds, L, lo, hi, br);
+                        resample(phi, qs, ds, &qR[p * n_phi * 7], &dR[p * n_phi]);
+                    }
+                    size_t k = done.fetch_add(1, std::memory_order_relaxed) + 1;
+                    if (k % 20 == 0 || k == (size_t)n_theta) {
+                        std::lock_guard<std::mutex> lk(mu);
+                        double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                        std::cout << "  manifold_phi cols " << k << "/" << n_theta << " ("
+                                  << std::fixed << std::setprecision(0) << el << " s)" << std::endl;
+                    }
+                }
+            };
+            std::cout << "manifold_phi: " << N << " points, " << n_phi << " φ samples, " << n_threads
+                      << " threads" << std::endl;
+            std::vector<std::thread> pool;
+            for (int t = 0; t < n_threads; t++)
+                pool.emplace_back(worker);
+            for (auto &t : pool)
+                t.join();
+        }
+        double wall_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+        // ---- cycle-consistency proxy: transported φ=0 config must be continuous across neighbors ----
+        double cyc_max = 0;
+        int n_cyc_fail = 0;
+        for (int jj = 0; jj < n_s; jj++)
+            for (int i = 0; i < n_theta; i++) {
+                size_t p = idx(i, jj);
+                if (branch[p])
+                    continue;
+                auto dq0 = [&](size_t pa, size_t pb) {
+                    double d = 0;
+                    for (int j = 0; j < 7; j++)
+                        d = std::max(d, std::fabs(q0L[pa * 7 + j] - q0L[pb * 7 + j]));
+                    for (int j = 0; j < 7; j++)
+                        d = std::max(d, std::fabs(q0R[pa * 7 + j] - q0R[pb * 7 + j]));
+                    return d;
+                };
+                double dj = 0;
+                if (i > 0)
+                    dj = std::max(dj, dq0(p, idx(i - 1, jj)));
+                if (i < n_theta - 1)
+                    dj = std::max(dj, dq0(p, idx(i + 1, jj)));
+                if (jj > 0)
+                    dj = std::max(dj, dq0(p, idx(i, jj - 1)));
+                if (jj < n_s - 1)
+                    dj = std::max(dj, dq0(p, idx(i, jj + 1)));
+                cyc_max = std::max(cyc_max, dj);
+                if (dj > 0.5) {
+                    branch[p] = 3;
+                    n_cyc_fail++;
+                }
+            }
+
+        // ---- per-arm derivatives Q_x (7×2) and Q_φ (7×1) ----
+        std::vector<float> QxL(N * n_phi * 7 * 2, 0.f), QxR(N * n_phi * 7 * 2, 0.f);
+        std::vector<float> QphiL(N * n_phi * 7, 0.f), QphiR(N * n_phi * 7, 0.f);
+        const double dth = (th_max - th_min) / (n_theta - 1);
+        const double dss = (s_max - s_min) / (n_s - 1);
+        const double dph = (n_phi > 1) ? (phi_grid[1] - phi_grid[0]) : 1.0;
+        for (int jj = 0; jj < n_s; jj++)
+            for (int i = 0; i < n_theta; i++) {
+                size_t p = idx(i, jj);
+                int im = std::max(0, i - 1), ip = std::min(n_theta - 1, i + 1);
+                int jm = std::max(0, jj - 1), jp = std::min(n_s - 1, jj + 1);
+                double dth_eff = dth * (ip - im);
+                double dss_eff = dss * (jp - jm);
+                for (int k = 0; k < n_phi; k++) {
+                    int km = std::max(0, k - 1), kp = std::min(n_phi - 1, k + 1);
+                    double dph_eff = dph * (kp - km);
+                    for (int arm = 0; arm < 7; arm++) {
+                        size_t pL_im = idx(im, jj) * n_phi * 7 + k * 7 + arm;
+                        size_t pL_ip = idx(ip, jj) * n_phi * 7 + k * 7 + arm;
+                        size_t pL_jm = idx(i, jm) * n_phi * 7 + k * 7 + arm;
+                        size_t pL_jp = idx(i, jp) * n_phi * 7 + k * 7 + arm;
+                        size_t pL_km = p * n_phi * 7 + km * 7 + arm;
+                        size_t pL_kp = p * n_phi * 7 + kp * 7 + arm;
+                        QxL[((p * n_phi + k) * 7 + arm) * 2 + 0] = float((qL[pL_ip] - qL[pL_im]) / dth_eff);
+                        QxL[((p * n_phi + k) * 7 + arm) * 2 + 1] = float((qL[pL_jp] - qL[pL_jm]) / dss_eff);
+                        QphiL[(p * n_phi + k) * 7 + arm] = float((qL[pL_kp] - qL[pL_km]) / dph_eff);
+                        QxR[((p * n_phi + k) * 7 + arm) * 2 + 0] = float((qR[pL_ip] - qR[pL_im]) / dth_eff);
+                        QxR[((p * n_phi + k) * 7 + arm) * 2 + 1] = float((qR[pL_jp] - qR[pL_jm]) / dss_eff);
+                        QphiR[(p * n_phi + k) * 7 + arm] = float((qR[pL_kp] - qR[pL_km]) / dph_eff);
+                    }
+                }
+            }
+
+        // ---- write outputs ----
+        auto write_f32 = [&](const char *name, const std::vector<float> &v) {
+            std::ofstream f(mdir / name, std::ios::binary);
+            f.write(reinterpret_cast<const char *>(v.data()), std::streamsize(v.size() * sizeof(float)));
+        };
+        auto write_u8 = [&](const char *name, const std::vector<uint8_t> &v) {
+            std::ofstream f(mdir / name, std::ios::binary);
+            f.write(reinterpret_cast<const char *>(v.data()), std::streamsize(v.size()));
+        };
+        std::vector<float> phi_f(n_phi);
+        for (int k = 0; k < n_phi; k++)
+            phi_f[k] = float(phi_grid[k]);
+        write_f32("phi.bin", phi_f);
+        write_f32("qL.bin", qL);
+        write_f32("qR.bin", qR);
+        write_f32("dL.bin", dL);
+        write_f32("dR.bin", dR);
+        write_f32("safe.bin", safe);
+        write_u8("branch.bin", branch);
+        write_f32("QxL.bin", QxL);
+        write_f32("QxR.bin", QxR);
+        write_f32("QphiL.bin", QphiL);
+        write_f32("QphiR.bin", QphiR);
+
+        int n_branch = 0;
+        for (uint8_t b : branch)
+            if (b)
+                n_branch++;
+
+        {
+            std::ofstream f(mdir / "manifest.json");
+            f << "{\n"
+              << "  \"n_theta\": " << n_theta << ", \"n_s\": " << n_s << ", \"n_phi\": " << n_phi << ",\n"
+              << "  \"L_phi_L\": " << L_phi_L << ", \"L_phi_R\": " << L_phi_R << ",\n"
+              << "  \"anchor_theta\": 0.0, \"anchor_s\": 0.0,\n"
+              << "  \"th_min\": " << th_min << ", \"th_max\": " << th_max << ",\n"
+              << "  \"s_min\": " << s_min << ", \"s_max\": " << s_max << ",\n"
+              << "  \"phi_grid\": [" << phi_grid.front() << ", " << phi_grid.back() << "],\n"
+              << "  \"phi_encoding\": \"raw transported phase; single global grid = anchor safe interval\",\n"
+              << "  \"layout\": \"s-major; index = i_s * n_theta + i_theta; per-point per-arm n_phi φ samples, joint-major\",\n"
+              << "  \"d_safe\": " << d_safe << ", \"gap_inner\": " << wall_gap_inner() << ",\n"
+              << "  \"build\": {\"threads\": " << n_threads << ", \"n_branch_excluded\": " << n_branch
+              << ", \"cycle_consistency_max_violation_rad\": " << cyc_max << ", \"wall_seconds\": " << wall_s << "}\n"
+              << "}\n";
+        }
+
+        std::cout << std::defaultfloat << std::setprecision(4);
+        std::cout << "manifold_phi done in " << wall_s << " s (" << n_threads << " threads)\n"
+                  << "  L_L=" << L_phi_L << " L_R=" << L_phi_R << ", φ grid [" << phi_grid.front() << ", "
+                  << phi_grid.back() << "]\n"
+                  << "  branch-excluded " << n_branch << "/" << N << " (loop-open/unreachable/cycle), "
+                  << "cycle-consistency max neighbor jump " << cyc_max << " rad (fail " << n_cyc_fail << ")\n"
+                  << "  wrote " << mdir / "*.bin" << " + manifest.json\n";
+    }
+
+    // Task 0.3: Full-horizon DP teacher. Reads C² quintic trajectories (traj_XXXX.npz, each with
+    // t,x,xdot,xddot) from the Task-0 trajectory source. Per arm, collects the φ-carrying safe-arc
+    // candidates via self_motion_arc, then runs the lexicographic DP:
+    //   (1) min max_t ‖q̇/q̇max‖_∞  (2) min Σ‖q̇‖²  (3) min Σ‖Δq̇‖²  (4) max Σ R_reserve
+    // with clearance / speed / joint-limit as hard constraints. The teacher action is the forward
+    // difference of the winning φ series (BLOCKER #4). Emits outdir/dp_demo/traj_<i>.csv.
+    void record_dp(const fs::path &outdir, const fs::path &traj_dir, int n_threads) {
+        const double qmax = 1.5;  // frozen joint-speed limit (rad/s)
+        const int K = 64;         // safe-arc candidate resolution
+        // Small phase-velocity regularization in the DP smoothness objective. At the
+        // θ=±50° singularity Q_φ→0, so φ is a "gauge" direction the joint-velocity-only
+        // objective cannot see; without this the DP emits a ±30 rad/s limit cycle in φ
+        // (q and d stay safe, but the action labels become degenerate). The weight is
+        // tiny so it only breaks the tie in that flat direction, leaving normal motion
+        // (Σ‖q̇‖²) untouched. This is the numeric counterpart of the plan's "continuous
+        // unwrap" requirement for the φ̃ series.
+        const double PHI_W = 1e-3;
+
+        std::vector<fs::path> files;
+        for (auto &e : fs::directory_iterator(traj_dir))
+            if (e.path().extension() == ".npz")
+                files.push_back(e.path());
+        std::sort(files.begin(), files.end());
+        if (files.empty()) {
+            std::cerr << "record_dp: no .npz in " << traj_dir << "\n";
+            return;
+        }
+        fs::create_directories(outdir / "dp_demo");
+
+        // φ grid bounds = the manifold's global grid (anchor safe interval), read from phi.bin so
+        // the DP teacher's φ stays inside the lookable manifold range. Falls back to the frozen
+        // anchor grid if the manifold has not been built yet.
+        double grid_lo = -0.1, grid_hi = 0.15;
+        {
+            std::ifstream pf(outdir / "manifold_phi" / "phi.bin", std::ios::binary);
+            if (pf) {
+                std::vector<float> ph;
+                float v;
+                while (pf.read(reinterpret_cast<char *>(&v), sizeof(float)))
+                    ph.push_back(v);
+                if (ph.size() >= 2) {
+                    grid_lo = ph.front();
+                    grid_hi = ph.back();
+                }
+            }
+        }
+        std::cout << "record_dp: φ grid [" << grid_lo << ", " << grid_hi << "]\n";
+
+        // Per-arm self-motion loop length (S¹ circumference in phase units) for the
+        // continuous unwrap of φ̃ (Task 0.3 Step 2). Read from the manifold manifest;
+        // falls back to a frozen anchor estimate. Near the θ=±50° singularity the
+        // transported seed winds past one loop, so a raw φ forward-difference emits a
+        // spurious ±40 rad/s φ̇; unwrapping by ±L_phi yields the true phase velocity.
+        double L_phi_L = 0.19, L_phi_R = 0.19;
+        {
+            std::ifstream mf(outdir / "manifold_phi" / "manifest.json");
+            if (mf) {
+                std::string mjson((std::istreambuf_iterator<char>(mf)),
+                                  std::istreambuf_iterator<char>());
+                auto getL = [&](const char *key) -> double {
+                    std::string k = std::string("\"") + key + "\"";
+                    auto p = mjson.find(k);
+                    if (p == std::string::npos) return -1.0;
+                    auto c = mjson.find(':', p + k.size());
+                    if (c == std::string::npos) return -1.0;
+                    return std::atof(mjson.c_str() + c + 1);
+                };
+                double vL = getL("L_phi_L");
+                double vR = getL("L_phi_R");
+                if (vL > 0) L_phi_L = vL;
+                if (vR > 0) L_phi_R = vR;
+            }
+        }
+        std::cout << "record_dp: L_phi = [" << L_phi_L << ", " << L_phi_R << "]\n";
+
+        struct Cand { double q[7], phi, d, res; };
+        struct Cost3 { double qd2, dqd2, negres; };
+
+        // Phase 1: minimax normalized joint speed (scalar). min over paths of max_t ‖q̇/qmax‖_∞.
+        auto minimax_speed = [](const std::vector<std::vector<Cand>> &cands, double dt, double qmax) {
+            int N = (int)cands.size();
+            std::vector<double> prev(cands[0].size(), 0.0), cur;
+            for (int k = 1; k < N; k++) {
+                size_t na = cands[k - 1].size(), nb = cands[k].size();
+                cur.assign(nb, 1e18);
+                for (size_t b = 0; b < nb; b++) {
+                    double best = 1e18;
+                    for (size_t a = 0; a < na; a++) {
+                        double w = 0;
+                        for (int j = 0; j < 7; j++)
+                            w = std::max(w, std::fabs(cands[k][b].q[j] - cands[k - 1][a].q[j]));
+                        best = std::min(best, std::max(prev[a], w / (qmax * dt)));
+                    }
+                    cur[b] = best;
+                }
+                prev.swap(cur);
+            }
+            double best = 1e18;
+            for (double v : prev)
+                best = std::min(best, v);
+            return best;
+        };
+
+        // Phase 2: second-order lexicographic DP (Σ‖q̇‖², Σ‖Δq̇‖², −ΣR_reserve) with hard speed cap.
+        // State at step k≥1 = (a,b): a = candidate at k−1, b = candidate at k (flattened a*K+b).
+        auto lex_dp_smooth = [PHI_W](const std::vector<std::vector<Cand>> &cands, double dt, double qmax,
+                                double v_cap, std::vector<int> &idx) {
+            int N = (int)cands.size();
+            int K = (int)cands[0].size();
+            idx.assign(N, 0);
+            const double INF = 1e18;
+            auto less3 = [](const Cost3 &a, const Cost3 &b) {
+                if (a.qd2 != b.qd2) return a.qd2 < b.qd2;
+                if (a.dqd2 != b.dqd2) return a.dqd2 < b.dqd2;
+                return a.negres < b.negres;
+            };
+            if (N == 1) {
+                idx[0] = 0;
+                return;
+            }
+            std::vector<Cost3> prev((size_t)K * K, Cost3{INF, INF, INF});
+            std::vector<int> bp((size_t)(N - 1) * K * K, -1);
+            for (int a = 0; a < K; a++)
+                for (int b = 0; b < K; b++) {
+                    double qd_inf = 0, qd2 = 0;
+                    for (int j = 0; j < 7; j++) {
+                        double qdj = (cands[1][b].q[j] - cands[0][a].q[j]) / dt;
+                        qd_inf = std::max(qd_inf, std::fabs(qdj) / qmax);
+                        qd2 += qdj * qdj;
+                    }
+                    double phid = (cands[1][b].phi - cands[0][a].phi) / dt;
+                    qd2 += PHI_W * phid * phid;
+                    if (qd_inf > v_cap + 1e-9)
+                        continue;
+                    prev[(size_t)a * K + b] = Cost3{qd2, 0.0, -cands[1][b].res};
+                    bp[(size_t)0 * K * K + a * K + b] = a;
+                }
+            for (int k = 2; k < N; k++) {
+                std::vector<Cost3> cur((size_t)K * K, Cost3{INF, INF, INF});
+                for (int b = 0; b < K; b++) {
+                    for (int c = 0; c < K; c++) {
+                        double qd_bc[7], qd_bc_inf = 0, qd_bc2 = 0;
+                        for (int j = 0; j < 7; j++) {
+                            qd_bc[j] = (cands[k][c].q[j] - cands[k - 1][b].q[j]) / dt;
+                            qd_bc_inf = std::max(qd_bc_inf, std::fabs(qd_bc[j]) / qmax);
+                            qd_bc2 += qd_bc[j] * qd_bc[j];
+                        }
+                        double phid_bc = (cands[k][c].phi - cands[k - 1][b].phi) / dt;
+                        qd_bc2 += PHI_W * phid_bc * phid_bc;
+                        if (qd_bc_inf > v_cap + 1e-9)
+                            continue;
+                        Cost3 best{INF, INF, INF};
+                        int best_a = -1;
+                        for (int a = 0; a < K; a++) {
+                            const Cost3 &pc = prev[(size_t)a * K + b];
+                            if (pc.qd2 >= INF)
+                                continue;
+                            double dqd2 = 0;
+                            for (int j = 0; j < 7; j++) {
+                                double qd_ab = (cands[k - 1][b].q[j] - cands[k - 2][a].q[j]) / dt;
+                                double dd = (qd_bc[j] - qd_ab) / dt;
+                                dqd2 += dd * dd;
+                            }
+                            Cost3 nc{pc.qd2 + qd_bc2, pc.dqd2 + dqd2, pc.negres - cands[k][c].res};
+                            if (less3(nc, best)) {
+                                best = nc;
+                                best_a = a;
+                            }
+                        }
+                        cur[(size_t)b * K + c] = best;
+                        bp[(size_t)(k - 1) * K * K + b * K + c] = best_a;
+                    }
+                }
+                prev.swap(cur);
+            }
+            Cost3 bestc{INF, INF, INF};
+            int best_a = -1, best_b = -1;
+            for (int a = 0; a < K; a++)
+                for (int b = 0; b < K; b++) {
+                    const Cost3 &c = prev[(size_t)a * K + b];
+                    if (less3(c, bestc)) {
+                        bestc = c;
+                        best_a = a;
+                        best_b = b;
+                    }
+                }
+            if (best_b < 0) {
+                best_a = 0;
+                best_b = 0;
+            }
+            idx[N - 1] = best_b;
+            idx[N - 2] = best_a;
+            int pa = best_a, pb = best_b;
+            for (int k = N - 1; k >= 2; k--) {
+                int a_prev = bp[(size_t)(k - 1) * K * K + pa * K + pb];
+                if (a_prev < 0)
+                    a_prev = pa;
+                idx[k - 2] = a_prev;
+                pb = pa;
+                pa = a_prev;
+            }
+        };
+
+        std::atomic<size_t> next{0};
+        std::atomic<int> n_done{0}, n_infeasible{0}, n_speed_fail{0};
+        std::mutex mu;
+        auto t0 = std::chrono::steady_clock::now();
+
+        auto worker = [&]() {
+            ClearanceTrajectory run(cfg_path, d_safe, q_margin_target, trace_half, trace_step);
+            run.arc_verbose = false;
+            while (true) {
+                size_t fi = next.fetch_add(1, std::memory_order_relaxed);
+                if (fi >= files.size())
+                    break;
+                const fs::path &fp = files[fi];
+
+                std::map<std::string, std::vector<uint8_t>> entries;
+                if (!npz_load(fp, entries)) {
+                    std::lock_guard<std::mutex> lk(mu);
+                    std::cerr << "record_dp: bad zip " << fp << "\n";
+                    continue;
+                }
+                NpyArr t, x, xd;
+                if (!npy_load(entries["t.npy"], t) || !npy_load(entries["x.npy"], x) ||
+                    !npy_load(entries["xdot.npy"], xd)) {
+                    std::lock_guard<std::mutex> lk(mu);
+                    std::cerr << "record_dp: bad npz " << fp << "\n";
+                    continue;
+                }
+                int N = (int)x.shape[0];
+                if (x.shape.size() != 2 || x.shape[1] != 2 || t.total != (size_t)N ||
+                    xd.total != (size_t)N * 2) {
+                    std::lock_guard<std::mutex> lk(mu);
+                    std::cerr << "record_dp: bad shape " << fp << "\n";
+                    continue;
+                }
+                double dt = (N > 1) ? (t.v[N - 1] - t.v[0]) / (N - 1) : 0.01;
+
+                // ---- per-arm candidate collection (φ-carrying safe arc) ----
+                std::vector<std::vector<Cand>> cands[2];
+                std::vector<double> lo[2], hi[2];
+                for (int side = 0; side < 2; side++) {
+                    cands[side].resize(N);
+                    lo[side].assign(N, 0.0);
+                    hi[side].assign(N, 0.0);
+                }
+                double mean_L[2] = {0.0, 0.0};
+                bool feasible = true;
+                int fail_k = -1, fail_side = -1;
+                double fail_th = 0, fail_s = 0, fail_l = 0, fail_h = 0, fail_dmin = 1e9;
+                std::string fail_reason;
+                // Continuation seeds along the trajectory: each point's φ=0 config is IK-seeded
+                // from the previous point's φ=0 config (matching build_manifold_phi's transport),
+                // so the safe branch stays continuous and the safe φ stays near φ=0.
+                Q seed_cont[2] = {run.seeds[0], run.seeds[1]};
+                for (int k = 0; k < N && feasible; k++) {
+                    double th = x.v[k * 2], s = x.v[k * 2 + 1];
+                    for (int side = 0; side < 2 && feasible; side++) {
+                        Q q0(7);
+                        // Primary seed = continuation (φ=0 transport). If its self-motion branch has
+                        // no safe arc (branch bifurcation near the θ=±50° singularity — plan
+                        // "Remaining risk"), re-seed from the static baseline. The two branches meet
+                        // at the singularity, so the re-seed is a small joint jump, not a full reset.
+                        bool got_safe = false;
+                        Q ref_cands[6] = {Q(7), Q(7), Q(7), Q(7), Q(7), Q(7)};
+                        ref_cands[0] = seed_cont[side];
+                        ref_cands[1] = run.seeds[side];
+                        for (int j = 0; j < 7; j++) {
+                            ref_cands[2](j) = 0.5 * (run.lower[side](j) + run.upper[side](j));       // mid
+                            ref_cands[3](j) = run.lower[side](j) + 0.25 * (run.upper[side](j) - run.lower[side](j));
+                            ref_cands[4](j) = run.lower[side](j) + 0.75 * (run.upper[side](j) - run.lower[side](j));
+                            ref_cands[5](j) = 2.0 * ref_cands[2](j) - run.seeds[side](j);           // mirror
+                        }
+                        for (int rc = 0; rc < 6 && !got_safe; rc++) {
+                            if (!run.ik_multi_seed(side, th, s, ref_cands[rc], atlas_seed(0, side, 0), q0))
+                                continue;
+                            std::vector<double> phi, ds;
+                            std::vector<Q> qs;
+                            double L, l, h;
+                            int branch;
+                            run.self_motion_arc(side, q0, th, s, phi, qs, ds, L, l, h, branch);
+                            // Clamp the safe box to the manifold φ grid so the teacher's φ stays lookable.
+                            l = std::max(l, grid_lo);
+                            h = std::min(h, grid_hi);
+                            std::vector<size_t> safe_idx;
+                            for (size_t i = 0; i < qs.size(); i++)
+                                if (ds[i] >= d_safe && phi[i] >= l - 1e-9 && phi[i] <= h + 1e-9)
+                                    safe_idx.push_back(i);
+                            if (safe_idx.empty())
+                                continue;  // try the next seed
+                            seed_cont[side] = q0;  // transport φ=0 forward (from whichever branch won)
+                            lo[side][k] = l;
+                            hi[side][k] = h;
+                            mean_L[side] += L;
+                            cands[side][k].resize(K);
+                            int M = (int)safe_idx.size();
+                            for (int i = 0; i < K; i++) {
+                                int ii = (M == 1) ? 0 : std::min((int)std::lround(double(i) * (M - 1) / (K - 1)), M - 1);
+                                const Q &q = qs[safe_idx[ii]];
+                                for (int j = 0; j < 7; j++)
+                                    cands[side][k][i].q[j] = q(j);
+                                double ph = phi[safe_idx[ii]];
+                                cands[side][k][i].phi = ph;
+                                cands[side][k][i].d = ds[safe_idx[ii]];
+                                cands[side][k][i].res = std::min(ph - l, h - ph);
+                            }
+                            got_safe = true;
+                        }
+                        if (!got_safe) {
+                            feasible = false; fail_k = k; fail_side = side;
+                            fail_th = th; fail_s = s;
+                            fail_reason = "no safe arc (even after baseline re-seed)";
+                            break;
+                        }
+                    }
+                }
+                if (!feasible) {
+                    n_infeasible.fetch_add(1, std::memory_order_relaxed);
+                    int nd = n_done.fetch_add(1, std::memory_order_relaxed) + 1;
+                    std::lock_guard<std::mutex> lk(mu);
+                    std::cout << "  record_dp [" << nd << "/" << files.size() << "] " << fp.filename()
+                              << ": INFEASIBLE (" << fail_reason << " side=" << fail_side << " k=" << fail_k
+                              << " th=" << fail_th * 180 / M_PI << "deg s=" << fail_s * 1e3
+                              << "mm safe=[" << fail_l << "," << fail_h << "] dmin=" << fail_dmin * 1e3 << "mm)\n";
+                    continue;
+                }
+                mean_L[0] /= N;
+                mean_L[1] /= N;
+
+                // ---- Phase 1 + 2 DP ----
+                double bn_L = minimax_speed(cands[0], dt, qmax);
+                double bn_R = minimax_speed(cands[1], dt, qmax);
+                double v_cap = std::max(bn_L, bn_R);
+                if (v_cap > 1.0 + 1e-6) {
+                    n_speed_fail.fetch_add(1, std::memory_order_relaxed);
+                    int nd = n_done.fetch_add(1, std::memory_order_relaxed) + 1;
+                    std::lock_guard<std::mutex> lk(mu);
+                    std::cout << "  record_dp [" << nd << "/" << files.size() << "] " << fp.filename()
+                              << ": SPEED-INFEASIBLE (minimax " << v_cap * qmax << " rad/s > " << qmax << ")\n";
+                    continue;
+                }
+                std::vector<int> idxL, idxR;
+                lex_dp_smooth(cands[0], dt, qmax, v_cap, idxL);
+                lex_dp_smooth(cands[1], dt, qmax, v_cap, idxR);
+
+                // ---- continuous unwrap of φ̃ (plan Task 0.3 Step 2) ----
+                // The candidate arc-length can wind past one S¹ loop near the θ=±50°
+                // singularity (the transported seed wraps), so a raw forward-difference
+                // emits a spurious ±40 rad/s φ̇. Unwrap each arm's φ̃ by integer multiples
+                // of its loop length L_phi so φ̇ is the true continuous phase velocity.
+                double Lphi[2] = {L_phi_L, L_phi_R};
+                std::vector<double> phiu[2];
+                for (int side = 0; side < 2; side++) {
+                    const std::vector<int> &idxs = side == 0 ? idxL : idxR;
+                    phiu[side].resize(N);
+                    phiu[side][0] = cands[side][0][idxs[0]].phi;
+                    double half = 0.5 * Lphi[side];
+                    for (int k = 1; k < N; k++) {
+                        double p = cands[side][k][idxs[k]].phi;
+                        double prev = phiu[side][k - 1];
+                        while (p - prev > half) p -= Lphi[side];
+                        while (p - prev < -half) p += Lphi[side];
+                        phiu[side][k] = p;
+                    }
+                }
+
+                // ---- emit CSV ----
+                fs::path csv_path = outdir / "dp_demo" / (fp.stem().string() + ".csv");
+                std::ofstream f(csv_path);
+                f.precision(10);
+                f << "# L_phi_L=" << mean_L[0] << ",L_phi_R=" << mean_L[1] << "\n";
+                f << "t,theta,s,theta_dot,s_dot,sin_phi_L,cos_phi_L,sin_phi_R,cos_phi_R,phi_dot_L,phi_dot_R,"
+                     "qL1,qL2,qL3,qL4,qL5,qL6,qL7,qR1,qR2,qR3,qR4,qR5,qR6,qR7,"
+                     "qdotL1,qdotL2,qdotL3,qdotL4,qdotL5,qdotL6,qdotL7,qdotR1,qdotR2,qdotR3,qdotR4,qdotR5,qdotR6,qdotR7,"
+                     "dL,dR,d_min,m_phi_minus_L,m_phi_minus_R,m_phi_plus_L,m_phi_plus_R,m_q\n";
+
+                double dmin_obs = 1e9, max_qd = 0;
+                for (int k = 0; k < N; k++) {
+                    const Cand &cL = cands[0][k][idxL[k]];
+                    const Cand &cR = cands[1][k][idxR[k]];
+                    double phid_L = 0, phid_R = 0;
+                    double qdL[7] = {0}, qdR[7] = {0};
+                    if (k < N - 1) {
+                        phid_L = (phiu[0][k + 1] - phiu[0][k]) / dt;
+                        phid_R = (phiu[1][k + 1] - phiu[1][k]) / dt;
+                        for (int j = 0; j < 7; j++)
+                            qdL[j] = (cands[0][k + 1][idxL[k + 1]].q[j] - cL.q[j]) / dt;
+                        for (int j = 0; j < 7; j++)
+                            qdR[j] = (cands[1][k + 1][idxR[k + 1]].q[j] - cR.q[j]) / dt;
+                    }
+                    Q ql(7), qr(7);
+                    for (int j = 0; j < 7; j++) {
+                        ql(j) = cL.q[j];
+                        qr(j) = cR.q[j];
+                        max_qd = std::max(max_qd, std::fabs(qdL[j]));
+                        max_qd = std::max(max_qd, std::fabs(qdR[j]));
+                    }
+                    run.set_config(ql, qr, x.v[k * 2], x.v[k * 2 + 1]);
+                    double dL = run.wall_clearance(0), dR = run.wall_clearance(1);
+                    double dmin = std::min(dL, dR);
+                    dmin_obs = std::min(dmin_obs, dmin);
+                    double m_q = std::min(run.arm_margin(0, ql), run.arm_margin(1, qr));
+
+                    f << t.v[k] << ',' << x.v[k * 2] << ',' << x.v[k * 2 + 1] << ',' << xd.v[k * 2] << ','
+                      << xd.v[k * 2 + 1] << ',';
+                    f << std::sin(phiu[0][k]) << ',' << std::cos(phiu[0][k]) << ','
+                      << std::sin(phiu[1][k]) << ',' << std::cos(phiu[1][k]) << ','
+                      << phid_L << ',' << phid_R << ',';
+                    for (int j = 0; j < 7; j++)
+                        f << cL.q[j] << ',';
+                    for (int j = 0; j < 7; j++)
+                        f << cR.q[j] << ',';
+                    for (int j = 0; j < 7; j++)
+                        f << qdL[j] << ',';
+                    for (int j = 0; j < 6; j++)
+                        f << qdR[j] << ',';
+                    f << qdR[6] << ',' << dL << ',' << dR << ',' << dmin << ',';
+                    f << (cL.phi - lo[0][k]) << ',' << (cR.phi - lo[1][k]) << ','
+                      << (hi[0][k] - cL.phi) << ',' << (hi[1][k] - cR.phi) << ',' << m_q << '\n';
+                }
+                f.close();
+
+                int nd = n_done.fetch_add(1, std::memory_order_relaxed) + 1;
+                std::lock_guard<std::mutex> lk(mu);
+                std::cout << "  record_dp [" << nd << "/" << files.size() << "] " << fp.filename()
+                          << ": N=" << N << " d_min=" << dmin_obs * 1e3 << "mm max|qdot|=" << max_qd
+                          << " rad/s\n";
+            }
+        };
+
+        std::cout << "record_dp: " << files.size() << " trajectories, K=" << K << ", qmax=" << qmax
+                  << " rad/s, " << n_threads << " threads\n";
+        std::vector<std::thread> pool;
+        for (int t = 0; t < n_threads; t++)
+            pool.emplace_back(worker);
+        for (auto &t : pool)
+            t.join();
+        double wall = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        std::cout << "record_dp done: " << (files.size() - n_infeasible.load() - n_speed_fail.load()) << "/"
+                  << files.size() << " trajectories emitted in " << wall << " s ("
+                  << n_infeasible.load() << " clearance-infeasible, " << n_speed_fail.load()
+                  << " speed-infeasible) -> " << outdir / "dp_demo" << "\n";
+    }
+
     // CLOSEST to q_home (least reshaping), falling back to max-d if none reaches d_safe.
     bool safe_start(int side, const Q &q_home, const Q &other_home, double theta, double s, Q &q_out, double &d_out) {
         Q best = q_home;
@@ -5769,6 +6870,21 @@ int main(int argc, char **argv) {
             // T5 offline: margin-respecting safe-manifold section (max-margin among d>=d_safe).
             // argv[8] doubles as the thread count here.
             run.build_manifold_safe(outdir, argc > 8 ? std::atoi(argv[8]) : 16);
+            return 0;
+        }
+        if (only.count("manifold_phi")) {
+            // Gate 0 (Task 0.2): phase-consistent Q(x,φ) manifold. argv[8] = thread count.
+            run.build_manifold_phi(outdir, argc > 8 ? std::atoi(argv[8]) : 16);
+            return 0;
+        }
+        if (only.count("record_dp")) {
+            // Gate 0 (Task 0.3): full-horizon DP teacher. argv[8] = trajectory_source/trajs/<split>/ dir.
+            int nth = std::min(16, (int)std::thread::hardware_concurrency());
+            if (argc <= 8) {
+                std::cerr << "record_dp: usage TASKS=record_dp with argv[8] = path to trajectory .npz dir\n";
+                return 2;
+            }
+            run.record_dp(outdir, fs::path(argv[8]), std::max(1, nth));
             return 0;
         }
         if (only.count("check_manifold")) {
