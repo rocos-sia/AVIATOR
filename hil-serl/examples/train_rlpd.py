@@ -11,7 +11,7 @@ from flax.training import checkpoints
 import os
 import copy
 import pickle as pkl
-from gymnasium.wrappers.record_episode_statistics import RecordEpisodeStatistics
+from gymnasium.wrappers import RecordEpisodeStatistics
 from natsort import natsorted
 
 from serl_launcher.agents.continuous.sac import SACAgent
@@ -33,6 +33,10 @@ from serl_launcher.utils.launcher import (
 from serl_launcher.data.data_store import MemoryEfficientReplayBufferDataStore
 
 from experiments.mappings import CONFIG_MAPPING
+from experiments.aviator_manifold.vectorized_actor import (
+    VectorizedManifoldEnv,
+    vectorized_actor,
+)
 
 FLAGS = flags.FLAGS
 
@@ -43,6 +47,7 @@ flags.DEFINE_boolean("actor", False, "Whether this is an actor.")
 flags.DEFINE_string("ip", "localhost", "IP address of the learner.")
 flags.DEFINE_multi_string("demo_path", None, "Path to the demo data.")
 flags.DEFINE_string("checkpoint_path", None, "Path to save checkpoints.")
+flags.DEFINE_string("bc_checkpoint_path", None, "Path to the BC checkpoint to warm-start the SAC actor.")
 flags.DEFINE_integer("eval_checkpoint_step", 0, "Step to evaluate the checkpoint.")
 flags.DEFINE_integer("eval_n_trajs", 0, "Number of trajectories to evaluate.")
 flags.DEFINE_boolean("save_video", False, "Save video.")
@@ -285,19 +290,18 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
     server.publish_network(agent.state.params)
     print_green("sent initial network to actor")
 
-    # 50/50 sampling from RLPD, half from demo and half from online experience
+    # 50/50 sampling from RLPD, half from demo and half from online experience.
+    # pack_obs_and_next_obs is a memory-efficient-buffer (pixel) option; the
+    # plain ReplayBuffer rejects it, so only pass it for image experiments.
+    _sample_args = {"batch_size": config.batch_size // 2}
+    if config.image_keys:
+        _sample_args["pack_obs_and_next_obs"] = True
     replay_iterator = replay_buffer.get_iterator(
-        sample_args={
-            "batch_size": config.batch_size // 2,
-            "pack_obs_and_next_obs": True,
-        },
+        sample_args=_sample_args,
         device=sharding.replicate(),
     )
     demo_iterator = demo_buffer.get_iterator(
-        sample_args={
-            "batch_size": config.batch_size // 2,
-            "pack_obs_and_next_obs": True,
-        },
+        sample_args=_sample_args,
         device=sharding.replicate(),
     )
 
@@ -377,7 +381,16 @@ def main(_):
 
     rng, sampling_rng = jax.random.split(rng)
     
-    if config.setup_mode == 'single-arm-fixed-gripper' or config.setup_mode == 'dual-arm-fixed-gripper':   
+    if hasattr(config, "make_sac_agent"):
+        # proprio-only SAC factory (config.py): MLP(256,256,256) actor/critic,
+        # no ResNet vision encoder.  Actor structure matches BC for warmstart.
+        agent: SACAgent = config.make_sac_agent(
+            seed=FLAGS.seed,
+            sample_obs=env.observation_space.sample(),
+            sample_action=env.action_space.sample(),
+        )
+        include_grasp_penalty = False
+    elif config.setup_mode == 'single-arm-fixed-gripper' or config.setup_mode == 'dual-arm-fixed-gripper':
         agent: SACAgent = make_sac_pixel_agent(
             seed=FLAGS.seed,
             sample_obs=env.observation_space.sample(),
@@ -410,6 +423,24 @@ def main(_):
     else:
         raise NotImplementedError(f"Unknown setup mode: {config.setup_mode}")
 
+    # warm-start the SAC actor from the BC-pretrained policy (Task 2.2 -> 2.3).
+    # Only on a fresh start (no RLPD checkpoint yet); a resume restores the full
+    # SAC state (actor + critic + temperature) instead.
+    if (FLAGS.bc_checkpoint_path is not None
+            and not (FLAGS.checkpoint_path and os.path.exists(FLAGS.checkpoint_path))):
+        bc_agent = config.make_bc_agent(
+            seed=FLAGS.seed,
+            sample_obs=env.observation_space.sample(),
+            sample_action=env.action_space.sample(),
+        )
+        bc_ckpt = checkpoints.restore_checkpoint(
+            os.path.abspath(FLAGS.bc_checkpoint_path), bc_agent.state
+        )
+        params = dict(agent.state.params)
+        params["modules_actor"] = bc_ckpt.params["modules_actor"]
+        agent = agent.replace(state=agent.state.replace(params=params))
+        print_green("seeded SAC actor from BC checkpoint")
+
     # replicate agent across devices
     # need the jnp.array to avoid a bug where device_put doesn't recognize primitives
     agent = jax.device_put(
@@ -417,7 +448,8 @@ def main(_):
     )
 
     if FLAGS.checkpoint_path is not None and os.path.exists(FLAGS.checkpoint_path):
-        input("Checkpoint path already exists. Press Enter to resume training.")
+        # auto-resume (no prompt) so the overnight run restarts unattended
+        print_green("Checkpoint path already exists; resuming training.")
         ckpt = checkpoints.restore_checkpoint(
             os.path.abspath(FLAGS.checkpoint_path),
             agent.state,
@@ -428,14 +460,21 @@ def main(_):
         )[11:]
         print_green(f"Loaded previous checkpoint at step {ckpt_number}.")
 
-    def create_replay_buffer_and_wandb_logger():
-        replay_buffer = MemoryEfficientReplayBufferDataStore(
+    def make_buffer(capacity):
+        if hasattr(config, "make_replay_buffer"):
+            return config.make_replay_buffer(
+                env.observation_space, env.action_space, capacity
+            )
+        return MemoryEfficientReplayBufferDataStore(
             env.observation_space,
             env.action_space,
-            capacity=config.replay_buffer_capacity,
+            capacity=capacity,
             image_keys=config.image_keys,
             include_grasp_penalty=include_grasp_penalty,
         )
+
+    def create_replay_buffer_and_wandb_logger():
+        replay_buffer = make_buffer(config.replay_buffer_capacity)
         # set up wandb and logging
         wandb_logger = make_wandb_logger(
             project="hil-serl",
@@ -447,13 +486,7 @@ def main(_):
     if FLAGS.learner:
         sampling_rng = jax.device_put(sampling_rng, device=sharding.replicate())
         replay_buffer, wandb_logger = create_replay_buffer_and_wandb_logger()
-        demo_buffer = MemoryEfficientReplayBufferDataStore(
-            env.observation_space,
-            env.action_space,
-            capacity=config.replay_buffer_capacity,
-            image_keys=config.image_keys,
-            include_grasp_penalty=include_grasp_penalty,
-        )
+        demo_buffer = make_buffer(config.replay_buffer_capacity)
 
         assert FLAGS.demo_path is not None
         for path in FLAGS.demo_path:
@@ -509,13 +542,23 @@ def main(_):
 
         # actor loop
         print_green("starting actor loop")
-        actor(
-            agent,
-            data_store,
-            intvn_data_store,
-            env,
-            sampling_rng,
-        )
+        if hasattr(config, "make_sac_agent"):
+            # Task 2.3: 8-way vectorized kinematic env, batched policy forward
+            vec_env = VectorizedManifoldEnv(
+                config, n_envs=config.num_actor_envs, seed=FLAGS.seed
+            )
+            vectorized_actor(
+                agent, data_store, intvn_data_store, vec_env,
+                sampling_rng, config, FLAGS,
+            )
+        else:
+            actor(
+                agent,
+                data_store,
+                intvn_data_store,
+                env,
+                sampling_rng,
+            )
 
     else:
         raise NotImplementedError("Must be either a learner or an actor")
