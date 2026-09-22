@@ -1,0 +1,10 @@
+[WARN] [1790046101.040544822] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046101.302672072] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046101.500756031] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046101.696258384] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046101.878601460] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046102.060189959] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046102.232537557] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046102.367343276] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+RESUME outputs/t5_pose_slack_200hz_20260922/phase200/pose_200hz_3deg_side1.npz
+LP_FAILED 1 3.0000000000000004 0 (HiGHS Status 0: Not Set)

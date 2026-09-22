@@ -1,0 +1,14 @@
+[WARN] [1790045918.877891588] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045919.059883607] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045919.181900189] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045919.284432645] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045919.382002201] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045919.483865755] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045919.583386432] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045919.682887545] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+RESUME outputs/t5_pose_slack_200hz_20260922/phase200/pose_200hz_1deg_side0.npz
+ITER 0 1.0 {'it': 0, 'vmax': 5.127208966718233, 'pos': 7.247644090315289e-14, 'rot': 0.015443822179652329, 'clear': 0.004999780549468143, 'lp_v': 5.064077922728999, 'step': 0.030000084756530404, 'scale': 0.25, 'trust': 0.03, 'seconds': 32.23908585400204}
+LP_FAILED 0 1.0 1 (HiGHS Status 0: Not Set)
+ITER 0 2.0 {'it': 0, 'vmax': 5.04338393610364, 'pos': 4.273502461757382e-15, 'rot': 0.029351032192126668, 'clear': 0.0049944713970980145, 'lp_v': 4.95918879262621, 'step': 0.030000091061138115, 'scale': 0.5, 'trust': 0.03, 'seconds': 27.972691782997572}
+LP_FAILED 0 2.0 1 (HiGHS Status 0: Not Set)
+LP_FAILED 0 3.0000000000000004 0 (HiGHS Status 0: Not Set)

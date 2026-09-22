@@ -1,0 +1,11 @@
+[WARN] [1790046100.872444587] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046101.139885816] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046101.328637795] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046101.517325033] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046101.711844898] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046101.895193230] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046102.088186446] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790046102.255530959] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+RESUME outputs/t5_pose_slack_200hz_20260922/phase200/pose_200hz_2deg_side1.npz
+ITER 1 2.0 {'it': 0, 'vmax': 6.290236032657903, 'pos': 8.341679092089178e-14, 'rot': 0.028964571824385783, 'clear': 0.004998084742791564, 'lp_v': 6.184930796926732, 'step': 0.030000000000000117, 'scale': 0.25, 'trust': 0.03, 'seconds': 27.85138844398898}
+LP_FAILED 1 2.0 1 (HiGHS Status 0: Not Set)

@@ -1,0 +1,66 @@
+{
+  "scope": "Offline kinematic experiment; local sequential LP, no global optimality or infeasibility certificate. Clearance uses the original decimated mesh vertex-to-wall metric. Collision detector ignores penetration smaller than 1 mm. Sampled pass does not imply interpolant or dynamic pass.",
+  "environment": {
+    "python": "3.10.20",
+    "numpy": "1.26.4",
+    "scipy": "1.15.3"
+  },
+  "results": [
+    {
+      "hz": 200.0,
+      "n": 39997,
+      "duration_s": 199.98000000000002,
+      "alpha_deg": 0.0,
+      "vmax_rad_s": 6.533386434605704,
+      "left_vmax_rad_s": 5.253699848762539,
+      "right_vmax_rad_s": 6.533386434605704,
+      "over_speed_intervals": 20378,
+      "peak_time_s": 8.76,
+      "peak_joint": "R5",
+      "position_max_mm": 4.9145330214480825e-05,
+      "orientation_max_deg": 5.3040640837391294e-06,
+      "clearance_min_mm": 5.000058082014296,
+      "joint_margin_min_rad": 0.0,
+      "collision_cycles_existing_detector": 0,
+      "qddot_max_rad_s2": 1493.3730691922342,
+      "position_ok_0p1um": true,
+      "orientation_ok": true,
+      "clearance_ok": true,
+      "joint_limits_ok": true,
+      "speed_ok": false,
+      "sampled_kinematic_pass": false,
+      "linear_interpolation_audit": {
+        "hz": 1000.0,
+        "n": 199981,
+        "duration_s": 199.98000000000002,
+        "alpha_deg": 0.0,
+        "vmax_rad_s": 6.533386434614985,
+        "left_vmax_rad_s": 5.253699848792426,
+        "right_vmax_rad_s": 6.533386434614985,
+        "over_speed_intervals": 101890,
+        "peak_time_s": 8.758000000000001,
+        "peak_joint": "R5",
+        "position_max_mm": 0.7318987635939893,
+        "orientation_max_deg": 0.3260116708422605,
+        "clearance_min_mm": 4.992954657267398,
+        "joint_margin_min_rad": 0.0,
+        "collision_cycles_existing_detector": 0,
+        "qddot_max_rad_s2": 7466.865346003604,
+        "position_ok_0p1um": false,
+        "orientation_ok": false,
+        "clearance_ok": false,
+        "joint_limits_ok": true,
+        "speed_ok": false,
+        "sampled_kinematic_pass": false
+      }
+    }
+  ],
+  "source_hashes": {
+    "AviatorRobot/tools/clearance_trajectory.cpp": "0ba4379ae947a37818801daf777adb625cf4c4b1f619e7cb7474ee2a0808a44d",
+    "AviatorRobot/tools/pose_slack_bridge.cpp": "db763234c6b9ad7ca0427a31e204a058eeb6b81bd95301cd0872340625a35efe",
+    "AviatorRobot/scripts/test_pose_slack_200hz.py": "f927e7e5c9d0a4a396a67338a332d9e16a6e27f7e6c177ffd39a659ccf0709be",
+    "AviatorRobot/scripts/report_pose_slack_200hz.py": "67fb3b6222808ffeab6ebb28d1dd5326e9b220e844374223cb43837fd71c14bb",
+    "AviatorRobot/config/aviator.yaml": "76f82e29749eecf986c6866a9c7fe386489f1e27823585e36f2ce9c90fdb93d1",
+    "reference/rocos-mujoco/model/aviator.xml": "eed48df4d94cd30aef8530bac7be11f2224ca6e1196e8b4f6773385a9bf5c034"
+  }
+}

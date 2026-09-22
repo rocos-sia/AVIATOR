@@ -1,0 +1,116 @@
+[WARN] [1790045169.358709550] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+gap_inner=0.51 m, d_safe=0.005, q_margin=0.03, trace_half=10, qddot_max=10
+existence test: 39997 cycles, K_full=256, qdot=1.5 rad/s, 16 threads
+[WARN] [1790045170.223229781] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045170.524249026] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045170.700561363] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045170.797811831] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045170.872620335] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.034471241] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.042146546] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.150331732] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.164052394] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.254229238] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.367501649] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.379643677] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.404215373] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.525285682] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.553030990] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[WARN] [1790045171.571009447] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+  exists 500/39997  (2 s)
+  exists 1000/39997  (3 s)
+  exists 1500/39997  (3 s)
+  exists 2000/39997  (4 s)
+  exists 2500/39997  (4 s)
+  exists 3000/39997  (5 s)
+  exists 3500/39997  (5 s)
+  exists 4000/39997  (5 s)
+  exists 4500/39997  (6 s)
+  exists 5000/39997  (7 s)
+  exists 5500/39997  (7 s)
+  exists 6000/39997  (8 s)
+  exists 6500/39997  (8 s)
+  exists 7000/39997  (8 s)
+  exists 7500/39997  (9 s)
+  exists 8000/39997  (9 s)
+  exists 8500/39997  (10 s)
+  exists 9000/39997  (10 s)
+  exists 9500/39997  (11 s)
+  exists 10000/39997  (11 s)
+  exists 10500/39997  (11 s)
+  exists 11000/39997  (12 s)
+  exists 11500/39997  (12 s)
+  exists 12000/39997  (13 s)
+  exists 12500/39997  (13 s)
+  exists 13000/39997  (14 s)
+  exists 13500/39997  (14 s)
+  exists 14000/39997  (15 s)
+  exists 14500/39997  (15 s)
+  exists 15000/39997  (16 s)
+  exists 15500/39997  (16 s)
+  exists 16000/39997  (16 s)
+  exists 16500/39997  (17 s)
+  exists 17000/39997  (18 s)
+  exists 17500/39997  (18 s)
+  exists 18000/39997  (19 s)
+  exists 18500/39997  (19 s)
+  exists 19000/39997  (20 s)
+  exists 19500/39997  (20 s)
+  exists 20000/39997  (21 s)
+  exists 20500/39997  (21 s)
+  exists 21000/39997  (22 s)
+  exists 21500/39997  (22 s)
+  exists 22000/39997  (23 s)
+  exists 22500/39997  (23 s)
+  exists 23000/39997  (23 s)
+  exists 23500/39997  (24 s)
+  exists 24000/39997  (24 s)
+  exists 24500/39997  (25 s)
+  exists 25000/39997  (26 s)
+  exists 25500/39997  (26 s)
+  exists 26000/39997  (27 s)
+  exists 26500/39997  (27 s)
+  exists 27000/39997  (27 s)
+  exists 27500/39997  (28 s)
+  exists 28000/39997  (28 s)
+  exists 28500/39997  (29 s)
+  exists 29000/39997  (29 s)
+  exists 29500/39997  (30 s)
+  exists 30000/39997  (30 s)
+  exists 30500/39997  (31 s)
+  exists 31000/39997  (31 s)
+  exists 31500/39997  (32 s)
+  exists 32000/39997  (32 s)
+  exists 32500/39997  (33 s)
+  exists 33000/39997  (33 s)
+  exists 33500/39997  (34 s)
+  exists 34000/39997  (34 s)
+  exists 34500/39997  (34 s)
+  exists 35000/39997  (35 s)
+  exists 35500/39997  (35 s)
+  exists 36000/39997  (36 s)
+  exists 36500/39997  (36 s)
+  exists 37000/39997  (37 s)
+  exists 37500/39997  (37 s)
+  exists 38000/39997  (38 s)
+  exists 38500/39997  (38 s)
+  exists 39000/39997  (39 s)
+  exists 39500/39997  (40 s)
+  exists 39997/39997  (40 s)
+
+=== K-convergence sweep (candidate resolution) ===
+  K= 32  v_min^DP = 617.7751 rad/s   (L=617.7751 R=11.9152)   d_min=5.0005 mm
+  K= 64  v_min^DP = 617.7751 rad/s   (L=617.7751 R=11.9152)   d_min=5.0005 mm
+  K=128  v_min^DP = 617.7751 rad/s   (L=617.7751 R=11.9152)   d_min=5.0005 mm
+  K=256  v_min^DP = 617.7751 rad/s   (L=617.7751 R=11.9152)   d_min=5.0005 mm
+existence_test done in 40.0369 s (16 threads)
+  min achievable max|qdot| (K=64, best branch sequence) = 617.7751 rad/s   [limit 1.5 → INFEASIBLE]
+  per-arm max|qdot|: L=617.7751  R=11.9152 rad/s
+  safe-set separation lower bound: L=616.7604  R=7.7515 rad/s (max at cycle 26886)
+  d_min along path = 5.0005 mm  (d_safe 5 mm → clearance-safe on ALL cycles, 0 clearance-infeasible)
+  cycles w/o margin-safe (d>=d_safe AND margin>=0.03) config = 2226/39997   (soft preference, not safety)
+  max grasp-closure error (spot, every 250th) = 0.0006 mm @ t=151.2500 s
+  contrast: current T5 single-section max|qdot| on this stream = 24.7 rad/s
+  velfeas task-velocity lower bound = 0.14–0.30 rad/s (task itself is cheap; the 7.84 is
+     safe-arc self-motion reconfiguration at the θ=±50°,s=−160mm corners)
+wrote "/home/rocos/sia/AVIATOR/outputs/t5_pose_slack_200hz_20260922/baseline_dp200/exists_path.csv"
