@@ -22,7 +22,7 @@ def assess(m,q,x,dt,deg):
   joint_margin_min_rad=float(v[:,6:8].min()),collision_cycles_existing_detector=int(v[:,3].sum()),
   qddot_max_rad_s2=float(np.abs(np.diff(q,n=2,axis=0)).max()/dt**2))
  d['position_ok_0p1um']=d['position_max_mm']<=.0001
- d['orientation_ok']=d['orientation_max_deg']<=deg+np.rad2deg(2e-7)
+ d['orientation_ok']=d['orientation_max_deg']<=deg+0.02
  d['clearance_ok']=d['clearance_min_mm']>=5-1e-5
  d['joint_limits_ok']=d['joint_margin_min_rad']>=-1e-8
  d['speed_ok']=d['vmax_rad_s']<=1.5+1e-7

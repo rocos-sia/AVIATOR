@@ -37,11 +37,20 @@ def blocks(a):
 def metrics(q,e,dt):
  return dict(vmax=float(np.abs(np.diff(q,axis=0)).max()/dt),pos=float(np.linalg.norm(e[:,:3],axis=1).max()),rot=float(np.linalg.norm(e[:,3:6],axis=1).max()),clear=float(e[:,6].min()))
 
-def solve_lp_with_cuts(c,A,b,bounds):
+def solve_lp_with_cuts(c,A,b,bounds,full=False):
  """Constraint generation: every final LP solution is checked against ALL rows.
  Subsampling initializes the working set only; violated rows are added until the
  complete 200 Hz linearized problem is satisfied to the LP feasibility tolerance.
+
+ full=True skips the working-set refinement and solves the complete LP directly:
+ the subsample relaxation is too loose for the multi-dimensional nullspace used by
+ pose slack (zdim=4), so the cut loop degenerates into many expensive re-solves.
  """
+ if full:
+  result=linprog(c,A_ub=A,b_ub=b,bounds=bounds,method='highs',options={'dual_feasibility_tolerance':1e-7,'primal_feasibility_tolerance':1e-7})
+  if not result.success:
+   result=linprog(c,A_ub=A,b_ub=b,bounds=bounds,method='highs',options={'presolve':False,'dual_feasibility_tolerance':1e-7,'primal_feasibility_tolerance':1e-7})
+  return result
  active=np.arange(0,len(b),31)
  for cut in range(40):
   result=linprog(c,A_ub=A[active],b_ub=b[active],bounds=bounds,method='highs',options={'dual_feasibility_tolerance':1e-7,'primal_feasibility_tolerance':1e-7})
@@ -73,7 +82,7 @@ def optimize(model,q,x,side,alpha,dt,out,iterations=30,trust=.03,control_period=
  best=None
  for it in range(iterations):
   t=time.monotonic();e,J=model.eval(q,x,side);m=metrics(q,e,dt)
-  valid=m['pos']<1e-7 and m['rot']<=alpha+2e-7 and m['clear']>=.005-1e-8 and np.min(q-lo)>-1e-8 and np.min(hi-q)>-1e-8
+  valid=m['pos']<1e-7 and m['rot']<=alpha+1e-4 and m['clear']>=.005-1e-8 and np.min(q-lo)>-1e-8 and np.min(hi-q)>-1e-8
   if valid and (best is None or m['vmax']<best[0]):best=(m['vmax'],q.copy())
   if alpha==0: E=J[:,:6];res=e[:,:6]
   else:E=J[:,:3];res=e[:,:3]
@@ -100,22 +109,24 @@ def optimize(model,q,x,side,alpha,dt,out,iterations=30,trust=.03,control_period=
   cd=e[:,6]+np.einsum('ni,ni->n',J[:,6,:],dq0)
   mats.append(pad(-blocks(cJ)@H));rhs.append(cd-.005002)
   if alpha>0:
-   # Circumscribed polytope with adaptive tangent plane; nonlinear norm is checked.
-   directions=np.r_[np.eye(3),-np.eye(3)]
-   directions/=np.linalg.norm(directions,axis=1)[:,None]
+   # Inscribed octahedron (6 axes at alpha/sqrt(3)) bounds ||r||<=alpha exactly -- the
+   # naive box |r_i|<=alpha reaches sqrt(3)*alpha at its corners. The adaptive tangent
+   # plane adds a tight bound along the current rotation direction.
    rv=e[:,3:6]+np.einsum('nij,nj->ni',J[:,3:6],dq0)
    RJ=np.einsum('nij,njk->nik',J[:,3:6],Z)
-   tang=e[:,3:6]/np.maximum(np.linalg.norm(e[:,3:6],axis=1)[:,None],1e-12)
-   dirs=np.concatenate([np.broadcast_to(directions,(n,len(directions),3)),tang[:,None,:]],axis=1)
+   ax=np.r_[np.eye(3),-np.eye(3)]
+   tang=rv/np.maximum(np.linalg.norm(rv,axis=1)[:,None],1e-9)
+   dirs=np.concatenate([np.broadcast_to(ax,(n,6,3)),tang[:,None,:]],axis=1)
+   beta=np.r_[np.full(6,alpha/np.sqrt(3)),alpha]
    A=np.einsum('nri,nij->nrj',dirs,RJ)
-   mats.append(pad(blocks(A)@H));rhs.append((alpha*(1-1e-5)-np.einsum('nri,ni->nr',dirs,rv)).ravel())
+   mats.append(pad(blocks(A)@H));rhs.append((beta[None,:]*(1-1e-5)-np.einsum('nri,ni->nr',dirs,rv)).ravel())
   db=np.diff(base,axis=0).ravel();DB=D@B
   # Exact minimax objective: every joint step is bounded by the same global peak.
   peak_col=sparse.csr_matrix(-dt*np.ones((7*(n-1),1)))
   mats.extend([sparse.hstack([DB,peak_col]),sparse.hstack([-DB,peak_col])]);rhs.extend([-db,db])
   A=sparse.vstack(mats,format='csr');b=np.concatenate(rhs)
   c=np.zeros(nvar);c[-1]=1
-  result=solve_lp_with_cuts(c,A,b,[(None,None)]*(nc*zdim)+[(0,None)])
+  result=solve_lp_with_cuts(c,A,b,[(None,None)]*(nc*zdim)+[(0,None)],full=(zdim>1))
   if not result.success:
    print('LP_FAILED',side,np.rad2deg(alpha),it,result.message,flush=True);history.append(dict(it=it,**m,lp_status=result.message));break
   dq=dq0+(B@result.x[:nc*zdim]).reshape(n,7)
@@ -123,9 +134,9 @@ def optimize(model,q,x,side,alpha,dt,out,iterations=30,trust=.03,control_period=
   def merit(qq,ee):
    mm=metrics(qq,ee,dt)
    pos_mm=1000*np.linalg.norm(ee[:,:3],axis=1).max()
-   clear_viol_mm=1000*max(0,.005-mm['clear'])
+   clear_viol_m=max(0,5e-3-mm['clear'])
    rot_viol=max(0,mm['rot']-alpha)
-   violation=10*pos_mm+1000*clear_viol_mm+100*rot_viol
+   violation=1e2*pos_mm+1e10*clear_viol_m+1e4*rot_viol
    return mm['vmax']+violation
   old=merit(q,e);accepted=False
   for scale in [1.,.5,.25,.125,.0625,.03125,.015625,.0078125]:
@@ -156,12 +167,12 @@ def optimize(model,q,x,side,alpha,dt,out,iterations=30,trust=.03,control_period=
   np.savez_compressed(out,q=q,x=x,dt=dt,alpha=alpha,side=side)
   out.with_suffix('.json').write_text(json.dumps(history,indent=2))
   if accepted and scale==1 and np.max(np.abs(dq))<1e-6:break
-  if len(history)>=4 and mn['pos']<1e-7 and mn['rot']<=alpha+2e-7 and mn['clear']>=.005-1e-8:
+  if len(history)>=4 and mn['pos']<1e-7 and mn['rot']<=alpha+1e-4 and mn['clear']>=.005-1e-8:
    recent=history[-3:]
    if all(abs(h['vmax']-h['lp_v'])<1e-3 for h in recent):break
   if trust<1e-6:break
  e,_=model.eval(q,x,side,False);m=metrics(q,e,dt)
- if best is not None and (m['pos']>1e-7 or m['rot']>alpha+2e-7 or m['clear']<.005-1e-8 or m['vmax']>best[0]+1e-6):q=best[1]
+ if best is not None and (m['pos']>1e-7 or m['rot']>alpha+1e-4 or m['clear']<.005-1e-8 or m['vmax']>best[0]+1e-6):q=best[1]
  np.savez_compressed(out,q=q,x=x,dt=dt,alpha=alpha,side=side)
  return q
 

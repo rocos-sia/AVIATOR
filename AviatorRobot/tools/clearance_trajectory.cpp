@@ -726,6 +726,92 @@ class ClearanceTrajectory {
         std::cout << "Wrote " << outdir / "release_ablation.csv" << "\n";
     }
 
+    // Re-grip reachability scan. Sweep the PHYSICAL wheel roll angle θ and, per arm, measure
+    // the 1-D self-motion loop extent at each angle: the per-joint range of every one of the 7
+    // joints over the traced orbit. The loop extent collapses to 0 at the workspace boundary —
+    // the θ = ±50° singularity — and is large where the arm comfortably reaches the grip. A grip
+    // roll offset Δ maps the ±50° command arc onto physical roll [Δ−50°, Δ+50°], so "does some
+    // re-grip eliminate the singularity" reduces to: is there a ≥100°-wide window of
+    // comfortably-large loop extent? NOTE the elbow *joint* (index 3) is geometrically pinned by
+    // the shoulder→wrist distance and does NOT move in self-motion; the orbit is carried by the
+    // shoulder/wrist joints, so all 7 per-joint ranges are reported.
+    void grip_scan(const fs::path &outdir) {
+        std::ofstream out(outdir / "grip_scan.csv");
+        out << "theta_deg,s_mm";
+        for (const char *sd : {"L", "R"}) {
+            out << ',' << sd << "_reach";
+            for (int j = 0; j < 7; j++)
+                out << ',' << sd << "_rng" << j;
+            out << ',' << sd << "_steps" << ',' << sd << "_stop_pos" << ',' << sd << "_stop_neg";
+        }
+        out << ",L_dq_dth,R_dq_dth\n";
+        out.precision(6);
+        const double rad = M_PI / 180.0;
+        const double s_slices[2] = {0.0, -0.16};
+        int row = 0;
+        for (double s_pull : s_slices) {
+            for (double th_deg = -110.0; th_deg <= 110.0 + 1e-9; th_deg += 5.0) {
+                double th = th_deg * rad;
+                out << th_deg << ',' << (s_pull * 1e3);
+                Q q0[2]{Q(7), Q(7)};
+                bool reach[2] = {false, false};
+                for (int side = 0; side < 2; side++)
+                    reach[side] = ik_multi_seed(side, th, s_pull, seeds[side], 0u, q0[side]);
+                for (int side = 0; side < 2; side++) {
+                    double emin[7], emax[7];
+                    int steps = 0, stop_pos = 0, stop_neg = 0;
+                    for (int j = 0; j < 7; j++)
+                        emin[j] = emax[j] = reach[side] ? q0[side](j) : 0.0;
+                    if (reach[side]) {
+                        auto visit = [&](const Q &q) {
+                            for (int j = 0; j < 7; j++) {
+                                emin[j] = std::min(emin[j], q(j));
+                                emax[j] = std::max(emax[j], q(j));
+                            }
+                        };
+                        const Q &other0 = reach[1 - side] ? q0[1 - side] : seeds[1 - side];
+                        int np = 0, nn = 0;
+                        double cep = 1e9, cen = 1e9;
+                        stop_pos = stop_code(walk_dir(side, q0[side], other0, th, s_pull,
+                                                     handle[side].M, +1.0, np, cep, visit));
+                        stop_neg = stop_code(walk_dir(side, q0[side], other0, th, s_pull,
+                                                     handle[side].M, -1.0, nn, cen, visit));
+                        steps = np + nn;
+                    }
+                    out << ',' << (reach[side] ? 1 : 0);
+                    for (int j = 0; j < 7; j++)
+                        out << ',' << ((emax[j] - emin[j]) / rad);
+                    out << ',' << steps << ',' << stop_pos << ',' << stop_neg;
+                }
+                // Task-tracking gain dq/dθ (dimensionless, ° joint per ° wheel): continuation
+                // step q(θ±δθ) − q(θ) from the SAME branch. This is the quantity that diverges at
+                // the workspace-boundary singularity (≈1 healthy, ≳10 singular).
+                double dq_dth[2] = {0.0, 0.0};
+                for (int side = 0; side < 2; side++) {
+                    if (!reach[side])
+                        continue;
+                    const double dth = 1.0 * rad;
+                    for (double sgn : {+1.0, -1.0}) {
+                        Q q1(7);
+                        if (ik[side]->CartToJnt(q0[side], target(side, th + sgn * dth, s_pull), q1) < 0)
+                            continue;
+                        double g = 0.0;
+                        for (int j = 0; j < 7; j++)
+                            g = std::max(g, std::fabs(q1(j) - q0[side](j)) / dth);
+                        dq_dth[side] = std::max(dq_dth[side], g);
+                    }
+                }
+                out << ',' << dq_dth[0] << ',' << dq_dth[1];
+                out << '\n';
+                out.flush();
+                if (++row % 10 == 0)
+                    std::cout << "  grip_scan " << row << "/90 rows\n";
+            }
+        }
+        out.close();
+        std::cout << "Wrote " << outdir / "grip_scan.csv" << "\n";
+    }
+
     // Deterministic baseline IK. The home approach seed is tried FIRST: with SolveType
     // Speed the solver does local continuation (Newton from the seed, first convergence),
     // so it stays on the home self-motion branch and keeps the left/right arms on
@@ -1031,6 +1117,54 @@ class ClearanceTrajectory {
             cd.push_back(d_max);
             return;
         }
+        int k = std::min(K, M);
+        if (k == 1) {
+            cand.push_back(arc[M / 2]);
+            cd.push_back(arc_d[M / 2]);
+            return;
+        }
+        for (int i = 0; i < k; i++) {
+            int idx = (int)std::lround(double(i) * (M - 1) / (k - 1));
+            cand.push_back(arc[idx]);
+            cd.push_back(arc_d[idx]);
+        }
+    }
+
+    // Same clearance-safe self-motion candidate collection as collect_boundary_candidates,
+    // but at a FIXED φ-rotated grasp (Rh) instead of the rigid handle[side].M, and without the
+    // old max-margin section bookkeeping. Returns the argmax-clearance config (q_max/d_max) so
+    // the gate caller has a fallback when no φ in the tolerance set reaches d_safe.
+    void collect_phi_candidates(int side, const Q &q0, const Q &other0, double theta, double s,
+                                const KDL::Rotation &Rh, int K,
+                                std::vector<Q> &cand, std::vector<double> &cd,
+                                Q &q_max, double &d_max) {
+        cand.clear();
+        cd.clear();
+        q_max = q0;
+        d_max = -1.0;
+        std::vector<Q> arc;
+        std::vector<double> arc_d;
+        auto visit = [&](const Q &q) {
+            set_config(side ? other0 : q, side ? q : other0, theta, s);
+            double dd = wall_clearance(side);
+            if (dd > d_max) {
+                d_max = dd;
+                q_max = q;
+            }
+            if (dd >= d_safe) {
+                arc.push_back(q);
+                arc_d.push_back(dd);
+            }
+            return dd;
+        };
+        visit(q0);
+        int n_steps;
+        double ce;
+        walk_dir(side, q0, other0, theta, s, Rh, +1.0, n_steps, ce, [&](const Q &q) { (void)visit(q); });
+        walk_dir(side, q0, other0, theta, s, Rh, -1.0, n_steps, ce, [&](const Q &q) { (void)visit(q); });
+        int M = (int)arc.size();
+        if (M == 0)
+            return;
         int k = std::min(K, M);
         if (k == 1) {
             cand.push_back(arc[M / 2]);
@@ -2707,12 +2841,37 @@ class ClearanceTrajectory {
                   << "\n";
     }
 
+    // Slew-rate limit a task stream (theta in rad, s in m) so the task-induced joint demand
+    // stays <= rate_lim rad/s: |dtheta/dt| <= rate_lim (dq/dtheta ~ 1 from grip_scan), and
+    // |ds/dt| <= rate_lim/6.4 (pull-task dq/ds ~ 6.4 rad/m measured on the clean pull ramp).
+    // Call AFTER any constant grip-roll offset is applied (shifts commute with the limiter).
+    template <typename Arr>
+    static void slew_limit(std::vector<Arr> &stream, double dt, double rate_lim) {
+        if (rate_lim <= 0.0)
+            return;
+        const double lim_s = rate_lim / 6.4;
+        double th_p = stream[0][0], s_p = stream[0][1];
+        for (auto &row : stream) {
+            double th = th_p + std::clamp(row[0] - th_p, -rate_lim * dt, rate_lim * dt);
+            double s = s_p + std::clamp(row[1] - s_p, -lim_s * dt, lim_s * dt);
+            row[0] = th;
+            row[1] = s;
+            th_p = th;
+            s_p = s;
+        }
+    }
+
     // Record the T0 (pure continuation TRAC-IK, no collision awareness) joint trajectory for
     // the three compare profiles, as keyframes + clearance scalars, so a renderer can show the
     // arm penetrating the wall. Writes keyframes_t0_<profile>.csv (16 cols:
     // theta,s,qL0..6,qR0..6) and trajectory_t0_<profile>.csv (d_base,coll per knot).
-    void record_t0(const fs::path &outdir, int N) {
+    void record_t0(const fs::path &outdir, int N, double grip_off = 0.0, double rate_lim = 0.0,
+                   bool smooth = false) {
         const double dt = 0.02;  // 50 Hz
+        // grip_off: re-grip physical wheel-roll offset (rad) added to the command stream,
+        // i.e. physical theta = command theta + grip_off (the +15° grip-roll re-grip).
+        // rate_lim > 0: slew-rate limit the final task stream to joint-equivalent rate_lim rad/s.
+        // smooth: C-inf random stream (no clamps → no velocity kinks, velocity <= 1.5 by construction).
         struct Profile { const char *name; double f, th_amp, s_amp; };
         const Profile profiles[] = {
             {"sine", 0.2, 0.87266, 0.0},
@@ -2741,46 +2900,78 @@ class ClearanceTrajectory {
                 double th, s;
                 if (std::string(p.name) == "random") {
                     th = 0.0; s = -0.08;
-                    for (int i = 0; i < ncomp; i++) {
-                        th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
-                        s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                    if (smooth) {
+                        // C-inf stream: fixed small amplitudes so that WITHOUT any clamp
+                        // |th| <= sum(A_th) = 0.8727 rad (~50 deg), |dth/dt| <= sum(A_th*w) = 1.486 rad/s,
+                        // |s| <= 0.16 m, |ds/dt| <= sum(A_s*w) = 0.167 m/s. No saturation -> no kinks.
+                        static const double A_th[ncomp] = {0.40, 0.25, 0.12, 0.06, 0.04};
+                        static const double A_s[ncomp]  = {0.030, 0.020, 0.015, 0.010, 0.005};
+                        for (int i = 0; i < ncomp; i++) {
+                            th += A_th[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                            s += A_s[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                        }
+                    } else {
+                        for (int i = 0; i < ncomp; i++) {
+                            th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                            s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                        }
+                        th = std::clamp(0.5 * th, -0.87266, 0.87266);
+                        s = std::clamp(s, -0.16, 0.0);
                     }
-                    th = std::clamp(0.5 * th, -0.87266, 0.87266);
-                    s = std::clamp(s, -0.16, 0.0);
                 } else {
                     double thd, sd;
                     command(p.name, t, p.f, p.th_amp, p.s_amp, dt * N, th, s, thd, sd);
                 }
+                th += grip_off;  // re-grip: physical wheel roll
                 stream[k] = {th, s};
             }
+            slew_limit(stream, dt, rate_lim);
 
             // pure continuation IK (T0), landing on the grasp manifold at the first knot
             Q ql = seeds[0], qr = seeds[1], out(7);
             ik[0]->CartToJnt(seeds[0], target(0, stream[0][0], stream[0][1]), out); ql = out;
             ik[1]->CartToJnt(seeds[1], target(1, stream[0][0], stream[0][1]), out); qr = out;
 
-            std::ofstream kf(outdir / (std::string("keyframes_t0_") + p.name + ".csv"));
+            std::string fstem = std::string("t0");
+            if (grip_off != 0.0)
+                fstem += "_g" + std::to_string((int)std::lround(grip_off / rad));
+            if (rate_lim > 0.0)
+                fstem += "_rl" + std::to_string((int)std::lround(rate_lim * 10.0));
+            if (smooth)
+                fstem += "_sm";
+            std::ofstream kf(outdir / (std::string("keyframes_") + fstem + "_" + p.name + ".csv"));
             kf.precision(10);
             kf << "k,theta,s,qL0,qL1,qL2,qL3,qL4,qL5,qL6,qR0,qR1,qR2,qR3,qR4,qR5,qR6\n";
-            std::ofstream tr(outdir / (std::string("trajectory_t0_") + p.name + ".csv"));
+            std::ofstream tr(outdir / (std::string("trajectory_") + fstem + "_" + p.name + ".csv"));
             tr.precision(10);
             tr << "k,t,theta,s,d_base,coll\n";
 
             double dmin = 1e9, dmax = -1e9; int ncoll = 0;
+            double stepmax = 0; int stepk = -1, stepj = -1; char stepside = '?';
+            int nf0 = 0, nf1 = 0;  // nf0: first-attempt failures (seed fallback), nf1: frozen cycles
             for (int k = 0; k < N; k++) {
                 double th = stream[k][0], s = stream[k][1];
                 Q ql_base(7), qr_base(7);
                 bool okL = ik[0]->CartToJnt(ql, target(0, th, s), out) >= 0;
-                if (!okL) okL = ik[0]->CartToJnt(seeds[0], target(0, th, s), out) >= 0;
+                if (!okL) { nf0++; okL = ik[0]->CartToJnt(seeds[0], target(0, th, s), out) >= 0; }
                 ql_base = okL ? out : ql;
                 bool okR = ik[1]->CartToJnt(qr, target(1, th, s), out) >= 0;
-                if (!okR) okR = ik[1]->CartToJnt(seeds[1], target(1, th, s), out) >= 0;
+                if (!okR) { nf0++; okR = ik[1]->CartToJnt(seeds[1], target(1, th, s), out) >= 0; }
                 qr_base = okR ? out : qr;
+                if (!okL || !okR) nf1++;
                 set_config(ql_base, qr_base, th, s);
                 double d = std::min(wall_clearance(0), wall_clearance(1));
                 int coll = (collision(0) || collision(1)) ? 1 : 0;
                 dmin = std::min(dmin, d); dmax = std::max(dmax, d); ncoll += coll;
 
+                if (k > 0) {
+                    for (int j = 0; j < 7; j++) {
+                        double w = std::fabs(ql_base(j) - ql(j));
+                        if (w > stepmax) { stepmax = w; stepk = k; stepj = j; stepside = 'L'; }
+                        w = std::fabs(qr_base(j) - qr(j));
+                        if (w > stepmax) { stepmax = w; stepk = k; stepj = j; stepside = 'R'; }
+                    }
+                }
                 kf << k << ',' << th << ',' << s;
                 for (int j = 0; j < 7; j++) kf << ',' << ql_base(j);
                 for (int j = 0; j < 7; j++) kf << ',' << qr_base(j);
@@ -2789,8 +2980,98 @@ class ClearanceTrajectory {
                 ql = ql_base; qr = qr_base;
             }
             kf.close(); tr.close();
-            std::cout << "t0 " << p.name << ": N=" << N << "  d_min=" << dmin * 1e3
-                      << " mm  d_max=" << dmax * 1e3 << " mm  coll=" << ncoll << "/" << N << "\n";
+            std::cout << "t0 " << p.name << (grip_off != 0.0 ? "  [+grip offset]" : "")
+                      << ": N=" << N << "  d_min=" << dmin * 1e3
+                      << " mm  d_max=" << dmax * 1e3 << " mm  coll=" << ncoll << "/" << N
+                      << "\n  max|dq|/dt = " << stepmax / dt << " rad/s (k=" << stepk
+                      << " t=" << stepk * dt << " s, th=" << stream[stepk][0] * 180 / M_PI
+                      << " deg, s=" << stream[stepk][1] * 1e3 << " mm, " << stepside << (stepj + 1) << ")"
+                      << "\n  IK first-attempt failures = " << nf0 << "/" << 2 * N
+                      << ", frozen cycles = " << nf1 << "/" << N << "\n";
+        }
+    }
+
+    // Record the TRAC-IK continuation trajectories for the three canonical task specs
+    // (roll_pos, roll_neg, pull) at grip-roll offsets {0°, +15°}. The re-grip (grip_scan
+    // conclusion) shifts command θ → physical θ+Δ; at Δ=+15° the command arc [−50°,+50°]
+    // rides a shifted physical window [−35°,+65°] that clears the θ=−50° self-motion
+    // collapse, so the continuation branch stays smooth and its max|Δq|/dt drops from the
+    // ~9.5 rad/s branch-jump level. Writes keyframes_regrip_<tag>_<off>.csv (16 cols:
+    // theta,s,qL0..6,qR0..6) + trajectory_regrip_<tag>_<off>.csv (d_base,coll); prints
+    // max|Δq|/dt per (tag, offset) for the speed report.
+    void record_regrip(const fs::path &outdir) {
+        const double dt = this->dt;   // 0.02 (50 Hz)
+        struct Spec { const char *tag; double th0, s0, th1, s1, dur; };
+        const Spec specs[] = {
+            {"roll_pos", 0.0, 0.0, 0.87266, 0.0, 3.0},
+            {"roll_neg", 0.0, 0.0, -0.87266, 0.0, 3.0},
+            {"pull", 0.0, 0.0, 0.0, -0.16, 3.0},
+        };
+        struct Off { const char *label; double rad; };
+        const Off offs[] = {{"0", 0.0}, {"15", 15.0 * M_PI / 180.0}};
+
+        for (const auto &of : offs) {
+            for (const auto &sp : specs) {
+                const int N = std::max(2, int(std::lround(sp.dur / dt)));
+                std::vector<double> thv(N), sv(N);
+                for (int k = 0; k < N; k++) {
+                    double u = N > 1 ? double(k) / (N - 1) : 0.5;
+                    thv[k] = sp.th0 + (sp.th1 - sp.th0) * u + of.rad;   // physical wheel roll
+                    sv[k] = sp.s0 + (sp.s1 - sp.s0) * u;
+                }
+
+                Q ql = seeds[0], qr = seeds[1], out(7);
+                // land on the exact grasp manifold at the first (offset) knot
+                ik[0]->CartToJnt(seeds[0], target(0, thv[0], sv[0]), out); ql = out;
+                ik[1]->CartToJnt(seeds[1], target(1, thv[0], sv[0]), out); qr = out;
+
+                const std::string tag = std::string(sp.tag) + "_" + of.label;
+                std::ofstream kf(outdir / ("keyframes_regrip_" + tag + ".csv"));
+                kf.precision(10);
+                kf << "k,theta,s,qL0,qL1,qL2,qL3,qL4,qL5,qL6,qR0,qR1,qR2,qR3,qR4,qR5,qR6\n";
+                std::ofstream tr(outdir / ("trajectory_regrip_" + tag + ".csv"));
+                tr.precision(10);
+                tr << "k,t,theta,s,d_base,coll\n";
+
+                Q ql_prev = ql, qr_prev = qr;
+                double max_dq = 0.0, dmin = 1e9;
+                int max_k = -1, max_side = -1, max_j = -1, ncoll = 0;
+                for (int k = 0; k < N; k++) {
+                    double th = thv[k], s = sv[k];
+                    Q ql_base(7), qr_base(7);
+                    bool okL = ik[0]->CartToJnt(ql, target(0, th, s), out) >= 0;
+                    if (!okL) okL = ik[0]->CartToJnt(seeds[0], target(0, th, s), out) >= 0;
+                    ql_base = okL ? out : ql;
+                    bool okR = ik[1]->CartToJnt(qr, target(1, th, s), out) >= 0;
+                    if (!okR) okR = ik[1]->CartToJnt(seeds[1], target(1, th, s), out) >= 0;
+                    qr_base = okR ? out : qr;
+
+                    if (k > 0)
+                        for (int j = 0; j < 7; j++) {
+                            double dqL = std::fabs(ql_base(j) - ql_prev(j));
+                            double dqR = std::fabs(qr_base(j) - qr_prev(j));
+                            if (dqL > max_dq) { max_dq = dqL; max_k = k; max_side = 0; max_j = j; }
+                            if (dqR > max_dq) { max_dq = dqR; max_k = k; max_side = 1; max_j = j; }
+                        }
+                    ql_prev = ql_base; qr_prev = qr_base;
+
+                    set_config(ql_base, qr_base, th, s);
+                    double d = std::min(wall_clearance(0), wall_clearance(1));
+                    int coll = (collision(0) || collision(1)) ? 1 : 0;
+                    dmin = std::min(dmin, d); ncoll += coll;
+
+                    kf << k << ',' << th << ',' << s;
+                    for (int j = 0; j < 7; j++) kf << ',' << ql_base(j);
+                    for (int j = 0; j < 7; j++) kf << ',' << qr_base(j);
+                    kf << '\n';
+                    tr << k << ',' << k * dt << ',' << th << ',' << s << ',' << d << ',' << coll << '\n';
+                    ql = ql_base; qr = qr_base;
+                }
+                kf.close(); tr.close();
+                std::cout << "regrip " << sp.tag << " +" << of.label << "deg: max|dq|/dt = " << max_dq / dt
+                          << " rad/s  (k=" << max_k << " " << (max_side ? "R" : "L") << max_j << ")"
+                          << "  d_min=" << dmin * 1e3 << " mm  coll=" << ncoll << "/" << N << "\n";
+            }
         }
     }
 
@@ -3862,15 +4143,19 @@ class ClearanceTrajectory {
     // trajectory. If it is ≤ 1.5 rad/s, the random trajectory IS executable at the true robot limit
     // and the single section — not the task — is the bottleneck. Rigid grasp ⇒ arms independent ⇒
     // the 14-D optimum factors into per-arm optima.
-    void existence_test(const fs::path &outdir, int N, int n_threads, double sample_dt = 0.02) {
+    void existence_test(const fs::path &outdir, int N, int n_threads, double sample_dt = 0.02,
+                        const std::string &stream_tag = "", double grip_off = 0.0, double rate_lim = 0.0,
+                        bool smooth = false) {
         const double dt = sample_dt;
         const double qdot = 1.5;   // true unified robot joint-speed limit
         const int K_full = 256;    // full self-motion arc stored; DP is re-run at K∈{32,64,128,256}
         const double step_lim = qdot * dt;
 
-        // regenerate the random stream (byte-identical to compare())
+        // Task stream: default = the random band-limited stream (byte-identical to compare());
+        // stream_tag = "roll_pos"/"roll_neg"/"pull" = the clean 3 s task ramp (same as run_task),
+        // for the "does the DP find TRAC-IK's low-speed path when it exists" contrast.
         std::vector<std::array<double, 4>> stream(N);
-        {
+        if (stream_tag.empty()) {
             std::mt19937 rng(987654321u);
             std::uniform_real_distribution<double> U01(0.0, 1.0), Uph(0.0, 2.0 * M_PI);
             const int nc = 5;
@@ -3883,13 +4168,43 @@ class ClearanceTrajectory {
             }
             for (int k = 0; k < N; k++) {
                 double t = k * dt, th = 0.0, s = -0.08;
-                for (int i = 0; i < nc; i++) {
-                    th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
-                    s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                if (smooth) {
+                    // C-inf stream: fixed small amplitudes so that WITHOUT any clamp
+                    // |th| <= 0.8727 rad, |dth/dt| <= 1.486 rad/s, |s| <= 0.16 m,
+                    // |ds/dt| <= 0.167 m/s. No saturation -> no velocity kinks.
+                    static const double A_th[nc] = {0.40, 0.25, 0.12, 0.06, 0.04};
+                    static const double A_s[nc]  = {0.030, 0.020, 0.015, 0.010, 0.005};
+                    for (int i = 0; i < nc; i++) {
+                        th += A_th[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                        s += A_s[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                    }
+                } else {
+                    for (int i = 0; i < nc; i++) {
+                        th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                        s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                    }
+                    th = std::clamp(0.5 * th, -0.87266, 0.87266);
+                    s = std::clamp(s, -0.16, 0.0);
                 }
-                stream[k] = {std::clamp(0.5 * th, -0.87266, 0.87266), std::clamp(s, -0.16, 0.0), 0.0, 0.0};
+                stream[k] = {th, s, 0.0, 0.0};
+            }
+        } else {
+            double th0 = 0.0, s0 = 0.0, th1 = 0.0, s1 = 0.0;
+            if (stream_tag == "roll_pos") th1 = 0.87266;
+            else if (stream_tag == "roll_neg") th1 = -0.87266;
+            else if (stream_tag == "pull") s1 = -0.16;
+            else { std::cerr << "existence_test: unknown stream_tag " << stream_tag << "\n"; return; }
+            for (int k = 0; k < N; k++) {
+                double u = N > 1 ? double(k) / (N - 1) : 0.5;
+                stream[k] = {th0 + (th1 - th0) * u, s0 + (s1 - s0) * u, 0.0, 0.0};
             }
         }
+        // grip_off: re-grip physical wheel-roll offset (rad) added to the command stream.
+        if (grip_off != 0.0)
+            for (int k = 0; k < N; k++)
+                stream[k][0] += grip_off;
+        // rate_lim > 0: slew-rate limit the final task stream to joint-equivalent rate_lim rad/s.
+        slew_limit(stream, dt, rate_lim);
 
         std::vector<std::vector<Q>> cand[2];
         std::vector<std::vector<double>> cd[2];
@@ -3947,7 +4262,10 @@ class ClearanceTrajectory {
             }
         };
         std::cout << "existence test: " << N << " cycles, K_full=" << K_full << ", qdot=" << qdot << " rad/s, "
-                  << n_threads << " threads" << std::endl;
+                  << n_threads << " threads"
+                  << (rate_lim > 0.0 ? " [task slew-limited to 1.5 rad/s]" : "")
+                  << (grip_off != 0.0 ? " [+15deg grip]" : "")
+                  << (smooth ? " [C-inf smooth stream]" : "") << std::endl;
         std::vector<std::thread> pool;
         for (int t = 0; t < n_threads; t++)
             pool.emplace_back(worker);
@@ -4105,7 +4423,18 @@ class ClearanceTrajectory {
 
         int n_low_margin = (int)std::accumulate(low_margin.begin(), low_margin.end(), 0);
 
-        std::ofstream f(outdir / "exists_path.csv");
+        std::string fstem = stream_tag;
+        if (grip_off != 0.0)
+            fstem += (fstem.empty() ? std::string("g") : std::string("_g"))
+                     + std::to_string((int)std::lround(grip_off / rad));
+        if (rate_lim > 0.0)
+            fstem += (fstem.empty() ? std::string("rl") : std::string("_rl"))
+                     + std::to_string((int)std::lround(rate_lim * 10.0));
+        if (smooth)
+            fstem += (fstem.empty() ? std::string("sm") : std::string("_sm"));
+        const fs::path path_csv = outdir / (fstem.empty() ? "exists_path.csv"
+                                                          : "exists_path_" + fstem + ".csv");
+        std::ofstream f(path_csv);
         f << "t,theta,s,L1,L2,L3,L4,L5,L6,L7,R1,R2,R3,R4,R5,R6,R7,dmin\n";
         f << std::setprecision(9);
         for (int k = 0; k < N; k++) {
@@ -4134,7 +4463,475 @@ class ClearanceTrajectory {
                   << "  contrast: current T5 single-section max|qdot| on this stream = 24.7 rad/s\n"
                   << "  velfeas task-velocity lower bound = 0.14–0.30 rad/s (task itself is cheap; the 7.84 is\n"
                   << "     safe-arc self-motion reconfiguration at the θ=±50°,s=−160mm corners)\n"
-                  << "wrote " << outdir / "exists_path.csv" << "\n";
+                  << "wrote " << path_csv << "\n";
+    }
+
+    // Orientation-slak gate (decisive): does freeing the grip orientation (coaxial roll φ,
+    // 1-D per arm) restore dynamic viability? Replays the SAME random stream as existence_test
+    // (seed 987654321u, N cycles @ 50 Hz). At each cycle the per-arm candidate set is the UNION
+    // over |φ|≤ψ of the clearance-safe self-motion arc at orientation φ, so the rigid φ=0 set is
+    // exactly the ψ=0 subset. The per-arm minimax DP over time then gives V*(ψ) = min achievable
+    // max|q̇|. If V*(5°) ≤ 1.5 rad/s, a small task tolerance restores viability at almost zero
+    // static-clearance change; if V*(ψ) ≈ 7.84 for all ψ, more redundancy ≠ useful redundancy.
+    void orientation_gate(const fs::path &outdir, int N, int n_threads) {
+        const double dt = 0.02;      // match existence_test's 50 Hz stream (7.84 baseline)
+        const double qdot = 1.5;     // true unified robot joint-speed limit
+        const int Kphi = 64;         // per-φ candidate resolution (matches exists K_report=64)
+        const int K_dp = 192;        // downsample the per-cycle φ-union for the minimax DP
+        const std::vector<double> phi_grid_deg = {-10, -8, -5, -2, 0, 2, 5, 8, 10};
+        const std::vector<double> tol_deg = {0, 2, 5, 8, 10};
+
+        // regenerate the random stream (byte-identical to existence_test())
+        std::vector<std::array<double, 4>> stream(N);
+        {
+            std::mt19937 rng(987654321u);
+            std::uniform_real_distribution<double> U01(0.0, 1.0), Uph(0.0, 2.0 * M_PI);
+            const int nc = 5;
+            double thA[nc], thPh[nc], sA[nc], sPh[nc];
+            const double thF[nc] = {0.10, 0.25, 0.40, 0.70, 1.10};
+            const double sF[nc] = {0.08, 0.20, 0.35, 0.60, 0.90};
+            for (int i = 0; i < nc; i++) {
+                thA[i] = 0.35 + 0.65 * U01(rng); thPh[i] = Uph(rng);
+                sA[i] = 0.35 + 0.65 * U01(rng); sPh[i] = Uph(rng);
+            }
+            for (int k = 0; k < N; k++) {
+                double t = k * dt, th = 0.0, s = -0.08;
+                for (int i = 0; i < nc; i++) {
+                    th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                    s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                }
+                stream[k] = {std::clamp(0.5 * th, -0.87266, 0.87266), std::clamp(s, -0.16, 0.0), 0.0, 0.0};
+            }
+        }
+
+        const int NPHI = (int)phi_grid_deg.size();
+        int center = -1;
+        for (int pi = 0; pi < NPHI; pi++)
+            if (phi_grid_deg[pi] == 0.0) center = pi;
+        std::vector<std::vector<std::vector<Q>>> cand[2];    // cand[side][k][φ]
+        std::vector<std::vector<std::vector<double>>> cd[2];
+        std::vector<Q> qmax[2];                              // φ=0 argmax-clearance fallback
+        std::vector<double> dmax[2];
+        std::vector<uint8_t> no_safe_any_phi(N, 0);          // no d≥d_safe config at ANY φ
+        for (int side = 0; side < 2; side++) {
+            cand[side].resize(N);
+            cd[side].resize(N);
+            for (int k = 0; k < N; k++) {
+                cand[side][k].resize(NPHI);
+                cd[side][k].resize(NPHI);
+            }
+            qmax[side].assign(N, Q(7));
+            dmax[side].assign(N, -1.0);
+        }
+
+        std::atomic<size_t> next{0}, done{0};
+        std::mutex mu;
+        auto t0 = std::chrono::steady_clock::now();
+        auto worker = [&]() {
+            ClearanceTrajectory run(cfg_path, d_safe, q_margin_target, trace_half, trace_step);
+            while (true) {
+                size_t k = next.fetch_add(1, std::memory_order_relaxed);
+                if (k >= (size_t)N)
+                    break;
+                double th = stream[k][0], s = stream[k][1];
+                Q q0[2]{Q(7), Q(7)};
+                bool reach = true;
+                for (int side = 0; side < 2; side++)
+                    if (!run.ik_multi_seed(side, th, s, run.seeds[side], atlas_seed(0, side, 0), q0[side])) {
+                        reach = false;
+                        break;
+                    }
+                for (int side = 0; side < 2; side++) {
+                    if (!reach) {
+                        qmax[side][k] = run.seeds[side];
+                        dmax[side][k] = -1.0;
+                        no_safe_any_phi[k] = 1;
+                        continue;
+                    }
+                    bool any_safe = false;
+                    for (int pi = 0; pi < NPHI; pi++) {
+                        double phi = phi_grid_deg[pi] * M_PI / 180.0;
+                        Q qphi(7);
+                        if (pi == center) {
+                            qphi = q0[side];
+                        } else if (run.ik[side]->CartToJnt(q0[side], run.target(side, th, s, phi), qphi) < 0) {
+                            continue;  // φ unreachable from the φ=0 branch
+                        }
+                        Q qm(7);
+                        double dm;
+                        run.collect_phi_candidates(side, qphi, q0[1 - side], th, s,
+                                                   run.handle_rot(side, phi, 0.0, 0), Kphi,
+                                                   cand[side][k][pi], cd[side][k][pi], qm, dm);
+                        if (!cand[side][k][pi].empty())
+                            any_safe = true;
+                        if (pi == center) {
+                            qmax[side][k] = qm;
+                            dmax[side][k] = dm;
+                        }
+                    }
+                    if (!any_safe)
+                        no_safe_any_phi[k] = 1;
+                }
+                size_t p = done.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (p % 500 == 0 || p == (size_t)N) {
+                    std::lock_guard<std::mutex> lk(mu);
+                    double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                    std::cout << "  ogate " << p << "/" << N << "  (" << std::fixed << std::setprecision(0)
+                              << el << " s)" << std::endl;
+                }
+            }
+        };
+        std::cout << "orientation gate: " << N << " cycles, " << NPHI << " φ samples, "
+                  << n_threads << " threads" << std::endl;
+        std::vector<std::thread> pool;
+        for (int t = 0; t < n_threads; t++)
+            pool.emplace_back(worker);
+        for (auto &t : pool)
+            t.join();
+        double wall_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+        auto downsample_vec = [&](const std::vector<Q> &full, const std::vector<double> &fulld, int K,
+                                  std::vector<Q> &out, std::vector<double> &outd) {
+            out.clear();
+            outd.clear();
+            int M = (int)full.size();
+            int kk = std::min(K, M);
+            if (kk <= 1) {
+                out.push_back(full[M / 2]);
+                outd.push_back(fulld[M / 2]);
+                return;
+            }
+            for (int i = 0; i < kk; i++) {
+                int idx = (int)std::lround(double(i) * (M - 1) / (kk - 1));
+                out.push_back(full[idx]);
+                outd.push_back(fulld[idx]);
+            }
+        };
+        // per-arm minimax DP over time: dp[k][b] = min_a max(dp[k-1][a], |q_k[b]-q_{k-1}[a]|_∞)
+        auto minimax = [&](const std::vector<std::vector<Q>> &ck, const std::vector<std::vector<double>> &ckd,
+                           double &stepmax, double &dmin) {
+            std::vector<double> prev_dp(ck[0].size(), 0.0), cur_dp;
+            std::vector<std::vector<int>> bk(N);
+            for (int k = 1; k < N; k++) {
+                size_t na = ck[k - 1].size(), nb = ck[k].size();
+                cur_dp.assign(nb, 1e18);
+                bk[k].assign(nb, -1);
+                for (size_t b = 0; b < nb; b++) {
+                    double best = 1e18;
+                    int best_a = -1;
+                    for (size_t a = 0; a < na; a++) {
+                        double w = 0;
+                        for (int i = 0; i < 7; i++)
+                            w = std::max(w, std::fabs(ck[k][b](i) - ck[k - 1][a](i)));
+                        double v = std::max(prev_dp[a], w);
+                        if (v < best) {
+                            best = v;
+                            best_a = (int)a;
+                        }
+                    }
+                    cur_dp[b] = best;
+                    bk[k][b] = best_a;
+                }
+                prev_dp.swap(cur_dp);
+            }
+            int best = 0;
+            for (size_t b = 1; b < prev_dp.size(); b++)
+                if (prev_dp[b] < prev_dp[best])
+                    best = b;
+            stepmax = prev_dp[best];
+            dmin = 1e9;
+            int b = best;
+            for (int k = N - 1; k >= 1; k--) {
+                dmin = std::min(dmin, ckd[k][b]);
+                b = bk[k][b];
+            }
+            dmin = std::min(dmin, ckd[0][b]);
+        };
+
+        int n_never_safe = (int)std::accumulate(no_safe_any_phi.begin(), no_safe_any_phi.end(), 0);
+
+        std::cout << std::fixed << std::setprecision(4);
+        std::cout << "\n=== orientation-slak gate: V*_inf vs tolerance (rigid = φ=0) ===\n"
+                  << "  qdot limit = " << qdot << " rad/s;  d_safe = " << d_safe * 1e3 << " mm\n"
+                  << "  cycles with NO d≥d_safe config at any φ (≤±10°) = " << n_never_safe << "/" << N << "\n";
+        std::ofstream f(outdir / "ogate.csv");
+        f << "tol_deg,V_inf_rad_s,ratio_vs_rigid,L_rad_s,R_rad_s,d_min_mm,feasible_1p5\n";
+        std::cout << "  " << std::setw(6) << "tol°" << std::setw(10) << "V*∞"
+                  << std::setw(9) << "vs rigid" << std::setw(9) << "L" << std::setw(9) << "R"
+                  << std::setw(11) << "d_min mm" << std::setw(10) << "≤1.5?\n";
+        double v_rigid = 0.0;
+        for (size_t ti = 0; ti < tol_deg.size(); ti++) {
+            double psi = tol_deg[ti] * M_PI / 180.0;
+            double stepL = 0, stepR = 0, dL = 0, dR = 0;
+            for (int side = 0; side < 2; side++) {
+                std::vector<std::vector<Q>> ck(N);
+                std::vector<std::vector<double>> ckd(N);
+                for (int k = 0; k < N; k++) {
+                    std::vector<Q> u;
+                    std::vector<double> ud;
+                    for (int pi = 0; pi < NPHI; pi++) {
+                        if (std::fabs(phi_grid_deg[pi] * M_PI / 180.0) <= psi + 1e-9) {
+                            u.insert(u.end(), cand[side][k][pi].begin(), cand[side][k][pi].end());
+                            ud.insert(ud.end(), cd[side][k][pi].begin(), cd[side][k][pi].end());
+                        }
+                    }
+                    if (u.empty()) {
+                        u.push_back(qmax[side][k]);
+                        ud.push_back(dmax[side][k]);
+                    }
+                    downsample_vec(u, ud, K_dp, ck[k], ckd[k]);
+                }
+                double sm, dm;
+                minimax(ck, ckd, sm, dm);
+                if (side == 0) { stepL = sm; dL = dm; }
+                else { stepR = sm; dR = dm; }
+            }
+            double v = std::max(stepL, stepR) / dt;
+            if (ti == 0)
+                v_rigid = v;
+            double dmin = std::min(dL, dR);
+            bool ok = v <= qdot + 1e-9;
+            f << tol_deg[ti] << ',' << v << ',' << (v_rigid > 0 ? v / v_rigid : 0.0) << ','
+              << stepL / dt << ',' << stepR / dt << ',' << dmin * 1e3 << ',' << (ok ? 1 : 0) << '\n';
+            std::cout << "  " << std::setw(6) << tol_deg[ti] << std::setw(10) << v
+                      << std::setw(9) << (v_rigid > 0 ? v / v_rigid : 0.0) << std::setw(9) << stepL / dt
+                      << std::setw(9) << stepR / dt << std::setw(11) << dmin * 1e3
+                      << std::setw(10) << (ok ? "YES" : "no") << "\n";
+        }
+        f.close();
+        std::cout << "orientation gate done in " << wall_s << " s (" << n_threads << " threads)\n"
+                  << "wrote " << outdir / "ogate.csv" << "\n";
+    }
+
+    // Full 3-D orientation gate: does the FULL orientation freedom (coaxial roll φ × radial tilt
+    // βr × normal tilt βn, each bounded at ±10°) break through the φ-only floor (5.90 rad/s)?
+    // Same random stream + per-arm minimax DP as orientation_gate, but the per-cycle candidate
+    // set is the union over the 3-D orientation grid of the clearance-safe self-motion arc.
+    void orientation_gate3d(const fs::path &outdir, int N, int n_threads) {
+        const double dt = 0.02, qdot = 1.5;
+        const int Kphi = 64, K_dp = 192;
+        const double phi_ax[] = {-10, -5, 0, 5, 10};   // deg, coaxial roll
+        const double beta_ax[] = {-10, 0, 10};         // deg, radial / normal tilt
+        std::vector<std::array<double, 3>> samp;       // (φ, βr, βn) in deg
+        for (double f : phi_ax)
+            for (double br : beta_ax)
+                for (double bn : beta_ax)
+                    samp.push_back({f, br, bn});
+        const int NS = (int)samp.size();
+        int rigid_s = -1;
+        for (int si = 0; si < NS; si++)
+            if (samp[si][0] == 0 && samp[si][1] == 0 && samp[si][2] == 0)
+                rigid_s = si;
+
+        // regenerate the random stream (byte-identical to existence_test())
+        std::vector<std::array<double, 4>> stream(N);
+        {
+            std::mt19937 rng(987654321u);
+            std::uniform_real_distribution<double> U01(0.0, 1.0), Uph(0.0, 2.0 * M_PI);
+            const int nc = 5;
+            double thA[nc], thPh[nc], sA[nc], sPh[nc];
+            const double thF[nc] = {0.10, 0.25, 0.40, 0.70, 1.10};
+            const double sF[nc] = {0.08, 0.20, 0.35, 0.60, 0.90};
+            for (int i = 0; i < nc; i++) {
+                thA[i] = 0.35 + 0.65 * U01(rng); thPh[i] = Uph(rng);
+                sA[i] = 0.35 + 0.65 * U01(rng); sPh[i] = Uph(rng);
+            }
+            for (int k = 0; k < N; k++) {
+                double t = k * dt, th = 0.0, s = -0.08;
+                for (int i = 0; i < nc; i++) {
+                    th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                    s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                }
+                stream[k] = {std::clamp(0.5 * th, -0.87266, 0.87266), std::clamp(s, -0.16, 0.0), 0.0, 0.0};
+            }
+        }
+
+        std::vector<std::vector<std::vector<Q>>> cand[2];
+        std::vector<std::vector<std::vector<double>>> cd[2];
+        std::vector<Q> qmax[2];
+        std::vector<double> dmax[2];
+        for (int side = 0; side < 2; side++) {
+            cand[side].resize(N);
+            cd[side].resize(N);
+            for (int k = 0; k < N; k++) {
+                cand[side][k].resize(NS);
+                cd[side][k].resize(NS);
+            }
+            qmax[side].assign(N, Q(7));
+            dmax[side].assign(N, -1.0);
+        }
+
+        std::atomic<size_t> next{0}, done{0};
+        std::mutex mu;
+        auto t0 = std::chrono::steady_clock::now();
+        auto worker = [&]() {
+            ClearanceTrajectory run(cfg_path, d_safe, q_margin_target, trace_half, trace_step);
+            while (true) {
+                size_t k = next.fetch_add(1, std::memory_order_relaxed);
+                if (k >= (size_t)N)
+                    break;
+                double th = stream[k][0], s = stream[k][1];
+                Q q0[2]{Q(7), Q(7)};
+                bool reach = true;
+                for (int side = 0; side < 2; side++)
+                    if (!run.ik_multi_seed(side, th, s, run.seeds[side], atlas_seed(0, side, 0), q0[side])) {
+                        reach = false;
+                        break;
+                    }
+                for (int side = 0; side < 2; side++) {
+                    if (!reach) {
+                        qmax[side][k] = run.seeds[side];
+                        dmax[side][k] = -1.0;
+                        continue;
+                    }
+                    for (int si = 0; si < NS; si++) {
+                        double phi = samp[si][0] * M_PI / 180.0;
+                        double br = samp[si][1] * M_PI / 180.0;
+                        double bn = samp[si][2] * M_PI / 180.0;
+                        KDL::Rotation Rh = KDL::Rotation::Rot(run.handle_axis[side], phi) *
+                                           KDL::Rotation::Rot(run.handle_radial[side], br) *
+                                           KDL::Rotation::Rot(run.wheel_normal, bn) * run.handle[side].M;
+                        Q qo(7);
+                        if (si == rigid_s) {
+                            qo = q0[side];
+                        } else if (run.ik[side]->CartToJnt(q0[side], run.target_Rh(side, th, s, Rh), qo) < 0) {
+                            continue;  // orientation unreachable from the φ=0 branch
+                        }
+                        Q qm(7);
+                        double dm;
+                        run.collect_phi_candidates(side, qo, q0[1 - side], th, s, Rh, Kphi,
+                                                   cand[side][k][si], cd[side][k][si], qm, dm);
+                        if (si == rigid_s) {
+                            qmax[side][k] = qm;
+                            dmax[side][k] = dm;
+                        }
+                    }
+                }
+                size_t p = done.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (p % 500 == 0 || p == (size_t)N) {
+                    std::lock_guard<std::mutex> lk(mu);
+                    double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                    std::cout << "  ogate3d " << p << "/" << N << "  (" << std::fixed << std::setprecision(0)
+                              << el << " s)" << std::endl;
+                }
+            }
+        };
+        std::cout << "orientation gate 3D: " << N << " cycles, " << NS << " orientation samples (each axis ≤10°), "
+                  << n_threads << " threads" << std::endl;
+        std::vector<std::thread> pool;
+        for (int t = 0; t < n_threads; t++)
+            pool.emplace_back(worker);
+        for (auto &t : pool)
+            t.join();
+        double wall_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+        auto downsample_vec = [&](const std::vector<Q> &full, const std::vector<double> &fulld, int K,
+                                  std::vector<Q> &out, std::vector<double> &outd) {
+            out.clear();
+            outd.clear();
+            int M = (int)full.size();
+            int kk = std::min(K, M);
+            if (kk <= 1) {
+                out.push_back(full[M / 2]);
+                outd.push_back(fulld[M / 2]);
+                return;
+            }
+            for (int i = 0; i < kk; i++) {
+                int idx = (int)std::lround(double(i) * (M - 1) / (kk - 1));
+                out.push_back(full[idx]);
+                outd.push_back(fulld[idx]);
+            }
+        };
+        auto minimax = [&](const std::vector<std::vector<Q>> &ck, const std::vector<std::vector<double>> &ckd,
+                           double &stepmax, double &dmin) {
+            std::vector<double> prev_dp(ck[0].size(), 0.0), cur_dp;
+            std::vector<std::vector<int>> bk(N);
+            for (int k = 1; k < N; k++) {
+                size_t na = ck[k - 1].size(), nb = ck[k].size();
+                cur_dp.assign(nb, 1e18);
+                bk[k].assign(nb, -1);
+                for (size_t b = 0; b < nb; b++) {
+                    double best = 1e18;
+                    int best_a = -1;
+                    for (size_t a = 0; a < na; a++) {
+                        double w = 0;
+                        for (int i = 0; i < 7; i++)
+                            w = std::max(w, std::fabs(ck[k][b](i) - ck[k - 1][a](i)));
+                        double v = std::max(prev_dp[a], w);
+                        if (v < best) {
+                            best = v;
+                            best_a = (int)a;
+                        }
+                    }
+                    cur_dp[b] = best;
+                    bk[k][b] = best_a;
+                }
+                prev_dp.swap(cur_dp);
+            }
+            int best = 0;
+            for (size_t b = 1; b < prev_dp.size(); b++)
+                if (prev_dp[b] < prev_dp[best])
+                    best = b;
+            stepmax = prev_dp[best];
+            dmin = 1e9;
+            int b = best;
+            for (int k = N - 1; k >= 1; k--) {
+                dmin = std::min(dmin, ckd[k][b]);
+                b = bk[k][b];
+            }
+            dmin = std::min(dmin, ckd[0][b]);
+        };
+
+        // run the DP on two nested subsets: rigid (sample (0,0,0) only) and full 3-D (all NS)
+        auto solve_subset = [&](const std::vector<int> &subset, double &stepL, double &stepR, double &dL, double &dR) {
+            for (int side = 0; side < 2; side++) {
+                std::vector<std::vector<Q>> ck(N);
+                std::vector<std::vector<double>> ckd(N);
+                for (int k = 0; k < N; k++) {
+                    std::vector<Q> u;
+                    std::vector<double> ud;
+                    for (int si : subset) {
+                        u.insert(u.end(), cand[side][k][si].begin(), cand[side][k][si].end());
+                        ud.insert(ud.end(), cd[side][k][si].begin(), cd[side][k][si].end());
+                    }
+                    if (u.empty()) {
+                        u.push_back(qmax[side][k]);
+                        ud.push_back(dmax[side][k]);
+                    }
+                    downsample_vec(u, ud, K_dp, ck[k], ckd[k]);
+                }
+                double sm, dm;
+                minimax(ck, ckd, sm, dm);
+                if (side == 0) { stepL = sm; dL = dm; }
+                else { stepR = sm; dR = dm; }
+            }
+        };
+
+        double rL, rR, rDL, rDR, aL, aR, aDL, aDR;
+        solve_subset({rigid_s}, rL, rR, rDL, rDR);
+        std::vector<int> all(NS);
+        for (int si = 0; si < NS; si++)
+            all[si] = si;
+        solve_subset(all, aL, aR, aDL, aDR);
+        double v_rigid = std::max(rL, rR) / dt;
+        double v_3d = std::max(aL, aR) / dt;
+
+        std::cout << std::fixed << std::setprecision(4);
+        std::cout << "\n=== 3-D orientation gate (each axis ≤ 10°) ===\n"
+                  << "  qdot limit = " << qdot << " rad/s\n"
+                  << "  rigid φ=0            : V*∞ = " << v_rigid << " rad/s (L " << rL / dt << " / R " << rR / dt
+                  << ", d_min " << std::min(rDL, rDR) * 1e3 << " mm)\n"
+                  << "  full 3-D (φ,βr,βn)  : V*∞ = " << v_3d << " rad/s (L " << aL / dt << " / R " << aR / dt
+                  << ", d_min " << std::min(aDL, aDR) * 1e3 << " mm)\n"
+                  << "  vs φ-only 10° (5.90): " << (v_3d <= 5.90 ? "improved" : "no improvement")
+                  << ";  ≤1.5 rad/s ? " << (v_3d <= qdot + 1e-9 ? "YES" : "no") << "\n";
+        std::ofstream f(outdir / "ogate3d.csv");
+        f << "mode,V_inf_rad_s,L_rad_s,R_rad_s,d_min_mm\n";
+        f << "rigid," << v_rigid << ',' << rL / dt << ',' << rR / dt << ',' << std::min(rDL, rDR) * 1e3 << '\n';
+        f << "full3d_10deg," << v_3d << ',' << aL / dt << ',' << aR / dt << ',' << std::min(aDL, aDR) * 1e3 << '\n';
+        f.close();
+        std::cout << "orientation gate 3D done in " << wall_s << " s (" << n_threads << " threads)\n"
+                  << "wrote " << outdir / "ogate3d.csv" << "\n";
     }
 
     // T5.1 Step 4: 1-D self-motion boundary dynamics — decompose "why is the DP floor 7.84 rad/s"
@@ -4883,6 +5680,10 @@ int main(int argc, char **argv) {
             run.release_ablation(outdir);
             return 0;
         }
+        if (only.count("grip_scan")) {
+            run.grip_scan(outdir);
+            return 0;
+        }
         if (only.count("online_b0")) {
             run.online(0, outdir);
             return 0;
@@ -4918,6 +5719,40 @@ int main(int argc, char **argv) {
         if (only.count("record_t0")) {
             // argv[8] doubles as the per-profile knot count here (50 Hz).
             run.record_t0(outdir, argc > 8 ? std::atoi(argv[8]) : 250);
+            return 0;
+        }
+        if (only.count("record_t0_g15")) {
+            // Same T0 continuation but with the +15° grip-roll re-grip applied
+            // (physical theta = command theta + 15°). argv[8] = knot count.
+            run.record_t0(outdir, argc > 8 ? std::atoi(argv[8]) : 250, 15.0 * rad);
+            return 0;
+        }
+        if (only.count("record_t0_rl")) {
+            // T0 continuation on the random stream with the task rate slew-limited to
+            // joint-equivalent 1.5 rad/s (|theta_dot|<=1.5, |s_dot|<=0.234 m/s).
+            // argv[8] = knot count.
+            run.record_t0(outdir, argc > 8 ? std::atoi(argv[8]) : 250, 0.0, 1.5);
+            return 0;
+        }
+        if (only.count("record_t0_g15_rl")) {
+            // Same rate-limited T0 but with the +15° grip-roll re-grip applied.
+            run.record_t0(outdir, argc > 8 ? std::atoi(argv[8]) : 250, 15.0 * rad, 1.5);
+            return 0;
+        }
+        if (only.count("record_t0_sm")) {
+            // T0 continuation on the C-inf smooth random stream (no clamps, |dtheta/dt|<=1.486,
+            // |ds/dt|<=0.167 by construction). argv[8] = knot count.
+            run.record_t0(outdir, argc > 8 ? std::atoi(argv[8]) : 250, 0.0, 0.0, true);
+            return 0;
+        }
+        if (only.count("record_t0_g15_sm")) {
+            // Same smooth T0 but with the +15° grip-roll re-grip applied.
+            run.record_t0(outdir, argc > 8 ? std::atoi(argv[8]) : 250, 15.0 * rad, 0.0, true);
+            return 0;
+        }
+        if (only.count("record_regrip")) {
+            // Three task specs (roll_pos/roll_neg/pull) × grip-roll offsets {0°,+15°}.
+            run.record_regrip(outdir);
             return 0;
         }
         if (only.count("record_t5")) {
@@ -4958,9 +5793,64 @@ int main(int argc, char **argv) {
             run.existence_test(outdir, 10000, argc > 8 ? std::atoi(argv[8]) : 16);
             return 0;
         }
+        if (only.count("exists_ramp")) {
+            // Same candidate-DP pipeline but on the three clean 3 s task ramps: does the DP
+            // find TRAC-IK's low-speed path when it exists? argv[8] = thread count.
+            int th = argc > 8 ? std::atoi(argv[8]) : 16;
+            for (const char *tag : {"roll_pos", "roll_neg", "pull"})
+                run.existence_test(outdir, 150, th, 0.02, tag);
+            return 0;
+        }
+        if (only.count("exists_g15")) {
+            // Same candidate-DP pipeline on the random stream but with the +15° grip-roll
+            // re-grip applied (physical theta = command theta + 15°). argv[8] = thread count.
+            run.existence_test(outdir, 10000, argc > 8 ? std::atoi(argv[8]) : 16, 0.02, "", 15.0 * rad);
+            return 0;
+        }
+        if (only.count("exists_rl")) {
+            // Same candidate-DP pipeline on the random stream with the task rate slew-limited
+            // to joint-equivalent 1.5 rad/s. argv[8] = thread count.
+            run.existence_test(outdir, 10000, argc > 8 ? std::atoi(argv[8]) : 16, 0.02, "", 0.0, 1.5);
+            return 0;
+        }
+        if (only.count("exists_g15_rl")) {
+            // Same rate-limited candidate-DP but with the +15° grip-roll re-grip applied.
+            run.existence_test(outdir, 10000, argc > 8 ? std::atoi(argv[8]) : 16, 0.02, "", 15.0 * rad, 1.5);
+            return 0;
+        }
+        if (only.count("exists_sm")) {
+            // Same candidate-DP pipeline on the C-inf smooth random stream (no clamps,
+            // velocity <= 1.5 by construction). argv[8] = thread count.
+            run.existence_test(outdir, 10000, argc > 8 ? std::atoi(argv[8]) : 16, 0.02, "", 0.0, 0.0, true);
+            return 0;
+        }
+        if (only.count("exists_g15_sm")) {
+            // Same smooth candidate-DP but with the +15° grip-roll re-grip applied.
+            run.existence_test(outdir, 10000, argc > 8 ? std::atoi(argv[8]) : 16, 0.02, "", 15.0 * rad, 0.0, true);
+            return 0;
+        }
+        if (only.count("exists_ramp_g15")) {
+            // Same as exists_ramp but with the +15° re-grip. argv[8] = thread count.
+            int th = argc > 8 ? std::atoi(argv[8]) : 16;
+            for (const char *tag : {"roll_pos", "roll_neg", "pull"})
+                run.existence_test(outdir, 150, th, 0.02, tag, 15.0 * rad);
+            return 0;
+        }
         if (only.count("exists200")) {
             // Same [0,199.98] s interval as 10000 samples at 50 Hz, with 5 ms knots.
             run.existence_test(outdir, 39997, argc > 8 ? std::atoi(argv[8]) : 16, 0.005);
+            return 0;
+        }
+        if (only.count("ogate")) {
+            // Orientation-slack gate: V*_inf vs grip-roll tolerance on the random stream.
+            // argv[8] doubles as the thread count here (default 16).
+            run.orientation_gate(outdir, 10000, argc > 8 ? std::atoi(argv[8]) : 16);
+            return 0;
+        }
+        if (only.count("ogate3d")) {
+            // Full 3-D orientation gate (φ×βr×βn, each ≤10°): does full orientation freedom
+            // break the φ-only floor? argv[8] doubles as the thread count here (default 16).
+            run.orientation_gate3d(outdir, 10000, argc > 8 ? std::atoi(argv[8]) : 16);
             return 0;
         }
         if (only.count("sm_dyn")) {
