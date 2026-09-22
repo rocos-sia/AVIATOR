@@ -1,28 +1,66 @@
-# 离线第三方依赖
+# 第三方源码
 
-`linux-x86_64.tar.gz` 是本项目直接使用的开发头文件与运行库，约 32 MiB。
-正常配置时 CMake 校验 `linux-x86_64.sha256` 后解压到构建目录；不下载、不搜索兄弟工程，
-也不调用系统的 Boost/KDL/Pinocchio/ROS CMake 包。
+开源依赖直接以源码目录保存，不使用压缩依赖包或构建时下载。
+CMake 按依赖顺序编译，产物位于 `build/third_party/`，头文件和库安装到
+`build/dependencies/`。不依赖原 `AviatorRobot`、ROS、`/opt/rocos` 或系统安装的同名机器人库。
 
-平台：**Ubuntu 22.04 x86_64 / GCC 11 / glibc 2.35**。这是预编译依赖包，
-不承诺 Windows、ARM 或旧版 glibc 的二进制兼容性。仍需要系统编译器、CMake、pthread、
-C/C++ 标准运行库；可视化还需要系统显示服务和 OpenGL 驱动。
+唯一的预编译例外是厂商未提供实现源码的 **xCore SDK**：
 
-| 依赖 | 集成方式 / 来源 |
+```text
+third_party/
+  eigen/ boost/ orocos-kdl/ trac_ik/ kdl_parser/ ...  # 开源源码
+  pinocchio/ coal/                                 # 包含本地 cmake 模块
+  mujoco/ mujoco_deps/ glfw/                       # 仿真及其源码依赖
+  xcore/
+    include/rokae/                                # 真机头文件
+    lib/linux-x86_64/libxCoreSDK.a
+    lib/linux-x86_64/libxMateModel.a
+  licenses/                                       # 安装时携带的授权说明
+  manifest.json                                   # 固定版本、来源和下载原件校验值
+  PATCHES.md                                      # 对上游源码的必要适配
+```
+
+| 目录 | 版本 / 来源 |
 |---|---|
-| TRAC-IK、kdl_parser | `trac_ik/`、`kdl_parser/` 源码，来自原 AviatorRobot 的 rocos_app/3rdparty；不编译 ROS 支持 |
-| Pinocchio 3.9.0、coal 3.0.4 | 原 AviatorRobot 的已构建头文件和动态库 |
-| MuJoCo 3.4.0 | 原 reference/rocos-mujoco 所用发行版 |
-| xCoreSDK 0.7.1 | xCoreSDK-CPP-main 的头文件及 0.7.1 Linux 包的静态 SDK/模型库 |
-| NLopt 2.7.0 | 本机原 rocos 使用的配套头文件和动态库 |
-| Boost 1.74、Eigen 3.4、KDL 1.5.1、yaml-cpp、urdfdom、TinyXML/TinyXML2、GLFW | Ubuntu 22.04 开发头文件及对应动态库 |
-| Assimp、OctoMap、Draco、zlib、minizip、X11 等 | 上述动态库的运行时依赖闭包 |
+| eigen | 3.4.0 |
+| boost | 1.74.0；编译 filesystem、system、thread、date_time、serialization 及其依赖 |
+| orocos-kdl | 1.5.1；编译 `orocos_kdl/` |
+| trac_ik、kdl_parser | 保留本项目已有源码，来自原 AviatorRobot，无 ROS 支持 |
+| pinocchio、coal | 3.9.0、3.0.4；保留原项目版本及内含的 jrl-cmakemodules |
+| yaml-cpp、nlopt | 0.7.0、2.7.0 |
+| console_bridge、urdfdom_headers | 1.0.1、1.0.5 |
+| urdfdom | 上游标签 3.0.1（该标签内部 CMake 版本仍写作 3.0.0） |
+| tinyxml、tinyxml2 | 2.6.2（STL 接口）、9.0.0 |
+| assimp、octomap、zlib | 5.2.2、1.9.7、1.3.1 |
+| mujoco、glfw | 3.4.0、3.3.6 |
+| mujoco_deps | 按 MuJoCo 3.4.0 固定提交保存 lodepng、marchingcubecpp、qhull、tinyxml2、tinyobjloader、trianglemeshdistance、ccd |
+| xcore | SDK 0.7.1，Linux x86_64；厂商头文件与静态库 |
 
-`manifest.json` 记录包版本与每个文件的 SHA256；授权/版权说明在压缩包的 `licenses/` 内，
-安装时复制到 `share/aviator/licenses/`。xCoreSDK 保留厂商版权声明，不属于本项目的 MIT 授权范围。
-TRAC-IK 和 kdl_parser 的授权说明保留在各源码文件头。
+MuJoCo 内部使用的 TinyXML2 和控制代码使用的 TinyXML2 分开放置，避免改变上游版本配套。
+Assimp 只启用当前模型需要的 STL、OBJ 导入器，使用其源码内附的 unzip 和本地 zlib；
+关闭未使用的导出器、Draco 等功能。新增模型格式时在 `cmake/Dependencies.cmake` 中启用对应导入器。
+MuJoCo 的示例、Python、测试、Studio 等未使用组件不参与构建，其额外依赖也不需要下载。
 
-维护者可用 `python3 tools/bundle_dependencies.py` 从原工作区重建包；脚本说明了输入来源。
-**普通用户构建不需要这些原路径**。要跨平台移植，需为目标平台重新构建相应依赖及 SDK。
-SDK 独立 DSO 使用静态库及局部符号绑定，避免其内嵌 KDL 覆盖控制库的 KDL；
-不使用 `--allow-shlib-undefined` 或运行时延迟解析来绕过链接错误。
+## 构建与平台
+
+从项目根目录执行 README 中的普通 CMake 命令即可，无需先逐个安装这些库。
+首次构建需要较长时间；后续构建会检查第三方源码变更并增量编译。
+可用 `-DAVIATOR_DEPENDENCY_JOBS=2` 调整每个依赖的编译并发数。
+
+已验证 Ubuntu 22.04 x86_64、GCC 11、CMake 3.22。系统仍需提供编译器、标准运行库、
+pthread；窗口构建还需要 X11/OpenGL 开发包及显示环境。源码集成不代表这些系统组件也被打包。
+当前链接规则面向 Linux；其他平台需单独移植和验证。xCore 静态库仅支持 Linux x86_64，
+其他平台必须关闭 `AVIATOR_WITH_ROKAE` 或换用对应厂商 SDK。
+
+SDK 独立 DSO 使用静态库及局部符号绑定，避免其内嵌 KDL 覆盖控制库的 KDL。
+KDL/TRAC-IK 的运动学、Pinocchio 的碰撞检测分工不变。
+
+## 来源与授权
+
+每个新增源码目录的 `.aviator-source.json` 和总表 `manifest.json` 记录版本、来源及
+下载原件 SHA256（如适用）。这些 URL 只用于追溯，构建过程不访问它们。
+上游版权和授权文件保留在源码树，`licenses/` 随安装复制到 `share/aviator/licenses/`。
+xCore 属于厂商 SDK，不受本项目 MIT 授权覆盖；其厂商说明见 `xcore/README.vendor.md`。
+
+更新库时替换对应源码、同步来源记录及必要适配，并重新执行完整仿真测试。
+无需重建任何第三方压缩包。

@@ -60,7 +60,7 @@ tracking_tolerance: 0.12
 settle_duration: 1.5
 
 # v=1 时的轮盘速度上限；MoveWheel 自动协调时间并受各关节速度进一步约束。
-wheel_angular_speed: 0.4   # rad/s
+wheel_angular_speed: 0.8   # rad/s
 wheel_linear_speed: 0.08   # m/s
 
 # 在线逆解/碰撞检查周期；关节目标仍通过底层约 1 ms 节拍平滑插值。

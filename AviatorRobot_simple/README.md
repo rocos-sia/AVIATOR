@@ -6,9 +6,23 @@
 
 ## 构建与运行
 
-当前离线依赖包面向 **Ubuntu 22.04 x86_64**，需要 C++17 编译器和 CMake 3.16+。
-第三方头文件与库已集成到 `third_party/`；正常构建不访问网络，也不引用兄弟项目目录。
+已验证平台为 **Ubuntu 22.04 x86_64 / GCC 11**，需要 CMake 3.22+；控制代码使用 C++17，
+MuJoCo 源码需要支持 C++20 的编译器。开源依赖的源码直接放在 `third_party/`，
+构建时编译到 `build/dependencies/`，不解压依赖包、不访问网络，也不引用兄弟项目目录。
+xCore SDK 没有提供实现源码，保留厂商头文件和静态库。
 详细版本、来源、平台约束见 [third_party/README.md](third_party/README.md)。
+源码集成与离线构建的验证记录见 [validation/DEPENDENCY_SOURCES.md](validation/DEPENDENCY_SOURCES.md)。
+
+系统需安装编译工具及窗口开发库（一次性准备；随后项目构建可离线）：
+
+```bash
+sudo apt install build-essential cmake ninja-build python3 pkg-config \
+    libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+```
+
+首次构建会编译第三方库，耗时和磁盘占用明显多于之前的预编译包。
+`-j4` 控制同时构建的项目数，每个依赖默认使用 2 个编译任务；内存较小时可用
+`-DAVIATOR_DEPENDENCY_JOBS=1` 并将构建参数改为 `-j2`。
 
 ```bash
 cd AviatorRobot_simple
@@ -166,7 +180,7 @@ while (robot.GetState() == "SERVO")
 
 **第三个参数已从秒数改为速度倍率 `v`，范围 `(0, 1]`，默认 0.5。**
 两个坐标均为绝对目标：转角范围 ±0.87266 rad，推拉范围 [-0.17, 0] m。
-`v=1` 对应配置的 `wheel_angular_speed=0.4 rad/s`、`wheel_linear_speed=0.08 m/s`
+`v=1` 对应配置中的 `wheel_angular_speed`（rad/s）、`wheel_linear_speed`（m/s）
 以及各关节 `min(joint_speed, URDF 速度限位)`；`v=0.5` 将这些速度上限减半。
 这是上限倍率，不是恒定轮盘速度；同时转动和推拉时两个分量按同一进度协调。
 

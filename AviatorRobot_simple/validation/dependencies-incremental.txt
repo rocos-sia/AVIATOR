@@ -1,0 +1,46 @@
+[0/1] Re-running CMake...
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+[1/67] Performing build step for 'source_yaml-cpp'
+[2/65] Performing build step for 'source_eigen'
+[3/65] Performing build step for 'source_mujoco'
+[4/63] No install step for 'source_eigen'
+[5/63] Completed 'source_eigen'
+[6/63] Performing build step for 'source_tinyxml'
+[7/61] Performing build step for 'source_tinyxml2'
+[8/59] Performing configure step for 'source_orocos-kdl'
+[9/59] Performing build step for 'source_console_bridge'
+[10/57] Performing build step for 'source_orocos-kdl'
+[11/56] Performing build step for 'source_urdfdom_headers'
+[12/56] Completed 'source_orocos-kdl'
+[13/56] No install step for 'source_urdfdom_headers'
+[14/56] Performing build step for 'source_nlopt'
+[15/54] Completed 'source_urdfdom_headers'
+[16/54] Performing build step for 'source_zlib'
+[17/52] Performing configure step for 'source_urdfdom'
+[18/52] Performing configure step for 'source_assimp'
+[19/52] Performing build step for 'source_urdfdom'
+[20/51] Completed 'source_urdfdom'
+[21/51] Performing build step for 'source_assimp'
+[22/50] Completed 'source_assimp'
+[23/50] Performing build step for 'source_glfw'
+[24/48] Linking CXX executable bin/aviator_viewer_test
+[25/48] cd /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build && /usr/bin/cmake -E copy_directory /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/config /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/config && /usr/bin/cmake -E copy_directory /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/model /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/model
+[26/48] Performing build step for 'source_octomap'
+[27/46] Performing build step for 'source_boost'
+[28/44] Performing configure step for 'source_coal'
+[29/44] Performing build step for 'source_coal'
+[30/43] Completed 'source_coal'
+[31/43] Performing configure step for 'source_pinocchio'
+[32/43] Performing build step for 'source_pinocchio'
+[33/42] Completed 'source_pinocchio'
+[34/42] Linking CXX shared library lib/libaviator_control.so
+[35/42] Linking CXX executable bin/aviator_backend_selection_test
+[36/42] Linking CXX executable bin/aviator_basic_test
+[37/42] Linking CXX executable bin/aviator_acceptance_test
+[38/42] Linking CXX executable bin/aviator
+[39/42] Linking CXX executable bin/aviator_realtime_test
+[40/42] Linking CXX executable bin/aviator_move_wheel_test
+[41/42] Linking CXX executable bin/aviator_servo_wheel_test
+[42/42] Linking CXX executable bin/aviator_controller_safety_test

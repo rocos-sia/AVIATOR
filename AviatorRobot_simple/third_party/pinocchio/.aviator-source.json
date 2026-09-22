@@ -1,0 +1,5 @@
+{
+  "version": "3.9.0",
+  "url": "https://github.com/stack-of-tasks/pinocchio/tree/v3.9.0",
+  "note": "Imported existing vendored source including jrl-cmakemodules; no build artifacts."
+}

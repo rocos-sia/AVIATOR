@@ -1,0 +1,174 @@
+[1/174] Creating directories for 'source_boost'
+[2/174] Creating directories for 'source_yaml-cpp'
+[3/174] Creating directories for 'source_eigen'
+[4/174] No download step for 'source_boost'
+[5/174] No download step for 'source_yaml-cpp'
+[6/174] No download step for 'source_eigen'
+[7/174] No update step for 'source_boost'
+[8/174] No update step for 'source_yaml-cpp'
+[9/174] No update step for 'source_eigen'
+[10/174] No patch step for 'source_boost'
+[11/174] No patch step for 'source_yaml-cpp'
+[12/174] No patch step for 'source_eigen'
+[13/174] No configure step for 'source_boost'
+[14/174] Performing configure step for 'source_yaml-cpp'
+[15/174] Building CXX object CMakeFiles/aviator_open_loop_test.dir/tests/test_open_loop.cpp.o
+[16/174] Linking CXX executable bin/aviator_open_loop_test
+[17/174] Creating directories for 'source_nlopt'
+[18/174] No download step for 'source_nlopt'
+[19/174] No update step for 'source_nlopt'
+[20/174] No patch step for 'source_nlopt'
+[21/174] Performing configure step for 'source_nlopt'
+[22/174] Performing configure step for 'source_eigen'
+[23/174] Performing build step for 'source_eigen'
+[24/174] No install step for 'source_eigen'
+[25/174] Completed 'source_eigen'
+[26/174] Building CXX object CMakeFiles/aviator_rokae_sdk.dir/src/rokae_sdk.cpp.o
+[27/174] Linking CXX shared library lib/libaviator_rokae_sdk.so
+[28/174] Creating directories for 'source_orocos-kdl'
+[29/174] No download step for 'source_orocos-kdl'
+[30/174] No update step for 'source_orocos-kdl'
+[31/174] No patch step for 'source_orocos-kdl'
+[32/174] Performing configure step for 'source_orocos-kdl'
+[33/174] Performing build step for 'source_yaml-cpp'
+[34/174] No install step for 'source_yaml-cpp'
+[35/174] Completed 'source_yaml-cpp'
+[36/174] Creating directories for 'source_tinyxml'
+[37/174] No download step for 'source_tinyxml'
+[38/174] No update step for 'source_tinyxml'
+[39/174] No patch step for 'source_tinyxml'
+[40/174] Performing configure step for 'source_tinyxml'
+[41/174] Performing build step for 'source_tinyxml'
+[42/174] No install step for 'source_tinyxml'
+[43/174] Completed 'source_tinyxml'
+[44/174] Creating directories for 'source_tinyxml2'
+[45/174] No download step for 'source_tinyxml2'
+[46/174] No update step for 'source_tinyxml2'
+[47/174] No patch step for 'source_tinyxml2'
+[48/174] Performing configure step for 'source_tinyxml2'
+[49/174] Performing build step for 'source_tinyxml2'
+[50/174] Performing build step for 'source_nlopt'
+[51/174] No install step for 'source_tinyxml2'
+[52/174] No install step for 'source_nlopt'
+[53/174] Completed 'source_tinyxml2'
+[54/174] Completed 'source_nlopt'
+[55/174] Creating directories for 'source_console_bridge'
+[56/174] Creating directories for 'source_urdfdom_headers'
+[57/174] No download step for 'source_console_bridge'
+[58/174] No download step for 'source_urdfdom_headers'
+[59/174] No update step for 'source_console_bridge'
+[60/174] No update step for 'source_urdfdom_headers'
+[61/174] No patch step for 'source_console_bridge'
+[62/174] No patch step for 'source_urdfdom_headers'
+[63/174] Performing configure step for 'source_urdfdom_headers'
+[64/174] Performing build step for 'source_urdfdom_headers'
+[65/174] No install step for 'source_urdfdom_headers'
+[66/174] Completed 'source_urdfdom_headers'
+[67/174] Creating directories for 'source_zlib'
+[68/174] No download step for 'source_zlib'
+[69/174] No update step for 'source_zlib'
+[70/174] No patch step for 'source_zlib'
+[71/174] Performing configure step for 'source_console_bridge'
+[72/174] Performing build step for 'source_console_bridge'
+[73/174] No install step for 'source_console_bridge'
+[74/174] Completed 'source_console_bridge'
+[75/174] Performing configure step for 'source_zlib'
+[76/174] Creating directories for 'source_urdfdom'
+[77/174] No download step for 'source_urdfdom'
+[78/174] No update step for 'source_urdfdom'
+[79/174] No patch step for 'source_urdfdom'
+[80/174] Performing configure step for 'source_urdfdom'
+[81/174] Performing build step for 'source_zlib'
+[82/174] No install step for 'source_zlib'
+[83/174] Completed 'source_zlib'
+[84/174] Creating directories for 'source_assimp'
+[85/174] No download step for 'source_assimp'
+[86/174] No update step for 'source_assimp'
+[87/174] No patch step for 'source_assimp'
+[88/174] Performing configure step for 'source_assimp'
+[89/174] Performing build step for 'source_urdfdom'
+[90/174] No install step for 'source_urdfdom'
+[91/174] Completed 'source_urdfdom'
+[92/174] Creating directories for 'source_octomap'
+[93/174] No download step for 'source_octomap'
+[94/174] No update step for 'source_octomap'
+[95/174] No patch step for 'source_octomap'
+[96/174] Performing configure step for 'source_octomap'
+[97/174] Performing build step for 'source_octomap'
+[98/174] No install step for 'source_octomap'
+[99/174] Completed 'source_octomap'
+[100/174] Creating directories for 'source_mujoco'
+[101/174] No download step for 'source_mujoco'
+[102/174] No update step for 'source_mujoco'
+[103/174] No patch step for 'source_mujoco'
+[104/174] Performing configure step for 'source_mujoco'
+[105/174] Performing build step for 'source_orocos-kdl'
+[106/174] No install step for 'source_orocos-kdl'
+[107/174] Completed 'source_orocos-kdl'
+[108/174] Creating directories for 'source_glfw'
+[109/174] No download step for 'source_glfw'
+[110/174] No update step for 'source_glfw'
+[111/174] No patch step for 'source_glfw'
+[112/174] Performing configure step for 'source_glfw'
+[113/174] Performing build step for 'source_glfw'
+[114/174] No install step for 'source_glfw'
+[115/174] Completed 'source_glfw'
+[116/174] cd /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build && /usr/bin/cmake -E copy_directory /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/config /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/config && /usr/bin/cmake -E copy_directory /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/model /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/model
+[117/174] Performing build step for 'source_assimp'
+[118/174] No install step for 'source_assimp'
+[119/174] Completed 'source_assimp'
+[120/174] Performing build step for 'source_boost'
+[121/174] No install step for 'source_boost'
+[122/174] Completed 'source_boost'
+[123/174] Creating directories for 'source_coal'
+[124/174] No download step for 'source_coal'
+[125/174] No update step for 'source_coal'
+[126/174] No patch step for 'source_coal'
+[127/174] Performing configure step for 'source_coal'
+[128/174] Performing build step for 'source_mujoco'
+[129/174] No install step for 'source_mujoco'
+[130/174] Completed 'source_mujoco'
+[131/174] Building CXX object CMakeFiles/aviator_viewer.dir/src/Viewer.cpp.o
+[132/174] Building CXX object CMakeFiles/aviator_viewer_test.dir/tests/test_viewer.cpp.o
+[133/174] Linking CXX static library libaviator_viewer.a
+[134/174] Linking CXX executable bin/aviator_viewer_test
+[135/174] Performing build step for 'source_coal'
+[136/174] No install step for 'source_coal'
+[137/174] Completed 'source_coal'
+[138/174] Creating directories for 'source_pinocchio'
+[139/174] No download step for 'source_pinocchio'
+[140/174] No update step for 'source_pinocchio'
+[141/174] No patch step for 'source_pinocchio'
+[142/174] Performing configure step for 'source_pinocchio'
+[143/174] Performing build step for 'source_pinocchio'
+[144/174] No install step for 'source_pinocchio'
+[145/174] Completed 'source_pinocchio'
+[146/174] Building CXX object CMakeFiles/kdl_parser.dir/third_party/kdl_parser/src/kdl_parser.cpp.o
+[147/174] Linking CXX static library libkdl_parser.a
+[148/174] Building CXX object CMakeFiles/trac_ik.dir/third_party/trac_ik/src/kdl_tl.cpp.o
+[149/174] Building CXX object CMakeFiles/aviator_control.dir/src/backend_factory.cpp.o
+[150/174] Building CXX object CMakeFiles/trac_ik.dir/third_party/trac_ik/src/nlopt_ik.cpp.o
+[151/174] Building CXX object CMakeFiles/aviator_control.dir/src/Aviator.cpp.o
+[152/174] Building CXX object CMakeFiles/aviator_control.dir/src/Kinematics_tracik.cpp.o
+[153/174] Building CXX object CMakeFiles/aviator_control.dir/src/DataLink_direct.cpp.o
+[154/174] Building CXX object CMakeFiles/aviator_control.dir/src/DataLink_rokae.cpp.o
+[155/174] Building CXX object CMakeFiles/aviator.dir/src/main.cpp.o
+[156/174] Building CXX object CMakeFiles/aviator_basic_test.dir/tests/test_basic.cpp.o
+[157/174] Building CXX object CMakeFiles/aviator_acceptance_test.dir/tests/test_acceptance.cpp.o
+[158/174] Building CXX object CMakeFiles/trac_ik.dir/third_party/trac_ik/src/trac_ik.cpp.o
+[159/174] Linking CXX static library libtrac_ik.a
+[160/174] Building CXX object CMakeFiles/aviator_realtime_test.dir/tests/test_realtime.cpp.o
+[161/174] Building CXX object CMakeFiles/aviator_backend_selection_test.dir/tests/test_backend_selection.cpp.o
+[162/174] Building CXX object CMakeFiles/aviator_move_wheel_test.dir/tests/test_move_wheel.cpp.o
+[163/174] Building CXX object CMakeFiles/aviator_servo_wheel_test.dir/tests/test_servo_wheel.cpp.o
+[164/174] Building CXX object CMakeFiles/aviator_controller_safety_test.dir/tests/test_controller_safety.cpp.o
+[165/174] Building CXX object CMakeFiles/aviator_control.dir/src/CollisionChecker_pinocchio.cpp.o
+[166/174] Linking CXX shared library lib/libaviator_control.so
+[167/174] Linking CXX executable bin/aviator_acceptance_test
+[168/174] Linking CXX executable bin/aviator_backend_selection_test
+[169/174] Linking CXX executable bin/aviator
+[170/174] Linking CXX executable bin/aviator_basic_test
+[171/174] Linking CXX executable bin/aviator_realtime_test
+[172/174] Linking CXX executable bin/aviator_move_wheel_test
+[173/174] Linking CXX executable bin/aviator_servo_wheel_test
+[174/174] Linking CXX executable bin/aviator_controller_safety_test
