@@ -39,6 +39,7 @@ import numpy as np
 from .manifold_lookup import ManifoldLookup
 from .reward import reward_fn
 from .safety_filter import project_phi_dot
+from .safety_filter import _QDOT_TOL  # hard-shield speed tolerance (rad/s)
 
 # frozen v0.1 constants
 _DT = 0.01
@@ -196,7 +197,10 @@ class AviatorManifoldEnv(gym.Env):
         if d_min < self.d_safe:
             terminated = True
             info["termination"] = "collision"
-        elif max_qdot > self.qdot_max:
+        elif max_qdot > self.qdot_max + _QDOT_TOL:
+            # same tolerance as the safety filter's hard shield: the filter
+            # certifies q_dot <= qdot_max + _QDOT_TOL (float32 q noise), so a
+            # strict > qdot_max here would spuriously terminate those steps.
             terminated = True
             info["termination"] = "speed"
         elif self._t >= len(self._traj["x"]) - 1:
