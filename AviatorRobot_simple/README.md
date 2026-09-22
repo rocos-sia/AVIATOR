@@ -1,8 +1,17 @@
 # AviatorRobot_simple
 
 参考 `AviatorRobot` 的单进程双臂操纵盘控制器。仿真和真机使用同一个 `aviator`
-可执行文件、`Aviator.cpp` 状态机、TRAC-IK、Pinocchio 碰撞检测、轨迹规划和命令处理，
+可执行文件、`Aviator.cpp` 状态机、PIN-IK 逆解、Pinocchio 正运动学/碰撞检测、轨迹规划和命令处理，
 仅 `DataLink` 后端不同。无需启动 `rocos_mujoco`、共享内存或 ROS。
+
+运动学实现在 [src/Kinematics_pin_ik.cpp](src/Kinematics_pin_ik.cpp)：每臂一条
+`aircraft → 法兰` 运动链，使用 `Distance` 模式、5 ms 求解预算、`7e-7` 精度，
+J2 求解范围由姿态配置及规划余量决定。求解成功后再检查限位和 FK 残差。
+5 ms 是求解预算，不是硬实时保证；IK 在规划/Servo 工作线程运行，不进入 xCore 的 1 ms 回调。
+位姿统一使用 `pinocchio::SE3`，Eigen 处理旋转及插值；配置四元数保持 `[w,x,y,z]`。
+项目已移除 KDL、kdl_parser 和 TRAC-IK 的源码与构建依赖；xCore 闭源 SDK 内嵌实现保留。
+运动学测试使用 MuJoCo 独立核对 FK/IK。验证见 [validation/NO_KDL.md](validation/NO_KDL.md)，
+最初的 PIN-IK 集成记录见 [validation/PIN_IK.md](validation/PIN_IK.md)。
 
 ## 构建与运行
 
@@ -70,6 +79,8 @@ cmake --install build --prefix "$PWD/dist"
 
 | 文件 | 检查内容 |
 |---|---|
+| [test_pose.cpp](tests/test_pose.cpp) | SDK 行优先矩阵、工具变换、接近插值及旋转边界 |
+| [test_kinematics.cpp](tests/test_kinematics.cpp) | 实际双臂的 MuJoCo FK/IK 校验、J2 限位、连续性及耗时 |
 | [test_basic.cpp](tests/test_basic.cpp) | 启动姿态、初始化、使能、失能 |
 | [test_acceptance.cpp](tests/test_acceptance.cpp) | 接近、锁定、完整目标表、实测误差和全程 J2 范围 |
 | [test_move_wheel.cpp](tests/test_move_wheel.cpp) | 速度倍率、下发速度上限、关节限速自动延时 |

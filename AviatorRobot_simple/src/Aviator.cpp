@@ -3,7 +3,7 @@
 #include "aviator/CollisionChecker.hpp"
 #include "aviator/backend.hpp"
 #include <yaml-cpp/yaml.h>
-#include <kdl/frames.hpp>
+#include "aviator/Pose.hpp"
 #include <condition_variable>
 #include <atomic>
 #include <algorithm>
@@ -34,7 +34,7 @@ struct ServoTimeout : std::runtime_error {
     ServoTimeout() : std::runtime_error("Servo command timeout; holding position") {}
 };
 
-KDL::Frame parseFrame(const YAML::Node &node) {
+pinocchio::SE3 parseFrame(const YAML::Node &node) {
     const auto p = node["position"].as<std::vector<double>>();
     const auto q = node["quaternion"].as<std::vector<double>>();
     require(p.size() == 3 && q.size() == 4, "Invalid frame dimensions");
@@ -42,8 +42,8 @@ KDL::Frame parseFrame(const YAML::Node &node) {
     double norm = 0;
     for (double val : q) norm += val * val;
     require(std::abs(norm - 1) < 1e-6, "Quaternion must be normalized (wxyz)");
-    return {KDL::Rotation::Quaternion(q[1], q[2], q[3], q[0]),
-            KDL::Vector(p[0], p[1], p[2])};
+    return {Eigen::Quaterniond(q[0], q[1], q[2], q[3]).normalized(),
+            Eigen::Vector3d(p[0], p[1], p[2])};
 }
 
 } // namespace
@@ -163,7 +163,7 @@ class Aviator::Impl {
             const std::string urdf = resolvePath(config, "urdf", config_dir);
             const double ik_lo = joint2_min_ + joint2_margin_;
             const double ik_hi = joint2_max_ - joint2_margin_;
-            kinematics_ = makeTracIkKinematics(urdf, ik_lo, ik_hi);
+            kinematics_ = makePinIkKinematics(urdf, ik_lo, ik_hi);
         }
         if (!collision_checker_) {
             std::string collision_urdf = resolvePath(config, "collision_urdf", config_dir);
@@ -271,7 +271,7 @@ class Aviator::Impl {
             path.clear();
 
             seed = measured();
-            KDL::Frame from[2];
+            pinocchio::SE3 from[2];
             for (int side = 0; side < 2; ++side) {
                 std::array<double, 7> q{};
                 for (int j = 0; j < 7; ++j)
@@ -281,11 +281,10 @@ class Aviator::Impl {
 
             for (size_t k = 0; k <= steps; ++k) {
                 double s = smooth(double(k) / steps);
-                std::array<KDL::Frame, 2> targets;
+                std::array<pinocchio::SE3, 2> targets;
                 for (int side = 0; side < 2; ++side) {
                     auto end = target(side, wheel1.angle, wheel1.displacement);
-                    auto twist = KDL::diff(from[side], end);
-                    targets[side] = KDL::addDelta(from[side], twist, s);
+                    targets[side] = interpolatePose(from[side], end, s);
                 }
                 if (k)
                     seed = solve(targets, seed);
@@ -634,18 +633,19 @@ class Aviator::Impl {
         fail("Grasp command acknowledgement timeout");
     }
 
-    KDL::Frame wheel(double angle, double translation) const {
+    pinocchio::SE3 wheel(double angle, double translation) const {
         return wheel_origin_ *
-               KDL::Frame(KDL::Rotation::RotZ(angle), KDL::Vector(0, 0, translation));
+               pinocchio::SE3(Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitZ()).toRotationMatrix(),
+                              Eigen::Vector3d(0, 0, translation));
     }
 
-    KDL::Frame target(int side, double angle, double translation, double retreat = 0) const {
-        auto flange = wheel(angle, translation) * handles_[side] * tool_.Inverse();
-        flange.p = flange.p - flange.M * KDL::Vector(0, 0, retreat);
+    pinocchio::SE3 target(int side, double angle, double translation, double retreat = 0) const {
+        auto flange = wheel(angle, translation) * handles_[side] * tool_.inverse();
+        flange.translation() -= flange.rotation() * Eigen::Vector3d(0, 0, retreat);
         return flange;
     }
 
-    Joints solve(const std::array<KDL::Frame, 2> &targets, const Joints &seed) {
+    Joints solve(const std::array<pinocchio::SE3, 2> &targets, const Joints &seed) {
         Joints result{};
         for (int side = 0; side < 2; ++side) {
             require(!cancel_, "Motion cancelled while solving IK");
@@ -799,7 +799,9 @@ class Aviator::Impl {
 
     double joint2_min_, joint2_max_, joint2_margin_;
 
-    KDL::Frame handles_[2], tool_, wheel_origin_;
+    pinocchio::SE3 handles_[2]{pinocchio::SE3::Identity(), pinocchio::SE3::Identity()};
+    pinocchio::SE3 tool_ = pinocchio::SE3::Identity();
+    pinocchio::SE3 wheel_origin_ = pinocchio::SE3::Identity();
     Joints home_{}, approach_seed_{};
     Joints last_target_{};
 

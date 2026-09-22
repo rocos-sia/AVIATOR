@@ -8,7 +8,7 @@ CMake 按依赖顺序编译，产物位于 `build/third_party/`，头文件和�
 
 ```text
 third_party/
-  eigen/ boost/ orocos-kdl/ trac_ik/ kdl_parser/ ...  # 开源源码
+  eigen/ boost/ pin_ik/ nlopt/ ...  # 开源源码
   pinocchio/ coal/                                 # 包含本地 cmake 模块
   mujoco/ mujoco_deps/ glfw/                       # 仿真及其源码依赖
   xcore/
@@ -24,8 +24,7 @@ third_party/
 |---|---|
 | eigen | 3.4.0 |
 | boost | 1.74.0；编译 filesystem、system、thread、date_time、serialization 及其依赖 |
-| orocos-kdl | 1.5.1；编译 `orocos_kdl/` |
-| trac_ik、kdl_parser | 保留本项目已有源码，来自原 AviatorRobot，无 ROS 支持 |
+| pin_ik | 2.2.0 源码快照，来自工作区 pin_ik-main；正式 FK/IK 使用 Pinocchio/PIN-IK |
 | pinocchio、coal | 3.9.0、3.0.4；保留原项目版本及内含的 jrl-cmakemodules |
 | yaml-cpp、nlopt | 0.7.0、2.7.0 |
 | console_bridge、urdfdom_headers | 1.0.1、1.0.5 |
@@ -52,8 +51,12 @@ pthread；窗口构建还需要 X11/OpenGL 开发包及显示环境。源码集�
 当前链接规则面向 Linux；其他平台需单独移植和验证。xCore 静态库仅支持 Linux x86_64，
 其他平台必须关闭 `AVIATOR_WITH_ROKAE` 或换用对应厂商 SDK。
 
-SDK 独立 DSO 使用静态库及局部符号绑定，避免其内嵌 KDL 覆盖控制库的 KDL。
-KDL/TRAC-IK 的运动学、Pinocchio 的碰撞检测分工不变。
+SDK 独立 DSO 使用静态库及局部符号绑定，其内嵌 KDL 保持私有。
+PIN-IK 求逆解，Pinocchio 做正运动学、位姿表示和碰撞检测，Eigen 处理旋转与插值。
+项目不再构建或链接独立 KDL、kdl_parser、TRAC-IK；对应源码已移除。
+`licenses/orocos-kdl/` 的既有授权说明保留，因闭源 xCore SDK 内部仍包含 KDL；
+PIN-IK 源码自身的上游版权与来源声明也保持原样。
+PIN-IK 复用现有依赖，不另行引入 Pinocchio、Eigen 或 NLopt 的其他版本。
 
 ## 来源与授权
 

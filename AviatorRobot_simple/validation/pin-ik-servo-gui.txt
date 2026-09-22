@@ -1,0 +1,9 @@
+Backend: mujoco | config: "/tmp/aviator-pin-install-20260922/relocated/bin/config/aviator.yaml"
+Camera: left drag rotate | right drag pan | Shift changes drag axis | wheel/middle drag zoom | R reset view | Esc quit
+DEMO approaching handles
+state=APPROACHED angle=4.42871e-17 displacement=-0.00431471 locked=0 mode=simulation error= ready=1 fault=0
+state=LOCKED angle=4.42871e-17 displacement=-0.00431471 locked=3 mode=simulation error= ready=1 fault=0
+state=SERVO angle=0.02 displacement=-0.002 locked=3 mode=simulation error= ready=1 fault=0
+state=SERVO angle=-0.015 displacement=-0.001 locked=3 mode=simulation error= ready=1 fault=0
+state=SERVO angle=0 displacement=0 locked=3 mode=simulation error= ready=1 fault=0
+Demo completed

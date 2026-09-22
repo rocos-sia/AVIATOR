@@ -40,16 +40,10 @@ void require(bool ok, const std::string &message) {
         fail(message);
 }
 
-// URDF 四元数 [x,y,z,w] → KDL::Rotation
-KDL::Rotation rotationFromUrdf(const urdf::Rotation &r) {
-    return KDL::Rotation::Quaternion(r.x, r.y, r.z, r.w);
-}
-KDL::Vector vectorFromUrdf(const urdf::Vector3 &v) { return KDL::Vector(v.x, v.y, v.z); }
-
 // 在 URDF 里沿固定关节链求 link 在 root 系下的位姿。
 // 只用于推算臂基座 → 轮盘的安装变换（中间全是 fixed 关节或已知转角为 0）。
 // 这里只支持"纯固定关节"链，遇到可动关节就报错，避免静默算错。
-KDL::Frame fixedChainToRoot(const urdf::ModelInterfaceSharedPtr &model,
+pinocchio::SE3 fixedChainToRoot(const urdf::ModelInterfaceSharedPtr &model,
                             const std::string &link, const std::string &root) {
     std::vector<const urdf::Joint *> chain;
     std::string current = link;
@@ -65,12 +59,14 @@ KDL::Frame fixedChainToRoot(const urdf::ModelInterfaceSharedPtr &model,
         require(!current.empty(), "父链在到达 " + root + " 前断开");
     }
 
-    KDL::Frame result; // 单位阵
+    auto result = pinocchio::SE3::Identity();
     // 从 root 往下累乘
     for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
         const auto *joint = *it;
-        const KDL::Frame local(rotationFromUrdf(joint->parent_to_joint_origin_transform.rotation),
-                               vectorFromUrdf(joint->parent_to_joint_origin_transform.position));
+        const auto &r = joint->parent_to_joint_origin_transform.rotation;
+        const auto &p = joint->parent_to_joint_origin_transform.position;
+        const pinocchio::SE3 local(Eigen::Quaterniond(r.w, r.x, r.y, r.z).normalized(),
+                                   Eigen::Vector3d(p.x, p.y, p.z));
         result = result * local;
     }
     return result;
@@ -119,15 +115,15 @@ class RokaeDataLink final : public DataLink {
             const std::string base_link =
                 std::string("AR5-5_07") + (side == 0 ? "L" : "R") + "-W4C4A2_base";
             // aircraft → base_link 的逆 × aircraft → steering_wheel
-            const KDL::Frame base_in_root = fixedChainToRoot(model, base_link, "aircraft");
-            const KDL::Frame wheel_in_root = geometry.wheel_origin;
-            mounting_[side] = base_in_root.Inverse() * wheel_in_root;
+            const pinocchio::SE3 base_in_root = fixedChainToRoot(model, base_link, "aircraft");
+            const pinocchio::SE3 wheel_in_root = geometry.wheel_origin;
+            mounting_[side] = base_in_root.inverse() * wheel_in_root;
         }
 
         const char *ip[2] = {config.left_ip.c_str(), config.right_ip.c_str()};
         for (int side = 0; side < 2; ++side) {
             arms_[side] = std::make_unique<RokaeArm>(ip[side], config.local_ip,
-                                                     frameToRowMajor(geometry.tool), config.joint_stiffness);
+                                                     poseToRowMajor(geometry.tool), config.joint_stiffness);
             joint_pos_[side] = arms_[side]->position();
             for (int axis = 0; axis < 7; ++axis)
                 target_[7 * side + axis] = joint_pos_[side][axis];
@@ -270,44 +266,25 @@ class RokaeDataLink final : public DataLink {
             if (powered_[side]) feedback = std::min(feedback, feedback_time_[side]);
             position[side] = rotation[side] = std::numeric_limits<double>::infinity();
             if (tcp_pose_valid_[side]) {
-                const auto error = KDL::diff(frameFromRowMajor(tcp_pose_[side]),
-                    desiredCylinderPose(side, reference.angle, reference.displacement));
-                position[side] = error.vel.Norm();
-                rotation[side] = error.rot.Norm();
+                const auto actual = poseFromRowMajor(tcp_pose_[side]);
+                const auto desired = desiredCylinderPose(side, reference.angle, reference.displacement);
+                position[side] = (actual.translation() - desired.translation()).norm();
+                rotation[side] = rotationError(actual, desired);
             }
             for (double value : joint_vel_[side]) speed = std::max(speed, std::abs(value));
         }
         return grasp_.update(now, feedback, powered_[0] && powered_[1], position, rotation, speed);
     }
-    // KDL::Frame → SDK 的 4x4 行优先数组（Frame::pos 的布局）
-    static std::array<double, 16> frameToRowMajor(const KDL::Frame &f) {
-        std::array<double, 16> m{};
-        for (int i = 0; i < 3; ++i)
-            for (int j = 0; j < 3; ++j)
-                m[4 * i + j] = f.M(i, j);
-        for (int i = 0; i < 3; ++i) {
-            m[4 * i + 3] = f.p(i);
-            m[12 + i] = 0.0;
-        }
-        m[15] = 1.0;
-        return m;
-    }
-
-    // 行优先 4x4 齐次矩阵（SDK tcpPose_m 的布局）→ KDL::Frame
-    static KDL::Frame frameFromRowMajor(const std::array<double, 16> &m) {
-        const KDL::Rotation R(m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]);
-        return KDL::Frame(R, KDL::Vector(m[3], m[7], m[11]));
-    }
-
     // 目标"抓取圆柱中心"位姿 = 臂基座 → 轮盘 × 轮盘(θ, d) × handle
     //
     // 注意：因为 configureToolset() 已把控制器末端坐标系设为 grasp.json 的 tool
     // （法兰 → 圆柱中心），所以 tcpPose_m 直接给出圆柱中心的位姿，
     // 期望值里不再需要乘 tool⁻¹。
-    KDL::Frame desiredCylinderPose(int side, double angle, double displacement) const {
-        const KDL::Frame wheel =
+    pinocchio::SE3 desiredCylinderPose(int side, double angle, double displacement) const {
+        const pinocchio::SE3 wheel =
             mounting_[side] *
-            KDL::Frame(KDL::Rotation::RotZ(angle), KDL::Vector(0, 0, displacement));
+            pinocchio::SE3(Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitZ()).toRotationMatrix(),
+                              Eigen::Vector3d(0, 0, displacement));
         return wheel * geometry_.handles[side];
     }
 
@@ -333,7 +310,7 @@ class RokaeDataLink final : public DataLink {
     std::array<double, 14> target_{};
 
     GraspGeometry geometry_;
-    KDL::Frame mounting_[2];
+    pinocchio::SE3 mounting_[2]{pinocchio::SE3::Identity(), pinocchio::SE3::Identity()};
 
     std::atomic<bool> powered_[2]{{false}, {false}};
     double feedback_time_[2]{};

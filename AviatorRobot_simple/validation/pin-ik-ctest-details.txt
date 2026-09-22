@@ -1,0 +1,275 @@
+Start testing: Sep 22 08:55 CST
+----------------------------------------------------------
+1/13 Testing: aviator_kinematics
+1/13 Test: aviator_kinematics
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_kinematics_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_kinematics" start time: Sep 22 08:55 CST
+Output:
+----------------------------------------------------------
+The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.Link AR5-5_07L-W4C4A2_base had 1 children
+Link AR5-5_07L-W4C4A2_link1 had 1 children
+Link AR5-5_07L-W4C4A2_link2 had 1 children
+Link AR5-5_07L-W4C4A2_link3 had 1 children
+Link AR5-5_07L-W4C4A2_link4 had 1 children
+Link AR5-5_07L-W4C4A2_link5 had 1 children
+Link AR5-5_07L-W4C4A2_link6 had 1 children
+Link AR5-5_07L-W4C4A2_link7 had 1 children
+Link AR5-5_07L-W4C4A2_flan_link had 0 children
+Link AR5-5_07R-W4C4A2_base had 1 children
+Link AR5-5_07R-W4C4A2_link1 had 1 children
+Link AR5-5_07R-W4C4A2_link2 had 1 children
+Link AR5-5_07R-W4C4A2_link3 had 1 children
+Link AR5-5_07R-W4C4A2_link4 had 1 children
+Link AR5-5_07R-W4C4A2_link5 had 1 children
+Link AR5-5_07R-W4C4A2_link6 had 1 children
+Link AR5-5_07R-W4C4A2_link7 had 1 children
+Link AR5-5_07R-W4C4A2_flan_link had 0 children
+Link dummy_link had 1 children
+Link steering_wheel had 0 children
+PIN-IK solved=80/80 p50_ms=5.13638 p95_ms=5.24086 max_ms=5.46299
+TRAC-IK solved=80/80 p50_ms=5.10692 p95_ms=5.1837 max_ms=5.27256
+FK difference: 2.22045e-16 m, 0 rad
+PIN-IK residual: 6.43988e-07 m, 0 rad
+Largest seed step: 0.00353045 rad
+<end of output>
+Test time =   0.85 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_kinematics" end time: Sep 22 08:55 CST
+"aviator_kinematics" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/13 Testing: aviator_pin_ik
+2/13 Test: aviator_pin_ik
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_pin_ik_test" "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/third_party/pin_ik/tests/robot.urdf"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_pin_ik" start time: Sep 22 08:55 CST
+Output:
+----------------------------------------------------------
+Error:   Error document empty.
+         at line 100 in /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/third_party/urdfdom/urdf_parser/src/model.cpp
+All five solve modes, 100 6R targets, analytic FK, limits, invalid inputs and timeout passed
+<end of output>
+Test time =   0.29 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_pin_ik" end time: Sep 22 08:55 CST
+"aviator_pin_ik" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/13 Testing: aviator_basic
+3/13 Test: aviator_basic
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_basic_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_basic" start time: Sep 22 08:55 CST
+Output:
+----------------------------------------------------------
+Home posture and basic control passed
+<end of output>
+Test time =   1.61 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_basic" end time: Sep 22 08:55 CST
+"aviator_basic" time elapsed: 00:00:01
+----------------------------------------------------------
+
+4/13 Testing: aviator_acceptance
+4/13 Test: aviator_acceptance
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_acceptance_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_acceptance" start time: Sep 22 08:55 CST
+Output:
+----------------------------------------------------------
+target=0.87266,0 actual_error=1.91452e-07 rad, 0.000142735 mm
+target=-0.87266,0 actual_error=8.11826e-07 rad, 6.37814e-05 mm
+target=0,0 actual_error=2.29313e-07 rad, 9.52296e-05 mm
+target=0,-0.17 actual_error=4.75881e-09 rad, 0.000202368 mm
+target=0,0 actual_error=2.07073e-07 rad, 0.000227329 mm
+J2 range=85.4957 ... 94.5002 deg
+Full simulation acceptance passed
+<end of output>
+Test time =  15.22 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_acceptance" end time: Sep 22 08:55 CST
+"aviator_acceptance" time elapsed: 00:00:15
+----------------------------------------------------------
+
+5/13 Testing: aviator_backend_selection
+5/13 Test: aviator_backend_selection
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_backend_selection_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_backend_selection" start time: Sep 22 08:55 CST
+Output:
+----------------------------------------------------------
+unknown: 未知 backend: 'unknown'（可选: mujoco / rokae）
+mujoco: backend: mujoco 需要 mjModel/mjData 句柄；请从 aviator 启动（它会加载模型并传入句柄）
+rokae: rokae.left_ip / rokae.right_ip 未配置
+Backend selection passed without hardware connections
+<end of output>
+Test time =   1.73 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_backend_selection" end time: Sep 22 08:55 CST
+"aviator_backend_selection" time elapsed: 00:00:01
+----------------------------------------------------------
+
+6/13 Testing: aviator_realtime
+6/13 Test: aviator_realtime
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_realtime_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_realtime" start time: Sep 22 08:55 CST
+Output:
+----------------------------------------------------------
+Realtime active controller: simulation=0.6s wall=0.599247s speed=1.00126x
+Realtime after mode switch: simulation=0.601s wall=0.600148s speed=1.00142x
+Realtime with 2ms model timestep: simulation=0.6s wall=0.598519s speed=1.00247x
+<end of output>
+Test time =   3.21 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_realtime" end time: Sep 22 08:56 CST
+"aviator_realtime" time elapsed: 00:00:03
+----------------------------------------------------------
+
+7/13 Testing: aviator_move_wheel
+7/13 Test: aviator_move_wheel
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_move_wheel_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_move_wheel" start time: Sep 22 08:56 CST
+Output:
+----------------------------------------------------------
+v=1 duration=0.502 joint_rad_s=0.263995 wheel_rad_s=0.374226 wheel_m_s=0.0256608
+v=0.5 duration=1.003 joint_rad_s=0.140026 wheel_rad_s=0.187113 wheel_m_s=0.0187113
+joint-limited v=1 duration=1.754 peak_joint=0.0799201
+joint-limited v=0.5 duration=3.508 peak_joint=0.03996
+MoveWheel speed ratio and velocity limits passed
+<end of output>
+Test time =   7.69 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_move_wheel" end time: Sep 22 08:56 CST
+"aviator_move_wheel" time elapsed: 00:00:07
+----------------------------------------------------------
+
+8/13 Testing: aviator_servo_wheel
+8/13 Test: aviator_servo_wheel
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_servo_wheel_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_servo_wheel" start time: Sep 22 08:56 CST
+Output:
+----------------------------------------------------------
+target=0.02,-0.002 reference=0.02,-0.002 max_publish_ms=0.013233
+target=-0.015,-0.001 reference=-0.015,-0.001 max_publish_ms=0.015588
+Servo targets, tracking, Stop, timeout and fault recovery passed
+<end of output>
+Test time =  10.35 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_servo_wheel" end time: Sep 22 08:56 CST
+"aviator_servo_wheel" time elapsed: 00:00:10
+----------------------------------------------------------
+
+9/13 Testing: aviator_demo
+9/13 Test: aviator_demo
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator" "--demo" "--headless"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_demo" start time: Sep 22 08:56 CST
+Output:
+----------------------------------------------------------
+Backend: mujoco | config: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/config/aviator.yaml"
+DEMO approaching handles
+state=APPROACHED angle=1.71256e-17 displacement=-0.00328328 locked=0 mode=simulation error= ready=1 fault=0
+state=LOCKED angle=1.71256e-17 displacement=-0.00328328 locked=3 mode=simulation error= ready=1 fault=0
+DEMO target angle=0.87266 displacement=0
+state=LOCKED angle=0.87266 displacement=0 locked=3 mode=simulation error= ready=1 fault=0
+DEMO target angle=-0.87266 displacement=0
+state=LOCKED angle=-0.87266 displacement=0 locked=3 mode=simulation error= ready=1 fault=0
+DEMO target angle=0 displacement=0
+state=LOCKED angle=0 displacement=0 locked=3 mode=simulation error= ready=1 fault=0
+DEMO target angle=0 displacement=-0.17
+state=LOCKED angle=0 displacement=-0.17 locked=3 mode=simulation error= ready=1 fault=0
+DEMO target angle=0 displacement=0
+state=LOCKED angle=0 displacement=0 locked=3 mode=simulation error= ready=1 fault=0
+Demo completed
+<end of output>
+Test time =  15.17 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_demo" end time: Sep 22 08:56 CST
+"aviator_demo" time elapsed: 00:00:15
+----------------------------------------------------------
+
+10/13 Testing: aviator_servo_demo
+10/13 Test: aviator_servo_demo
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator" "--servo-demo" "--headless"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_servo_demo" start time: Sep 22 08:56 CST
+Output:
+----------------------------------------------------------
+Backend: mujoco | config: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/config/aviator.yaml"
+DEMO approaching handles
+state=APPROACHED angle=2.45545e-17 displacement=-0.00411863 locked=0 mode=simulation error= ready=1 fault=0
+state=LOCKED angle=2.45545e-17 displacement=-0.00411863 locked=3 mode=simulation error= ready=1 fault=0
+state=SERVO angle=0.02 displacement=-0.002 locked=3 mode=simulation error= ready=1 fault=0
+state=SERVO angle=-0.015 displacement=-0.001 locked=3 mode=simulation error= ready=1 fault=0
+state=SERVO angle=0 displacement=0 locked=3 mode=simulation error= ready=1 fault=0
+Demo completed
+<end of output>
+Test time =  16.83 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_servo_demo" end time: Sep 22 08:56 CST
+"aviator_servo_demo" time elapsed: 00:00:16
+----------------------------------------------------------
+
+11/13 Testing: aviator_open_loop
+11/13 Test: aviator_open_loop
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_open_loop_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_open_loop" start time: Sep 22 08:56 CST
+Output:
+----------------------------------------------------------
+Open-loop phase, references, timing and arm feedback faults passed
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_open_loop" end time: Sep 22 08:56 CST
+"aviator_open_loop" time elapsed: 00:00:00
+----------------------------------------------------------
+
+12/13 Testing: aviator_controller_safety
+12/13 Test: aviator_controller_safety
+Command: "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator_controller_safety_test"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_controller_safety" start time: Sep 22 08:56 CST
+Output:
+----------------------------------------------------------
+Dual-arm enable rollback and invalid planning configuration passed
+<end of output>
+Test time =   0.31 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_controller_safety" end time: Sep 22 08:56 CST
+"aviator_controller_safety" time elapsed: 00:00:00
+----------------------------------------------------------
+
+13/13 Testing: aviator_interactive
+13/13 Test: aviator_interactive
+Command: "/usr/bin/python3.10" "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/tests/test_interactive.py" "/home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/bin/aviator"
+Directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+"aviator_interactive" start time: Sep 22 08:56 CST
+Output:
+----------------------------------------------------------
+Interactive parsing, status/stop, EOF and clean exit passed
+<end of output>
+Test time =   3.71 sec
+----------------------------------------------------------
+Test Passed.
+"aviator_interactive" end time: Sep 22 08:56 CST
+"aviator_interactive" time elapsed: 00:00:03
+----------------------------------------------------------
+
+End testing: Sep 22 08:56 CST

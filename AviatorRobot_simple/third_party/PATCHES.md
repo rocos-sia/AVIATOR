@@ -1,5 +1,8 @@
 # 上游源码适配
 
+`pin_ik/` 的角度回绕、数值梯度、内部命名空间及构建适配见
+[pin_ik/README.vendor.md](pin_ik/README.vendor.md)。原工作区 `pin_ik-main` 未修改。
+
 除以下适配外，不修改第三方算法实现。构建选项集中在 `cmake/Dependencies.cmake`。
 
 - `tinyxml/CMakeLists.txt`：上游 2.6.2 只有 Makefile，补充最小共享库构建与安装规则。
@@ -18,5 +21,5 @@
 - 为部分 `.gitignore` 添加源码文件例外，确保上游 Makefile、CMake 模块、样例数据等
   不被工作区或上游的宽泛忽略规则漏掉。
 
-`trac_ik/`、`kdl_parser/` 保留项目已有的无 ROS 适配，本次不变。
+`orocos-kdl/`、`trac_ik/`、`kdl_parser/` 已随位姿接口迁移移除，见 `../validation/NO_KDL.md`。
 `pinocchio/`、`coal/` 包含原 AviatorRobot 中已有的 jrl-cmakemodules 源码，避免构建时下载子模块。

@@ -1,0 +1,6 @@
+{
+  "version": "2.2.0",
+  "source": "workspace pin_ik-main, imported 2026-09-22",
+  "upstream_snapshot_sha256": "d153e35bca4156b63fc99e763c44645ed2e59584cf42a74760102bcfe4901687",
+  "note": "Source snapshot before local adaptations; see README.vendor.md and ../PATCHES.md."
+}

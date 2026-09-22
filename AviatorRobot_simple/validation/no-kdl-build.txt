@@ -1,0 +1,143 @@
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+[  2%] Performing build step for 'source_yaml-cpp'
+[  2%] Performing build step for 'source_boost'
+[  2%] Performing build step for 'source_eigen'
+[  2%] Performing build step for 'source_nlopt'
+-- source_eigen build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/eigen/src/source_eigen-stamp/source_eigen-build-*.log
+[  2%] No install step for 'source_eigen'
+[  3%] Completed 'source_eigen'
+-- source_yaml-cpp build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/yaml-cpp/src/source_yaml-cpp-stamp/source_yaml-cpp-build-*.log
+[  3%] No install step for 'source_yaml-cpp'
+[  6%] Built target source_eigen
+-- source_nlopt build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/nlopt/src/source_nlopt-stamp/source_nlopt-build-*.log
+[  6%] No install step for 'source_nlopt'
+[  7%] Performing build step for 'source_tinyxml'
+[  8%] Completed 'source_yaml-cpp'
+[  9%] Completed 'source_nlopt'
+[ 13%] Built target source_yaml-cpp
+[ 17%] Built target source_nlopt
+[ 18%] Performing build step for 'source_tinyxml2'
+[ 19%] Performing build step for 'source_console_bridge'
+-- source_tinyxml build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/tinyxml/src/source_tinyxml-stamp/source_tinyxml-build-*.log
+[ 20%] No install step for 'source_tinyxml'
+[ 20%] Completed 'source_tinyxml'
+-- source_tinyxml2 build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/tinyxml2/src/source_tinyxml2-stamp/source_tinyxml2-build-*.log
+-- source_console_bridge build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/console_bridge/src/source_console_bridge-stamp/source_console_bridge-build-*.log
+[ 20%] No install step for 'source_tinyxml2'
+[ 22%] Built target source_tinyxml
+[ 23%] No install step for 'source_console_bridge'
+[ 24%] Completed 'source_tinyxml2'
+[ 25%] Performing build step for 'source_urdfdom_headers'
+[ 25%] Completed 'source_console_bridge'
+[ 28%] Built target source_tinyxml2
+[ 30%] Built target source_console_bridge
+[ 31%] Performing build step for 'source_zlib'
+[ 32%] Performing build step for 'source_octomap'
+-- source_urdfdom_headers build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/urdfdom_headers/src/source_urdfdom_headers-stamp/source_urdfdom_headers-build-*.log
+[ 33%] No install step for 'source_urdfdom_headers'
+[ 33%] Completed 'source_urdfdom_headers'
+[ 35%] Built target source_urdfdom_headers
+-- source_zlib build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/zlib/src/source_zlib-stamp/source_zlib-build-*.log
+[ 36%] No install step for 'source_zlib'
+[ 37%] Performing build step for 'source_mujoco'
+[ 37%] Completed 'source_zlib'
+[ 40%] Built target source_zlib
+[ 40%] Performing build step for 'source_glfw'
+-- source_glfw build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/glfw/src/source_glfw-stamp/source_glfw-build-*.log
+[ 41%] No install step for 'source_glfw'
+-- source_octomap build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/octomap/src/source_octomap-stamp/source_octomap-build-*.log
+[ 42%] No install step for 'source_octomap'
+[ 43%] Completed 'source_glfw'
+[ 43%] Completed 'source_octomap'
+[ 46%] Built target source_glfw
+Consolidate compiler generated dependencies of target aviator_rokae_sdk
+[ 49%] Built target source_octomap
+[ 50%] Built target aviator_rokae_sdk
+Consolidate compiler generated dependencies of target aviator_open_loop_test
+[ 51%] Built target aviator_open_loop_test
+[ 52%] Performing configure step for 'source_urdfdom'
+-- source_mujoco build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/mujoco/src/source_mujoco-stamp/source_mujoco-build-*.log
+[ 53%] No install step for 'source_mujoco'
+[ 53%] Completed 'source_mujoco'
+[ 55%] Built target source_mujoco
+-- source_urdfdom configure command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/urdfdom/src/source_urdfdom-stamp/source_urdfdom-configure-*.log
+[ 56%] Performing configure step for 'source_assimp'
+[ 56%] Performing build step for 'source_urdfdom'
+-- source_assimp configure command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/assimp/src/source_assimp-stamp/source_assimp-configure-*.log
+[ 57%] Performing build step for 'source_assimp'
+-- source_urdfdom build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/urdfdom/src/source_urdfdom-stamp/source_urdfdom-build-*.log
+[ 58%] No install step for 'source_urdfdom'
+[ 59%] Completed 'source_urdfdom'
+[ 61%] Built target source_urdfdom
+Consolidate compiler generated dependencies of target aviator_viewer
+[ 62%] Built target aviator_viewer
+[ 62%] Built target aviator_assets
+Consolidate compiler generated dependencies of target aviator_viewer_test
+[ 63%] Linking CXX executable bin/aviator_viewer_test
+-- source_assimp build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/assimp/src/source_assimp-stamp/source_assimp-build-*.log
+[ 64%] No install step for 'source_assimp'
+[ 64%] Built target aviator_viewer_test
+[ 64%] Completed 'source_assimp'
+[ 66%] Built target source_assimp
+-- source_boost build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/boost/src/source_boost-stamp/source_boost-build-*.log
+[ 66%] No install step for 'source_boost'
+[ 66%] Completed 'source_boost'
+[ 69%] Built target source_boost
+[ 70%] Performing configure step for 'source_coal'
+-- source_coal configure command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/coal/src/source_coal-stamp/source_coal-configure-*.log
+[ 70%] Performing build step for 'source_coal'
+-- source_coal build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/coal/src/source_coal-stamp/source_coal-build-*.log
+[ 71%] No install step for 'source_coal'
+[ 72%] Completed 'source_coal'
+[ 74%] Built target source_coal
+[ 75%] Performing configure step for 'source_pinocchio'
+-- source_pinocchio configure command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/pinocchio/src/source_pinocchio-stamp/source_pinocchio-configure-*.log
+[ 75%] Performing build step for 'source_pinocchio'
+-- source_pinocchio build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/pinocchio/src/source_pinocchio-stamp/source_pinocchio-build-*.log
+[ 76%] No install step for 'source_pinocchio'
+[ 77%] Completed 'source_pinocchio'
+[ 79%] Built target source_pinocchio
+[ 79%] Performing configure step for 'source_pin_ik'
+-- source_pin_ik configure command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/pin_ik/src/source_pin_ik-stamp/source_pin_ik-configure-*.log
+[ 80%] Performing build step for 'source_pin_ik'
+-- source_pin_ik build command succeeded.  See also /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build/third_party/stamps/pin_ik/src/source_pin_ik-stamp/source_pin_ik-build-*.log
+[ 80%] No install step for 'source_pin_ik'
+[ 80%] Completed 'source_pin_ik'
+[ 83%] Built target source_pin_ik
+[ 83%] Built target aviator_third_party
+[ 84%] Building CXX object CMakeFiles/aviator_pose_test.dir/tests/test_pose.cpp.o
+Consolidate compiler generated dependencies of target aviator_pin_ik_test
+[ 85%] Built target aviator_pin_ik_test
+Consolidate compiler generated dependencies of target aviator_control
+[ 89%] Built target aviator_control
+[ 90%] Building CXX object CMakeFiles/aviator.dir/src/main.cpp.o
+[ 90%] Building CXX object CMakeFiles/aviator_basic_test.dir/tests/test_basic.cpp.o
+[ 90%] Building CXX object CMakeFiles/aviator_acceptance_test.dir/tests/test_acceptance.cpp.o
+[ 90%] Linking CXX executable bin/aviator_basic_test
+[ 90%] Built target aviator_basic_test
+[ 90%] Building CXX object CMakeFiles/aviator_backend_selection_test.dir/tests/test_backend_selection.cpp.o
+[ 91%] Linking CXX executable bin/aviator
+[ 91%] Built target aviator
+[ 92%] Building CXX object CMakeFiles/aviator_realtime_test.dir/tests/test_realtime.cpp.o
+[ 93%] Linking CXX executable bin/aviator_acceptance_test
+[ 93%] Built target aviator_acceptance_test
+[ 94%] Building CXX object CMakeFiles/aviator_move_wheel_test.dir/tests/test_move_wheel.cpp.o
+[ 94%] Linking CXX executable bin/aviator_pose_test
+[ 94%] Built target aviator_pose_test
+[ 95%] Building CXX object CMakeFiles/aviator_servo_wheel_test.dir/tests/test_servo_wheel.cpp.o
+[ 96%] Linking CXX executable bin/aviator_backend_selection_test
+[ 96%] Built target aviator_backend_selection_test
+[ 97%] Building CXX object CMakeFiles/aviator_kinematics_test.dir/tests/test_kinematics.cpp.o
+[ 97%] Linking CXX executable bin/aviator_realtime_test
+[ 97%] Built target aviator_realtime_test
+[ 98%] Building CXX object CMakeFiles/aviator_controller_safety_test.dir/tests/test_controller_safety.cpp.o
+[ 99%] Linking CXX executable bin/aviator_move_wheel_test
+[ 99%] Built target aviator_move_wheel_test
+[100%] Linking CXX executable bin/aviator_servo_wheel_test
+[100%] Built target aviator_servo_wheel_test
+[100%] Linking CXX executable bin/aviator_controller_safety_test
+[100%] Built target aviator_controller_safety_test
+[100%] Linking CXX executable bin/aviator_kinematics_test
+[100%] Built target aviator_kinematics_test

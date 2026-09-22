@@ -55,8 +55,6 @@ ExternalProject_Add(source_boost
     LOG_BUILD ON LOG_OUTPUT_ON_FAILURE ON)
 add_dependencies(aviator_third_party source_boost)
 
-aviator_source(orocos-kdl DIRECTORY "${AVIATOR_VENDOR}/orocos-kdl/orocos_kdl"
-    DEPENDS source_eigen LIBRARIES orocos-kdl ARGS -DENABLE_TESTS=OFF)
 aviator_source(yaml-cpp LIBRARIES yaml-cpp ARGS -DYAML_CPP_BUILD_TESTS=OFF
     -DYAML_CPP_BUILD_TOOLS=OFF -DYAML_CPP_BUILD_CONTRIB=OFF -DYAML_BUILD_SHARED_LIBS=ON)
 aviator_source(nlopt LIBRARIES nlopt ARGS -DNLOPT_PYTHON=OFF -DNLOPT_OCTAVE=OFF
@@ -88,6 +86,8 @@ aviator_source(pinocchio DEPENDS source_coal source_urdfdom LIBRARIES
     -DBUILD_WITH_COLLISION_SUPPORT=ON -DBUILD_WITH_SDF_SUPPORT=OFF
     -DBUILD_WITH_AUTODIFF_SUPPORT=OFF -DBUILD_WITH_CASADI_SUPPORT=OFF
     -DBUILD_WITH_CODEGEN_SUPPORT=OFF -DBUILD_WITH_OPENMP_SUPPORT=OFF -DBUILD_WITH_EXTRA_SUPPORT=OFF)
+aviator_source(pin_ik DEPENDS source_pinocchio source_nlopt LIBRARIES pin_ik
+    ARGS ${boost_args} -DPIN_IK_BUILD_EXAMPLES=OFF)
 
 if(AVIATOR_WITH_SIMULATION)
     set(mujoco_args "")
@@ -110,9 +110,9 @@ add_library(aviator_dependencies INTERFACE)
 add_dependencies(aviator_dependencies aviator_third_party)
 target_include_directories(aviator_dependencies SYSTEM INTERFACE
     "${AVIATOR_DEPS}/include" "${AVIATOR_DEPS}/include/eigen3")
-foreach(name yaml-cpp orocos-kdl tinyxml tinyxml2 urdfdom_model console_bridge
+foreach(name yaml-cpp tinyxml tinyxml2 urdfdom_model console_bridge
         boost_filesystem boost_system boost_thread boost_date_time boost_serialization
-        nlopt coal pinocchio_default pinocchio_collision pinocchio_parsers)
+        nlopt coal pinocchio_default pinocchio_collision pinocchio_parsers pin_ik)
     add_library(dep_${name} SHARED IMPORTED GLOBAL)
     set_target_properties(dep_${name} PROPERTIES IMPORTED_LOCATION "${AVIATOR_DEPS}/lib/lib${name}.so")
     target_link_libraries(aviator_dependencies INTERFACE dep_${name})
@@ -122,10 +122,3 @@ target_compile_definitions(aviator_dependencies INTERFACE
     PINOCCHIO_ENABLE_TEMPLATE_INSTANTIATION PINOCCHIO_WITH_HPP_FCL PINOCCHIO_WITH_URDFDOM
     COAL_BACKWARD_COMPATIBILITY_WITH_HPP_FCL COAL_DISABLE_HPP_FCL_WARNINGS
     COAL_HAS_OCTOMAP COAL_HAVE_OCTOMAP OCTOMAP_MAJOR_VERSION=1 OCTOMAP_MINOR_VERSION=9 OCTOMAP_PATCH_VERSION=7)
-add_library(kdl_parser STATIC "${AVIATOR_VENDOR}/kdl_parser/src/kdl_parser.cpp")
-target_include_directories(kdl_parser PUBLIC "${AVIATOR_VENDOR}/kdl_parser/include")
-target_link_libraries(kdl_parser PUBLIC aviator_dependencies)
-add_library(trac_ik STATIC "${AVIATOR_VENDOR}/trac_ik/src/kdl_tl.cpp"
-    "${AVIATOR_VENDOR}/trac_ik/src/nlopt_ik.cpp" "${AVIATOR_VENDOR}/trac_ik/src/trac_ik.cpp")
-target_include_directories(trac_ik PUBLIC "${AVIATOR_VENDOR}/trac_ik/include")
-target_link_libraries(trac_ik PUBLIC kdl_parser Threads::Threads)

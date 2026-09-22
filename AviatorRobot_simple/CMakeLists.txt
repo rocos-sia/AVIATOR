@@ -18,12 +18,13 @@ set(CMAKE_BUILD_RPATH "$ORIGIN/../lib;$ORIGIN/../dependencies/lib")
 set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 add_link_options("-Wl,--disable-new-dtags" "-Wl,-z,defs")
 find_package(Threads REQUIRED)
+include(CTest)
 include(cmake/Dependencies.cmake)
 
 add_library(aviator_control SHARED src/Aviator.cpp src/backend_factory.cpp
-    src/Kinematics_tracik.cpp src/CollisionChecker_pinocchio.cpp)
+    src/Kinematics_pin_ik.cpp src/CollisionChecker_pinocchio.cpp)
 target_include_directories(aviator_control PUBLIC include PRIVATE src)
-target_link_libraries(aviator_control PUBLIC aviator_dependencies Threads::Threads PRIVATE trac_ik)
+target_link_libraries(aviator_control PUBLIC aviator_dependencies Threads::Threads)
 if(AVIATOR_WITH_SIMULATION)
     add_library(mujoco SHARED IMPORTED)
     set_target_properties(mujoco PROPERTIES IMPORTED_LOCATION "${AVIATOR_DEPS}/lib/libmujoco.so")
@@ -72,12 +73,24 @@ add_custom_target(aviator_assets ALL
 add_dependencies(aviator aviator_assets)
 install(TARGETS aviator aviator_control RUNTIME DESTINATION bin LIBRARY DESTINATION lib)
 install(DIRECTORY config model DESTINATION bin)
-install(DIRECTORY "${AVIATOR_DEPS}/lib/" DESTINATION lib FILES_MATCHING PATTERN "*.so*")
+# Do not ship an obsolete library left in a dependency prefix by an older build.
+install(DIRECTORY "${AVIATOR_DEPS}/lib/" DESTINATION lib FILES_MATCHING
+    PATTERN "*.so*" PATTERN "liborocos-kdl.so*" EXCLUDE)
 install(DIRECTORY "${AVIATOR_VENDOR}/licenses/" DESTINATION share/aviator/licenses)
 
-include(CTest)
+if(BUILD_TESTING)
+    add_executable(aviator_pose_test tests/test_pose.cpp)
+    target_include_directories(aviator_pose_test PRIVATE include)
+    target_link_libraries(aviator_pose_test PRIVATE aviator_dependencies)
+    add_test(NAME aviator_pose COMMAND aviator_pose_test)
+
+    add_executable(aviator_pin_ik_test third_party/pin_ik/tests/standalone_tests.cpp)
+    target_link_libraries(aviator_pin_ik_test PRIVATE aviator_dependencies)
+    add_test(NAME aviator_pin_ik COMMAND aviator_pin_ik_test "${AVIATOR_VENDOR}/pin_ik/tests/robot.urdf")
+    set_tests_properties(aviator_pin_ik PROPERTIES TIMEOUT 60 ENVIRONMENT "LD_BIND_NOW=1")
+endif()
 if(BUILD_TESTING AND AVIATOR_WITH_SIMULATION)
-    foreach(_test basic acceptance backend_selection realtime move_wheel servo_wheel)
+    foreach(_test basic acceptance backend_selection realtime move_wheel servo_wheel kinematics)
         add_executable(aviator_${_test}_test "tests/test_${_test}.cpp")
         target_link_libraries(aviator_${_test}_test PRIVATE aviator_control mujoco)
         target_compile_definitions(aviator_${_test}_test PRIVATE

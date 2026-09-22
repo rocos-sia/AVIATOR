@@ -1,0 +1,32 @@
+Internal ctest changing into directory: /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+Test project /home/sia/Documents/GitHub/AVIATOR/AviatorRobot_simple/build
+      Start  1: aviator_kinematics
+ 1/13 Test  #1: aviator_kinematics ...............   Passed    0.85 sec
+      Start  2: aviator_pin_ik
+ 2/13 Test  #2: aviator_pin_ik ...................   Passed    0.29 sec
+      Start  3: aviator_basic
+ 3/13 Test  #3: aviator_basic ....................   Passed    1.61 sec
+      Start  4: aviator_acceptance
+ 4/13 Test  #4: aviator_acceptance ...............   Passed   15.22 sec
+      Start  5: aviator_backend_selection
+ 5/13 Test  #5: aviator_backend_selection ........   Passed    1.73 sec
+      Start  6: aviator_realtime
+ 6/13 Test  #6: aviator_realtime .................   Passed    3.21 sec
+      Start  7: aviator_move_wheel
+ 7/13 Test  #7: aviator_move_wheel ...............   Passed    7.69 sec
+      Start  8: aviator_servo_wheel
+ 8/13 Test  #8: aviator_servo_wheel ..............   Passed   10.35 sec
+      Start  9: aviator_demo
+ 9/13 Test  #9: aviator_demo .....................   Passed   15.17 sec
+      Start 10: aviator_servo_demo
+10/13 Test #10: aviator_servo_demo ...............   Passed   16.83 sec
+      Start 11: aviator_open_loop
+11/13 Test #11: aviator_open_loop ................   Passed    0.00 sec
+      Start 12: aviator_controller_safety
+12/13 Test #12: aviator_controller_safety ........   Passed    0.31 sec
+      Start 13: aviator_interactive
+13/13 Test #13: aviator_interactive ..............   Passed    3.71 sec
+
+100% tests passed, 0 tests failed out of 13
+
+Total Test time (real) =  77.47 sec

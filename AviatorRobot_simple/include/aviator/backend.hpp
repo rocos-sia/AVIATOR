@@ -2,7 +2,7 @@
 #include "aviator/CollisionChecker.hpp"
 #include "aviator/DataLink.hpp"
 #include "aviator/Kinematics.hpp"
-#include <kdl/frames.hpp>
+#include "aviator/Pose.hpp"
 #include <memory>
 #include <string>
 
@@ -29,9 +29,9 @@ struct GraspCylinder {
 //   tool          法兰 → 抓取圆柱中心（连接杆 + 圆柱）的刚体变换
 //   approach_dist 预接近距离（沿法兰 -Z 后退量），供真机做同样的接近动作
 struct GraspGeometry {
-    KDL::Frame wheel_origin;
-    KDL::Frame handles[2];
-    KDL::Frame tool;
+    pinocchio::SE3 wheel_origin = pinocchio::SE3::Identity();
+    pinocchio::SE3 handles[2]{pinocchio::SE3::Identity(), pinocchio::SE3::Identity()};
+    pinocchio::SE3 tool = pinocchio::SE3::Identity();
     double approach_distance = 0.06;
 };
 
@@ -80,8 +80,8 @@ std::unique_ptr<DataLink> makeRokaeDataLink(const std::string &urdf_path,
                                             const GraspGeometry &geometry);
 #endif
 
-// TRAC-IK 运动学后端。joint2_min/max 为 J2（肘部）的规划限位，弧度。
-std::unique_ptr<Kinematics> makeTracIkKinematics(const std::string &urdf_path, double joint2_min,
+// PIN-IK / Pinocchio 运动学后端。joint2_min/max 为 J2 规划限位，弧度。
+std::unique_ptr<Kinematics> makePinIkKinematics(const std::string &urdf_path, double joint2_min,
                                                  double joint2_max);
 
 // Pinocchio + hpp-fcl/coal 碰撞后端。
