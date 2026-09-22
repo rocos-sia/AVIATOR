@@ -176,7 +176,46 @@ class ManifoldLookup:
         return out
 
     # -- public API ----------------------------------------------------------
-    def query(self, x: np.ndarray, phi: np.ndarray) -> dict:
+    def safe_interval(self, x: np.ndarray) -> dict:
+        """Return the per-arm safe-phase interval at a batch of task states.
+
+        Parameters
+        ----------
+        x : (B, 2) array -- ``(theta, s)``
+
+        Returns
+        -------
+        dict with ``phi_safe_lo`` (B,2), ``phi_safe_hi`` (B,2), ``branch`` (B,).
+        This is the bilinear (theta, s) interpolation of ``safe.bin`` and does
+        *not* require a phase argument -- it is used by the safety filter to
+        clip ``phi_{t+1}`` into the safe box at ``x_next``.
+        """
+        x = np.asarray(x, dtype=np.float64)
+        if x.ndim != 2 or x.shape[1] != 2:
+            raise ValueError(f"x must have shape (B, 2), got {x.shape}")
+        th, s = x[:, 0], x[:, 1]
+        bad_x = ((th < self.th_min - _TOL) | (th > self.th_max + _TOL)
+                 | (s < self.s_min - _TOL) | (s > self.s_max + _TOL))
+        if bad_x.any():
+            i = int(np.flatnonzero(bad_x)[0])
+            raise ValueError(
+                f"x[{i}] = (theta={th[i]:.6g}, s={s[i]:.6g}) outside grid "
+                f"theta in [{self.th_min}, {self.th_max}], s in [{self.s_min}, {self.s_max}]"
+            )
+        i_th, w_th = self._frac(self.theta_axis, th)
+        i_s, w_s = self._frac(self.s_axis, s)
+        safe = self._bilinear(self.safe, i_th, i_s, w_th, w_s)   # (B, 4)
+        branch = np.maximum.reduce([
+            self.branch[(i_s + ds) * self.n_theta + (i_th + dth)]
+            for ds in (0, 1) for dth in (0, 1)
+        ])
+        return {
+            "phi_safe_lo": safe[:, [0, 2]],
+            "phi_safe_hi": safe[:, [1, 3]],
+            "branch": branch,
+        }
+
+    def query(self, x: np.ndarray, phi: np.ndarray, check_safe: bool = True) -> dict:
         """Query the manifold at a batch of states.
 
         Parameters
@@ -191,11 +230,19 @@ class ManifoldLookup:
         ``phi_safe_lo`` (B,2), ``phi_safe_hi`` (B,2), ``Q_x`` (B,14,2),
         ``Q_phi`` (B,14,2), ``branch`` (B,).
 
+        Parameters
+        ----------
+        check_safe : bool
+            when False, the safe-interval membership check is skipped (the
+            derivatives ``Q_x``/``Q_phi`` and ``dL``/``dR`` are still returned).
+            Used by the safety filter to linearize at ``x_next`` while the
+            current phase may be outside that state's safe box.
+
         Raises
         ------
         ValueError
-            if any ``(x, phi)`` lies outside the grid or outside the arm's safe
-            interval.
+            if any ``(x, phi)`` lies outside the grid, or (when ``check_safe``)
+            outside the arm's safe interval.
         """
         x = np.asarray(x, dtype=np.float64)
         phi = np.asarray(phi, dtype=np.float64)
@@ -241,7 +288,7 @@ class ManifoldLookup:
 
         bad_safe = ((pL < phi_safe_lo[:, 0] - _TOL) | (pL > phi_safe_hi[:, 0] + _TOL)
                     | (pR < phi_safe_lo[:, 1] - _TOL) | (pR > phi_safe_hi[:, 1] + _TOL))
-        if bad_safe.any():
+        if check_safe and bad_safe.any():
             i = int(np.flatnonzero(bad_safe)[0])
             raise ValueError(
                 f"phi[{i}] = ({pL[i]:.6g}, {pR[i]:.6g}) outside the safe interval "
