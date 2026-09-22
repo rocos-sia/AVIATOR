@@ -101,6 +101,11 @@ class TrainConfig(DefaultTrainingConfig):
     trajectory_split = "rl_train"            # actor rollout split (400 trajs)
     num_actor_envs = 8                       # Task 2.3: envs stepped in lockstep
 
+    # Save the SAC state (actor + critic + temperature) every this many learner
+    # iterations so progress can be evaluated and the run resumed.  Default 0
+    # means "never save", which loses everything on a crash.
+    checkpoint_period = 20000
+
     def __init__(self):
         self.phi_dot_scale = _read_phi_dot_scale()
 
