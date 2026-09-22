@@ -3,3 +3,14 @@
 data/aviator/manifold_phi/
 data/aviator/dp_demo/*.csv
 data/aviator/dp_demo/*.pkl
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# large vendored binaries not needed for proprio-only training
+examples/experiments/resnet10_params.pkl
+docs/images/
+
+# Python build artifacts
+*.egg-info/
