@@ -426,6 +426,12 @@ class ClearanceTrajectory {
                 }
             }
         }
+        // The TRUE robot's unified joint-speed limit is 1.5 rad/s (a hard physical spec), NOT the
+        // URDF/MJCF `velocity` field (3–5 rad/s, a trajectory-duration scaling constant). Override
+        // so every dynamics evaluation (rate_sat, velfeas, B3/B4) is judged against the real limit.
+        for (int s = 0; s < 2; s++)
+            for (int j = 0; j < 7; j++)
+                qdot_max[s][j] = 1.5;
     }
 
     // Handle orientation under the constraint-release ladder. φ spins about the grip axis
@@ -943,6 +949,99 @@ class ClearanceTrajectory {
         dmax = tr.d_max;
         qmax = tr.q_max;
         return tr.d_max > -0.5;
+    }
+
+    // Step 2 (T5.1 boundary 1-D reselection): trace the FULL self-motion loop of one arm
+    // at (θ,s) (other arm frozen at other0) and collect a phase-consistent set of
+    // clearance-safe on-manifold candidates (d ≥ d_safe, TRUE joint limits; joint margin is
+    // NOT required — that was the old max-margin section's over-constraint). Phase
+    // consistency comes from the home-approach-seeded q0 (a smooth function of s) + fixed
+    // signed null-space arc sampling, so candidate k at one s tracks candidate k at the next
+    // s and the DP can latch onto a continuous self-motion branch instead of re-picking the
+    // argmax margin each row. Also returns the OLD max-margin section config
+    // (q_safe/d_safe_at, with q_max/d_max fallback) so the caller can reproduce max|qdot|_old.
+    void collect_boundary_candidates(int side, const Q &q0, const Q &other0, double theta, double s, int K,
+                                     std::vector<Q> &cand, std::vector<double> &cd,
+                                     Q &q_safe, double &d_safe_at, bool &has_safe,
+                                     Q &q_max, double &d_max) {
+        cand.clear();
+        cd.clear();
+        has_safe = false;
+        d_safe_at = -1.0;
+        d_max = -1.0;
+        q_max = q0;
+        q_safe = q0;
+        double m_safe = -1.0;
+        std::vector<Q> arc;
+        std::vector<double> arc_d;
+
+        auto visit = [&](const Q &q) {
+            set_config(side ? other0 : q, side ? q : other0, theta, s);
+            double dd = wall_clearance(side);
+            if (dd > d_max) {
+                d_max = dd;
+                q_max = q;
+            }
+            if (dd >= d_safe) {
+                double m = arm_margin(side, q);
+                if (m >= q_margin_target && m > m_safe) {
+                    has_safe = true;
+                    m_safe = m;
+                    d_safe_at = dd;
+                    q_safe = q;
+                }
+            }
+            return dd;
+        };
+
+        double d0 = visit(q0);  // q0 belongs to the loop
+        std::vector<Q> minus;
+        std::vector<double> minus_d;
+        if (d0 >= d_safe) {
+            arc.push_back(q0);
+            arc_d.push_back(d0);
+        }
+        int n_steps;
+        double ce;
+        // + direction: collect candidates (phase-consistent) + track old-section stats
+        walk_dir(side, q0, other0, theta, s, handle[side].M, +1.0, n_steps, ce, [&](const Q &q) {
+            double dd = visit(q);
+            if (dd >= d_safe) {
+                arc.push_back(q);
+                arc_d.push_back(dd);
+            }
+        });
+        // − direction: track old-section stats only (candidates keep a single signed-arc
+        // ordering, so the +-half and −-half are concatenated as [−…, q0, +…]).
+        walk_dir(side, q0, other0, theta, s, handle[side].M, -1.0, n_steps, ce, [&](const Q &q) {
+            double dd = visit(q);
+            if (dd >= d_safe) {
+                minus.push_back(q);
+                minus_d.push_back(dd);
+            }
+        });
+        for (int i = (int)minus.size() - 1; i >= 0; i--) {
+            arc.insert(arc.begin(), minus[i]);
+            arc_d.insert(arc_d.begin(), minus_d[i]);
+        }
+
+        int M = (int)arc.size();
+        if (M == 0) {  // no clearance-safe config on this loop: fall back to argmax (d < d_safe)
+            cand.push_back(q_max);
+            cd.push_back(d_max);
+            return;
+        }
+        int k = std::min(K, M);
+        if (k == 1) {
+            cand.push_back(arc[M / 2]);
+            cd.push_back(arc_d[M / 2]);
+            return;
+        }
+        for (int i = 0; i < k; i++) {
+            int idx = (int)std::lround(double(i) * (M - 1) / (k - 1));
+            cand.push_back(arc[idx]);
+            cd.push_back(arc_d[idx]);
+        }
     }
 
     // Step 5: static φ ablation — d*_{ρ+φ} = max clearance over the 2-D null space
@@ -2695,6 +2794,114 @@ class ClearanceTrajectory {
         }
     }
 
+    // Record the T5 (safe-manifold bilinear lookup + fixed 2-step Newton, NO per-frame TRAC-IK)
+    // joint trajectory for the three compare profiles, mirroring record_t0()'s task stream so the
+    // two are frame-for-frame comparable. Requires the safe-manifold section
+    // (manifold_qL/qR/dcont.bin) built via TASKS=manifold_safe. Writes keyframes_t5_<profile>.csv
+    // (16 cols: theta,s,qL0..6,qR0..6) and trajectory_t5_<profile>.csv (d_base,coll per knot).
+    void record_t5(const fs::path &outdir, int N) {
+        const double dt = 0.02;  // 50 Hz
+        Manifold manifold;
+        if (!manifold.load(outdir)) {
+            std::cerr << "record_t5: no manifold in " << outdir << " (run TASKS=manifold_safe first)\n";
+            return;
+        }
+        struct Profile { const char *name; double f, th_amp, s_amp; };
+        const Profile profiles[] = {
+            {"sine", 0.2, 0.87266, 0.0},
+            {"roll_pull", 0.2, 0.6, 0.08},
+            {"random", 0.0, 0.0, 0.0},
+        };
+
+        for (const auto &p : profiles) {
+            // identical task stream to record_t0()/compare()
+            std::vector<std::array<double, 2>> stream(N);
+            std::mt19937 rng(987654321u);
+            std::uniform_real_distribution<double> U01(0.0, 1.0);
+            std::uniform_real_distribution<double> Uph(0.0, 2.0 * M_PI);
+            const int ncomp = 5;
+            double thA[ncomp], thPh[ncomp], sA[ncomp], sPh[ncomp];
+            const double thF[ncomp] = {0.10, 0.25, 0.40, 0.70, 1.10};
+            const double sF[ncomp] = {0.08, 0.20, 0.35, 0.60, 0.90};
+            for (int i = 0; i < ncomp; i++) {
+                thA[i] = 0.35 + 0.65 * U01(rng);
+                thPh[i] = Uph(rng);
+                sA[i] = 0.35 + 0.65 * U01(rng);
+                sPh[i] = Uph(rng);
+            }
+            for (int k = 0; k < N; k++) {
+                double t = k * dt;
+                double th, s;
+                if (std::string(p.name) == "random") {
+                    th = 0.0; s = -0.08;
+                    for (int i = 0; i < ncomp; i++) {
+                        th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                        s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                    }
+                    th = std::clamp(0.5 * th, -0.87266, 0.87266);
+                    s = std::clamp(s, -0.16, 0.0);
+                } else {
+                    double thd, sd;
+                    command(p.name, t, p.f, p.th_amp, p.s_amp, dt * N, th, s, thd, sd);
+                }
+                stream[k] = {th, s};
+            }
+
+            // T5: manifold lookup + 2 Newton steps at the first knot (shared landing)
+            Q ql(7), qr(7);
+            {
+                std::array<double, 14> q14;
+                if (manifold.lookup(stream[0][0], stream[0][1], q14)) {
+                    for (int j = 0; j < 7; j++) { ql(j) = q14[j]; qr(j) = q14[7 + j]; }
+                    Q ql1(7), qr1(7);
+                    manifold_newton_step(ql, qr, stream[0][0], stream[0][1], ql1, qr1);
+                    manifold_newton_step(ql1, qr1, stream[0][0], stream[0][1], ql, qr);
+                } else {
+                    ql = seeds[0]; qr = seeds[1];
+                }
+            }
+
+            std::ofstream kf(outdir / (std::string("keyframes_t5_") + p.name + ".csv"));
+            kf.precision(10);
+            kf << "k,theta,s,qL0,qL1,qL2,qL3,qL4,qL5,qL6,qR0,qR1,qR2,qR3,qR4,qR5,qR6\n";
+            std::ofstream tr(outdir / (std::string("trajectory_t5_") + p.name + ".csv"));
+            tr.precision(10);
+            tr << "k,t,theta,s,d_base,coll\n";
+
+            double dmin = 1e9, dmax = -1e9; int ncoll = 0, nlookup_fail = 0;
+            for (int k = 0; k < N; k++) {
+                double th = stream[k][0], s = stream[k][1];
+                Q ql_base(7), qr_base(7);
+                std::array<double, 14> q14;
+                if (manifold.lookup(th, s, q14)) {
+                    Q ql0(7), qr0(7);
+                    for (int j = 0; j < 7; j++) { ql0(j) = q14[j]; qr0(j) = q14[7 + j]; }
+                    Q ql1(7), qr1(7);
+                    manifold_newton_step(ql0, qr0, th, s, ql1, qr1);
+                    manifold_newton_step(ql1, qr1, th, s, ql_base, qr_base);
+                } else {
+                    nlookup_fail++;           // outside the certified grid: hold previous config
+                    ql_base = ql; qr_base = qr;
+                }
+                set_config(ql_base, qr_base, th, s);
+                double d = std::min(wall_clearance(0), wall_clearance(1));
+                int coll = (collision(0) || collision(1)) ? 1 : 0;
+                dmin = std::min(dmin, d); dmax = std::max(dmax, d); ncoll += coll;
+
+                kf << k << ',' << th << ',' << s;
+                for (int j = 0; j < 7; j++) kf << ',' << ql_base(j);
+                for (int j = 0; j < 7; j++) kf << ',' << qr_base(j);
+                kf << '\n';
+                tr << k << ',' << k * dt << ',' << th << ',' << s << ',' << d << ',' << coll << '\n';
+                ql = ql_base; qr = qr_base;
+            }
+            kf.close(); tr.close();
+            std::cout << "t5 " << p.name << ": N=" << N << "  d_min=" << dmin * 1e3
+                      << " mm  d_max=" << dmax * 1e3 << " mm  coll=" << ncoll << "/" << N
+                      << "  lookup_fail=" << nlookup_fail << "\n";
+        }
+    }
+
     // =====================================================================
     // ATLAS builder (module A): 2-D static-feasibility atlas over the task
     // space x=(θ,s). At each grid point we compute, per arm, the max wall
@@ -3350,6 +3557,1279 @@ class ClearanceTrajectory {
                   << " mm, P(d_2>=d_safe)=" << (n ? 100.0 * n_d_safe / n : 0.0) << "%\n";
         std::cout << "wrote " << outdir / "manifold_check.csv" << "\n";
     }
+
+    // T5.1 Step 2: 1-D dynamic-aware section reselection along ONE axis — sweep θ at fixed s
+    // (roll direction), or sweep s at fixed θ (boundary columns). For each grid point we collect K
+    // clearance-safe self-motion candidates per arm (FULL safe arc: d ≥ d_safe, TRUE limits, NO margin
+    // requirement — the margin requirement was the old max-margin section's over-constraint), then a
+    // per-arm DP over the candidates finds two paths:
+    //   Path A = min Σ_j ‖q_{j+1} − q_j‖²  (smoothest self-motion branch)
+    //   Path B = min max_j max_i |q_{j+1,i} − q_{j,i}|  (max sustained axis speed at q̇ ≤ qdot)
+    // Both objectives are separable across arms, so the DP runs per arm and the arms recombine only to
+    // report the 14-D step + d_min. The OLD max-margin section is recovered from the same trace so
+    // max|q̇|_old is reproduced on the identical metric. Phase consistency comes from the
+    // home-approach-seeded q0 + fixed signed null-space arc, which is what lets the DP latch onto the
+    // continuous branch that the argmax-margin section kept abandoning.
+    void reselect_1d(const fs::path &outdir, int n_threads, bool sweep_theta, double fix_val, double x_ref,
+                     const char *label) {
+        const double th_min = -0.8726646259971648, th_max = 0.8726646259971648;
+        const double s_min = -0.16, s_max = 0.0;
+        const int n = sweep_theta ? 101 : 65;
+        const int K_keep = 1 << 20;   // keep the FULL safe arc (downsampled later)
+        const double qdot = 1.5;      // unified per-joint speed limit (rad/s)
+
+        auto th_at = [&](int k) { return th_min + double(k) * (th_max - th_min) / (n - 1); };
+        auto s_at = [&](int k) { return s_min + double(k) * (s_max - s_min) / (n - 1); };
+        double x_min = sweep_theta ? th_min : s_min, x_max = sweep_theta ? th_max : s_max;
+        double dx = (x_max - x_min) / (n - 1);
+
+        std::vector<std::vector<Q>> cand[2];
+        std::vector<std::vector<double>> cd[2];
+        std::vector<Q> oldq[2];
+        std::vector<double> oldd[2];
+        std::vector<uint8_t> oldhas[2];
+        for (int side = 0; side < 2; side++) {
+            cand[side].resize(n);
+            cd[side].resize(n);
+            oldq[side].resize(n, Q(7));
+            oldd[side].assign(n, -1.0);
+            oldhas[side].assign(n, 0);
+        }
+
+        std::atomic<size_t> next{0}, done{0};
+        std::mutex mu;
+        auto t0 = std::chrono::steady_clock::now();
+        auto worker = [&]() {
+            ClearanceTrajectory run(cfg_path, d_safe, q_margin_target, trace_half, trace_step);
+            while (true) {
+                size_t k = next.fetch_add(1, std::memory_order_relaxed);
+                if (k >= (size_t)n)
+                    break;
+                double theta = sweep_theta ? th_at((int)k) : fix_val;
+                double s = sweep_theta ? fix_val : s_at((int)k);
+                Q q0[2]{Q(7), Q(7)};
+                bool reach = true;
+                for (int side = 0; side < 2; side++)
+                    if (!run.ik_multi_seed(side, theta, s, run.seeds[side], atlas_seed(k, side, 0), q0[side])) {
+                        reach = false;
+                        break;
+                    }
+                for (int side = 0; side < 2; side++) {
+                    if (!reach) {
+                        oldhas[side][k] = 0;
+                        oldd[side][k] = -1.0;
+                        cand[side][k].push_back(run.seeds[side]);
+                        cd[side][k].push_back(-1.0);
+                        continue;
+                    }
+                    run.ik[side]->setSeed(atlas_seed(k, side, 1000));
+                    Q q_safe, q_max;
+                    double d_safe_at, d_max;
+                    bool has_safe;
+                    run.collect_boundary_candidates(side, q0[side], q0[1 - side], theta, s, K_keep,
+                                                    cand[side][k], cd[side][k], q_safe, d_safe_at, has_safe,
+                                                    q_max, d_max);
+                    oldhas[side][k] = has_safe ? 1 : 0;
+                    if (has_safe) {
+                        oldq[side][k] = q_safe;
+                        oldd[side][k] = d_safe_at;
+                    } else {
+                        oldq[side][k] = q_max;
+                        oldd[side][k] = d_max;
+                    }
+                }
+                size_t p = done.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (p % 25 == 0 || p == (size_t)n) {
+                    std::lock_guard<std::mutex> lk(mu);
+                    double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                    std::cout << "  " << label << " " << p << "/" << n << "  (" << std::fixed
+                              << std::setprecision(0) << el << " s)" << std::endl;
+                }
+            }
+        };
+        std::cout << label << ": " << n << " points, " << n_threads << " threads" << std::endl;
+        std::vector<std::thread> pool;
+        for (int t = 0; t < n_threads; t++)
+            pool.emplace_back(worker);
+        for (auto &t : pool)
+            t.join();
+        double wall_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+        // ---- DP (per arm, 7-D), run at several candidate resolutions K ----
+        auto downsample = [&](const std::vector<std::vector<Q>> &full, const std::vector<std::vector<double>> &fulld,
+                              int K, std::vector<std::vector<Q>> &out, std::vector<std::vector<double>> &outd) {
+            out.assign(n, {});
+            outd.assign(n, {});
+            for (int j = 0; j < n; j++) {
+                int M = (int)full[j].size();
+                int kk = std::min(K, M);
+                if (kk == 1) {
+                    out[j].push_back(full[j][M / 2]);
+                    outd[j].push_back(fulld[j][M / 2]);
+                    continue;
+                }
+                for (int i = 0; i < kk; i++) {
+                    int idx = (int)std::lround(double(i) * (M - 1) / (kk - 1));
+                    out[j].push_back(full[j][idx]);
+                    outd[j].push_back(fulld[j][idx]);
+                }
+            }
+        };
+
+        auto evaluate = [&](int K, bool write) {
+            std::vector<std::vector<Q>> ck[2];
+            std::vector<std::vector<double>> cdk[2];
+            downsample(cand[0], cd[0], K, ck[0], cdk[0]);
+            downsample(cand[1], cd[1], K, ck[1], cdk[1]);
+
+            auto pathA = [&](int side, std::vector<int> &idx, double &sumsq, double &stepmax) {
+                std::vector<std::vector<double>> dp(n);
+                std::vector<std::vector<int>> prev(n);
+                for (int j = 0; j < n; j++) {
+                    dp[j].assign(ck[side][j].size(), 1e18);
+                    prev[j].assign(ck[side][j].size(), -1);
+                }
+                for (size_t b = 0; b < ck[side][0].size(); b++)
+                    dp[0][b] = 0.0;
+                for (int j = 1; j < n; j++) {
+                    for (size_t b = 0; b < ck[side][j].size(); b++) {
+                        const Q &qb = ck[side][j][b];
+                        for (size_t a = 0; a < ck[side][j - 1].size(); a++) {
+                            const Q &qa = ck[side][j - 1][a];
+                            double c = 0;
+                            for (int i = 0; i < 7; i++) {
+                                double dq = qb(i) - qa(i);
+                                c += dq * dq;
+                            }
+                            double v = dp[j - 1][a] + c;
+                            if (v < dp[j][b]) {
+                                dp[j][b] = v;
+                                prev[j][b] = (int)a;
+                            }
+                        }
+                    }
+                }
+                size_t best = 0;
+                for (size_t b = 1; b < ck[side][n - 1].size(); b++)
+                    if (dp[n - 1][b] < dp[n - 1][best])
+                        best = b;
+                idx.resize(n);
+                idx[n - 1] = (int)best;
+                for (int j = n - 1; j >= 1; j--)
+                    idx[j - 1] = prev[j][idx[j]];
+                sumsq = dp[n - 1][best];
+                stepmax = 0.0;
+                for (int j = 0; j < n - 1; j++) {
+                    const Q &qa = ck[side][j][idx[j]], &qb = ck[side][j + 1][idx[j + 1]];
+                    for (int i = 0; i < 7; i++)
+                        stepmax = std::max(stepmax, std::fabs(qb(i) - qa(i)));
+                }
+            };
+            auto pathB = [&](int side, std::vector<int> &idx, double &stepmax) {
+                std::vector<std::vector<double>> dp(n);
+                std::vector<std::vector<int>> prev(n);
+                for (int j = 0; j < n; j++) {
+                    dp[j].assign(ck[side][j].size(), 1e18);
+                    prev[j].assign(ck[side][j].size(), -1);
+                }
+                for (size_t b = 0; b < ck[side][0].size(); b++)
+                    dp[0][b] = 0.0;
+                for (int j = 1; j < n; j++) {
+                    for (size_t b = 0; b < ck[side][j].size(); b++) {
+                        const Q &qb = ck[side][j][b];
+                        for (size_t a = 0; a < ck[side][j - 1].size(); a++) {
+                            const Q &qa = ck[side][j - 1][a];
+                            double w = 0;
+                            for (int i = 0; i < 7; i++)
+                                w = std::max(w, std::fabs(qb(i) - qa(i)));
+                            double v = std::max(dp[j - 1][a], w);
+                            if (v < dp[j][b]) {
+                                dp[j][b] = v;
+                                prev[j][b] = (int)a;
+                            }
+                        }
+                    }
+                }
+                size_t best = 0;
+                for (size_t b = 1; b < ck[side][n - 1].size(); b++)
+                    if (dp[n - 1][b] < dp[n - 1][best])
+                        best = b;
+                idx.resize(n);
+                idx[n - 1] = (int)best;
+                for (int j = n - 1; j >= 1; j--)
+                    idx[j - 1] = prev[j][idx[j]];
+                stepmax = dp[n - 1][best];
+            };
+            auto combined_step = [&](const std::vector<int> &iL, const std::vector<int> &iR) {
+                double m = 0;
+                for (int j = 0; j < n - 1; j++) {
+                    for (int i = 0; i < 7; i++) {
+                        m = std::max(m, std::fabs(ck[0][j + 1][iL[j + 1]](i) - ck[0][j][iL[j]](i)));
+                        m = std::max(m, std::fabs(ck[1][j + 1][iR[j + 1]](i) - ck[1][j][iR[j]](i)));
+                    }
+                }
+                return m;
+            };
+            auto path_dmin = [&](const std::vector<int> &iL, const std::vector<int> &iR) {
+                double d = 1e9;
+                for (int j = 0; j < n; j++)
+                    d = std::min(d, std::min(cdk[0][j][iL[j]], cdk[1][j][iR[j]]));
+                return d;
+            };
+
+            std::vector<int> aL, aR, bL, bR;
+            double a_sumL, a_sumR, a_stepL, a_stepR, b_stepL, b_stepR;
+            pathA(0, aL, a_sumL, a_stepL);
+            pathA(1, aR, a_sumR, a_stepR);
+            pathB(0, bL, b_stepL);
+            pathB(1, bR, b_stepR);
+            double a_step = combined_step(aL, aR), b_step = combined_step(bL, bR);
+            double a_dmin = path_dmin(aL, aR), b_dmin = path_dmin(bL, bR);
+
+            auto qdot_at_xref = [&](double step) { return step / dx * x_ref; };
+            auto v_path = [&](double step) { return step > 0 ? qdot * dx / step : 1e9; };
+            std::cout << std::fixed << std::setprecision(4) << "  K=" << std::setw(3) << K
+                      << "  PathA max|qdot|@x_ref=" << qdot_at_xref(a_step)
+                      << " (V " << v_path(a_step) << " , d_min " << a_dmin * 1e3 << " mm) | "
+                      << "PathB max|qdot|@x_ref=" << qdot_at_xref(b_step)
+                      << " (V " << v_path(b_step) << " , d_min " << b_dmin * 1e3 << " mm)\n";
+
+            if (write) {
+                auto write_col = [&](const char *name, const std::vector<int> &iL, const std::vector<int> &iR) {
+                    std::ofstream f(outdir / name);
+                    f << "s,theta,";
+                    for (int side = 0; side < 2; side++)
+                        for (int i = 0; i < 7; i++)
+                            f << (side ? "R" : "L") << (i + 1) << ',';
+                    f << "dmin\n";
+                    f << std::setprecision(9);
+                    for (int j = 0; j < n; j++) {
+                        double theta = sweep_theta ? th_at(j) : fix_val;
+                        double s = sweep_theta ? fix_val : s_at(j);
+                        f << s << ',' << theta << ',';
+                        for (int side = 0; side < 2; side++) {
+                            const Q &q = ck[side][j][side ? iR[j] : iL[j]];
+                            for (int i = 0; i < 7; i++)
+                                f << q(i) << ',';
+                        }
+                        f << std::min(cdk[0][j][iL[j]], cdk[1][j][iR[j]]) << '\n';
+                    }
+                };
+                write_col((std::string("breselect_") + label + "_pathA.csv").c_str(), aL, aR);
+                write_col((std::string("breselect_") + label + "_pathB.csv").c_str(), bL, bR);
+            }
+        };
+
+        // ---- OLD section (max-margin argmax) step + d_min on the same 1-D cut ----
+        double old_step = 0, old_dmin = 1e9;
+        for (int j = 0; j < n; j++) {
+            old_dmin = std::min(old_dmin, std::min(oldd[0][j], oldd[1][j]));
+            if (j < n - 1)
+                for (int side = 0; side < 2; side++)
+                    for (int i = 0; i < 7; i++)
+                        old_step = std::max(old_step, std::fabs(oldq[side][j + 1](i) - oldq[side][j](i)));
+        }
+        auto qdot_at_xref = [&](double step) { return step / dx * x_ref; };
+        std::cout << std::defaultfloat << std::setprecision(4);
+        std::cout << label << " done in " << wall_s << " s (" << n_threads << " threads)\n"
+                  << "  hard edge threshold (qdot=" << qdot << ", x_ref=" << x_ref
+                  << "): |dq| <= " << qdot * dx / x_ref << " rad\n"
+                  << "  OLD   (max-margin argmax): max|qdot|@x_ref = " << qdot_at_xref(old_step)
+                  << " rad/s,  d_min = " << old_dmin * 1e3 << " mm\n";
+        evaluate(32, true);
+        evaluate(64, false);
+        evaluate(128, false);
+    }
+
+    // Boundary (θ=±50°) + roll-direction reselections. Runs reselect_1d for the −50° / +50° columns
+    // (pull direction, x_ref = 0.433 m/s) and the roll direction at the two tightest s cuts
+    // (x_ref = 5.23 rad/s), then prints a compact summary table.
+    void boundary_reselect(const fs::path &outdir, int n_threads) {
+        const double th_min = -0.8726646259971648, th_max = 0.8726646259971648;
+        reselect_1d(outdir, n_threads, false, th_min, 0.433, "th-50_pull");
+        reselect_1d(outdir, n_threads, false, th_max, 0.433, "th+50_pull");
+        reselect_1d(outdir, n_threads, true, -0.16, 5.23, "roll_s-160");
+        reselect_1d(outdir, n_threads, true, -0.08, 5.23, "roll_s-80");
+        std::cout << "wrote " << outdir / "breselect_*.csv" << "\n";
+    }
+
+    // T5.1 Step 3 (decisive): trajectory-level dynamic existence test. Replay the SAME random task
+    // stream x(t)=(θ,s) that compare() uses (N cycles @ 50 Hz), but instead of the single section
+    // Q_g(x_k), keep K phase-consistent clearance-safe candidates per arm at every cycle
+    // (collect_boundary_candidates: d ≥ d_safe, TRUE limits, NO margin req). A per-arm minimax DP
+    // over TIME then finds the branch sequence that minimizes the largest per-cycle joint step
+    // |Δq|_∞; the result (step/dt) is the lowest achievable max|q̇| on the ORIGINAL random
+    // trajectory. If it is ≤ 1.5 rad/s, the random trajectory IS executable at the true robot limit
+    // and the single section — not the task — is the bottleneck. Rigid grasp ⇒ arms independent ⇒
+    // the 14-D optimum factors into per-arm optima.
+    void existence_test(const fs::path &outdir, int N, int n_threads, double sample_dt = 0.02) {
+        const double dt = sample_dt;
+        const double qdot = 1.5;   // true unified robot joint-speed limit
+        const int K_full = 256;    // full self-motion arc stored; DP is re-run at K∈{32,64,128,256}
+        const double step_lim = qdot * dt;
+
+        // regenerate the random stream (byte-identical to compare())
+        std::vector<std::array<double, 4>> stream(N);
+        {
+            std::mt19937 rng(987654321u);
+            std::uniform_real_distribution<double> U01(0.0, 1.0), Uph(0.0, 2.0 * M_PI);
+            const int nc = 5;
+            double thA[nc], thPh[nc], sA[nc], sPh[nc];
+            const double thF[nc] = {0.10, 0.25, 0.40, 0.70, 1.10};
+            const double sF[nc] = {0.08, 0.20, 0.35, 0.60, 0.90};
+            for (int i = 0; i < nc; i++) {
+                thA[i] = 0.35 + 0.65 * U01(rng); thPh[i] = Uph(rng);
+                sA[i] = 0.35 + 0.65 * U01(rng); sPh[i] = Uph(rng);
+            }
+            for (int k = 0; k < N; k++) {
+                double t = k * dt, th = 0.0, s = -0.08;
+                for (int i = 0; i < nc; i++) {
+                    th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                    s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                }
+                stream[k] = {std::clamp(0.5 * th, -0.87266, 0.87266), std::clamp(s, -0.16, 0.0), 0.0, 0.0};
+            }
+        }
+
+        std::vector<std::vector<Q>> cand[2];
+        std::vector<std::vector<double>> cd[2];
+        std::vector<uint8_t> low_margin(N, 0);
+        for (int side = 0; side < 2; side++) {
+            cand[side].resize(N);
+            cd[side].resize(N);
+        }
+
+        std::atomic<size_t> next{0}, done{0};
+        std::mutex mu;
+        auto t0 = std::chrono::steady_clock::now();
+        auto worker = [&]() {
+            ClearanceTrajectory run(cfg_path, d_safe, q_margin_target, trace_half, trace_step);
+            while (true) {
+                size_t k = next.fetch_add(1, std::memory_order_relaxed);
+                if (k >= (size_t)N)
+                    break;
+                double th = stream[k][0], s = stream[k][1];
+                Q q0[2]{Q(7), Q(7)};
+                bool reach = true;
+                for (int side = 0; side < 2; side++)
+                    if (!run.ik_multi_seed(side, th, s, run.seeds[side], atlas_seed(0, side, 0), q0[side])) {
+                        reach = false;
+                        break;
+                    }
+                for (int side = 0; side < 2; side++) {
+                    if (!reach) {
+                        cand[side][k].push_back(run.seeds[side]);
+                        cd[side][k].push_back(-1.0);
+                        low_margin[k] = 1;
+                        continue;
+                    }
+                    run.ik[side]->setSeed(atlas_seed(0, side, 1000));
+                    Q q_safe, q_max;
+                    double d_safe_at, d_max;
+                    bool has_safe;
+                    run.collect_boundary_candidates(side, q0[side], q0[1 - side], th, s, K_full,
+                                                    cand[side][k], cd[side][k], q_safe, d_safe_at, has_safe,
+                                                    q_max, d_max);
+                    if (!has_safe)
+                        low_margin[k] = 1;  // no {d≥d_safe AND margin≥0.03} config — soft, NOT clearance
+                    if (cand[side][k].empty()) {
+                        cand[side][k].push_back(q_max);
+                        cd[side][k].push_back(d_max);
+                    }
+                }
+                size_t p = done.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (p % 500 == 0 || p == (size_t)N) {
+                    std::lock_guard<std::mutex> lk(mu);
+                    double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                    std::cout << "  exists " << p << "/" << N << "  (" << std::fixed << std::setprecision(0)
+                              << el << " s)" << std::endl;
+                }
+            }
+        };
+        std::cout << "existence test: " << N << " cycles, K_full=" << K_full << ", qdot=" << qdot << " rad/s, "
+                  << n_threads << " threads" << std::endl;
+        std::vector<std::thread> pool;
+        for (int t = 0; t < n_threads; t++)
+            pool.emplace_back(worker);
+        for (auto &t : pool)
+            t.join();
+        double wall_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+        // Safe-set separation lower bound (parameterization-free, joint-space). δ_k = min over
+        // a∈S_{k-1}, b∈S_k of ||q_k[b] − q_{k-1}[a]||_∞ is the smallest joint step that keeps you
+        // clearance-safe from one cycle to the next; max_k δ_k/dt is a LOWER bound on the DP floor.
+        // Interpretation: if it ≈ 7.84, the safe set itself slides/collapses in joint space that
+        // fast (a genuine moving-safe-set constraint); if ≪ 7.84, local hops are cheap and the
+        // floor is global branch-continuity (one continuous branch is expensive even though a
+        // cheap safe branch exists at every instant).
+        double sep[2] = {0, 0};
+        int sep_k[2] = {-1, -1};
+        for (int side = 0; side < 2; side++) {
+            for (int k = 1; k < N; k++) {
+                const auto &qa = cand[side][k - 1];
+                const auto &qb = cand[side][k];
+                double best = 1e18;
+                for (size_t a = 0; a < qa.size(); a++) {
+                    for (size_t b = 0; b < qb.size(); b++) {
+                        double w = 0;
+                        for (int i = 0; i < 7; i++)
+                            w = std::max(w, std::fabs(qb[b](i) - qa[a](i)));
+                        if (w < best)
+                            best = w;
+                    }
+                }
+                if (best < 1e17 && best > sep[side]) {
+                    sep[side] = best;
+                    sep_k[side] = k;
+                }
+            }
+            sep[side] /= dt;
+        }
+        double sep_max = std::max(sep[0], sep[1]);
+
+        // stride-downsample the full safe arc to K candidates (mirrors collect_boundary_candidates)
+        auto downsample = [&](const std::vector<Q> &full, const std::vector<double> &fulld, int K,
+                              std::vector<Q> &out, std::vector<double> &outd) {
+            out.clear();
+            outd.clear();
+            int M = (int)full.size();
+            int kk = std::min(K, M);
+            if (kk <= 1) {
+                out.push_back(full[M / 2]);
+                outd.push_back(fulld[M / 2]);
+                return;
+            }
+            for (int i = 0; i < kk; i++) {
+                int idx = (int)std::lround(double(i) * (M - 1) / (kk - 1));
+                out.push_back(full[idx]);
+                outd.push_back(fulld[idx]);
+            }
+        };
+
+        // per-arm minimax DP over time (on downsampled candidate sets):
+        // dp[k][b] = min_a max(dp[k-1][a], |q_k[b] − q_{k-1}[a]|_∞)
+        auto minimax = [&](const std::vector<std::vector<Q>> &ck, const std::vector<std::vector<double>> &ckd,
+                           std::vector<int> &idx, double &stepmax, double &dmin) {
+            std::vector<double> prev_dp(ck[0].size(), 0.0), cur_dp;
+            std::vector<std::vector<int>> bk(N);
+            for (int k = 1; k < N; k++) {
+                size_t na = ck[k - 1].size(), nb = ck[k].size();
+                cur_dp.assign(nb, 1e18);
+                bk[k].assign(nb, -1);
+                const auto &qa = ck[k - 1];
+                const auto &qb = ck[k];
+                for (size_t b = 0; b < nb; b++) {
+                    double best = 1e18;
+                    int best_a = -1;
+                    for (size_t a = 0; a < na; a++) {
+                        double w = 0;
+                        for (int i = 0; i < 7; i++)
+                            w = std::max(w, std::fabs(qb[b](i) - qa[a](i)));
+                        double v = std::max(prev_dp[a], w);
+                        if (v < best) {
+                            best = v;
+                            best_a = (int)a;
+                        }
+                    }
+                    cur_dp[b] = best;
+                    bk[k][b] = best_a;
+                }
+                prev_dp.swap(cur_dp);
+            }
+            int best = 0;
+            for (size_t b = 1; b < prev_dp.size(); b++)
+                if (prev_dp[b] < prev_dp[best])
+                    best = b;
+            stepmax = prev_dp[best];
+            idx.assign(N, -1);
+            idx[N - 1] = best;
+            for (int k = N - 1; k >= 1; k--)
+                idx[k - 1] = bk[k][idx[k]];
+            dmin = 1e9;
+            for (int k = 0; k < N; k++)
+                dmin = std::min(dmin, ckd[k][idx[k]]);
+        };
+
+        // K-convergence sweep: is 7.84 a candidate-resolution artifact or the converged floor?
+        std::cout << std::fixed << std::setprecision(4);
+        std::cout << "\n=== K-convergence sweep (candidate resolution) ===\n";
+        std::vector<int> iL, iR;
+        std::vector<std::vector<Q>> ck_best[2];
+        std::vector<std::vector<double>> ckd_best[2];
+        double sL_best = 0, sR_best = 0, dL_best = 0, dR_best = 0;
+        const int K_report = 64;
+        for (int K : {32, 64, 128, 256}) {
+            std::vector<std::vector<Q>> ck[2];
+            std::vector<std::vector<double>> ckd[2];
+            for (int side = 0; side < 2; side++) {
+                ck[side].resize(N);
+                ckd[side].resize(N);
+                for (int k = 0; k < N; k++)
+                    downsample(cand[side][k], cd[side][k], K, ck[side][k], ckd[side][k]);
+            }
+            std::vector<int> aL, aR;
+            double sL, sR, dL, dR;
+            minimax(ck[0], ckd[0], aL, sL, dL);
+            minimax(ck[1], ckd[1], aR, sR, dR);
+            double v = std::max(sL, sR) / dt;
+            std::cout << "  K=" << std::setw(3) << K << "  v_min^DP = " << v << " rad/s"
+                      << "   (L=" << sL / dt << " R=" << sR / dt << ")   d_min=" << std::min(dL, dR) * 1e3
+                      << " mm\n";
+            if (K == K_report) {
+                iL = aL;
+                iR = aR;
+                sL_best = sL;
+                sR_best = sR;
+                dL_best = dL;
+                dR_best = dR;
+                ck_best[0] = std::move(ck[0]);
+                ck_best[1] = std::move(ck[1]);
+                ckd_best[0] = std::move(ckd[0]);
+                ckd_best[1] = std::move(ckd[1]);
+            }
+        }
+        double stepmax = std::max(sL_best, sR_best);
+        double dmin = std::min(dL_best, dR_best);
+        double max_qdot = stepmax / dt;
+
+        // closure spot-check on the reconstructed 14-D path (set_config + grasp closure)
+        double cl_max = 0, cl_argmax = 0;
+        for (int k = 0; k < N; k += 250) {
+            set_config(ck_best[0][k][iL[k]], ck_best[1][k][iR[k]], stream[k][0], stream[k][1]);
+            double e = task_error();
+            if (e > cl_max) {
+                cl_max = e;
+                cl_argmax = k * dt;
+            }
+        }
+
+        int n_low_margin = (int)std::accumulate(low_margin.begin(), low_margin.end(), 0);
+
+        std::ofstream f(outdir / "exists_path.csv");
+        f << "t,theta,s,L1,L2,L3,L4,L5,L6,L7,R1,R2,R3,R4,R5,R6,R7,dmin\n";
+        f << std::setprecision(9);
+        for (int k = 0; k < N; k++) {
+            f << k * dt << ',' << stream[k][0] << ',' << stream[k][1];
+            for (int j = 0; j < 7; j++)
+                f << ',' << ck_best[0][k][iL[k]](j);
+            for (int j = 0; j < 7; j++)
+                f << ',' << ck_best[1][k][iR[k]](j);
+            f << ',' << std::min(ckd_best[0][k][iL[k]], ckd_best[1][k][iR[k]]) << '\n';
+        }
+        f.close();
+
+        std::cout << std::fixed << std::setprecision(4);
+        std::cout << "existence_test done in " << wall_s << " s (" << n_threads << " threads)\n"
+                  << "  min achievable max|qdot| (K=" << K_report << ", best branch sequence) = " << max_qdot
+                  << " rad/s   [limit 1.5 → " << (max_qdot <= qdot + 1e-9 ? "FEASIBLE" : "INFEASIBLE") << "]\n"
+                  << "  per-arm max|qdot|: L=" << sL_best / dt << "  R=" << sR_best / dt << " rad/s\n"
+                  << "  safe-set separation lower bound: L=" << sep[0] << "  R=" << sep[1]
+                  << " rad/s (max at cycle " << std::max(sep_k[0], sep_k[1]) << ")\n"
+                  << "  d_min along path = " << dmin * 1e3 << " mm"
+                  << "  (d_safe 5 mm → clearance-safe on ALL cycles, 0 clearance-infeasible)\n"
+                  << "  cycles w/o margin-safe (d>=d_safe AND margin>=0.03) config = " << n_low_margin << "/" << N
+                  << "   (soft preference, not safety)\n"
+                  << "  max grasp-closure error (spot, every 250th) = " << cl_max * 1e3 << " mm"
+                  << " @ t=" << cl_argmax << " s\n"
+                  << "  contrast: current T5 single-section max|qdot| on this stream = 24.7 rad/s\n"
+                  << "  velfeas task-velocity lower bound = 0.14–0.30 rad/s (task itself is cheap; the 7.84 is\n"
+                  << "     safe-arc self-motion reconfiguration at the θ=±50°,s=−160mm corners)\n"
+                  << "wrote " << outdir / "exists_path.csv" << "\n";
+    }
+
+    // T5.1 Step 4: 1-D self-motion boundary dynamics — decompose "why is the DP floor 7.84 rad/s"
+    // into the low-dimensional mechanism. Correct decomposition is q̇ = ∂q/∂x·ẋ + ∂q/∂ρ·ρ̇
+    // (J^# v_task + N(q) z), where the second term is self-motion; safety is ρ∈[ρ_min(x),ρ_max(x)].
+    // For each grid cell we trace the FULL self-motion loop and record (i) the safe-interval span
+    // [ρ_min, ρ_max] in step-index units (home config at 0), and (ii) the self-motion direction cost
+    // q_ρ = max_j |Δq_j|/step (rad per step). Then finite-difference the boundary fields over the
+    // grid, replay the random stream, and evaluate the boundary-velocity LOWER bound
+    //   ρ̇_bound(t) = max(|∂ρ_min/∂x·ẋ|, |∂ρ_max/∂x·ẋ|)   [steps/s]
+    //   q̇_reshape(t) = q_ρ(x) · ρ̇_bound(t)              [rad/s]
+    // If max_t q̇_reshape ≈ 7.84 (task term is ≤0.30), the floor is the moving safe window, not IK
+    // jumping or candidate discretization. Also reports where ∂ρ_min/∂s is steepest (expect s→−160mm).
+    void self_motion_dynamics(const fs::path &outdir, int n_threads) {
+        const double th_min = -0.8726646259971648, th_max = 0.8726646259971648;
+        const double s_min = -0.16, s_max = 0.0;
+        const int n_th = 101, n_s = 65;
+        const size_t n_cells = size_t(n_th) * n_s;
+        const double dt = 0.02;
+        const double dth = (th_max - th_min) / (n_th - 1);
+        const double ds = (s_max - s_min) / (n_s - 1);
+
+        auto th_at = [&](int i) { return th_min + double(i) * dth; };
+        auto s_at = [&](int j) { return s_min + double(j) * ds; };
+        auto at = [&](int j, int i) { return size_t(j) * n_th + i; };  // s-major
+
+        std::vector<double> rho_min[2], rho_max[2], q_rho[2];
+        std::vector<uint8_t> has_safe[2];
+        for (int side = 0; side < 2; side++) {
+            rho_min[side].assign(n_cells, 0.0);
+            rho_max[side].assign(n_cells, 0.0);
+            q_rho[side].assign(n_cells, 0.0);
+            has_safe[side].assign(n_cells, 0);
+        }
+
+        std::atomic<size_t> next{0}, done{0};
+        std::mutex mu;
+        auto t0 = std::chrono::steady_clock::now();
+        auto worker = [&]() {
+            ClearanceTrajectory run(cfg_path, d_safe, q_margin_target, trace_half, trace_step);
+            while (true) {
+                size_t idx = next.fetch_add(1, std::memory_order_relaxed);
+                if (idx >= n_cells)
+                    break;
+                int i_th = int(idx % n_th), i_s = int(idx / n_th);
+                double theta = th_at(i_th), s = s_at(i_s);
+                Q q0[2]{Q(7), Q(7)};
+                bool reach = true;
+                for (int side = 0; side < 2; side++)
+                    if (!run.ik_multi_seed(side, theta, s, run.seeds[side], atlas_seed(0, side, 0), q0[side])) {
+                        reach = false;
+                        break;
+                    }
+                for (int side = 0; side < 2; side++) {
+                    if (!reach) {
+                        has_safe[side][idx] = 0;
+                        continue;
+                    }
+                    run.ik[side]->setSeed(atlas_seed(0, side, 1000));
+                    Q prev = q0[side];
+                    double qrho = 0.0;
+                    int lo = 0, hi = 0;
+                    bool hs = false;
+                    // record(q, step): re-set config to this arm's on-manifold q (walk_dir leaves
+                    // MuJoCo at the pre-step seed), measure clearance, track self-motion cost + span.
+                    auto record = [&](const Q &q, int st) {
+                        run.set_config(side ? q0[1 - side] : q, side ? q : q0[1 - side], theta, s);
+                        double dd = run.wall_clearance(side);
+                        double w = 0.0;
+                        for (int j = 0; j < 7; j++)
+                            w = std::max(w, std::fabs(q(j) - prev(j)));
+                        qrho = std::max(qrho, w);
+                        prev = q;
+                        if (dd >= run.d_safe) {
+                            if (!hs) {
+                                hs = true;
+                                lo = hi = st;
+                            } else {
+                                lo = std::min(lo, st);
+                                hi = std::max(hi, st);
+                            }
+                        }
+                    };
+                    record(q0[side], 0);
+                    int n_steps;
+                    double ce;
+                    int step = 0;
+                    run.walk_dir(side, q0[side], q0[1 - side], theta, s, run.handle[side].M, +1.0, n_steps, ce,
+                                 [&](const Q &q) { record(q, ++step); });
+                    step = 0;
+                    run.walk_dir(side, q0[side], q0[1 - side], theta, s, run.handle[side].M, -1.0, n_steps, ce,
+                                 [&](const Q &q) { record(q, --step); });
+                    has_safe[side][idx] = hs ? 1 : 0;
+                    rho_min[side][idx] = lo;
+                    rho_max[side][idx] = hi;
+                    q_rho[side][idx] = qrho;
+                }
+                size_t p = done.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (p % 500 == 0 || p == n_cells) {
+                    std::lock_guard<std::mutex> lk(mu);
+                    double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                    std::cout << "  sm_dyn " << p << "/" << n_cells << "  (" << std::fixed
+                              << std::setprecision(0) << el << " s)" << std::endl;
+                }
+            }
+        };
+        std::cout << "self_motion_dynamics: " << n_cells << " cells, " << n_threads << " threads" << std::endl;
+        std::vector<std::thread> pool;
+        for (int t = 0; t < n_threads; t++)
+            pool.emplace_back(worker);
+        for (auto &t : pool)
+            t.join();
+        double wall_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+        // ---- finite-difference boundary fields over the grid (central, one-sided edges) ----
+        auto fd = [&](const std::vector<double> &F) {
+            std::vector<double> Fth(n_cells, 0.0), Fs(n_cells, 0.0);
+            for (int j = 0; j < n_s; j++) {
+                for (int i = 0; i < n_th; i++) {
+                    size_t c = at(j, i);
+                    int im = std::max(i - 1, 0), ip = std::min(i + 1, n_th - 1);
+                    Fth[c] = (F[at(j, ip)] - F[at(j, im)]) / ((ip - im) * dth);
+                    int jm = std::max(j - 1, 0), jp = std::min(j + 1, n_s - 1);
+                    Fs[c] = (F[at(jp, i)] - F[at(jm, i)]) / ((jp - jm) * ds);
+                }
+            }
+            return std::make_pair(Fth, Fs);
+        };
+        std::vector<double> rmin_th[2], rmin_s[2], rmax_th[2], rmax_s[2];
+        for (int side = 0; side < 2; side++) {
+            auto p = fd(rho_min[side]);
+            rmin_th[side] = p.first;
+            rmin_s[side] = p.second;
+            auto q = fd(rho_max[side]);
+            rmax_th[side] = q.first;
+            rmax_s[side] = q.second;
+        }
+
+        // write the grid (raw safe-interval + self-motion-cost fields)
+        {
+            std::ofstream g(outdir / "sm_dyn_grid.csv");
+            g << "theta,s,rho_min_L,rho_max_L,q_rho_L,rho_min_R,rho_max_R,q_rho_R,has_safe_L,has_safe_R,"
+                 "drmin_ds_L,drmin_ds_R,drmax_ds_L,drmax_ds_R\n";
+            g << std::setprecision(9);
+            for (int j = 0; j < n_s; j++)
+                for (int i = 0; i < n_th; i++) {
+                    size_t c = at(j, i);
+                    g << th_at(i) << ',' << s_at(j);
+                    for (int side = 0; side < 2; side++)
+                        g << ',' << rho_min[side][c] << ',' << rho_max[side][c] << ',' << q_rho[side][c];
+                    g << ',' << int(has_safe[0][c]) << ',' << int(has_safe[1][c]);
+                    g << ',' << rmin_s[0][c] << ',' << rmin_s[1][c] << ',' << rmax_s[0][c] << ',' << rmax_s[1][c];
+                    g << '\n';
+                }
+            g.close();
+        }
+
+        // ---- replay the random stream, evaluate the boundary-velocity lower bound ----
+        auto bilinear = [&](const std::vector<double> &F, double theta, double s) {
+            double x = (theta - th_min) / dth;
+            double y = (s - s_min) / ds;
+            x = std::clamp(x, 0.0, double(n_th - 1));
+            y = std::clamp(y, 0.0, double(n_s - 1));
+            int ix = std::min((int)x, n_th - 2), iy = std::min((int)y, n_s - 2);
+            double fx = x - ix, fy = y - iy;
+            size_t i00 = at(iy, ix);
+            return F[i00] * (1 - fx) * (1 - fy) + F[i00 + 1] * fx * (1 - fy) + F[i00 + n_th] * (1 - fx) * fy +
+                   F[i00 + n_th + 1] * fx * fy;
+        };
+
+        const int N = 10000;
+        std::vector<std::array<double, 2>> stream(N);
+        {
+            std::mt19937 rng(987654321u);
+            std::uniform_real_distribution<double> U01(0.0, 1.0), Uph(0.0, 2.0 * M_PI);
+            const int nc = 5;
+            double thA[nc], thPh[nc], sA[nc], sPh[nc];
+            const double thF[nc] = {0.10, 0.25, 0.40, 0.70, 1.10};
+            const double sF[nc] = {0.08, 0.20, 0.35, 0.60, 0.90};
+            for (int i = 0; i < nc; i++) {
+                thA[i] = 0.35 + 0.65 * U01(rng);
+                thPh[i] = Uph(rng);
+                sA[i] = 0.35 + 0.65 * U01(rng);
+                sPh[i] = Uph(rng);
+            }
+            for (int k = 0; k < N; k++) {
+                double t = k * dt, th = 0.0, s = -0.08;
+                for (int i = 0; i < nc; i++) {
+                    th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                    s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                }
+                stream[k] = {std::clamp(0.5 * th, -0.87266, 0.87266), std::clamp(s, -0.16, 0.0)};
+            }
+        }
+
+        std::ofstream f(outdir / "sm_dyn_traj.csv");
+        f << "t,theta,s,thdot,sdot,rminL,rmaxL,qrhoL,rminR,rmaxR,qrhoR,rhodotL,rhodotR,qdot_reshapeL,qdot_reshapeR\n";
+        f << std::setprecision(9);
+        double peak_qdot = 0, peak_qdotL = 0, peak_qdotR = 0;
+        int peak_k = -1;
+        for (int k = 0; k < N; k++) {
+            double theta = stream[k][0], s = stream[k][1];
+            double thdot = 0, sdot = 0;
+            if (k + 1 < N) {
+                thdot = (stream[k + 1][0] - theta) / dt;
+                sdot = (stream[k + 1][1] - s) / dt;
+            }
+            double rmin[2], rmax[2], qrho[2], rhodot[2], qdr[2];
+            for (int side = 0; side < 2; side++) {
+                rmin[side] = bilinear(rho_min[side], theta, s);
+                rmax[side] = bilinear(rho_max[side], theta, s);
+                qrho[side] = bilinear(q_rho[side], theta, s);
+                double vmin = std::fabs(bilinear(rmin_th[side], theta, s) * thdot + bilinear(rmin_s[side], theta, s) * sdot);
+                double vmax = std::fabs(bilinear(rmax_th[side], theta, s) * thdot + bilinear(rmax_s[side], theta, s) * sdot);
+                rhodot[side] = std::max(vmin, vmax);
+                qdr[side] = qrho[side] * rhodot[side];
+            }
+            double qr = std::max(qdr[0], qdr[1]);
+            if (qr > peak_qdot) {
+                peak_qdot = qr;
+                peak_qdotL = qdr[0];
+                peak_qdotR = qdr[1];
+                peak_k = k;
+            }
+            f << k * dt << ',' << theta << ',' << s << ',' << thdot << ',' << sdot;
+            f << ',' << rmin[0] << ',' << rmax[0] << ',' << qrho[0] << ',' << rmin[1] << ',' << rmax[1] << ',' << qrho[1];
+            f << ',' << rhodot[0] << ',' << rhodot[1] << ',' << qdr[0] << ',' << qdr[1] << '\n';
+        }
+        f.close();
+
+        // steepest boundary-slope location (per arm, over the grid)
+        auto argmax_abs = [&](const std::vector<double> &F) {
+            size_t c = 0;
+            for (size_t i = 1; i < F.size(); i++)
+                if (std::fabs(F[i]) > std::fabs(F[c]))
+                    c = i;
+            return c;
+        };
+
+        std::cout << std::fixed << std::setprecision(4);
+        std::cout << "\nself_motion_dynamics done in " << wall_s << " s (" << n_threads << " threads)\n";
+        std::cout << "  peak q̇_reshape (boundary-velocity lower bound) = " << peak_qdot << " rad/s"
+                  << "   (L=" << peak_qdotL << " R=" << peak_qdotR << ")"
+                  << " @ t=" << peak_k * dt << " s, θ=" << stream[peak_k][0] * 180.0 / M_PI
+                  << "°, s=" << stream[peak_k][1] * 1e3 << " mm\n";
+        std::cout << "  DP floor (exists, K-converged) = 7.84 rad/s (L 6.78 / R 7.84); task term ≤ 0.30 rad/s\n";
+        for (int side = 0; side < 2; side++) {
+            size_t cmin = argmax_abs(rmin_s[side]), cmax = argmax_abs(rmax_s[side]);
+            std::cout << "  arm " << (side ? 'R' : 'L') << ": max |∂ρ_min/∂s| = "
+                      << std::fabs(rmin_s[side][cmin]) << " steps/m @ θ=" << th_at(int(cmin % n_th)) * 180.0 / M_PI
+                      << "°, s=" << s_at(int(cmin / n_th)) * 1e3 << " mm;   max |∂ρ_max/∂s| = "
+                      << std::fabs(rmax_s[side][cmax]) << " steps/m @ θ=" << th_at(int(cmax % n_th)) * 180.0 / M_PI
+                      << "°, s=" << s_at(int(cmax / n_th)) * 1e3 << " mm\n";
+        }
+        std::cout << "wrote " << outdir / "sm_dyn_grid.csv" << " and " << outdir / "sm_dyn_traj.csv" << "\n";
+    }
+
+    // T5.1 Step 5: STATEFUL minimum-reshaping self-motion tracking (the hysteretic / least-motion
+    // controller the user proposes). State = q_t (14-D); each cycle:
+    //   1. task-continuation q_cont = IK(seed=q_t, target(x_{k+1}))   (keep phase, re-satisfy task)
+    //   2. if d(q_cont) >= d_safe  ->  q_{k+1} = q_cont               ("能不动就不动")
+    //   3. else                     ->  q_{k+1} = nearest safe on the loop at x_{k+1} (min ||q-q_cont||_∞)
+    // Compare its max|qdot| to the DP floor (7.84) and the per-transition safe-set separation lower
+    // bound (4.26): if greedy-stateful ≈ 7.84, the DP is already the stateful optimum and the gap to
+    // 4.26 is committed-path consistency, NOT removable "reference chasing". Sequential (stateful).
+    void sm_track(const fs::path &outdir, int N) {
+        const double dt = 0.02;
+
+        std::vector<std::array<double, 2>> stream(N);
+        {
+            std::mt19937 rng(987654321u);
+            std::uniform_real_distribution<double> U01(0.0, 1.0), Uph(0.0, 2.0 * M_PI);
+            const int nc = 5;
+            double thA[nc], thPh[nc], sA[nc], sPh[nc];
+            const double thF[nc] = {0.10, 0.25, 0.40, 0.70, 1.10};
+            const double sF[nc] = {0.08, 0.20, 0.35, 0.60, 0.90};
+            for (int i = 0; i < nc; i++) {
+                thA[i] = 0.35 + 0.65 * U01(rng);
+                thPh[i] = Uph(rng);
+                sA[i] = 0.35 + 0.65 * U01(rng);
+                sPh[i] = Uph(rng);
+            }
+            for (int k = 0; k < N; k++) {
+                double t = k * dt, th = 0.0, s = -0.08;
+                for (int i = 0; i < nc; i++) {
+                    th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                    s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                }
+                stream[k] = {std::clamp(0.5 * th, -0.87266, 0.87266), std::clamp(s, -0.16, 0.0)};
+            }
+        }
+
+        Q qt[2]{Q(7), Q(7)};
+        for (int side = 0; side < 2; side++)
+            ik_multi_seed(side, stream[0][0], stream[0][1], seeds[side], atlas_seed(0, side, 0), qt[side]);
+
+        std::ofstream f(outdir / "sm_track.csv");
+        f << "t,theta,s,step_L,step_R,reshape_L,reshape_R,dmin\n";
+        f << std::setprecision(9);
+
+        auto t0 = std::chrono::steady_clock::now();
+        double peak = 0, peak_task = 0, peak_reshape = 0, dmin_all = 1e9;
+        int peak_k = -1, n_reshape = 0, n_task = 0;
+        for (int k = 0; k + 1 < N; k++) {
+            double th = stream[k + 1][0], s = stream[k + 1][1];
+            Q qcont[2]{Q(7), Q(7)}, qnext[2]{Q(7), Q(7)};
+            for (int side = 0; side < 2; side++) {
+                ik[side]->setSeed(atlas_seed(0, side, 1000));
+                if (ik[side]->CartToJnt(qt[side], target(side, th, s), qcont[side]) < 0)
+                    qcont[side] = qt[side];
+            }
+            set_config(qcont[0], qcont[1], th, s);
+            bool reshaped[2] = {false, false};
+            for (int side = 0; side < 2; side++) {
+                double dcont = wall_clearance(side);
+                if (dcont >= d_safe) {
+                    qnext[side] = qcont[side];
+                    continue;
+                }
+                Q best = qcont[side], qmax = qcont[side];
+                double bestw = 1e18, qmax_d = dcont;
+                auto visit = [&](const Q &q) {
+                    set_config(side ? qcont[1 - side] : q, side ? q : qcont[1 - side], th, s);
+                    double dd = wall_clearance(side);
+                    if (dd > qmax_d) {
+                        qmax_d = dd;
+                        qmax = q;
+                    }
+                    if (dd >= d_safe) {
+                        double w = 0;
+                        for (int j = 0; j < 7; j++)
+                            w = std::max(w, std::fabs(q(j) - qcont[side](j)));
+                        if (w < bestw) {
+                            bestw = w;
+                            best = q;
+                        }
+                    }
+                };
+                visit(qcont[side]);
+                int n_steps;
+                double ce;
+                walk_dir(side, qcont[side], qcont[1 - side], th, s, handle[side].M, +1.0, n_steps, ce, visit);
+                walk_dir(side, qcont[side], qcont[1 - side], th, s, handle[side].M, -1.0, n_steps, ce, visit);
+                qnext[side] = (bestw < 1e18) ? best : qmax;
+                reshaped[side] = true;
+            }
+            double stepL = 0, stepR = 0;
+            for (int j = 0; j < 7; j++) {
+                stepL = std::max(stepL, std::fabs(qnext[0](j) - qt[0](j)));
+                stepR = std::max(stepR, std::fabs(qnext[1](j) - qt[1](j)));
+            }
+            stepL /= dt;
+            stepR /= dt;
+            double step = std::max(stepL, stepR);
+            if (step > peak) {
+                peak = step;
+                peak_k = k;
+            }
+            if (reshaped[0] || reshaped[1]) {
+                n_reshape++;
+                peak_reshape = std::max(peak_reshape, step);
+            } else {
+                n_task++;
+                peak_task = std::max(peak_task, step);
+            }
+            set_config(qnext[0], qnext[1], th, s);
+            dmin_all = std::min(dmin_all, std::min(wall_clearance(0), wall_clearance(1)));
+            f << k * dt << ',' << th << ',' << s << ',' << stepL << ',' << stepR << ','
+              << (reshaped[0] ? 1 : 0) << ',' << (reshaped[1] ? 1 : 0) << ','
+              << std::min(wall_clearance(0), wall_clearance(1)) << '\n';
+            qt[0] = qnext[0];
+            qt[1] = qnext[1];
+            if ((k + 1) % 1000 == 0) {
+                double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                std::cout << "  sm_track " << k + 1 << "/" << (N - 1) << "  (" << std::fixed
+                          << std::setprecision(0) << el << " s)" << std::endl;
+            }
+        }
+        f.close();
+        double wall_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+        std::cout << std::fixed << std::setprecision(4);
+        std::cout << "\nsm_track done in " << wall_s << " s\n";
+        std::cout << "  stateful min-reshaping max|qdot| = " << peak << " rad/s @ t=" << peak_k * dt
+                  << " s (θ=" << stream[peak_k][0] * 180.0 / M_PI << "°, s=" << stream[peak_k][1] * 1e3 << " mm)\n";
+        std::cout << "  task-only cycles (no reshape): " << n_task << "/" << (N - 1) << "  (max step "
+                  << peak_task << " rad/s)\n";
+        std::cout << "  reshaped cycles (forced):      " << n_reshape << "/" << (N - 1) << "  (max step "
+                  << peak_reshape << " rad/s)\n";
+        std::cout << "  d_min over trajectory = " << dmin_all * 1e3 << " mm\n";
+        std::cout << "  DP floor (exists, K-converged) = 7.84 rad/s;  safe-set separation lower bound = 4.26 rad/s\n";
+        std::cout << "wrote " << outdir / "sm_track.csv" << "\n";
+    }
+
+    // T5.2 Step 1 — instantaneous dynamic feasibility + avoidance authority (the "why is 7.84
+    // infeasible" answer). This is an INDEPENDENT differential (velocity-level) certificate, separate
+    // from the trajectory DP (7.84): for each critical (x, ẋ) sample and every clearance-safe config
+    // q in the self-motion arc S(x), solve the 1-D QP
+    //     min_α ‖q̇‖_∞   s.t.   q̇ = J⁺ v + α n,   J_d q̇ ≥ −η(d − d_safe)   (task + CBF barrier)
+    // and report v_min^inst = min_{q∈S(x)} v_min. If v_min^inst > 1.5 at the corner, infeasibility is
+    // DIFFERENTIAL (wall physics), not a path/atlas artifact. Also reports the avoidance authority
+    //     A_avoid = max_{J_T q̇=0, |q̇|≤1.5} J_d q̇,   v_close = −J_d q̇_task,   Γ = v_close/A_avoid,
+    // where Γ > 1 means task-preserving redundancy cannot outpace the wall-closing the task induces.
+    void dynfeas(const fs::path &outdir, int max_samples) {
+        const double dt = 0.02;
+        const double qdot = 1.5;   // true unified robot joint-speed limit
+        const double eta = 50.0;   // CBF barrier rate [1/s]: allowed closing rate = η(d − d_safe)
+        const int N = 10000;
+
+        // regenerate the random stream (byte-identical to existence_test())
+        std::vector<std::array<double, 4>> stream(N);
+        {
+            std::mt19937 rng(987654321u);
+            std::uniform_real_distribution<double> U01(0.0, 1.0), Uph(0.0, 2.0 * M_PI);
+            const int nc = 5;
+            double thA[nc], thPh[nc], sA[nc], sPh[nc];
+            const double thF[nc] = {0.10, 0.25, 0.40, 0.70, 1.10};
+            const double sF[nc] = {0.08, 0.20, 0.35, 0.60, 0.90};
+            for (int i = 0; i < nc; i++) {
+                thA[i] = 0.35 + 0.65 * U01(rng); thPh[i] = Uph(rng);
+                sA[i] = 0.35 + 0.65 * U01(rng); sPh[i] = Uph(rng);
+            }
+            for (int k = 0; k < N; k++) {
+                double t = k * dt, th = 0.0, s = -0.08;
+                for (int i = 0; i < nc; i++) {
+                    th += thA[i] * std::sin(2.0 * M_PI * thF[i] * t + thPh[i]);
+                    s += 0.04 * sA[i] * std::sin(2.0 * M_PI * sF[i] * t + sPh[i]);
+                }
+                stream[k] = {std::clamp(0.5 * th, -0.87266, 0.87266), std::clamp(s, -0.16, 0.0), 0.0, 0.0};
+            }
+        }
+
+        // (a) corner-band random samples (the DP's binding region) with their true velocities
+        struct Work { double th, s, thd, sd; };
+        std::vector<Work> work;
+        std::vector<int> corner;
+        for (int k = 0; k < N - 1; k++) {
+            double th = stream[k][0], s = stream[k][1];
+            double thd = (stream[k + 1][0] - th) / dt, sd = (stream[k + 1][1] - s) / dt;
+            stream[k][2] = thd; stream[k][3] = sd;
+            if (std::fabs(th) > 0.5 || s < -0.13)
+                corner.push_back(k);
+        }
+        if ((int)corner.size() > max_samples) {
+            std::vector<int> sub;
+            int stride = (int)std::ceil((double)corner.size() / max_samples);
+            for (size_t i = 0; i < corner.size(); i += stride) sub.push_back(corner[i]);
+            corner.swap(sub);
+        }
+        for (int k : corner)
+            work.push_back({stream[k][0], stream[k][1], stream[k][2], stream[k][3]});
+        // (b) interior contrast grid at the worst-case combined velocity (roll + pull)
+        const double thg[] = {-0.87266, -0.35, 0.0, 0.35, 0.87266};
+        const double sg[] = {-0.16, -0.08};
+        for (double th : thg) for (double s : sg)
+            if (!(std::fabs(th) > 0.5 || s < -0.13))
+                work.push_back({th, s, 5.23, 0.433});
+
+        std::cout << "dynfeas: " << work.size() << " samples (" << corner.size()
+                  << " random-corner + " << (work.size() - corner.size())
+                  << " interior-contrast), qdot=" << qdot << " rad/s, eta=" << eta
+                  << " /s, d_safe=" << d_safe * 1e3 << " mm\n";
+
+        struct Row { int k; double th, s, thd, sd; int side;
+                     double v_min, A_avoid, v_close, Gamma, d_at; int active_j, arc_sz; bool feasible; };
+        std::vector<Row> rows;
+        std::mutex mu;
+        std::atomic<size_t> next{0};
+
+        auto worker = [&]() {
+            ClearanceTrajectory run(cfg_path, d_safe, q_margin_target, trace_half, trace_step);
+            while (true) {
+                size_t ii = next.fetch_add(1, std::memory_order_relaxed);
+                if (ii >= work.size()) break;
+                const Work &w = work[ii];
+                double th = w.th, s = w.s, thd = w.thd, sd = w.sd;
+                Q q0[2]{Q(7), Q(7)};
+                bool reach = true;
+                for (int side = 0; side < 2; side++)
+                    if (!run.ik_multi_seed(side, th, s, run.seeds[side], atlas_seed(0, side, 0), q0[side])) {
+                        reach = false;
+                        break;
+                    }
+                if (!reach) continue;
+                // task twist per arm (a function of x, ẋ only — independent of q)
+                Eigen::Matrix<double, 6, 1> v[2];
+                for (int side = 0; side < 2; side++) {
+                    const double eps = 1e-4;
+                    KDL::Frame tpp = run.target(side, th + eps, s), tpm = run.target(side, th - eps, s);
+                    KDL::Frame tsp = run.target(side, th, s + eps), tsm = run.target(side, th, s - eps);
+                    KDL::Vector plin = (tpp.p - tpm.p) * (thd / (2 * eps)) + (tsp.p - tsm.p) * (sd / (2 * eps));
+                    KDL::Vector pang = (tpp.M * tpm.M.Inverse()).GetRot() * (thd / (2 * eps)) +
+                                       (tsp.M * tsm.M.Inverse()).GetRot() * (sd / (2 * eps));
+                    v[side] << plin.x(), plin.y(), plin.z(), pang.x(), pang.y(), pang.z();
+                }
+                std::vector<Row> local;
+                for (int side = 0; side < 2; side++) {
+                    run.ik[side]->setSeed(atlas_seed(0, side, 1000));
+                    std::vector<Q> cand;
+                    std::vector<double> cd;
+                    Q q_safe, q_max;
+                    double d_safe_at, d_max;
+                    bool has_safe;
+                    run.collect_boundary_candidates(side, q0[side], q0[1 - side], th, s, 256,
+                                                    cand, cd, q_safe, d_safe_at, has_safe, q_max, d_max);
+                    if (cand.empty()) {
+                        local.push_back({(int)ii, th, s, thd, sd, side, 1e18, 0, 0, 0, -1, -1, 0, false});
+                        continue;
+                    }
+                    double best_v = 1e18, bestA = 0, bestVc = 0, bestG = 0, bestD = -1;
+                    int bestJ = -1;
+                    for (size_t i = 0; i < cand.size(); i++) {
+                        Q qa = (side == 0) ? cand[i] : q0[0];
+                        Q qb = (side == 1) ? cand[i] : q0[1];
+                        run.set_config(qa, qb, th, s);
+                        Eigen::Matrix<double, 6, 7> J = run.arm_jac(side);
+                        Eigen::JacobiSVD<Eigen::Matrix<double, 6, 7>> svd(J, Eigen::ComputeFullV);
+                        Eigen::Matrix<double, 7, 1> n = svd.matrixV().col(6);
+                        Eigen::VectorXd qd = svd.solve(v[side]);
+                        Eigen::Matrix<double, 1, 7> Jd = run.clearance_grad(side, qa, qb, th, s);
+                        double g = (Jd * n)(0, 0);      // ∂d/∂α along the null space
+                        double c0 = (Jd * qd)(0, 0);    // task-only clearance rate (closing > 0)
+                        double d = cd[i];
+                        double B = -eta * (d - d_safe) - c0;
+                        double lo = -1e18, hi = 1e18;
+                        bool bar_infeas = false;
+                        if (std::fabs(g) < 1e-12) {
+                            if (B > 1e-12) bar_infeas = true;
+                        } else if (g > 0) lo = B / g; else hi = B / g;
+                        if (bar_infeas) continue;
+                        auto f = [&](double a) {
+                            double r = 0;
+                            for (int j = 0; j < 7; j++) r = std::max(r, std::fabs(qd(j) + n(j) * a));
+                            return r;
+                        };
+                        double best = 1e18;
+                        int bj = -1;
+                        auto consider = [&](double a) {
+                            if (a < lo - 1e-12 || a > hi + 1e-12) return;
+                            a = std::clamp(a, lo, hi);
+                            double r = 0;
+                            int aj = -1;
+                            for (int j = 0; j < 7; j++) {
+                                double vv = std::fabs(qd(j) + n(j) * a);
+                                if (vv > r) { r = vv; aj = j; }
+                            }
+                            if (r < best) { best = r; bj = aj; }
+                        };
+                        consider(0.0);
+                        for (int j = 0; j < 7; j++) if (std::fabs(n(j)) > 1e-12) consider(-qd(j) / n(j));
+                        consider(lo);
+                        consider(hi);
+                        if (best >= 1e17) continue;
+                        double nmax = 0;
+                        for (int j = 0; j < 7; j++) nmax = std::max(nmax, std::fabs(n(j)));
+                        double A = nmax > 1e-12 ? qdot * std::fabs(g) / nmax : 0.0;
+                        double vc = -c0;
+                        double Gam = A > 1e-12 ? vc / A : (vc > 1e-12 ? 1e18 : 0.0);
+                        if (best < best_v) {
+                            best_v = best; bestA = A; bestVc = vc; bestG = Gam; bestD = d; bestJ = bj;
+                        }
+                    }
+                    if (best_v >= 1e17)
+                        local.push_back({(int)ii, th, s, thd, sd, side, 1e18, 0, 0, 0, bestD, -1, (int)cand.size(), false});
+                    else
+                        local.push_back({(int)ii, th, s, thd, sd, side, best_v, bestA, bestVc, bestG, bestD,
+                                         bestJ, (int)cand.size(), best_v <= qdot + 1e-9});
+                }
+                std::lock_guard<std::mutex> lk(mu);
+                rows.insert(rows.end(), local.begin(), local.end());
+            }
+        };
+        int n_threads = std::max(1u, std::min(16u, std::thread::hardware_concurrency()));
+        std::vector<std::thread> pool;
+        for (int t = 0; t < n_threads; t++) pool.emplace_back(worker);
+        for (auto &t : pool) t.join();
+
+        std::ofstream out(outdir / "dynfeas.csv");
+        out << std::setprecision(8);
+        out << "k,theta,s,thd,sd,side,v_min_inst,feasible,A_avoid,v_close,Gamma,d_at,active_joint,arc_size\n";
+        for (auto &r : rows)
+            out << r.k << ',' << r.th << ',' << r.s << ',' << r.thd << ',' << r.sd << ',' << r.side << ','
+                << (r.v_min > 1e17 ? -1 : r.v_min) << ',' << r.feasible << ',' << r.A_avoid << ','
+                << r.v_close << ',' << r.Gamma << ',' << r.d_at << ',' << r.active_j << ',' << r.arc_sz << '\n';
+        out.close();
+
+        for (int side = 0; side < 2; side++) {
+            std::vector<double> vm;
+            int nfeas = 0, ninf = 0;
+            double gmax = -1;
+            const Row *pb = nullptr;
+            for (auto &r : rows) if (r.side == side) {
+                if (r.feasible) nfeas++; else ninf++;
+                if (r.v_min < 1e17) vm.push_back(r.v_min);
+                if (r.Gamma > gmax) { gmax = r.Gamma; pb = &r; }
+            }
+            std::sort(vm.begin(), vm.end());
+            auto pct = [&](double p) { return vm.empty() ? 0.0 : vm[(size_t)(p * (vm.size() - 1))]; };
+            std::cout << "  side " << side << ": v_min^inst P50/P95/max = " << std::fixed << std::setprecision(3)
+                      << pct(0.5) << " / " << pct(0.95) << " / " << (vm.empty() ? 0.0 : vm.back())
+                      << " rad/s;  feasible@1.5 " << nfeas << "/" << (nfeas + ninf);
+            if (pb) std::cout << ";  max Gamma=" << std::setprecision(2) << gmax << " @(th="
+                              << pb->th * 180 / M_PI << "deg, s=" << pb->s * 1e3 << "mm)";
+            std::cout << std::defaultfloat << "\n";
+        }
+        std::cout << "wrote " << outdir / "dynfeas.csv" << "\n";
+    }
+
+    // Velocity feasibility lower bound (T5.1 Step 1): at critical task states (x, ẋ), compute the
+    // minimum-norm joint velocity q̇* = J_arm⁺ v that tracks the commanded TCP twist v (ZERO
+    // self-motion), then its null-space-optimized per-joint speed ratio r_task = min_α max_i
+    // |q̇*_i + n_i α| / qdot_max_i. Compare against the safe section's own velocity Q_g(x)·ẋ
+    // (which bundles null-space reconfiguration). If r_task ≤ 1 while r_section > 1, the 24.7
+    // rad/s spike is self-motion / section steepness (情况 A), not task dynamic infeasibility (B).
+    void velocity_feasibility(const fs::path &atlas_dir) {
+        Manifold manifold;
+        if (!manifold.load(atlas_dir)) {
+            std::cerr << "velocity_feasibility: no manifold in " << atlas_dir << "\n";
+            return;
+        }
+        std::cout << "per-joint qdot_max [rad/s]  L =";
+        for (int j = 0; j < 7; j++) std::cout << ' ' << qdot_max[0][j];
+        std::cout << "   R =";
+        for (int j = 0; j < 7; j++) std::cout << ' ' << qdot_max[1][j];
+        std::cout << "\n";
+
+        struct Crit { double th, s, thd, sd; const char *note; };
+        const Crit crits[] = {
+            {-0.8726646259971648, -0.15765, 0.0,   0.333, "peak: corner pull (theta clipped)"},
+            {-0.8726646259971648, -0.16000, 0.0,   0.433, "corner max-pull"},
+            { 0.8726646259971648, -0.15765, 0.0,   0.333, "+50 corner pull"},
+            { 0.0,                -0.08000, 5.23,  0.0,   "interior max-roll"},
+            {-0.52,               -0.08000, 5.23,  0.433, "interior max-combined"},
+        };
+        const double eps = 1e-4;
+        std::cout << "\n=== velocity feasibility lower bound ===\n";
+        std::cout << std::left << std::setw(32) << "state" << std::right << std::setw(10) << "r_task"
+                  << std::setw(11) << "|q*|max" << std::setw(10) << "r_section" << std::setw(11)
+                  << "|q_sec|max" << "   verdict\n";
+
+        for (auto &c : crits) {
+            double r_task = 0, q_task = 0, r_sec = 0, q_sec = 0;
+            for (int side = 0; side < 2; side++) {
+                // task twist v = d(target)/dx · ẋ  (central diff of the TCP target frame)
+                KDL::Frame tpp = target(side, c.th + eps, c.s), tpm = target(side, c.th - eps, c.s);
+                KDL::Frame tsp = target(side, c.th, c.s + eps), tsm = target(side, c.th, c.s - eps);
+                KDL::Vector plin = (tpp.p - tpm.p) * (c.thd / (2 * eps)) + (tsp.p - tsm.p) * (c.sd / (2 * eps));
+                KDL::Vector pang = (tpp.M * tpm.M.Inverse()).GetRot() * (c.thd / (2 * eps)) +
+                                   (tsp.M * tsm.M.Inverse()).GetRot() * (c.sd / (2 * eps));
+                Eigen::Matrix<double, 6, 1> v;
+                v << plin.x(), plin.y(), plin.z(), pang.x(), pang.y(), pang.z();
+
+                std::array<double, 14> q14;
+                if (!manifold.lookup(c.th, c.s, q14)) continue;
+                Q ql(7), qr(7);
+                for (int j = 0; j < 7; j++) { ql(j) = q14[j]; qr(j) = q14[7 + j]; }
+                set_config(ql, qr, c.th, c.s);
+                Eigen::Matrix<double, 6, 7> J = arm_jac(side);
+                Eigen::JacobiSVD<Eigen::Matrix<double, 6, 7>> svd(J, Eigen::ComputeFullV);
+                Eigen::VectorXd qd = svd.solve(v);           // min-norm (zero self-motion)
+                Eigen::VectorXd nsp = svd.matrixV().col(6);  // 1-D null-space basis
+                // min_α max_i |qd_i + nsp_i α| / qdot_max_i  (convex PWL → min at a breakpoint)
+                auto infnorm = [&](double a) {
+                    double r = 0;
+                    for (int j = 0; j < 7; j++)
+                        r = std::max(r, std::fabs(qd(j) + nsp(j) * a) / qdot_max[side][j]);
+                    return r;
+                };
+                double best = infnorm(0.0);
+                for (int j = 0; j < 7; j++)
+                    if (std::fabs(nsp(j)) > 1e-12)
+                        best = std::min(best, infnorm(-qd(j) / nsp(j)));
+                r_task = std::max(r_task, best);
+                for (int j = 0; j < 7; j++) q_task = std::max(q_task, std::fabs(qd(j)));
+
+                // section velocity along ẋ (includes the self-motion the section chose)
+                const double dt = 1e-3;
+                std::array<double, 14> qa, qb;
+                manifold.lookup(c.th, c.s, qa);
+                manifold.lookup(c.th + c.thd * dt, c.s + c.sd * dt, qb);
+                for (int j = 0; j < 14; j++) {
+                    double dq = (qb[j] - qa[j]) / dt;
+                    int sd = j < 7 ? 0 : 1;
+                    q_sec = std::max(q_sec, std::fabs(dq));
+                    r_sec = std::max(r_sec, std::fabs(dq) / qdot_max[sd][j % 7]);
+                }
+            }
+            std::cout << std::left << std::setw(32) << c.note << std::right << std::fixed
+                      << std::setprecision(3) << std::setw(10) << r_task << std::setw(11) << q_task
+                      << std::setw(10) << r_sec << std::setw(11) << q_sec << "   "
+                      << (r_task <= 1.0 ? "A: task feasible -> section too steep"
+                                        : "B: task itself over speed limit")
+                      << "\n";
+        }
+    }
 };
 
 int main(int argc, char **argv) {
@@ -3440,6 +4920,11 @@ int main(int argc, char **argv) {
             run.record_t0(outdir, argc > 8 ? std::atoi(argv[8]) : 250);
             return 0;
         }
+        if (only.count("record_t5")) {
+            // argv[8] doubles as the per-profile knot count here (50 Hz).
+            run.record_t5(outdir, argc > 8 ? std::atoi(argv[8]) : 250);
+            return 0;
+        }
         if (only.count("manifold")) {
             // T5 offline: build the continuous safe-manifold section Q_g(θ,s) ∈ R^14.
             run.build_manifold(outdir);
@@ -3454,6 +4939,46 @@ int main(int argc, char **argv) {
         if (only.count("check_manifold")) {
             // argv[8] doubles as the off-grid sample count here (default 5000).
             run.check_manifold(outdir, argc > 8 ? std::atoi(argv[8]) : 5000);
+            return 0;
+        }
+        if (only.count("velfeas")) {
+            // Velocity feasibility lower bound (reads the manifold from outdir).
+            run.velocity_feasibility(outdir);
+            return 0;
+        }
+        if (only.count("breselect")) {
+            // T5.1 Step 2: boundary 1-D dynamic-aware section reselection @ theta=-50deg.
+            // argv[8] doubles as the thread count here.
+            run.boundary_reselect(outdir, argc > 8 ? std::atoi(argv[8]) : 16);
+            return 0;
+        }
+        if (only.count("exists")) {
+            // T5.1 Step 3: candidate-DP trajectory-level existence test on the random stream.
+            // argv[8] doubles as the thread count here.
+            run.existence_test(outdir, 10000, argc > 8 ? std::atoi(argv[8]) : 16);
+            return 0;
+        }
+        if (only.count("exists200")) {
+            // Same [0,199.98] s interval as 10000 samples at 50 Hz, with 5 ms knots.
+            run.existence_test(outdir, 39997, argc > 8 ? std::atoi(argv[8]) : 16, 0.005);
+            return 0;
+        }
+        if (only.count("sm_dyn")) {
+            // T5.1 Step 4: 1-D self-motion boundary dynamics (decompose "why is the DP floor 7.84").
+            // argv[8] doubles as the thread count here.
+            run.self_motion_dynamics(outdir, argc > 8 ? std::atoi(argv[8]) : 16);
+            return 0;
+        }
+        if (only.count("sm_track")) {
+            // T5.1 Step 5: stateful minimum-reshaping self-motion tracking (hysteretic controller).
+            // argv[8] doubles as the cycle count here (default 10000, sequential).
+            run.sm_track(outdir, argc > 8 ? std::atoi(argv[8]) : 10000);
+            return 0;
+        }
+        if (only.count("dynfeas")) {
+            // T5.2 Step 1: instantaneous dynamic-feasibility QP + avoidance authority on critical
+            // samples of the random stream. argv[8] doubles as the max sample count (default 200).
+            run.dynfeas(outdir, argc > 8 ? std::atoi(argv[8]) : 200);
             return 0;
         }
         std::vector<TaskSummary> all;

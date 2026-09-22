@@ -429,6 +429,12 @@ T5 的三问在 margin-respecting safe 剖面上全部成立：连续（Δq≈0.
 **T5 单周期成本分解**：bilinear lookup ≈ 0.07–0.21 µs（可忽略）；2 步 Newton ≈ 71 µs（含
 `mj_forward`+`mj_jacSite`+6×6 LDLT）。合计 ~0.07 ms = 20 ms deadline 的 **1/280**。
 
+**timing scope 说明**：T5 的 0.07 ms 是 `T_solve`（lookup + Newton，即 command generation），
+**不含** collision/clearance 评估——因为 T5 的安全由离线证书保证，在线无需检测（这正是它的卖点）。
+T1/T4 的 `T_total` 含 collision detect（+0.15 ms）与 T4 的 reshape。为严格可比，若给 T5 也加一个
+监控式 collision check，总成本 ≈ 0.07+0.15 ≈ 0.22 ms，仍为 deadline 的 ~1/90；论文可分别报
+`T_solve` 与 `T_end-to-end`（含可选的监控检测）。
+
 ### 结论
 
 T5 是唯一在**三个 profile 上全部**做到 `d_min ≥ d_safe`、`coll=0`、`e_task=0` 的方法，且 P99
@@ -465,8 +471,288 @@ manifold 投影**。T5 把「安全」从每帧在线搜索变成一次离线证
 # 2) 在线对比（4 方法重放同一轨迹流）：
 ./build/bin/aviator_clearance_trajectory config/aviator.yaml /tmp/aviator-t5-compare \
     0.005 0.03 10 0.1 compare 10000
-# 输出 compare_timing.csv / compare_safety.csv / compare_substeps.csv
+# 输出 compare_timing.csv / compare_safety.csv / compare_substeps.csv / compare_dynamics.csv
 ```
+
+---
+
+## 18. 动态可执行性与 paper 主线
+
+### 18.1 下一道门：动态可执行性（|q̇| / |q̈|）
+
+§17 已证明 **kinematic closure + collision safety + computational realtime** 三件事。但
+`q(t)=Q_g(x(t))` 连续 ≠ 速度可接受：相邻 atlas 点最大 Δq≈0.19 rad，若真实轨迹快速跨格，会产生
+较大 q̇。同一批 profile 下实测的 |q̇|/|q̈| 分布（P50 / P99 / max）：
+
+| profile | 方法 | \|q̇\| P50/P99/max (rad/s) | \|q̈\| P50/P99/max (rad/s²) | low_margin% |
+|---|---|---|---|---|
+| sine | T0 | 0.66 / 0.96 / 0.97 | 0.90 / 14.7 / 35 | 93.6 |
+| | T5 | 0.75 / 3.30 / 3.47 | 1.26 / 146 / 155 | 17.6 |
+| roll_pull | T0 | 0.41 / 0.69 / 0.69 | 0.55 / 12.5 / 24 | 85.6 |
+| | T5 | 0.49 / 2.34 / 2.74 | 0.85 / 105 / 127 | 0.0 |
+| random | T0 | 1.55 / 5.58 / 9.53 | 14.2 / 163 / 468 | 84.2 |
+| | T5 | 1.93 / 7.03 / 11.19 | 24.9 / 240 / 775 | 5.7 |
+
+- **速度封顶机制**：T5 的 `max|q̇|` ≈（Q1 连续性 0.19 rad）/（dt=0.02）≈ 9.5 rad/s（random 实测 11.19，
+  略高是因为 s 方向也跳）。这是**网格格间跳变**伪运动；T0 的 9.53/468 是 IK **分支跳变**伪运动——同类，
+  非物理运动。
+- **smooth profile（0.2 Hz）上 T5 max|q̇|=3.47/2.74 < 6.28 rad/s**（joint_speed 限），通过；且 P99
+  （3.30/2.34）也 < 6.28，说明不是偶尔尖峰。random 应力 profile 上 T5 与 T0 都超限（11.19 vs 9.53），
+  是离散化伪运动。
+- **low_margin 是 T5 的隐藏加分项**：low_margin = 最终构型 min 关节 margin < 0.03 的周期占比。
+  T0 的 continuation-IK 构型 **82–96% 贴着关节限位**（这正是 §16「argmax 坐关节限位」的定量化），
+  几乎无「local correction reserve」；T5 的 margin-respecting section 把它压到 **0–17.6%**（roll_pull
+  甚至 0%）。这直接兑现了 §16 的「maximum clearance ≠ best tracking reference」——T5 不仅快，还给在线
+  修正留了 margin 余量。
+- **下一步**：压低随机 profile 的格间跳变需要 §11 全局平滑剖面选择（摊平 0.19 rad 格间跳变）或速度
+  前馈 `q̇_ff=J_Q(x)ẋ`。一旦平滑后 max|q̇| 回到限内且安全不丢，T5 就从「快速安全运动学映射」升级为
+  **实时可执行双臂运动生成器**。
+
+### 18.2 d_min 缓冲太薄：离线用 d_atlas = d_safe + d_robustness
+
+T5 random `d_min=5.04 mm`，数学上 ≥ 5 mm，但只剩 **0.04 mm** buffer。真机的 calibration / mesh /
+encoder / compliance / tracking 误差会吃掉它。建议仿真里离线 section 的硬约束提高到
+`d_atlas = d_safe + d_robustness`（如 7–8 mm），物理安全 threshold 仍取 5 mm——现有 safe section
+只需把 `d_safe` 换成 `d_atlas` 重建一次即可。
+
+### 18.3 paper 主线：problem reformulation，不是 solver engineering
+
+T5 相对 T4 的 ~500×（34.6→0.069 ms）与相对 T0 的 ~11×（0.78→0.069 ms）**不是优化求解器**，而是
+把在线问题的性质改掉了：
+
+- T0/T4 在线都在解**搜索问题** `x=(θ,s) → 在线找一个合适的 q`（IK branch 选择 / 冗余选择 / 避障
+  构型选择，每帧重来）。
+- T5 变成 `x → Q_g(x)（离线已选好安全 branch）→ 局部投影修正`。昂贵的分支/冗余/避障选择**全部
+  离线编译**进 `Q_g`，在线只剩一个接近流形的小残差修正（e₀≈11 µm → 2 步 Newton）。
+
+即 **IK/redundancy resolution is compiled offline into Q_g(θ,s)；在线只是 execution**。T5 也不是
+"利用 atlas 帮 IK"——它已不以在线 IK 为核心。
+
+方法阶梯干净且被数据支撑：
+
+- **T0** 快（0.78 ms）但不安全（d_min −15…−18 mm，coll 82–89%）。
+- **T1** 能检测危险（+0.15 ms），但不能解决。
+- **T4** 能在线重塑但搜索太慢（34–40 ms，2× deadline）且高速 irregular 时追不上（random 仍穿透）。
+- **T5** 离线选安全 branch，在线固定预算跟踪：0.07 ms、d≥d_safe、coll=0、e=0，**含 random**。
+
+一句话结论：**固定环境 + 低维机构任务下，没有必要每帧重新解高维 IK + redundancy + collision
+search；可以把它们离线压缩成 Q_g:(θ,s)→q*∈R¹⁴，在线只做 lookup + 插值 + 固定 2 步投影**，实测
+P99<0.1 ms、coll=0、e≈0，含 irregular random 轨迹。
+
+### 18.4 速度连续性诊断：C⁰ 已证，C¹ 未闭合（T5 的最后一环）
+
+§17/18.1 的 max|q̇| 只说明"速度上限"，没回答"速度连续性/突变"本身。Q1（max Δq=0.194 rad）只能
+证明 Q_g 大体 **C⁰ 可连接**；bilinear 插值本身也只有 C⁰。于是问：11.19 rad/s 是 (a) section 真实
+陡坡 × 任务速度，还是 (b) 离散跳变/分支切换伪运动？四组诊断（全离线，不动求解器）钉死答案：
+
+**A. Newton 归因（bound）**：§19 给 Newton 两步总修正 ≤ e₀max≈0.37 mm ⇒ q̇ 贡献 ≤ 0.02 rad/s，
+是 24.7 的 <0.1%。**不是 Newton**。
+
+**B. dt refinement（同一 smooth x(t)，采样 20/10/5/2.5/1.25/0.625 ms）**：
+
+| profile | 20 ms | 10 ms | 5 ms | 2.5 ms | 1.25 ms | 0.625 ms | 判定 |
+|---|---|---|---|---|---|---|---|
+| sine | 3.46 | 4.15 | 4.16 | — | — | — | 收敛 → 真 slope |
+| roll_pull | 2.74 | 2.74 | 2.74 | — | — | — | 平坦 → 真 slope |
+| random | 9.96 | 16.27 | 22.58 | 24.61 | 24.66 | **24.68** | 收敛到 **24.7** → 真陡坡 |
+
+random **收敛到 24.7 rad/s**（不是 1/dt 发散、不是平坦），说明不是配置不连续，而是 section 真实
+陡坡；**§17/18.1 报告的 11.19 是 20 ms 欠采样的下限，真实峰值 ~24.7 rad/s = 4× joint_speed(6.28)**。
+
+**C. 梯度图（max_joint ‖∂Q/∂x‖）**：陡度**集中在 θ=±50° 边界**，最陡关节 R3（肘）：
+
+| 量 | 全域最坏 | 内部（\|θ\|≤49°, s∈[−157.5,−2.5]mm） |
+|---|---|---|
+| \|∂Q/∂θ\| [rad/rad] | **11.11** | 6.00 |
+| \|∂Q/∂s\| [rad/m] | **74.17** | 34.90 |
+
+边界陡度是内部的 ~2×。**该边界清晰度安全**（θ=±50° 角 dcont=7.5–8.0 mm），所以这是"陡但安全"
+的边界区域，**不是 joint-limit fallback**（低 clearance 区其实在中心 θ≈−8°, s≈−30 mm）。
+
+**D. 二阶差分（cell-boundary 导数跳变）**：边界处 \|∂²Q/∂θ²\|=596、\|∂²Q/∂s²\|=36374，曲率极大
+——q̇ 虽收敛，q̈ 会更糟。
+
+**机制**：random profile 把 θ clip 到 ±50°、s 压向 −160 mm，正好开进边界陡区；当 θ 被 clip（θ̇=0）
+且 s 同时快速拉向 −160 mm 时，\|∂Q/∂s\|≈74 × ṡ≈0.33 m/s = **24.7 rad/s**。
+
+**速度兼容包络（§9 sufficient condition 实例化，q̇_i,max=6.28）**：
+`Gθ·θ̇max + Gs·ṡmax ≤ 6.28` ⇒ 全域最坏下 **纯 roll ≤0.57 rad/s（32°/s）、纯 pull ≤85 mm/s**；
+只走内部则 **纯 roll ≤1.05 rad/s（60°/s）、纯 pull ≤180 mm/s**。random profile 需要 θ̇ 5.23 / ṡ 0.43，
+超出包络 **9× / 5×**。
+
+**结论（回答"该改哪个"）**：主导是 **section 的一阶陡度**（边界 |∂Q/∂θ|=11），cubic 插值只能消
+C⁰ kink（帮 q̈），消不掉一阶坡度。所以 T5.1 必须**离线重选 section**：把 gradient / J_first 正则或
+§9 速度包络约束写进离线目标（不只是"挑安全+margin"，还要"挑随任务变化关节不需剧烈运动的安全姿态"）；
+cubic/B-spline 表示是次要的锦上添花（C¹/C² 连续、压 q̈/jerk）。这样 T5 才从"高速安全 kinematic
+lookup"升级为 **dynamically executable safe-manifold controller**。
+
+### 18.5 速度可行性下界：情况 A —— section 自运动放大 224×，任务本身只要 3–7%
+
+决定性一步（TASKS=velfeas）：在 critical states 上抛开当前 Q_g，求最小范数 + 零空间优化的关节速度
+`r*(x,ẋ) = min_{q̇: J_T q̇=v} max_i |q̇_i|/q̇_i,max`。结果：
+
+| state | r_task | \|q̇*\|max (rad/s) | r_section | \|q_sec\|max (rad/s) |
+|---|---|---|---|---|
+| peak corner pull（θ clip，ṡ=0.33） | 0.033 | 0.109 | 1.71 | 8.06 |
+| corner max-pull（θ=−50°, ṡ=0.43） | 0.047 | 0.143 | **6.82** | **32.11** |
+| +50° corner pull | 0.031 | 0.108 | 1.15 | 4.81 |
+| interior max-roll（θ̇=5.23） | 0.065 | 0.306 | 0.76 | 3.19 |
+| interior max-combined | 0.066 | 0.284 | 1.28 | 5.35 |
+
+- **r_task ≤ 0.066**（任务只需 3–7% 关节限速）⇒ **物理速度可行解存在（情况 A），余量巨大**。
+- **r_section 到 6.8**（section 超限 6.8×）；最坏 corner max-pull：任务要 0.143 rad/s、section 要
+  32.1 rad/s ⇒ **自运动放大 224×**。24.7 rad/s 尖峰 **100% 来自 section 的 null-space 重配置**，
+  不是任务需求。
+- **限速修正**：真实关节限速来自 MJCF = `[3.05, 3.05, 4.71, 5.24, 4.19, 4.19, 4.19]` rad/s（**不是
+  6.28**——那是 `joint_speed` 轨迹时长缩放常数；也不是 1.0 默认值）。
+
+结论：**不是"任务太快"（情况 B），而是"当前 section 自运动选得太陡"（情况 A）**。T5.1 的离线
+velocity-aware section 重选（§18.4）是正确且唯一需要的主药；冗余空间足够，只是 selection 不够
+dynamic-aware。
+
+### 18.6 边界 1-D 动态重选（θ=−50°）：max|q̇| 32.11 → 5.21 rad/s（6.2×）
+
+不动在线求解器，只重选 θ=−50° 边界列上的自运动分支（TASKS=breselect）：在每个 s_j 上 trace 完整
+自运动环，保留**所有 clearance-safe（d≥d_safe，真实限位）**构型为候选（**不要求 margin**——这正是旧
+max-margin section 的过约束），再用逐臂 DP 找两条路径：
+
+- **Path A** = $\min \sum_j \|\mathbf q_{j+1}-\mathbf q_j\|^2$（最光滑分支）
+- **Path B** = $\max \min_j \dot s_{\max}^{\rm edge}$（最大可持续拉速）
+
+统一按 $\dot q_{\max}=1.5$ rad/s 评价，参考拉速 $\dot s_{\rm ref}=0.43$ m/s（随机 profile 峰值）。
+
+| 路径 | max\|q̇\|@ṡ_ref (rad/s) | V_path (m/s) | d_min (mm) |
+|---|---|---|---|
+| **OLD**（max-margin argmax） | **32.11** | 0.0087 | 7.59 |
+| **Path A**（min Σ‖Δq‖²） | **5.214** | 0.125 | 7.96 |
+| **Path B**（max 拉速） | **5.214** | 0.125 | 7.76 |
+
+要点：
+
+1. **Path A ≡ Path B**：光滑安全分支本质唯一，两种目标收敛到同一条。
+2. **K 收敛**：K=32/64/128 结果完全相同（5.2136），排除候选分辨率伪影，5.21 是真地板。
+3. **绑定边在 s≈−150 mm**（最大拉出端），关节 R5，步长平滑递减（0.030→0.022 rad 连续 5 边）——
+   这是真实几何（s→−160 mm 时安全自运动弧收缩，肘被迫内收），不是 selection 跳变。
+4. **分解**：任务 ~0.14 rad/s + 墙逼肘收 ~5.2 rad/s（不可避免）+ 旧分支跳变伪影 ~27 rad/s（DP 消除）。
+   重选吃掉了那 6× 伪影，只剩几何真正逼出的 ~3.5×（5.2/1.5）。
+
+结论：边界 1-D 重选证明 **section 陡峭的主导项是可消的自运动分支跳变**；剩余 5.2 rad/s 是单臂在
+θ=−50° 极限拉出端的几何地板。下一步：+50° 边界、roll 方向、再 2-D 梯度约束。
+
+### 18.7 完整 1-D 重选四象限：+50° 边界 + roll 方向（统一 $\dot q_{\max}=1.5$）
+
+把 `breselect` 推广为通用 `reselect_1d(sweep_theta, fix_val, x_ref, label)`，跑四个 1-D 切片——
+两条边界列（θ=±50°，扫 s，$x_{\rm ref}=\dot s_{\rm ref}=0.433$ m/s）和两条 roll 方向切面
+（s=−160 / −80 mm，扫 θ，$x_{\rm ref}=\dot\theta_{\rm ref}=5.23$ rad/s）：
+
+| 切片 | OLD max\|q̇\| | PathA max\|q̇\| | PathB max\|q̇\| | 可执行轴速 V | d_min (A/B, mm) | 缩减 |
+|---|---|---|---|---|---|---|
+| θ=−50° 拉 | 32.11 | 5.214 | 5.214 | 0.125 m/s | 7.96 / 7.76 | 6.2× |
+| θ=+50° 拉 | 13.95 | 8.894 | 8.457 | 0.077 m/s | 5.37 / 5.02 | 1.65× |
+| roll @ s=−160 | 58.10 | 14.39 | 14.39 | 0.545 rad/s | 7.59 / 7.59 | 4.0× |
+| roll @ s=−80 | 17.45 | 5.805 | 5.805 | 1.351 rad/s | 8.00 / 8.28 | 3.0× |
+
+（`max|q̇|` 均按对应 $x_{\rm ref}$ 折算：`|dq|/dx · x_ref`；V = 轴速使 max\|q̇\|≤1.5 rad/s。K=32/64/128
+全部一致，非量化伪影。）
+
+四个要点：
+
+1. **重选收益与旧 section 跳变程度正相关**：θ=−50°（旧 32.1，最严重跳变）和 roll 角落 s=−160
+   （旧 58.1，全局最陡）收益最大（6.2× / 4.0×）；+50°（旧 13.95，本来较平滑）只赚 1.65×。证明
+   max-margin argmax 的**分支跳变是主导伪影**，DP 重选精准把它消掉。
+2. **镜像不对称是真实的，不是 seed bug**：+50° 残余 8.46 rad/s ≈ −50° 的 1.6×，与 mirror-audit
+   FAIL（右墙低 25 mm）一致——θ=+50° 把方向盘倾向更低的右墙，安全自运动弧更薄。**左/右边界不可互换**。
+3. **Path A ≢ Path B 首次分叉**（+50°：8.89 vs 8.46）——安全弧足够薄时「最光滑」与「最快」不再同解；
+   且 +50° PathB d_min=5.02 mm 贴着 d_safe，说明光滑分支在 +50° 是**贴着墙走**（smoothness↔clearance
+   交换），而 −50° 重选让两者同时变好。薄弧处重选是**用 clearance 换光滑**，不是免费午餐。
+4. **全局绑定在 roll 角落 s=−160**：14.39 rad/s 是四象限最高残余（14.39/1.5 ≈ 9.6× 限速）。roll 方向的
+   残余放大比拉方向更贵（+50° 拉 8.46 vs roll 角落 14.39）。
+
+可执行轴速（统一 1.5 rad/s）——**拉受 +50° 限制 ≈ 0.077 m/s，roll 受 s=−160 角落限制 ≈ 0.545 rad/s**，
+分别是对照参考 0.433 m/s / 5.23 rad/s 的 1/5.6 与 1/9.6。
+
+5. **关键修正（结论重述）**：这 5.2–14.4 rad/s **不能叫「几何不可消地板」**。velfeas（§18.5）在**相同**
+   task velocity 下找到了 pointwise 解只要 **0.14–0.30 rad/s**（r_task=0.031–0.066，且真机统一限速就是
+   1.5 rad/s，见下），与 1.5 限速之间隔着 5–10× 余量。所以 5.2–14.4 只能叫 **当前 1-D phase-consistent
+   section 构造方法的残余速度放大**——DP 已消掉旧的 4–6× 分支跳变，但离真实速度可行下界仍有数量级差距。
+   真机统一最大关节速度确认为 $\dot q_{\max}=1.5$ rad/s，因此此前「放宽到 MJCF 3–5 rad/s 即可」的结论**全部
+   作废**；剩余瓶颈属于**全局 section 如何选择**（单一单值 Q(θ,s) 是否根本无法在所有方向铺平），而非任务
+   本身在 1.5 rad/s 下不可执行。下一道科学问题：**是否存在全局 velocity-compatible safe section**——
+   由 §18.8 的 candidate-DP 轨迹级存在性检验直接回答。
+
+### 18.8 Candidate-DP 轨迹级存在性检验（决定性实验）：24.7 → 7.84 rad/s，仍 5.2× 超限
+
+方法（`TASKS=exists`）：重放 compare() 的**同一条** random task stream（10000 cycles @ 50 Hz，θ∈±50°，
+s∈[−160,0]），但每个 cycle 不取单值 section Q_g(x_k)，而是用 `collect_boundary_candidates` 在每臂保留
+K_full=256 个 phase-consistent clearance-safe 候选（d≥d_safe，真实限位，无 margin 要求）存满安全弧，再沿
+时间轴做逐臂 minimax DP（`dp[k][b]=min_a max(dp[k−1][a], |q_k[b]−q_{k−1}[a]|_∞)`），找使最大周期关节步长
+最小的分支序列。结果 `step/dt` 就是原 random 轨迹上**可达的最低 max|q̇|**。刚性抓取 ⇒ 双臂独立 ⇒ 14-D
+最优分解成逐臂最优。候选分辨率用 stride-downsample 到 K∈{32,64,128,256} 重跑 DP 做收敛性认证。
+
+| 量 | 值 |
+|---|---|
+| **min achievable max\|q̇\|** | **7.84 rad/s**（L 6.78 / R 7.84）→ 1.5 限速 **INFEASIBLE（5.2×）** |
+| d_min 沿路径 | 5.0005 mm（**全部 10000 cycle 均 clearance-safe**，0 个 clearance 不可行） |
+| 无 margin-safe（d≥d_safe ∧ margin≥0.03）构型的 cycle | 554/10000（软偏好，非安全） |
+| grasp closure（每隔 250th 抽查） | max 0.0006 mm |
+| 对照：单值 T5 section 同流 max\|q̇\| | 24.7 rad/s（→ DP 7.84，**3.2× 降**） |
+| 对照：velfeas 任务速度下界 | 0.14–0.30 rad/s |
+
+**K 收敛性认证（把 7.84 钉死为真地板，而非候选分辨率伪影）**：对 K∈{32,64,128,256} 各自 stride-downsample
+安全弧重跑 DP，v_min^DP(K) 四值**完全相同**——`7.8429`（L 6.7840 / R 7.8429），d_min 恒 5.0005 mm。即
+K=32 就已饱和，说明绑定约束是 θ=±50°&s=−160 mm 角点处**安全弧塌缩成的薄段/单点**（K=32 已能完整分辨），
+不存在「K=64 覆盖不够、7.84 会随 K 下降」的风险（用户预设的 8.21→7.84→7.72→7.69 场景未出现，而是更干净
+的四值平）。因此 **≈7.84 rad/s 是 candidate-resolution 收敛后的动态安全下界，任何 chart 结构都消不掉**——这
+一断言现在有了分辨率层面的背书。
+
+关键（也是本实验的方法学教训）：第一版用 cycle-index 相关 seed（`atlas_seed(k,·)`）得到 L=155 rad/s 的
+假象——角点处 home-approach IK 失败、随机重启库落在与邻 cycle 3.1 rad 远的另一个 IK 分支上，候选集不连续。
+改为 **固定 seed**（`atlas_seed(0,·)`）后 155→6.78，证明 phase-consistent seeding 是候选集连续性的前提，
+也是 max-margin argmax 之外第二处「seed/selection 决定动态放大」的证据。
+
+结论（回答 §18.7 的科学问题）：**不存在一张全局 velocity-compatible safe section 让整条 random 轨迹在
+1.5 rad/s 下可执行**——即便每个 cycle 都独立挑最优分支，最低 max|q̇| 仍是 7.84 rad/s。三层分解：
+
+1. **任务速度 0.14–0.30 rad/s**（velfeas）——任务本身极便宜，**不是**瓶颈（用户的判断在此正确）。
+2. **单值 section 的分支跳变 24.7→7.84 = 3.2×**——可消伪影，multi-chart/stateful atlas 能拿下（用户对
+   「section 是主要瓶颈」的判断在此成立，但只解释了 3.2×，不是全部）。
+3. **角点 safe-arc 塌缩的 self-motion 重配置 7.84 rad/s**（θ=±50° 且 s=−160 mm 处安全弧收成薄段/单点，
+   肘被迫以远超任务的速度内收）——这是**真地板**，任何 section/chart 结构都消不掉，只能靠 gap/d_safe/新
+   DOF（见 [[dg-static-feasibility-certificate]]）。
+
+因此对「5.2–14.4 是不是几何地板」的最终裁决是：**它不是「任务不可执行」的地板（任务只要 0.14–0.30），
+但它是「安全弧重配置」的地板**——重选吃掉了 section 的那 3.2×，剩 7.84 rad/s 是安全弧塌缩逼出的
+self-motion，本质仍是几何的（只是几何在「保持安全」上，而非「跟踪任务」上）。multi-chart atlas 是达到
+这个 7.84 地板（而非 1.5）的正确架构；要达到 1.5，唯一出路是改任务/几何。
+
+### 18.9 「7.84 为什么这么大」的动力学分解（sm_dyn / sm_track 模式）
+
+把 7.84 拆成可解释的低维动力学。正确分解是 $\dot q = J^\# v_{\rm task} + N(q)z$（第一项完成任务，第二项是
+self-motion）。同一 random 流上四个数：
+
+| 层 | 量 | 值 (rad/s) | 含义 |
+|---|---|---|---|
+| 任务 | velfeas $r_{\rm task}$ | 0.14–0.30 | 末端任务本身，可忽略 |
+| **安全弧滑移（逐转移、参数无关）** | $\max_k\min_{a,b}\|q_k^b-q_{k-1}^a\|_\infty/dt$ | **4.26**（L 4.08/R 4.26） | 安全窗口在**关节空间**里滑移/塌缩的真实速度 |
+| **最优 stateful 地板（前瞻 DP）** | exists minimax（K 收敛） | **7.84** | = 4.26 + 3.58 承诺路径一致性 |
+| 贪心 stateful + 朴素 IK 延续 | sm_track | **11.05** | 比 DP 更差（见下） |
+
+关键发现一（sm_dyn）：以 home 构型为原点的**步数索引 ρ 不是合法坐标**——网格上 $|\partial\rho_{\min}/\partial s|$
+高达 25000–50000 steps/m，是「每个 cell 重新以 home 锚定」造成的标签跳变（给出虚假的 2415 rad/s 边界）。
+所以「把 $\rho_t$ clip 进 $[\rho_{\min},\rho_{\max}]$」控制器必须用**规范坐标**（关节空间弧长 + 一致锚定/解绕），
+不能用 home 相对步数索引。
+
+关键发现二（sm_track）：贪心 stateful 控制器（保持 $q_t$，任务延续，只在离开安全集时投到最近安全点）
+给 **11.05 rad/s，反而比 DP 的 7.84 差**。两个原因：(a) 贪心局部最优，提前 commit 到坏分支；(b) 更本质的——
+`CartToJnt(seed=q_t)` 的「任务延续」**并不保持 ρ**：在角点处 TRAC-IK 随机重启逃出种子盆，跳到相邻
+self-motion 分支，「无 reshape」周期本身就达到 7.87 rad/s（而任务一步只需 0.006 rad）。即「保持 ρ 只做
+task projection」必须用速度级 $q_{\rm cont}=q_t+\Delta t\,J^\#\dot x$（再 Newton 重投影），不能重新 IK。
+
+**裁决**：用户提出的 stateful 最小必要重构是**正确的架构**，而前瞻 DP 已经就是它——**7.84 就是 stateful 最优
+地板，不是可消的「reference chasing」**。真正被消掉的是单值 section 的 24.7→7.84（3.2×，无状态 $\rho^*(x)$
+追参考）。剩余 7.84 的构成是：0.2（任务）+ 4.26（安全窗口真实滑移）+ 3.58（承诺路径一致性 = 安全弧塌缩成
+移动点时连续路径无法「处处最优」）。即便只算安全弧滑移 4.26 也已 2.8× 超 1.5，故任务在真实限速下不可执行，
+且这不是选择/参数化伪影，而是几何逼出的安全弧运动（[[dg-static-feasibility-certificate]]）。
 
 ---
 
