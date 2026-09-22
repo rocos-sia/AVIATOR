@@ -19,3 +19,6 @@ docs/images/
 examples/experiments/aviator_manifold/debug/
 examples/experiments/aviator_manifold/debug_rlpd/
 wandb/
+
+# overnight run logs (nohup output)
+examples/experiments/aviator_manifold/rlpd_*.log
