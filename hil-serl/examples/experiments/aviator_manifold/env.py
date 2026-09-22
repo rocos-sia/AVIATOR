@@ -110,7 +110,17 @@ class AviatorManifoldEnv(gym.Env):
         self._traj = self._load_trajectory()
         self._t = 0
         self._x = self._traj["x"][0].copy()
-        self._phi = np.zeros(2)            # anchor phase = 0 for both arms
+        # Initialize phi to a *safe* configuration at x[0].  The transported
+        # anchor phase phi=0 is only safe near (theta=0, s=0); elsewhere the
+        # continuation of the anchor config can collide (the per-arm safe
+        # interval does not contain 0).  Project 0 onto the per-arm safe box so
+        # the episode starts feasible -- the policy's job is to keep it feasible.
+        box = self.lookup.safe_interval(self._x[None, :])
+        self._phi = np.clip(
+            np.zeros(2),
+            box["phi_safe_lo"][0],
+            box["phi_safe_hi"][0],
+        )
         self._a_prev = np.zeros(2)
 
         self._hist_x.clear()
@@ -151,14 +161,19 @@ class AviatorManifoldEnv(gym.Env):
 
         # --- advance (kinematic execution) ----------------------------------
         phi_next = phi + phi_dot_safe * self.dt
-        res_next = self.lookup.query(x_next[None, :], phi_next[None, :])
+        # check_safe=False: the safety filter's hard shield already verified the
+        # *trilinear* clearance d >= d_safe (authoritative); the bilinear safe
+        # interval in safe.bin can disagree with it by interpolation error at the
+        # boundary, so re-checking it here would spuriously reject safe steps.
+        # The explicit d_min < d_safe termination check below is the real guard.
+        res_next = self.lookup.query(x_next[None, :], phi_next[None, :], check_safe=False)
         q_ref = np.concatenate([res_next["qL"][0], res_next["qR"][0]])
         # clamp to joint limits (the manifold point is the task projection)
         lo = np.concatenate([self.lookup.joint_lower[0], self.lookup.joint_lower[1]])
         hi = np.concatenate([self.lookup.joint_upper[0], self.lookup.joint_upper[1]])
         q_ref = np.clip(q_ref, lo, hi)
 
-        res_cur = self.lookup.query(x[None, :], phi[None, :])
+        res_cur = self.lookup.query(x[None, :], phi[None, :], check_safe=False)
         q_t = np.concatenate([res_cur["qL"][0], res_cur["qR"][0]])
         q_t = np.clip(q_t, lo, hi)   # previous actual config is the *clamped* q_ref
         q_dot_actual = (q_ref - q_t) / self.dt
@@ -204,7 +219,7 @@ class AviatorManifoldEnv(gym.Env):
 
     # -- observation ---------------------------------------------------------
     def _get_obs(self) -> dict:
-        res = self.lookup.query(self._x[None, :], self._phi[None, :])
+        res = self.lookup.query(self._x[None, :], self._phi[None, :], check_safe=False)
         d_min = float(res["d_min"][0])
         m_q = float(res["m_q"][0])
         m_minus = res["m_phi_minus"][0]

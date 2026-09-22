@@ -220,7 +220,7 @@ def project_phi_dot(
     # matching the plan's "clamp to joint limits, then check" hard-shield rule.
     lo = np.concatenate([lookup.joint_lower[0], lookup.joint_lower[1]])
     hi = np.concatenate([lookup.joint_upper[0], lookup.joint_upper[1]])
-    q_t = np.clip(_assemble_q(lookup.query(x[None, :], phi[None, :])), lo, hi)
+    q_t = np.clip(_assemble_q(lookup.query(x[None, :], phi[None, :], check_safe=False)), lo, hi)
     intervened = bool(np.linalg.norm(r - phi_dot_nom) > 1e-12)
     backtracked = 0
     for _ in range(_MAX_BACKTRACK + 1):
