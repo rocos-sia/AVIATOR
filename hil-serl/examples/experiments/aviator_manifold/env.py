@@ -36,9 +36,9 @@ from collections import deque
 import gymnasium as gym
 import numpy as np
 
-from examples.experiments.aviator_manifold.manifold_lookup import ManifoldLookup
-from examples.experiments.aviator_manifold.reward import reward_fn
-from examples.experiments.aviator_manifold.safety_filter import project_phi_dot
+from .manifold_lookup import ManifoldLookup
+from .reward import reward_fn
+from .safety_filter import project_phi_dot
 
 # frozen v0.1 constants
 _DT = 0.01
