@@ -38,9 +38,10 @@ class VectorizedManifoldEnv:
 
     Observations are stacked to ``{"state": (n_envs, 1, 40)}`` (the
     ``ChunkingWrapper(obs_horizon=1)`` shape), so one ``sample_actions`` call
-    serves every env.  Envs that finished on the previous step are auto-reset at
-    the *start* of the next step, mirroring HIL-SERL's single-env semantics (the
-    terminal transition keeps ``mask=0`` and its pre-reset ``next_obs``).
+    serves every env.  Envs that finished on the previous step are reset by
+    ``reset_done()`` *before* the next action is sampled, so the terminal
+    transition keeps ``mask=0`` and its pre-reset ``next_obs`` while the new
+    episode's first action comes from its own initial observation (audit §4).
     """
 
     def __init__(self, config, n_envs: int = 8, seed: int = 0):
@@ -57,22 +58,33 @@ class VectorizedManifoldEnv:
     def reset(self):
         obss = []
         for i, e in enumerate(self.envs):
+            # seed only on the FIRST reset: re-seeding every episode makes each
+            # worker replay the same trajectory forever (audit 2026-09-23 §3).
             obs, _ = e.reset(seed=self._seed + i)
             obss.append(obs)
         self.obs = self._stack(obss)
         self._done[:] = False
         return self.obs
 
+    def reset_done(self):
+        """Reset envs that finished last episode; call BEFORE sampling actions.
+
+        No seed is passed, so each env's RNG advances and draws a *different*
+        trajectory per episode (over ~800 episodes/worker this covers the full
+        400-traj set instead of 8).  Doing the reset here (not inside step)
+        makes the new episode's first action come from its own initial
+        observation, not the prior episode's terminal observation (audit §4).
+        """
+        for i, e in enumerate(self.envs):
+            if self._done[i]:
+                obs, _ = e.reset()
+                self.obs["state"][i] = obs["state"]
+                self._done[i] = False
+        return self.obs
+
     def step(self, actions):
         actions = np.asarray(actions, dtype=np.float32)
         assert actions.shape == (self.n_envs, 2), actions.shape
-
-        # auto-reset envs that finished last step so every env is live now
-        for i, e in enumerate(self.envs):
-            if self._done[i]:
-                obs, _ = e.reset(seed=self._seed + i)
-                self.obs["state"][i] = obs["state"]
-                self._done[i] = False
 
         next_obss, rewards, dones, truncs, infos = [], [], [], [], []
         for i, e in enumerate(self.envs):
@@ -99,10 +111,10 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
     """The ``--actor`` loop for the 8-way env.
 
     Mirrors ``train_rlpd.py:actor`` but steps ``n_envs`` envs per iteration and
-    batches the policy forward pass.  The safety filter projects each action
-    *inside* the env, so the transition stores the *applied* (safe) action
-    (``info["phi_dot_safe"] / phi_dot_scale``), keeping the (s, a) -> s' tuple
-    consistent with the MDP the critic is learning.
+    batches the policy forward pass.  The transition stores the policy's
+    *nominal* action (what the env actually received); the safety filter's
+    effect is already reflected in the reward (C_filter) and in the next obs's
+    action history, so the (s, a, r, s') tuple stays consistent (audit §2).
     """
     datastore_dict = {
         "actor_env": data_store,
@@ -140,6 +152,11 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
     for step in pbar:
         timer.tick("total")
 
+        # reset envs that finished last episode BEFORE sampling, so the new
+        # episode's first action is drawn from its own initial obs (audit §4)
+        with timer.context("reset_done"):
+            obs = vec_env.reset_done()
+
         with timer.context("sample_actions"):
             if step < config.random_steps:
                 actions = np.stack([
@@ -166,20 +183,21 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
                 window_min_d = min(window_min_d, float(info[i].get("d_min", np.inf)))
                 window_return += float(reward[i])
 
-                # store the *applied* (safety-filtered) action, not the nominal
-                if "phi_dot_safe" in info[i]:
-                    a_safe = np.clip(
-                        info[i]["phi_dot_safe"] / config.phi_dot_scale, -1.0, 1.0
-                    )
-                    actions[i] = a_safe.astype(np.float32)
-
+                # Store the *nominal* action (what the policy output and what
+                # env.step() received).  The env already accounts for the safety
+                # filter in the reward (C_filter) and in the next obs (a_prev /
+                # hist_a carry the nominal action); overwriting it with
+                # phi_dot_safe made (s, a, r, s') inconsistent -- the critic
+                # learned Q(s, a_safe) while the policy optimizes over a_nominal
+                # (audit §2).
+                episode_done = bool(done[i] or truncated[i])
                 transition = dict(
                     observations={"state": obs["state"][i]},
                     actions=actions[i],
                     next_observations={"state": next_obs["state"][i]},
                     rewards=np.asarray(reward[i], dtype=np.float32),
-                    masks=np.asarray(1.0 - done[i], dtype=np.float32),
-                    dones=np.asarray(done[i], dtype=bool),
+                    masks=np.asarray(1.0 - episode_done, dtype=np.float32),
+                    dones=np.asarray(episode_done, dtype=bool),
                 )
                 data_store.insert(transition)
 

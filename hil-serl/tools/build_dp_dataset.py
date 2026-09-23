@@ -155,7 +155,14 @@ def build_obs40(data: dict, a: np.ndarray) -> np.ndarray:
             o[idx:idx + 2] = _lag_clamped(xdot, t, k)
             idx += 2
         for k in _LAGS:
-            o[idx:idx + 2] = _lag_clamped(a, t, k)
+            # action history holds the action taken k steps *before* a_prev
+            # (a_prev = a[t-1]); the online env stores action_{t-1-k} in
+            # hist_a lag k, so the source row is t-1-k, zero-padded before the
+            # episode start.  The old `_lag_clamped(a, t, k)` returned a[t-k]
+            # (one step too fresh) and clamped the pre-start history to a[0]
+            # instead of zeros (audit 2026-09-23 §1 "初始历史").
+            src = t - 1 - k
+            o[idx:idx + 2] = a[src] if src >= 0 else np.zeros(2)
             idx += 2
         obs[t] = o
     return obs
@@ -166,8 +173,10 @@ def build_transitions(data: dict, phi_dot_scale: float, dt: float = _DT) -> list
 
     Row ``t`` -> transition ``t``: ``observations = obs[t]``,
     ``actions = phi_dot[t]/phi_dot_scale``, ``next_observations = obs[t+1]``.
-    The final row (``t == N-1``) is the terminal transition: zero action,
-    ``next_observations = obs[t]``, ``dones = True``.
+    A trajectory of N rows yields N-1 transitions; the last (``t == N-2``),
+    which lands on the final state ``x[N-1]``, is the terminal transition
+    (``dones=True, mask=0``) carrying its real action + reward, matching the
+    online env's ``truncated="end"`` step (audit 2026-09-23 §5).
     """
     n = len(data["t"])
     phi_dot = np.stack([data["phi_dot_L"], data["phi_dot_R"]], axis=1)  # (N, 2)
@@ -179,32 +188,34 @@ def build_transitions(data: dict, phi_dot_scale: float, dt: float = _DT) -> list
     m_plus = np.stack([data["m_phi_plus_L"], data["m_phi_plus_R"]], axis=1)
 
     transitions = []
-    for t in range(n):
-        if t == n - 1:
-            trans = {
-                "observations": {"state": obs[t][None].astype(np.float32)},
-                "actions": np.zeros(2, dtype=np.float32),
-                "next_observations": {"state": obs[t][None].astype(np.float32)},
-                "rewards": np.float32(0.0),
-                "masks": np.float32(0.0),
-                "dones": True,
-            }
-        else:
-            a_prev = phi_dot[t - 1] if t >= 1 else None
-            a_prev2 = phi_dot[t - 2] if t >= 2 else None
-            rew, _ = reward_fn(
-                x[t + 1], phi_dot[t], phi_dot[t], data["d_min"][t + 1],
-                m_minus[t + 1], m_plus[t + 1], data["m_q"][t + 1], None,
-                a_prev=a_prev, a_prev2=a_prev2, dt=dt,
-            )
-            trans = {
-                "observations": {"state": obs[t][None].astype(np.float32)},
-                "actions": a[t].astype(np.float32),
-                "next_observations": {"state": obs[t + 1][None].astype(np.float32)},
-                "rewards": np.float32(rew),
-                "masks": np.float32(1.0),
-                "dones": False,
-            }
+    for t in range(n - 1):
+        a_prev = phi_dot[t - 1] if t >= 1 else None
+        # a_prev2 (jerk) is deliberately disabled to match the online env,
+        # which always passes a_prev2=None.  With dt=0.01 the jerk term
+        # C_j = 0.05 * ||phi_dot_t - 2*phi_dot_{t-1} + phi_dot_{t-2}||^2 / dt^4
+        # blows up to ~1e6 per step and would train the critic on a reward
+        # the actor never observes (audit 2026-09-23 §1).
+        rew, _ = reward_fn(
+            x[t + 1], phi_dot[t], phi_dot[t], data["d_min"][t + 1],
+            m_minus[t + 1], m_plus[t + 1], data["m_q"][t + 1], None,
+            a_prev=a_prev, a_prev2=None, dt=dt,
+        )
+        # finite-horizon termination: the transition landing on the final state
+        # ends the episode (mask=0), so the critic does not bootstrap off x[N-1]
+        # and the demo's transition count/termination matches the online env's
+        # truncated="end" step.  The old code kept this mask=1 and appended a
+        # synthetic zero-action terminal row (reward 0, next_obs = obs), which
+        # taught Q(s_N, 0)=0 and let the reaching transition bootstrap off a
+        # terminal state (audit 2026-09-23 §5).
+        is_terminal = (t == n - 2)
+        trans = {
+            "observations": {"state": obs[t][None].astype(np.float32)},
+            "actions": a[t].astype(np.float32),
+            "next_observations": {"state": obs[t + 1][None].astype(np.float32)},
+            "rewards": np.float32(rew),
+            "masks": np.float32(0.0 if is_terminal else 1.0),
+            "dones": bool(is_terminal),
+        }
         transitions.append(trans)
     return transitions
 
@@ -254,7 +265,7 @@ def main():
         for p in csv_paths[:3]:
             data = read_dp_csv(p)
             tr = build_transitions(data, scale["phi_dot_scale"])
-            assert len(tr) == len(data["t"])
+            assert len(tr) == len(data["t"]) - 1
             assert tr[0]["observations"]["state"].shape == (1, 40)
             assert tr[-1]["dones"] is True and not tr[-2]["dones"]
         print(f"check-only OK: {len(csv_paths)} trajs, "

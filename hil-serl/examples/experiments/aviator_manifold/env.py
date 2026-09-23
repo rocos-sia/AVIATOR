@@ -92,8 +92,13 @@ class AviatorManifoldEnv(gym.Env):
         self._phi = None
         self._a_prev = np.zeros(2)
         # previous *filtered* velocity (rad/s) for the reward's C_a accel term;
-        # kept separate from _a_prev (raw action in [-1,1]) which feeds the obs
-        self._phi_dot_safe_prev = np.zeros(2)
+        # kept separate from _a_prev (raw action in [-1,1]) which feeds the obs.
+        # None until the first step: C_a is undefined at t=0 (no previous
+        # velocity), matching the demo (build_dp_dataset passes a_prev=None at
+        # t=0).  Initialising to zeros instead made the first step pay
+        # w_a * ||phi_dot_safe||^2 / dt^2 (~8.8e3 at 2.97 rad/s) for no reason
+        # and broke demo/online reward consistency (audit 2026-09-23 §1).
+        self._phi_dot_safe_prev = None
 
         self._hist_x = deque(maxlen=21)
         self._hist_xdot = deque(maxlen=21)
@@ -126,7 +131,7 @@ class AviatorManifoldEnv(gym.Env):
             box["phi_safe_hi"][0],
         )
         self._a_prev = np.zeros(2)
-        self._phi_dot_safe_prev = np.zeros(2)
+        self._phi_dot_safe_prev = None
 
         self._hist_x.clear()
         self._hist_xdot.clear()
