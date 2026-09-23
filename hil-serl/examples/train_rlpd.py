@@ -11,6 +11,7 @@ from flax.training import checkpoints
 import os
 import copy
 import pickle as pkl
+import threading
 from gymnasium.wrappers import RecordEpisodeStatistics
 from natsort import natsorted
 
@@ -35,6 +36,7 @@ from serl_launcher.data.data_store import MemoryEfficientReplayBufferDataStore
 from experiments.mappings import CONFIG_MAPPING
 from experiments.aviator_manifold.vectorized_actor import (
     VectorizedManifoldEnv,
+    aviator_trainer_config,
     vectorized_actor,
 )
 
@@ -251,26 +253,38 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
     """
     The learner loop, which runs when "--learner" is set to True.
     """
-    start_step = (
-        int(os.path.basename(checkpoints.latest_checkpoint(os.path.abspath(FLAGS.checkpoint_path)))[11:])
-        + 1
-        if FLAGS.checkpoint_path and os.path.exists(FLAGS.checkpoint_path)
-        else 0
-    )
+    latest = (checkpoints.latest_checkpoint(os.path.abspath(FLAGS.checkpoint_path))
+              if FLAGS.checkpoint_path else None)
+    start_step = int(os.path.basename(latest)[11:]) + 1 if latest else 0
     step = start_step
+    aviator_online = FLAGS.exp_name == "aviator_manifold"
+    actor_done = threading.Event()
+    updates_completed = 0
 
     def stats_callback(type: str, payload: dict) -> dict:
         """Callback for when server receives stats request."""
+        if type == "actor-done" and aviator_online:
+            actor_done.set()
+            return {"received": True}
+        if type == "learner-progress" and aviator_online:
+            return {"updates": updates_completed}
         assert type == "send-stats", f"Invalid request type: {type}"
         if wandb_logger is not None:
             wandb_logger.log(payload, step=step)
         return {}  # not expecting a response
 
     # Create server
-    server = TrainerServer(make_trainer_config(), request_callback=stats_callback)
+    trainer_config = aviator_trainer_config() if aviator_online else make_trainer_config()
+    server = TrainerServer(trainer_config, request_callback=stats_callback)
     server.register_data_store("actor_env", replay_buffer)
     server.register_data_store("actor_env_intvn", demo_buffer)
     server.start(threaded=True)
+
+    # The actor may request a network update while producing the first online
+    # transitions. Publish before waiting for training_starts to avoid a
+    # startup dependency between data collection and parameter delivery.
+    server.publish_network(agent.state.params)
+    print_green("sent initial network to actor")
 
     # Loop to wait until replay_buffer is filled
     pbar = tqdm.tqdm(
@@ -280,30 +294,35 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
         position=0,
         leave=True,
     )
-    while len(replay_buffer) < config.training_starts:
+    while len(replay_buffer) < config.training_starts and not actor_done.is_set():
         pbar.update(len(replay_buffer) - pbar.n)  # Update progress bar
         time.sleep(1)
     pbar.update(len(replay_buffer) - pbar.n)  # Update progress bar
     pbar.close()
 
-    # send the initial network to the actor
-    server.publish_network(agent.state.params)
-    print_green("sent initial network to actor")
+    # Keep the total batch shape fixed while reducing the demo share as actual
+    # online experience accumulates. The prior supplies feasibility examples;
+    # it is never an action-distance penalty or a behavior-cloning target here.
+    ratios = ((0, 0.5), (500, 0.25), (1_500, 0.1))
+    batch_iterators = {}
+    for _, prior_fraction in ratios:
+        n_prior = round(config.batch_size * prior_fraction)
+        n_online = config.batch_size - n_prior
+        online_args = {"batch_size": n_online}
+        prior_args = {"batch_size": n_prior}
+        if config.image_keys:
+            online_args["pack_obs_and_next_obs"] = True
+            prior_args["pack_obs_and_next_obs"] = True
+        batch_iterators[prior_fraction] = (
+            replay_buffer.get_iterator(sample_args=online_args, device=sharding.replicate()),
+            demo_buffer.get_iterator(sample_args=prior_args, device=sharding.replicate()),
+        )
 
-    # 50/50 sampling from RLPD, half from demo and half from online experience.
-    # pack_obs_and_next_obs is a memory-efficient-buffer (pixel) option; the
-    # plain ReplayBuffer rejects it, so only pass it for image experiments.
-    _sample_args = {"batch_size": config.batch_size // 2}
-    if config.image_keys:
-        _sample_args["pack_obs_and_next_obs"] = True
-    replay_iterator = replay_buffer.get_iterator(
-        sample_args=_sample_args,
-        device=sharding.replicate(),
-    )
-    demo_iterator = demo_buffer.get_iterator(
-        sample_args=_sample_args,
-        device=sharding.replicate(),
-    )
+    def next_batch():
+        prior_fraction = next(frac for threshold, frac in reversed(ratios)
+                              if len(replay_buffer) >= threshold)
+        online_iterator, prior_iterator = batch_iterators[prior_fraction]
+        return concat_batches(next(online_iterator), next(prior_iterator), axis=0)
 
     # wait till the replay buffer is filled with enough data
     timer = Timer()
@@ -318,13 +337,19 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
     for step in tqdm.tqdm(
         range(start_step, config.max_steps), dynamic_ncols=True, desc="learner"
     ):
+        if aviator_online:
+            # The actor is intentionally paced. Without this gate a fast GPU
+            # exhausts the learner's update budget long before 400 rollouts.
+            while (not actor_done.is_set() and
+                   step - start_step >= len(replay_buffer) * config.updates_per_online_transition):
+                actor_done.wait(0.1)
+            if actor_done.is_set():
+                break
         # run n-1 critic updates and 1 critic + actor update.
         # This makes training on GPU faster by reducing the large batch transfer time from CPU to GPU
         for critic_step in range(config.cta_ratio - 1):
             with timer.context("sample_replay_buffer"):
-                batch = next(replay_iterator)
-                demo_batch = next(demo_iterator)
-                batch = concat_batches(batch, demo_batch, axis=0)
+                batch = next_batch()
 
             with timer.context("train_critics"):
                 agent, critics_info = agent.update(
@@ -333,13 +358,12 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
                 )
 
         with timer.context("train"):
-            batch = next(replay_iterator)
-            demo_batch = next(demo_iterator)
-            batch = concat_batches(batch, demo_batch, axis=0)
+            batch = next_batch()
             agent, update_info = agent.update(
                 batch,
                 networks_to_update=train_networks_to_update,
             )
+        updates_completed = step - start_step + 1
         # publish the updated network
         if step > 0 and step % (config.steps_per_update) == 0:
             agent = jax.block_until_ready(agent)
@@ -357,6 +381,17 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
             checkpoints.save_checkpoint(
                 os.path.abspath(FLAGS.checkpoint_path), agent.state, step=step, keep=100
             )
+
+    if aviator_online and FLAGS.checkpoint_path:
+        # Keep the final actor/critic/temperature state even when completion
+        # falls between the periodic checkpoint steps.
+        final_step = step if actor_done.is_set() else config.max_steps
+        checkpoints.save_checkpoint(
+            os.path.abspath(FLAGS.checkpoint_path), agent.state,
+            step=final_step, keep=100, overwrite=True,
+        )
+    if aviator_online and not actor_done.is_set():
+        raise RuntimeError("learner reached its update cap before the actor completed")
 
 
 ##############################################################################
@@ -426,8 +461,9 @@ def main(_):
     # warm-start the SAC actor from the BC-pretrained policy (Task 2.2 -> 2.3).
     # Only on a fresh start (no RLPD checkpoint yet); a resume restores the full
     # SAC state (actor + critic + temperature) instead.
-    if (FLAGS.bc_checkpoint_path is not None
-            and not (FLAGS.checkpoint_path and os.path.exists(FLAGS.checkpoint_path))):
+    latest_checkpoint = (checkpoints.latest_checkpoint(os.path.abspath(FLAGS.checkpoint_path))
+                         if FLAGS.checkpoint_path else None)
+    if FLAGS.bc_checkpoint_path is not None and latest_checkpoint is None:
         bc_agent = config.make_bc_agent(
             seed=FLAGS.seed,
             sample_obs=env.observation_space.sample(),
@@ -447,7 +483,7 @@ def main(_):
         jax.tree_map(jnp.array, agent), sharding.replicate()
     )
 
-    if FLAGS.checkpoint_path is not None and os.path.exists(FLAGS.checkpoint_path):
+    if latest_checkpoint is not None:
         # auto-resume (no prompt) so the overnight run restarts unattended
         print_green("Checkpoint path already exists; resuming training.")
         ckpt = checkpoints.restore_checkpoint(
@@ -455,9 +491,7 @@ def main(_):
             agent.state,
         )
         agent = agent.replace(state=ckpt)
-        ckpt_number = os.path.basename(
-            checkpoints.latest_checkpoint(os.path.abspath(FLAGS.checkpoint_path))
-        )[11:]
+        ckpt_number = os.path.basename(latest_checkpoint)[11:]
         print_green(f"Loaded previous checkpoint at step {ckpt_number}.")
 
     def make_buffer(capacity):

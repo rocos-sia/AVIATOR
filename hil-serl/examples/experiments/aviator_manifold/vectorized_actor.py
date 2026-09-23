@@ -32,6 +32,15 @@ from agentlace.trainer import TrainerClient
 from serl_launcher.utils.launcher import make_trainer_config
 from serl_launcher.utils.timer_utils import Timer
 
+from .live_stream import publisher_from_env
+
+
+def aviator_trainer_config():
+    config = make_trainer_config()
+    config.request_types.append("actor-done")
+    config.request_types.append("learner-progress")
+    return config
+
 
 class VectorizedManifoldEnv:
     """``n_envs`` kinematic envs stepped in lockstep with batched inference.
@@ -48,6 +57,12 @@ class VectorizedManifoldEnv:
         self.n_envs = n_envs
         self._seed = seed
         self.envs = [config.get_environment() for _ in range(n_envs)]
+        self.max_episodes = config.max_online_episodes
+        available = len(self.envs[0].unwrapped._traj_paths)
+        if self.max_episodes > available or self.max_episodes < n_envs:
+            raise ValueError(f"need {self.max_episodes} distinct online trajectories; found {available}")
+        self._next_trajectory = 0
+        self.active = np.ones(n_envs, dtype=bool)
         self.obs = None                       # {"state": (n_envs, 1, 40)}
         self._done = np.zeros(n_envs, dtype=bool)
 
@@ -57,10 +72,12 @@ class VectorizedManifoldEnv:
 
     def reset(self):
         obss = []
+        self._next_trajectory = 0
+        self.active[:] = True
         for i, e in enumerate(self.envs):
-            # seed only on the FIRST reset: re-seeding every episode makes each
-            # worker replay the same trajectory forever (audit 2026-09-23 §3).
-            obs, _ = e.reset(seed=self._seed + i)
+            obs, _ = e.reset(seed=self._seed + i,
+                             options={"trajectory_index": self._next_trajectory})
+            self._next_trajectory += 1
             obss.append(obs)
         self.obs = self._stack(obss)
         self._done[:] = False
@@ -69,16 +86,18 @@ class VectorizedManifoldEnv:
     def reset_done(self):
         """Reset envs that finished last episode; call BEFORE sampling actions.
 
-        No seed is passed, so each env's RNG advances and draws a *different*
-        trajectory per episode (over ~800 episodes/worker this covers the full
-        400-traj set instead of 8).  Doing the reset here (not inside step)
+        Each reset gets the next unused trajectory from rl_train. Doing it here
         makes the new episode's first action come from its own initial
         observation, not the prior episode's terminal observation (audit §4).
         """
         for i, e in enumerate(self.envs):
             if self._done[i]:
-                obs, _ = e.reset()
-                self.obs["state"][i] = obs["state"]
+                if self._next_trajectory < self.max_episodes:
+                    obs, _ = e.reset(options={"trajectory_index": self._next_trajectory})
+                    self.obs["state"][i] = obs["state"]
+                    self._next_trajectory += 1
+                else:
+                    self.active[i] = False
                 self._done[i] = False
         return self.obs
 
@@ -88,6 +107,13 @@ class VectorizedManifoldEnv:
 
         next_obss, rewards, dones, truncs, infos = [], [], [], [], []
         for i, e in enumerate(self.envs):
+            if not self.active[i]:
+                next_obss.append({"state": self.obs["state"][i]})
+                rewards.append(0.0)
+                dones.append(False)
+                truncs.append(False)
+                infos.append({"inactive": True})
+                continue
             obs, r, d, t, info = e.step(actions[i])
             next_obss.append(obs)
             rewards.append(r)
@@ -111,10 +137,8 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
     """The ``--actor`` loop for the 8-way env.
 
     Mirrors ``train_rlpd.py:actor`` but steps ``n_envs`` envs per iteration and
-    batches the policy forward pass.  The transition stores the policy's
-    *nominal* action (what the env actually received); the safety filter's
-    effect is already reflected in the reward (C_filter) and in the next obs's
-    action history, so the (s, a, r, s') tuple stays consistent (audit §2).
+    batches the policy forward pass. The transition stores the policy action
+    that the unshielded environment executes.
     """
     datastore_dict = {
         "actor_env": data_store,
@@ -123,7 +147,7 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
     client = TrainerClient(
         "actor_env",
         flags.ip,
-        make_trainer_config(),
+        aviator_trainer_config(),
         data_stores=datastore_dict,
         wait_for_server=True,
         timeout_ms=3000,
@@ -137,25 +161,35 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
 
     obs = vec_env.reset()
 
+    publisher = publisher_from_env()
+
     timer = Timer()
-    running_return = 0.0
+    episode_returns = np.zeros(vec_env.n_envs, dtype=np.float64)
     # rolling window counters for the learner stats
     window_steps = 0
-    window_intervened = 0
     window_max_qdot = 0.0
     window_min_d = np.inf
-    window_return = 0.0
+    window_episode_returns = []
     window_episodes = 0
     window_completed = 0
+    window_clearance = 0
+    window_speed = 0
+    window_joint_limit = 0
+    window_grid_exit = 0
+    window_branch = 0
+    online_steps = 0
 
     pbar = tqdm.tqdm(range(config.max_steps), dynamic_ncols=True)
     for step in pbar:
+        loop_started = time.monotonic()
         timer.tick("total")
 
         # reset envs that finished last episode BEFORE sampling, so the new
         # episode's first action is drawn from its own initial obs (audit §4)
         with timer.context("reset_done"):
             obs = vec_env.reset_done()
+        if not np.any(vec_env.active):
+            break
 
         with timer.context("sample_actions"):
             if step < config.random_steps:
@@ -176,20 +210,19 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
             next_obs, reward, done, truncated, info = vec_env.step(actions)
 
             for i in range(vec_env.n_envs):
-                fi = info[i].get("filter", {})
+                if not vec_env.active[i]:
+                    continue
                 window_steps += 1
-                window_intervened += int(bool(fi.get("intervened")))
-                window_max_qdot = max(window_max_qdot, float(info[i].get("max_qdot", 0.0)))
-                window_min_d = min(window_min_d, float(info[i].get("d_min", np.inf)))
-                window_return += float(reward[i])
+                qdot = float(info[i].get("max_qdot", np.nan))
+                clearance = float(info[i].get("d_min", np.nan))
+                if np.isfinite(qdot):
+                    window_max_qdot = max(window_max_qdot, qdot)
+                if np.isfinite(clearance):
+                    window_min_d = min(window_min_d, clearance)
+                episode_returns[i] += float(reward[i])
 
-                # Store the *nominal* action (what the policy output and what
-                # env.step() received).  The env already accounts for the safety
-                # filter in the reward (C_filter) and in the next obs (a_prev /
-                # hist_a carry the nominal action); overwriting it with
-                # phi_dot_safe made (s, a, r, s') inconsistent -- the critic
-                # learned Q(s, a_safe) while the policy optimizes over a_nominal
-                # (audit §2).
+                # The stored action is exactly what env.step() executed. Keep
+                # the resulting next observation and terminal flag together.
                 episode_done = bool(done[i] or truncated[i])
                 transition = dict(
                     observations={"state": obs["state"][i]},
@@ -200,12 +233,45 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
                     dones=np.asarray(episode_done, dtype=bool),
                 )
                 data_store.insert(transition)
+                online_steps += 1
 
                 if done[i] or truncated[i]:
                     window_episodes += 1
-                    window_completed += int(info[i].get("termination", "") == "end")
+                    window_episode_returns.append(float(episode_returns[i]))
+                    episode_returns[i] = 0.0
+                    term = info[i].get("termination", "")
+                    window_completed += int(term == "end")
+                    window_clearance += int(term == "clearance")
+                    window_speed += int(term == "speed")
+                    window_joint_limit += int(term == "joint_limit")
+                    window_grid_exit += int(term == "grid_exit")
+                    window_branch += int(term == "branch")
 
         obs = next_obs
+
+        # Give the critic a chance to consume each new batch before spending
+        # another set of distinct trajectories. Otherwise a fast actor can
+        # exhaust all 400 starts while the learner is still compiling.
+        if online_steps >= config.training_starts:
+            if not client.update():
+                raise RuntimeError("could not flush online transitions to learner")
+            target_updates = online_steps * config.updates_per_online_transition
+            deadline = time.monotonic() + 120
+            while True:
+                progress = client.request("learner-progress", {})
+                if progress is not None and progress.get("updates", -1) >= target_updates:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f"learner stalled before update {target_updates}: {progress}")
+                time.sleep(0.1)
+
+        # Stream env 0's latest kinematic state to a live viewer, if enabled.
+        if publisher is not None and vec_env.active[0]:
+            i0 = info[0]
+            if i0.get("q") is not None:
+                publisher.publish(i0["x"], i0["q"],
+                                  float(i0.get("d_min", np.nan)),
+                                  float(i0.get("max_qdot", np.nan)))
 
         timer.tock("total")
 
@@ -213,11 +279,19 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
             window_steps = max(window_steps, 1)
             stats = {
                 "environment": {
-                    "intervention_rate": window_intervened / window_steps,
                     "max_qdot": window_max_qdot,
                     "min_d": window_min_d,
-                    "mean_episode_return": window_return / max(window_episodes, 1),
+                    "mean_episode_return": (float(np.mean(window_episode_returns))
+                                            if window_episode_returns else None),
                     "completion_rate": window_completed / max(window_episodes, 1),
+                    "termination_causes": {
+                        "end": window_completed,
+                        "clearance": window_clearance,
+                        "speed": window_speed,
+                        "joint_limit": window_joint_limit,
+                        "grid_exit": window_grid_exit,
+                        "branch": window_branch,
+                    },
                 },
                 "timer": timer.get_average_times(),
             }
@@ -225,15 +299,39 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
             client.update()
 
             pbar.set_description(
-                f"last 10-step return: {window_return / max(window_episodes, 1):.2f}"
+                f"completed={window_completed}/{window_episodes}, "
+                f"mean J={np.mean(window_episode_returns) if window_episode_returns else float('nan'):.2f}"
             )
             # reset window
             window_steps = 0
-            window_intervened = 0
             window_max_qdot = 0.0
             window_min_d = np.inf
-            window_return = 0.0
+            window_episode_returns = []
             window_episodes = 0
             window_completed = 0
+            window_clearance = 0
+            window_speed = 0
+            window_joint_limit = 0
+            window_grid_exit = 0
+            window_branch = 0
 
+        delay = getattr(config, "actor_step_delay", 0.0)
+        if delay > 0:
+            time.sleep(max(0.0, delay - (time.monotonic() - loop_started)))
+
+    # Flush transitions before announcing completion to the learner. A step
+    # cap hit is a failed run, not a successful 400-episode experiment.
+    client.update()
+    complete = not np.any(vec_env.active)
+    if complete:
+        response = client.request("actor-done", {"episodes": vec_env._next_trajectory})
+        if response != {"received": True}:
+            raise RuntimeError(f"learner did not acknowledge actor completion: {response}")
+    client.stop()
+    pbar.close()
+    if publisher is not None:
+        publisher.close()
+    if not complete:
+        raise RuntimeError(f"actor step cap reached after assigning "
+                           f"{vec_env._next_trajectory}/{vec_env.max_episodes} episodes")
     return

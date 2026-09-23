@@ -1,9 +1,13 @@
 {
-  "phi_dot_scale": 10.450000000000001,
+  "phi_dot_scale": 1.5,
+  "p95_abs_phi_dot": 0.0,
   "max_abs_phi_dot": [
-    9.5,
-    1.0
+    0.5944883451,
+    0.5944885314
   ],
   "n_trajs": 99,
-  "flag_exceeds_nominal": true
+  "flag_exceeds_nominal": false,
+  "n_valid_trajs": 99,
+  "rejected": [],
+  "clearance_source": "manifold_lookup"
 }

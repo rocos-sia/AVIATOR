@@ -4,11 +4,11 @@ Doc: docs/superpowers/plans/2026-09-22-aviator-v01-rl-training.md (Task 1.4)
 
 Reads the full-horizon DP teacher's CSV dumps
 (``data/aviator/dp_demo/traj_<i>.csv``), computes the per-arm action scale
-``phi_dot_scale = max(max|phi_dot*|) * 1.1`` across *all* trajectories, then
-rewrites each trajectory as a HIL-SERL demo ``.pkl`` (a flat list of transition
-dicts) with the actions normalized to ``[-1, 1]`` and the 40-D observation
-assembled to match ``AviatorManifoldEnv`` (incl. the ChunkingWrapper
-``obs_horizon=1`` leading dimension).
+``phi_dot_scale`` (95% quantile of ``|phi_dot|``, floored at 1.5 rad/s) across
+*all* trajectories, then rewrites each trajectory as a HIL-SERL demo ``.pkl``
+(a flat list of transition dicts) with the actions normalized to ``[-1, 1]``
+and the 40-D observation assembled to match ``AviatorManifoldEnv`` (incl. the
+ChunkingWrapper ``obs_horizon=1`` leading dimension).
 
 Transition dict keys (match ``ReplayBuffer`` / ``record_demos.py``)::
 
@@ -34,6 +34,7 @@ import pickle
 import numpy as np
 
 from examples.experiments.aviator_manifold.reward import reward_fn
+from examples.experiments.aviator_manifold.manifold_lookup import ManifoldLookup
 
 __all__ = [
     "COLUMNS",
@@ -92,26 +93,41 @@ def read_dp_csv(path: str) -> dict:
     return out
 
 
-def compute_phi_dot_scale(csv_paths, headroom: float = 1.1) -> dict:
+def compute_phi_dot_scale(csv_paths, quantile: float = 0.95, floor: float = 1.5,
+                          ceil: float = 2.0) -> dict:
     """Compute the calibrated action scale across all trajectories.
 
-    Returns ``{"phi_dot_scale": float, "max_abs_phi_dot": [maxL, maxR],
-    "n_trajs": int, "flag_exceeds_nominal": bool}``.
+    Uses the ``quantile`` of ``|phi_dot|`` (over both arms) instead of the max:
+    the max is driven by a single 9.5 rad/s glitch frame and previously produced
+    ``phi_dot_scale = 9.5 * 1.1 = 10.45``, which let a full-range actor output
+    (|a|=1 -> 10.45 rad/s) blow far past the ~2.97 rad/s joint-speed ceiling in
+    one step.  The quantile (0.5 for the hold-dominated demos) is then floored
+    at ``floor`` so the actor's full range still maps to a physically meaningful
+    phase velocity (1.5 rad/s), and ceiled at ``ceil``.
+
+    Returns ``{"phi_dot_scale": float, "p95_abs_phi_dot": float,
+    "max_abs_phi_dot": [maxL, maxR], "n_trajs": int,
+    "flag_exceeds_nominal": bool}``.
     """
     maxL = 0.0
     maxR = 0.0
+    all_abs = []
     n = 0
     for p in csv_paths:
         d = read_dp_csv(p)
         maxL = max(maxL, float(np.max(np.abs(d["phi_dot_L"]))))
         maxR = max(maxR, float(np.max(np.abs(d["phi_dot_R"]))))
+        all_abs.append(np.abs(d["phi_dot_L"]))
+        all_abs.append(np.abs(d["phi_dot_R"]))
         n += 1
-    scale = max(maxL, maxR) * headroom
+    p95 = float(np.percentile(np.concatenate(all_abs), 100 * quantile))
+    scale = float(np.clip(p95, floor, ceil))
     return {
-        "phi_dot_scale": float(scale),
+        "phi_dot_scale": scale,
+        "p95_abs_phi_dot": p95,
         "max_abs_phi_dot": [float(maxL), float(maxR)],
         "n_trajs": n,
-        "flag_exceeds_nominal": bool(max(maxL, maxR) > 2.0),
+        "flag_exceeds_nominal": bool(max(maxL, maxR) > ceil),
     }
 
 
@@ -168,7 +184,8 @@ def build_obs40(data: dict, a: np.ndarray) -> np.ndarray:
     return obs
 
 
-def build_transitions(data: dict, phi_dot_scale: float, dt: float = _DT) -> list:
+def build_transitions(data: dict, phi_dot_scale: float, dt: float = _DT,
+                      lookup: ManifoldLookup | None = None) -> list:
     """Build the list of transition dicts for one trajectory.
 
     Row ``t`` -> transition ``t``: ``observations = obs[t]``,
@@ -179,7 +196,30 @@ def build_transitions(data: dict, phi_dot_scale: float, dt: float = _DT) -> list
     online env's ``truncated="end"`` step (audit 2026-09-23 §5).
     """
     n = len(data["t"])
+    if lookup is not None:
+        # The online environment observes and rewards interpolated LUT
+        # clearance. DP CSV clearance is a fresh physical evaluation of the
+        # same q and can differ by sub-millimetres. Keep the CSV as the
+        # geometry audit source, but encode prior transitions with the exact
+        # observation/reward value the critic will see online.
+        data = dict(data)
+        x = np.stack([data["theta"], data["s"]], axis=1)
+        phi = np.stack([
+            np.arctan2(data[f"sin_phi_{side}"], data[f"cos_phi_{side}"])
+            for side in ("L", "R")
+        ], axis=1)
+        d_lookup = np.empty(n, dtype=np.float64)
+        for start in range(0, n, 2048):
+            stop = min(n, start + 2048)
+            d_lookup[start:stop] = lookup.query(
+                x[start:stop], phi[start:stop], check_safe=False)["d_min"]
+        data["d_min"] = d_lookup
     phi_dot = np.stack([data["phi_dot_L"], data["phi_dot_R"]], axis=1)  # (N, 2)
+    # A clipped label would no longer cause the recorded next phase. Reject the
+    # whole trajectory if any executed transition exceeds the policy's range.
+    # Keeping only the in-range transitions would retain inconsistent histories.
+    if np.any(np.abs(phi_dot[:-1]) > phi_dot_scale + 1e-9):
+        raise ValueError("teacher action exceeds phi_dot_scale; trajectory is not replayable")
     a = phi_dot / phi_dot_scale                                        # (N, 2)
     obs = build_obs40(data, a)
 
@@ -220,7 +260,8 @@ def build_transitions(data: dict, phi_dot_scale: float, dt: float = _DT) -> list
     return transitions
 
 
-def build_dataset(csv_dir: str, out_dir: str, headroom: float = 1.1) -> dict:
+def build_dataset(csv_dir: str, out_dir: str,
+                  manifold_dir: str = "data/aviator/manifold_phi") -> dict:
     """Read all CSVs, calibrate phi_dot_scale, write pkls + phi_dot_scale.json.
 
     Returns the scale manifest dict.
@@ -228,16 +269,29 @@ def build_dataset(csv_dir: str, out_dir: str, headroom: float = 1.1) -> dict:
     csv_paths = sorted(glob.glob(os.path.join(csv_dir, "traj_*.csv")))
     assert csv_paths, f"no traj_*.csv found in {csv_dir}"
 
-    scale_manifest = compute_phi_dot_scale(csv_paths, headroom=headroom)
+    scale_manifest = compute_phi_dot_scale(csv_paths)
     phi_dot_scale = scale_manifest["phi_dot_scale"]
+    lookup = ManifoldLookup(manifold_dir)
 
     os.makedirs(out_dir, exist_ok=True)
+    rejected = []
     for p in csv_paths:
         data = read_dp_csv(p)
-        transitions = build_transitions(data, phi_dot_scale)
         stem = os.path.splitext(os.path.basename(p))[0]
+        try:
+            transitions = build_transitions(data, phi_dot_scale, lookup=lookup)
+        except ValueError as exc:
+            rejected.append({"trajectory": stem, "reason": str(exc)})
+            stale = os.path.join(out_dir, stem + ".pkl")
+            if os.path.isfile(stale):
+                os.remove(stale)
+            continue
         with open(os.path.join(out_dir, stem + ".pkl"), "wb") as f:
             pickle.dump(transitions, f)
+
+    scale_manifest["n_valid_trajs"] = len(csv_paths) - len(rejected)
+    scale_manifest["rejected"] = rejected
+    scale_manifest["clearance_source"] = "manifold_lookup"
 
     with open(os.path.join(out_dir, "phi_dot_scale.json"), "w") as f:
         json.dump(scale_manifest, f, indent=2)
@@ -251,6 +305,8 @@ def main():
                     help="directory of record_dp CSVs")
     ap.add_argument("--out-dir", default="data/aviator/dp_demo/",
                     help="directory for pkls + phi_dot_scale.json")
+    ap.add_argument("--manifold-dir", default="data/aviator/manifold_phi",
+                    help="LUT used by the online environment for observations and rewards")
     ap.add_argument("--check-only", action="store_true",
                     help="validate CSV -> transition round-trip without writing")
     args = ap.parse_args()
@@ -264,7 +320,8 @@ def main():
               f"flag={scale['flag_exceeds_nominal']}")
         for p in csv_paths[:3]:
             data = read_dp_csv(p)
-            tr = build_transitions(data, scale["phi_dot_scale"])
+            tr = build_transitions(data, scale["phi_dot_scale"],
+                                   lookup=ManifoldLookup(args.manifold_dir))
             assert len(tr) == len(data["t"]) - 1
             assert tr[0]["observations"]["state"].shape == (1, 40)
             assert tr[-1]["dones"] is True and not tr[-2]["dones"]
@@ -272,8 +329,8 @@ def main():
               f"round-trip valid on first 3")
         return
 
-    manifest = build_dataset(args.csv_dir, args.out_dir)
-    print(f"wrote {manifest['n_trajs']} pkls + phi_dot_scale.json to "
+    manifest = build_dataset(args.csv_dir, args.out_dir, args.manifold_dir)
+    print(f"wrote {manifest['n_valid_trajs']} pkls + phi_dot_scale.json to "
           f"{os.path.abspath(args.out_dir)}")
     print(json.dumps(manifest, indent=2))
 

@@ -5,10 +5,9 @@ Doc: docs/superpowers/plans/2026-09-22-aviator-v01-rl-training.md (Task 2.2)
 Rolls the trained BC policy and three baselines out over held-out trajectories
 and reports the BC gate metrics:
 
-  * collision rate         (episodes ending in ``d_min < 5 mm``)
+  * clearance rate         (episodes ending in ``d_min < 5 mm``)
   * max |q̇|               (hard joint-speed bound, must be <= 1.5 rad/s)
-  * e_task                 (completion shortfall: 1 - steps_done / total_steps)
-  * intervention_rate      (fraction of steps the 2-D safety filter clipped)
+  * progress shortfall     (1 - steps_done / total_steps; not pose error)
   * oracle_regret          (J_BC - J_DP on the dp_train split)
   * action variance        (Var[a_DP | obs] over K-NN demo neighbours)
 
@@ -17,7 +16,7 @@ Baselines
   * ``dp_oracle``  -- the full-horizon DP teacher's phi_dot* re-read from CSV.
   * ``static``     -- no redundancy: phi_dot = 0 (anchor phase held fixed).
   * ``greedy``     -- myopic: move phi toward the safe-interval centre at full
-                      action scale every step (the safety filter clamps it).
+                      action scale every step.
 
 The BC policy is deterministic (``sample_actions(argmax=True)`` = distribution
 mode).
@@ -106,9 +105,11 @@ def roll_out(env, trajs, policy_fn):
         obs, _ = env.reset()
 
         steps = 0
-        intervened = 0
         max_qdot = 0.0
         min_d = np.inf
+        clearances = []
+        reserves = []
+        q_margins = []
         reward_sum = 0.0
         done = False
         termination = "end"
@@ -117,17 +118,21 @@ def roll_out(env, trajs, policy_fn):
             a = policy_fn(obs, env)
             obs, reward, terminated, truncated, info = env.step(a)
             steps += 1
-            intervened += int(info["filter"]["intervened"])
-            # the env's infeasible early-return omits d_min / max_qdot
-            if "max_qdot" in info:
-                max_qdot = max(max_qdot, float(info["max_qdot"]))
-            if "d_min" in info:
-                min_d = min(min_d, float(info["d_min"]))
+            qdot = float(info.get("max_qdot", np.nan))
+            clearance = float(info.get("d_min", np.nan))
+            if np.isfinite(qdot):
+                max_qdot = max(max_qdot, qdot)
+            if np.isfinite(clearance):
+                min_d = min(min_d, clearance)
+                clearances.append(clearance)
+            if "R_reserve" in info:
+                reserves.append(float(info["R_reserve"]))
+            if "m_q" in info:
+                q_margins.append(float(info["m_q"]))
             reward_sum += float(reward)
             done = terminated or truncated
             if terminated:
-                termination = ("infeasible" if not info["filter"]["feasible"]
-                               else info.get("termination", "terminated"))
+                termination = info.get("termination", "terminated")
 
         total_steps = len(env._traj["x"]) - 1
         episodes.append({
@@ -136,8 +141,11 @@ def roll_out(env, trajs, policy_fn):
             "total_steps": total_steps,
             "max_qdot": max_qdot,
             "min_d": min_d,
-            "intervention_rate": intervened / steps if steps else 0.0,
-            "e_task": 1.0 - steps / total_steps if total_steps else 0.0,
+            "progress_shortfall": 1.0 - steps / total_steps if total_steps else 0.0,
+            "boundary_fraction": (float(np.mean(np.asarray(clearances) <= 0.010))
+                                  if clearances else float("nan")),
+            "reserve_mean": float(np.mean(reserves)) if reserves else float("nan"),
+            "min_q_margin": float(np.min(q_margins)) if q_margins else float("nan"),
             "J": reward_sum,
         })
     return episodes
@@ -154,29 +162,33 @@ def summarize(episodes):
     return {
         "n_episodes": n,
         "completion_rate": float((term == "end").mean()),
-        "collision_rate": float((term == "collision").mean()),
+        "clearance_rate": float((term == "clearance").mean()),
         "speed_violation_rate": float((term == "speed").mean()),
-        "infeasible_rate": float((term == "infeasible").mean()),
+        "joint_limit_rate": float((term == "joint_limit").mean()),
+        "grid_exit_rate": float((term == "grid_exit").mean()),
+        "branch_rate": float((term == "branch").mean()),
         "max_qdot": float(np.max([e["max_qdot"] for e in episodes])),
         "mean_max_qdot": float(np.mean([e["max_qdot"] for e in episodes])),
         "mean_min_d_mm": float(np.mean([e["min_d"] for e in episodes]) * 1e3),
         "min_min_d_mm": float(np.min([e["min_d"] for e in episodes]) * 1e3),
-        "mean_e_task": float(np.mean([e["e_task"] for e in episodes])),
-        "mean_intervention_rate": float(np.mean([e["intervention_rate"] for e in episodes])),
+        "mean_progress_shortfall": float(np.mean([e["progress_shortfall"] for e in episodes])),
+        "mean_boundary_fraction": float(np.nanmean([e["boundary_fraction"] for e in episodes])),
+        "mean_reserve": float(np.nanmean([e["reserve_mean"] for e in episodes])),
+        "min_q_margin": float(np.nanmin([e["min_q_margin"] for e in episodes])),
         "mean_J": float(np.mean([e["J"] for e in episodes])),
     }
 
 
 def print_table(results):
-    header = (f"{'policy':<12} {'comp%':>6} {'coll%':>6} {'spd%':>6} {'inf%':>6} "
-              f"{'max|qdot|':>9} {'min_d_mm':>8} {'e_task':>7} {'interv%':>7} {'J':>9}")
+    header = (f"{'policy':<12} {'comp%':>6} {'clear%':>7} {'spd%':>6} {'joint%':>7} "
+              f"{'grid%':>6} {'max|qdot|':>9} {'min_d_mm':>8} {'reserve':>8} {'J':>9}")
     print(header)
     print("-" * len(header))
     for name, s in results.items():
-        print(f"{name:<12} {s['completion_rate']*100:6.1f} {s['collision_rate']*100:6.1f} "
-              f"{s['speed_violation_rate']*100:6.1f} {s['infeasible_rate']*100:6.1f} "
-              f"{s['max_qdot']:9.3f} {s['min_min_d_mm']:8.2f} {s['mean_e_task']:7.4f} "
-              f"{s['mean_intervention_rate']*100:7.1f} {s['mean_J']:9.3f}")
+        print(f"{name:<12} {s['completion_rate']*100:6.1f} {s['clearance_rate']*100:7.1f} "
+              f"{s['speed_violation_rate']*100:6.1f} {s['joint_limit_rate']*100:7.1f} "
+              f"{s['grid_exit_rate']*100:6.1f} {s['max_qdot']:9.3f} "
+              f"{s['min_min_d_mm']:8.2f} {s['mean_reserve']:8.3f} {s['mean_J']:9.3f}")
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +273,7 @@ def main():
         ("greedy", make_greedy_policy()),
     ]:
         results[name] = summarize(roll_out(env, split_trajs, fn))
-        print(f"[{name}] done: collision={results[name]['collision_rate']:.3f} "
+        print(f"[{name}] done: clearance={results[name]['clearance_rate']:.3f} "
               f"max|qdot|={results[name]['max_qdot']:.3f}")
 
     # -- BC policy -----------------------------------------------------------
@@ -278,7 +290,7 @@ def main():
         state=checkpoints.restore_checkpoint(os.path.abspath(args.bc_checkpoint), bc_agent.state)
     )
     results["bc"] = summarize(roll_out(env, split_trajs, make_bc_policy(bc_agent)))
-    print(f"[bc] done: collision={results['bc']['collision_rate']:.3f} "
+    print(f"[bc] done: clearance={results['bc']['clearance_rate']:.3f} "
           f"max|qdot|={results['bc']['max_qdot']:.3f}")
 
     print()
@@ -297,8 +309,7 @@ def main():
 def compute_oracle_regret(cfg, env, bc_agent, traj_dir, demo_dir):
     """J_BC - J_DP on the dp_train split (the split with DP teacher solutions).
 
-    J_DP is the DP teacher's phi_dot* replayed through the same env (so the
-    safety filter and reward_fn are identical to BC's rollout); J_BC is the BC
+    J_DP is the DP teacher's phi_dot* replayed through the same env; J_BC is the BC
     policy's reward sum on the same trajectories.
     """
     dp_csvs = sorted(glob.glob(os.path.join(demo_dir, "traj_*.csv")))

@@ -1,14 +1,10 @@
-"""eval_rlpd_policy.py — evaluate the RLPD (SAC) policy against the BC baseline.
+"""Evaluate unshielded RLPD (SAC), optionally against a compatible BC baseline.
 
-The BC-gate ``evaluate_policy.py`` only rolls the BC checkpoint; this script
-loads the RLPD-trained SAC checkpoint (``debug_rlpd/``) the same way
-``train_rlpd.py`` builds/restores it, and reports the same episode metrics plus
-the BC policy for comparison (BC = the RLPD warmstart, so the delta is the RL
-gain).
+The BC checkpoint must use the same action scale if one is supplied.
 
 Run from ``hil-serl/``::
 
-    python -m tools.eval_rlpd_policy --split val --n-eps 50 --ckpt-step 980000
+    python -m tools.eval_rlpd_policy --split val --n-eps 50 --ckpt-step 20000
 """
 from __future__ import annotations
 
@@ -44,8 +40,9 @@ def main():
     ap.add_argument("--manifold-dir", default="data/aviator/manifold_phi/")
     ap.add_argument("--trajectory-dir", default="data/aviator/trajectory_source/")
     ap.add_argument("--split", default="val")
-    ap.add_argument("--bc-checkpoint", default="examples/experiments/aviator_manifold/debug")
-    ap.add_argument("--sac-checkpoint", default="examples/experiments/aviator_manifold/debug_rlpd")
+    ap.add_argument("--bc-checkpoint", default=None,
+                    help="optional BC checkpoint trained with the same action scale")
+    ap.add_argument("--sac-checkpoint", default="examples/experiments/aviator_manifold/unshielded_rlpd_pilot")
     ap.add_argument("--ckpt-step", type=int, default=None, help="restore this SAC step (None = latest)")
     ap.add_argument("--n-eps", type=int, default=None)
     ap.add_argument("--seed", type=int, default=0)
@@ -75,12 +72,12 @@ def main():
 
     results = {}
 
-    # BC baseline (the RLPD warmstart)
-    bc_agent = cfg.make_bc_agent(seed=args.seed, sample_obs=sample_obs,
-                                 sample_action=sample_action)
-    bc_agent = bc_agent.replace(state=checkpoints.restore_checkpoint(
-        os.path.abspath(args.bc_checkpoint), bc_agent.state))
-    results["bc"] = summarize(roll_out(env, split_trajs, make_bc_policy(bc_agent)))
+    if args.bc_checkpoint:
+        bc_agent = cfg.make_bc_agent(seed=args.seed, sample_obs=sample_obs,
+                                     sample_action=sample_action)
+        bc_agent = bc_agent.replace(state=checkpoints.restore_checkpoint(
+            os.path.abspath(args.bc_checkpoint), bc_agent.state))
+        results["bc"] = summarize(roll_out(env, split_trajs, make_bc_policy(bc_agent)))
 
     # RLPD (SAC) policy
     sac_agent = cfg.make_sac_agent(seed=args.seed, sample_obs=sample_obs,

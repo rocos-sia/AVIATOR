@@ -2,17 +2,15 @@
 
 Doc: docs/superpowers/plans/2026-09-22-aviator-v01-rl-training.md (Task 1.3)
 
-The policy controls the per-arm *phase velocity* ``phi_dot = (phi_dot_L,
-phi_dot_R)``; the task variables ``x = (theta, s)`` follow a fixed reference
-trajectory (the "task controller" is assumed perfect).  Each ``step`` runs the
-full chain
+The policy controls the per-arm phase velocity; task variables follow a fixed
+reference trajectory. Actions are executed without a safety projection:
 
-    phi_dot_nom = action * phi_dot_scale
-    phi_dot_safe = project_phi_dot(phi_dot_nom, x, x_next, phi, lookup)   # hard shield
-    phi_next = phi + phi_dot_safe * dt
-    q_ref = Q(x_next, phi_next)        (the manifold point IS the task projection)
-    q_ref <- clamp to joint limits
-    x <- x_next,  phi <- phi_next
+    phi_dot_exec = action * phi_dot_scale
+    phi_next = phi + phi_dot_exec * dt
+    q_next = Q(x_next, phi_next)
+
+Clearance, branch, joint and velocity violations terminate with a hard cost.
+The lookup is a kinematic approximation, not a fresh physics collision check.
 
 Execution is *kinematic*: ``q`` tracks ``q_ref`` exactly and the clearance is the
 manifold's stored ``d_min`` (MuJoCo collision result baked into ``manifold_phi``).
@@ -37,9 +35,7 @@ import gymnasium as gym
 import numpy as np
 
 from .manifold_lookup import ManifoldLookup
-from .reward import reward_fn
-from .safety_filter import project_phi_dot
-from .safety_filter import _QDOT_TOL  # hard-shield speed tolerance (rad/s)
+from .reward import reward_fn, TERMINAL_PENALTY
 
 # frozen v0.1 constants
 _DT = 0.01
@@ -91,47 +87,47 @@ class AviatorManifoldEnv(gym.Env):
         self._x = None
         self._phi = None
         self._a_prev = np.zeros(2)
-        # previous *filtered* velocity (rad/s) for the reward's C_a accel term;
-        # kept separate from _a_prev (raw action in [-1,1]) which feeds the obs.
-        # None until the first step: C_a is undefined at t=0 (no previous
-        # velocity), matching the demo (build_dp_dataset passes a_prev=None at
-        # t=0).  Initialising to zeros instead made the first step pay
-        # w_a * ||phi_dot_safe||^2 / dt^2 (~8.8e3 at 2.97 rad/s) for no reason
-        # and broke demo/online reward consistency (audit 2026-09-23 §1).
-        self._phi_dot_safe_prev = None
+        # Previous executed velocity; the first step has no acceleration cost.
+        self._phi_dot_prev = None
 
         self._hist_x = deque(maxlen=21)
         self._hist_xdot = deque(maxlen=21)
         self._hist_a = deque(maxlen=21)
 
     # -- trajectory loading --------------------------------------------------
-    def _load_trajectory(self) -> dict:
+    def _load_trajectory(self, index=None) -> dict:
         if self._trajectories is not None:
-            traj = self._trajectories[self.np_random.integers(len(self._trajectories))]
+            chosen = self.np_random.integers(len(self._trajectories)) if index is None else index
+            traj = self._trajectories[chosen]
             return {k: np.asarray(v, dtype=np.float64) for k, v in traj.items()}
-        path = self._traj_paths[self.np_random.integers(len(self._traj_paths))]
+        chosen = self.np_random.integers(len(self._traj_paths)) if index is None else index
+        path = self._traj_paths[chosen]
         with np.load(path) as f:
             return {k: np.asarray(f[k], dtype=np.float64) for k in f.files}
 
     # -- reset / step --------------------------------------------------------
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-        self._traj = self._load_trajectory()
+        trajectory_index = None if options is None else options.get("trajectory_index")
+        self._traj = self._load_trajectory(trajectory_index)
         self._t = 0
         self._x = self._traj["x"][0].copy()
-        # Initialize phi to a *safe* configuration at x[0].  The transported
-        # anchor phase phi=0 is only safe near (theta=0, s=0); elsewhere the
-        # continuation of the anchor config can collide (the per-arm safe
-        # interval does not contain 0).  Project 0 onto the per-arm safe box so
-        # the episode starts feasible -- the policy's job is to keep it feasible.
-        box = self.lookup.safe_interval(self._x[None, :])
-        self._phi = np.clip(
-            np.zeros(2),
-            box["phi_safe_lo"][0],
-            box["phi_safe_hi"][0],
-        )
+        # A registered demonstration starts from its own canonical LUT phase.
+        # Keep the default online reset policy when no phase is supplied.
+        initial_phi = None if options is None else options.get("initial_phi")
+        if initial_phi is None:
+            box = self.lookup.safe_interval(self._x[None, :])
+            self._phi = np.clip(np.zeros(2), box["phi_safe_lo"][0],
+                                box["phi_safe_hi"][0])
+        else:
+            initial_phi = np.asarray(initial_phi, dtype=np.float64).reshape(2)
+            if (not np.all(np.isfinite(initial_phi)) or
+                    np.any(initial_phi < self.lookup.phi_axis[0]) or
+                    np.any(initial_phi > self.lookup.phi_axis[-1])):
+                raise ValueError("initial_phi must be finite and inside the LUT phase grid")
+            self._phi = initial_phi.copy()
         self._a_prev = np.zeros(2)
-        self._phi_dot_safe_prev = None
+        self._phi_dot_prev = None
 
         self._hist_x.clear()
         self._hist_xdot.clear()
@@ -148,99 +144,106 @@ class AviatorManifoldEnv(gym.Env):
 
     def step(self, action: np.ndarray):
         action = np.asarray(action, dtype=np.float64).reshape(2)
-        action = np.clip(action, -1.0, 1.0)
-        phi_dot_nom = action * self.phi_dot_scale
+        if not np.all(np.isfinite(action)) or np.any(np.abs(action) > 1.0):
+            raise ValueError("action must be finite and within [-1, 1]; it is never clipped")
+        phi_dot_exec = action * self.phi_dot_scale
 
         x = self._x
         x_next = self._traj["x"][self._t + 1]
         phi = self._phi
 
-        # --- hard shield ----------------------------------------------------
-        phi_dot_safe, filt = project_phi_dot(
-            phi_dot_nom, x, x_next, phi, self.lookup,
-            qdot_max=self.qdot_max, dt=self.dt, d_safe=self.d_safe,
-        )
-
-        info = {"filter": filt, "phi_dot_nom": phi_dot_nom, "phi_dot_safe": phi_dot_safe}
-
-        if not filt["feasible"]:
-            # safety filter could not find a safe step -> terminate
-            self._a_prev = action
-            obs = self._get_obs()
-            return obs, 0.0, True, True, info
-
-        # --- advance (kinematic execution) ----------------------------------
-        phi_next = phi + phi_dot_safe * self.dt
-        # check_safe=False: the safety filter's hard shield already verified the
-        # *trilinear* clearance d >= d_safe (authoritative); the bilinear safe
-        # interval in safe.bin can disagree with it by interpolation error at the
-        # boundary, so re-checking it here would spuriously reject safe steps.
-        # The explicit d_min < d_safe termination check below is the real guard.
-        res_next = self.lookup.query(x_next[None, :], phi_next[None, :], check_safe=False)
-        q_ref = np.concatenate([res_next["qL"][0], res_next["qR"][0]])
-        # clamp to joint limits (the manifold point is the task projection)
-        lo = np.concatenate([self.lookup.joint_lower[0], self.lookup.joint_lower[1]])
-        hi = np.concatenate([self.lookup.joint_upper[0], self.lookup.joint_upper[1]])
-        q_ref = np.clip(q_ref, lo, hi)
-
-        res_cur = self.lookup.query(x[None, :], phi[None, :], check_safe=False)
-        q_t = np.concatenate([res_cur["qL"][0], res_cur["qR"][0]])
-        q_t = np.clip(q_t, lo, hi)   # previous actual config is the *clamped* q_ref
-        q_dot_actual = (q_ref - q_t) / self.dt
-        max_qdot = float(np.max(np.abs(q_dot_actual)))
-
-        d_min = float(res_next["d_min"][0])
+        phi_next = phi + phi_dot_exec * self.dt
+        info = {"phi_dot_exec": phi_dot_exec.copy()}
+        # The lookup cannot represent a phase outside its grid. Treat that
+        # candidate as a failed action instead of projecting it onto the edge.
+        try:
+            res_next = self.lookup.query(x_next[None, :], phi_next[None, :], check_safe=False)
+        except ValueError:
+            res_next = None
+        prev_phi_dot = self._phi_dot_prev
 
         # --- advance state --------------------------------------------------
         self._t += 1
         self._x = x_next.copy()
         self._phi = phi_next.copy()
         self._a_prev = action
+        self._phi_dot_prev = phi_dot_exec.copy()
         self._hist_x.append(self._x)
         self._hist_xdot.append(self._traj["xdot"][self._t])
         self._hist_a.append(action)
 
+        if res_next is None:
+            info.update(termination="grid_exit", d_min=float("nan"),
+                        max_qdot=float("nan"), m_q=float("nan"))
+            return self._get_obs(allow_invalid=True), TERMINAL_PENALTY, True, False, info
+
+        q_next = np.concatenate([res_next["qL"][0], res_next["qR"][0]])
+        lo = np.concatenate([self.lookup.joint_lower[0], self.lookup.joint_lower[1]])
+        hi = np.concatenate([self.lookup.joint_upper[0], self.lookup.joint_upper[1]])
+        res_cur = self.lookup.query(x[None, :], phi[None, :], check_safe=False)
+        q_cur = np.concatenate([res_cur["qL"][0], res_cur["qR"][0]])
+        max_qdot = float(np.max(np.abs((q_next - q_cur) / self.dt)))
+        d_min = float(res_next["d_min"][0])
+        m_q = float(res_next["m_q"][0])
+
         # --- termination ----------------------------------------------------
         terminated = False
         truncated = False
-        if d_min < self.d_safe:
+        if not np.all(np.isfinite(q_next)) or not np.isfinite(d_min):
             terminated = True
-            info["termination"] = "collision"
-        elif max_qdot > self.qdot_max + _QDOT_TOL:
-            # same tolerance as the safety filter's hard shield: the filter
-            # certifies q_dot <= qdot_max + _QDOT_TOL (float32 q noise), so a
-            # strict > qdot_max here would spuriously terminate those steps.
+            info["termination"] = "invalid_lookup"
+        elif int(res_next["branch"][0]) >= 2:
+            # Branch codes 2 (unreachable chart) and 3 (cycle-inconsistent) name genuinely
+            # corrupt φ charts. Code 1 (loop-open) is a short-but-valid self-motion arc near
+            # the wrist singularity and is still clearance/joint/speed-checked below.
+            terminated = True
+            info["termination"] = "branch"
+        elif d_min < self.d_safe:
+            terminated = True
+            info["termination"] = "clearance"
+        elif np.any(q_next < lo) or np.any(q_next > hi):
+            terminated = True
+            info["termination"] = "joint_limit"
+        elif max_qdot > self.qdot_max:
             terminated = True
             info["termination"] = "speed"
         elif self._t >= len(self._traj["x"]) - 1:
             truncated = True
             info["termination"] = "end"
-        done = terminated or truncated
-
-        # --- reward ---------------------------------------------------------
         reward, rinfo = reward_fn(
-            x_next, phi_dot_nom, phi_dot_safe, d_min,
-            res_next["m_phi_minus"][0], res_next["m_phi_plus"][0], res_next["m_q"][0],
+            x_next, phi_dot_exec, phi_dot_exec, d_min,
+            res_next["m_phi_minus"][0], res_next["m_phi_plus"][0], m_q,
             self.lookup,
-            a_prev=self._phi_dot_safe_prev, a_prev2=None, dt=self.dt,
+            a_prev=prev_phi_dot,
+            a_prev2=None, dt=self.dt, d_safe=self.d_safe,
         )
-        # C_a = (phi_dot_safe - a_prev)^2 / dt^2: a_prev must be the previous
-        # *filtered* velocity in rad/s, not the raw action in [-1,1] (mixing the
-        # two made C_a ~1e4 x phi_dot_safe^2 and drowned out every other term).
-        self._phi_dot_safe_prev = phi_dot_safe.copy()
         info.update(rinfo)
-        info.update({"d_min": d_min, "max_qdot": max_qdot})
+        info.update({"d_min": d_min, "max_qdot": max_qdot, "m_q": m_q,
+                     "branch": int(res_next["branch"][0]),
+                     "q": q_next, "x": x_next})
+
+        # one-time hard penalty on terminal violations (d < d_safe or speed):
+        # the shaped reward only rewards *surviving* steps, so the terminal step
+        # pays TERMINAL_PENALTY instead -- the policy learns to avoid it.
+        if terminated:
+            reward = TERMINAL_PENALTY
+            info["reward"] = reward
 
         obs = self._get_obs()
         return obs, reward, terminated, truncated, info
 
     # -- observation ---------------------------------------------------------
-    def _get_obs(self) -> dict:
-        res = self.lookup.query(self._x[None, :], self._phi[None, :], check_safe=False)
-        d_min = float(res["d_min"][0])
-        m_q = float(res["m_q"][0])
-        m_minus = res["m_phi_minus"][0]
-        m_plus = res["m_phi_plus"][0]
+    def _get_obs(self, allow_invalid=False) -> dict:
+        try:
+            res = self.lookup.query(self._x[None, :], self._phi[None, :], check_safe=False)
+        except ValueError:
+            if not allow_invalid:
+                raise
+            res = None
+        d_min = float(res["d_min"][0]) if res is not None else 0.0
+        m_q = float(res["m_q"][0]) if res is not None else 0.0
+        m_minus = res["m_phi_minus"][0] if res is not None else np.zeros(2)
+        m_plus = res["m_phi_plus"][0] if res is not None else np.zeros(2)
 
         x = self._x
         xdot = self._traj["xdot"][self._t]

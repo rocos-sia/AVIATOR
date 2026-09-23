@@ -26,6 +26,7 @@ critic ensemble-2, so both agents are rebuilt here around ``StateEncoder`` with
 from __future__ import annotations
 
 import json
+import os
 from functools import partial
 from pathlib import Path
 
@@ -47,7 +48,10 @@ from .wrappers import StateEncoder
 # hil-serl/ root (config.py -> aviator_manifold -> experiments -> examples -> hil-serl)
 _HIL_SERL_ROOT = Path(__file__).resolve().parents[3]
 _MANIFOLD_DIR = _HIL_SERL_ROOT / "data" / "aviator" / "manifold_phi"
-_TRAJECTORY_DIR = _HIL_SERL_ROOT / "data" / "aviator" / "trajectory_source"
+_TRAJECTORY_DIR = Path(os.getenv(
+    "AVIATOR_TRAJECTORY_DIR",
+    str(_HIL_SERL_ROOT / "data" / "aviator" / "trajectory_source"),
+))
 _PHI_DOT_SCALE_PATH = _HIL_SERL_ROOT / "data" / "aviator" / "dp_demo" / "phi_dot_scale.json"
 
 # frozen v0.1 architecture: MLP(256,256,256) tanh, tanh-squashed Gaussian actor,
@@ -100,6 +104,9 @@ class TrainConfig(DefaultTrainingConfig):
 
     trajectory_split = "rl_train"            # actor rollout split (400 trajs)
     num_actor_envs = 8                       # Task 2.3: envs stepped in lockstep
+    max_online_episodes = 400               # cover each rl_train trajectory once
+    actor_step_delay = 0.5                   # allow learner updates between rollout steps
+    updates_per_online_transition = 1       # keep learning tied to new online data
 
     # Save the SAC state (actor + critic + temperature) every this many learner
     # iterations so progress can be evaluated and the run resumed.  Default 0
@@ -108,6 +115,16 @@ class TrainConfig(DefaultTrainingConfig):
 
     def __init__(self):
         self.phi_dot_scale = _read_phi_dot_scale()
+        self.max_steps = int(os.getenv("AVIATOR_MAX_STEPS", self.max_steps))
+        self.num_actor_envs = int(os.getenv("AVIATOR_NUM_ENVS", self.num_actor_envs))
+        self.max_online_episodes = int(os.getenv("AVIATOR_MAX_ONLINE_EPISODES", self.max_online_episodes))
+        self.checkpoint_period = int(os.getenv("AVIATOR_CHECKPOINT_PERIOD", self.checkpoint_period))
+        self.training_starts = int(os.getenv("AVIATOR_TRAINING_STARTS", self.training_starts))
+        self.actor_step_delay = float(os.getenv("AVIATOR_ACTOR_STEP_DELAY", self.actor_step_delay))
+        self.updates_per_online_transition = int(os.getenv(
+            "AVIATOR_UPDATES_PER_ONLINE_TRANSITION", self.updates_per_online_transition))
+        if self.updates_per_online_transition < 1:
+            raise ValueError("AVIATOR_UPDATES_PER_ONLINE_TRANSITION must be positive")
 
     def get_environment(self, fake_env=False, save_video=False, classifier=False):
         del fake_env, save_video, classifier   # kinematic env: no robot, no camera

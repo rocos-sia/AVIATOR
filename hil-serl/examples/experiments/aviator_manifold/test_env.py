@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from examples.experiments.aviator_manifold.env import AviatorManifoldEnv
+from examples.experiments.aviator_manifold.reward import reward_fn
 from examples.experiments.aviator_manifold.test_manifold_lookup import make_manifold
 
 # wide limits so the synthetic manifold's q values (max ~2.9) never clamp
@@ -67,15 +68,32 @@ def test_rollout_200_steps(tmp_path):
     env = _env(tmp_path)
     env.reset(seed=1)
     for i in range(200):
-        a = env.action_space.sample()
+        a = np.zeros(2)
         obs, rew, term, trunc, info = env.step(a)
         assert obs["state"].shape == (40,)
-        # info keys
-        for k in ("filter", "phi_dot_nom", "phi_dot_safe", "d_min", "max_qdot"):
+        for k in ("phi_dot_exec", "d_min", "max_qdot"):
             assert k in info
-        assert info["filter"]["feasible"]
-        # constant task + safe phase (filter keeps phi in [-1,1]) -> no early stop
         assert not term and not trunc
+
+
+def test_action_is_executed_without_projection(tmp_path):
+    env = _env(tmp_path, scale=1.5)
+    env.reset(seed=0)
+    _, _, terminated, _, info = env.step(np.array([1.0, 0.0]))
+    assert not terminated
+    np.testing.assert_allclose(info["phi_dot_exec"], [1.5, 0.0])
+    np.testing.assert_allclose(env._phi, [0.015, 0.0])
+    assert "filter" not in info
+
+
+def test_registered_initial_phase_is_used_without_projection(tmp_path):
+    env = _env(tmp_path)
+    obs, _ = env.reset(options={"initial_phi": [0.1, -0.1]})
+    np.testing.assert_allclose(env._phi, [0.1, -0.1])
+    np.testing.assert_allclose(obs["state"][4:8],
+                               [np.sin(0.1), np.cos(0.1), np.sin(-0.1), np.cos(-0.1)])
+    with pytest.raises(ValueError, match="initial_phi"):
+        env.reset(options={"initial_phi": [2.0, 0.0]})
 
 
 # --------------------------------------------------------------------------
@@ -94,20 +112,61 @@ def test_end_termination(tmp_path):
 # --------------------------------------------------------------------------
 # speed-violation termination
 # --------------------------------------------------------------------------
-def test_speed_violation_termination(tmp_path, monkeypatch):
-    import examples.experiments.aviator_manifold.env as env_mod
-
+def test_speed_violation_termination(tmp_path):
     env = _env(tmp_path, scale=5.0)
     env.reset(seed=0)
-    # bypass the shield: return the nominal velocity as if feasible, so the
-    # env's own finite-step |qdot| check sees the violation (0.6 * 5.0 = 3.0 > 1.5)
-    monkeypatch.setattr(
-        env_mod, "project_phi_dot",
-        lambda nom, x, x_next, phi, lookup, **kw:
-            (nom, {"feasible": True, "intervened": False,
-                   "clipped": False, "backtracked": 0}),
-    )
     obs, rew, term, trunc, info = env.step(np.array([1.0, 0.0]))
     assert term and not trunc
     assert info["termination"] == "speed"
     assert info["max_qdot"] > 1.5
+
+
+def test_grid_exit_returns_terminal_transition(tmp_path):
+    env = _env(tmp_path, scale=200.0)
+    env.reset(seed=0)
+    obs, rew, term, trunc, info = env.step(np.array([1.0, 0.0]))
+    assert term and not trunc
+    assert info["termination"] == "grid_exit"
+    assert rew < 0
+    assert obs["state"].shape == (40,)
+    np.testing.assert_allclose(env._phi, [2.0, 0.0])
+
+
+def test_out_of_range_action_is_rejected_not_clipped(tmp_path):
+    env = _env(tmp_path)
+    env.reset(seed=0)
+    with pytest.raises(ValueError, match="action"):
+        env.step(np.array([1.1, 0.0]))
+
+
+def test_joint_limit_is_detected_before_any_clamp(tmp_path):
+    env = _env(tmp_path, scale=1.5)
+    env.reset(seed=0)
+    q0 = env.lookup.query(env._x[None, :], env._phi[None, :], check_safe=False)["qL"][0, 0]
+    env.lookup.joint_upper[0, 0] = q0 + 0.001
+    _, rew, term, trunc, info = env.step(np.array([1.0, 0.0]))
+    assert term and not trunc and rew < 0
+    assert info["termination"] == "joint_limit"
+    assert info["m_q"] < 0
+
+
+def test_clearance_threshold_terminates(tmp_path):
+    env = _env(tmp_path)
+    env.reset(seed=0)
+    env.lookup.dL[:] = 0.004
+    _, rew, term, trunc, info = env.step(np.zeros(2))
+    assert term and not trunc and rew < 0
+    assert info["termination"] == "clearance"
+    assert info["d_min"] < 0.005
+
+
+def test_boundary_layer_penalizes_clearance_not_teacher_distance():
+    args = (np.zeros(2), np.zeros(2), np.zeros(2))
+    kwargs = dict(m_phi_minus=np.ones(2), m_phi_plus=np.ones(2),
+                  m_q=1.0, lookup=None)
+    safe, safe_info = reward_fn(*args, d_min=0.012, **kwargs)
+    near, near_info = reward_fn(*args, d_min=0.0075, **kwargs)
+    assert safe_info["C_margin"] == 0.0
+    assert near_info["C_margin"] > 0.0
+    assert near < safe
+    assert "C_filter" not in near_info

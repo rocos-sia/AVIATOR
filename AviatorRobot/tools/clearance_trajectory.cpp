@@ -37,12 +37,14 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <numeric>
 #include <random>
 #include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -322,6 +324,151 @@ struct Manifold {
                          w11 * qR[i11 * 7 + j];
         }
         return true;
+    }
+};
+
+// LUT-native trilinear Q(x, phi) query -- bit-identical to Python ManifoldLookup.query
+// (hil-serl/examples/experiments/aviator_manifold/manifold_lookup.py). Loads the
+// build_manifold_phi outputs (qL/qR/dL/dR/safe/branch/phi float32 binaries + manifest.json)
+// and reproduces _frac / _trilinear / _bilinear exactly:
+//   - theta_axis / s_axis via numpy-linspace replication (start + i*step, last element forced
+//     to stop), phi_axis from phi.bin float32 -> float64;
+//   - _frac: i0 = clip(searchsorted(axis, v, "right") - 1, 0, n-2); w = (v - a) / (b - a);
+//   - 8-corner weighted sum in (dth, ds, dp) order with float32 data upcast to double;
+//   - branch = max over the 4 (theta, s) stencil corners (conservative exclusion).
+// All arithmetic is IEEE double and matches numpy's elementwise float64 order, so results are
+// bit-identical to the Python query (the only stored precision is float32).
+struct PhiLUT {
+    int n_theta = 0, n_s = 0, n_phi = 0;
+    double th_min = 0, th_max = 0, s_min = 0, s_max = 0;
+    std::vector<double> theta_axis, s_axis, phi_axis;
+    std::vector<float> qL, qR, dL, dR, safe;  // (n_pt,7) (n_pt,7) (n_pt,) (n_pt,) (n_gp,4)
+    std::vector<uint8_t> branch;              // (n_gp,)
+    bool ok = false;
+
+    static std::vector<double> linspace(double start, double stop, int n) {
+        std::vector<double> y(n);
+        double step = (stop - start) / double(n - 1);
+        for (int i = 0; i < n; i++)
+            y[i] = start + double(i) * step;
+        if (n > 1)
+            y[n - 1] = stop;  // numpy forces the last element to stop
+        return y;
+    }
+
+    static double manifest_get(const std::string &json, const char *key) {
+        std::string k = std::string("\"") + key + "\"";
+        auto p = json.find(k);
+        if (p == std::string::npos)
+            return std::numeric_limits<double>::quiet_NaN();
+        auto c = json.find(':', p + k.size());
+        if (c == std::string::npos)
+            return std::numeric_limits<double>::quiet_NaN();
+        return std::atof(json.c_str() + c + 1);
+    }
+
+    bool load(const fs::path &dir) {
+        std::ifstream mf(dir / "manifest.json");
+        if (!mf)
+            return false;
+        std::string mjson((std::istreambuf_iterator<char>(mf)), std::istreambuf_iterator<char>());
+        n_theta = int(manifest_get(mjson, "n_theta"));
+        n_s = int(manifest_get(mjson, "n_s"));
+        n_phi = int(manifest_get(mjson, "n_phi"));
+        th_min = manifest_get(mjson, "th_min");
+        th_max = manifest_get(mjson, "th_max");
+        s_min = manifest_get(mjson, "s_min");
+        s_max = manifest_get(mjson, "s_max");
+        if (n_theta <= 1 || n_s <= 1 || n_phi <= 1)
+            return false;
+        theta_axis = linspace(th_min, th_max, n_theta);
+        s_axis = linspace(s_min, s_max, n_s);
+
+        size_t n_gp = size_t(n_theta) * n_s;
+        size_t n_pt = n_gp * n_phi;
+        auto rd = [&](const char *name, void *buf, size_t nbytes) {
+            std::ifstream f(dir / name, std::ios::binary);
+            if (!f)
+                return false;
+            f.read((char *)buf, (std::streamsize)nbytes);
+            return f.gcount() == (std::streamsize)nbytes;
+        };
+        std::vector<float> phi_f(n_phi);
+        qL.resize(n_pt * 7);
+        qR.resize(n_pt * 7);
+        dL.resize(n_pt);
+        dR.resize(n_pt);
+        safe.resize(n_gp * 4);
+        branch.resize(n_gp);
+        if (!rd("phi.bin", phi_f.data(), n_phi * sizeof(float)) ||
+            !rd("qL.bin", qL.data(), n_pt * 7 * sizeof(float)) ||
+            !rd("qR.bin", qR.data(), n_pt * 7 * sizeof(float)) ||
+            !rd("dL.bin", dL.data(), n_pt * sizeof(float)) ||
+            !rd("dR.bin", dR.data(), n_pt * sizeof(float)) ||
+            !rd("safe.bin", safe.data(), n_gp * 4 * sizeof(float)) ||
+            !rd("branch.bin", branch.data(), n_gp))
+            return false;
+        phi_axis.resize(n_phi);
+        for (int k = 0; k < n_phi; k++)
+            phi_axis[k] = double(phi_f[k]);
+        ok = true;
+        return true;
+    }
+
+    // numpy.searchsorted(axis, v, "right") - 1 clipped to [0, n-2]; w = (v - a) / (b - a).
+    void frac(const std::vector<double> &axis, double v, int &i0, double &w) const {
+        int n = int(axis.size());
+        int lo = 0, hi = n;  // upper_bound: first index with axis[mid] > v
+        while (lo < hi) {
+            int mid = (lo + hi) / 2;
+            if (v < axis[mid]) hi = mid; else lo = mid + 1;
+        }
+        i0 = lo - 1;
+        if (i0 < 0) i0 = 0;
+        if (i0 > n - 2) i0 = n - 2;
+        double a = axis[i0], b = axis[i0 + 1];
+        w = (v - a) / (b - a);
+    }
+
+    // 8-corner trilinear blend in (dth, ds, dp) order, float32 data upcast to double.
+    void trilinear(const std::vector<float> &arr, int i_th, int i_s, int i_p, double w_th,
+                   double w_s, double w_p, double *out, int D) const {
+        for (int j = 0; j < D; j++)
+            out[j] = 0.0;
+        double w0_th = 1.0 - w_th, w0_s = 1.0 - w_s, w0_p = 1.0 - w_p;
+        for (int dth = 0; dth < 2; dth++)
+            for (int ds = 0; ds < 2; ds++) {
+                int row = (i_s + ds) * n_theta + (i_th + dth);
+                for (int dp = 0; dp < 2; dp++) {
+                    size_t idx = size_t(row) * n_phi + (i_p + dp);
+                    double w = (dth ? w_th : w0_th) * (ds ? w_s : w0_s) * (dp ? w_p : w0_p);
+                    for (int j = 0; j < D; j++)
+                        out[j] += double(arr[idx * D + j]) * w;
+                }
+            }
+    }
+
+    // 4-corner bilinear blend in (dth, ds) for (theta, s)-only fields (n_gp, D).
+    void bilinear(const std::vector<float> &arr, int i_th, int i_s, double w_th, double w_s,
+                  double *out, int D) const {
+        for (int j = 0; j < D; j++)
+            out[j] = 0.0;
+        for (int dth = 0; dth < 2; dth++)
+            for (int ds = 0; ds < 2; ds++) {
+                size_t idx = size_t(i_s + ds) * n_theta + (i_th + dth);
+                double w = (dth ? w_th : 1.0 - w_th) * (ds ? w_s : 1.0 - w_s);
+                for (int j = 0; j < D; j++)
+                    out[j] += double(arr[idx * D + j]) * w;
+            }
+    }
+
+    // Conservative branch flag = max over the 4 (theta, s) stencil corners.
+    int branch_max(int i_th, int i_s) const {
+        int b = 0;
+        for (int ds = 0; ds < 2; ds++)
+            for (int dth = 0; dth < 2; dth++)
+                b = std::max(b, int(branch[size_t(i_s + ds) * n_theta + (i_th + dth)]));
+        return b;
     }
 };
 
@@ -676,6 +823,23 @@ class ClearanceTrajectory {
         }
         return e;
     }
+    // Per-arm pose error of the current FK: position (m) and orientation (rad) of the TCP
+    // site vs the handle site. Orientation = rotation angle of R_tcp^T R_handle, i.e.
+    // acos((trace - 1)/2); trace = Σ_i Rt[i]*Rh[i] (both column-major). Used by the
+    // LUT-native DP's physical feasibility gate (FK tolerance 2e-3 rad).
+    void arm_pose_error(int side, double &pos_err, double &ori_err) {
+        const double *hp = d->site_xpos + 3 * handle_site[side];
+        const double *tp = d->site_xpos + 3 * tcp_site[side];
+        double dx = tp[0] - hp[0], dy = tp[1] - hp[1], dz = tp[2] - hp[2];
+        pos_err = std::sqrt(dx * dx + dy * dy + dz * dz);
+        const double *Rt = d->site_xmat + 9 * tcp_site[side];
+        const double *Rh = d->site_xmat + 9 * handle_site[side];
+        double tr = 0.0;
+        for (int i = 0; i < 9; i++)
+            tr += Rt[i] * Rh[i];
+        double c = std::max(-1.0, std::min(1.0, 0.5 * (tr - 1.0)));
+        ori_err = std::acos(c);
+    }
     double wall_gap_inner() {
         int a = mj_name2id(m.get(), mjOBJ_BODY, "aviator_wall_left");
         int b = mj_name2id(m.get(), mjOBJ_BODY, "aviator_wall_right");
@@ -684,6 +848,93 @@ class ClearanceTrajectory {
         mjtNum delta[3];
         mju_sub3(delta, d->xpos + 3 * a, d->xpos + 3 * b);
         return mju_norm3(delta) - wall_thickness;  // centre distance minus thickness = inner clearance
+    }
+    // Evaluate saved configurations with the same geometry and task check used by
+    // record_dp. Input rows are theta,s,qL1..qL7,qR1..qR7. This is deliberately
+    // independent of the phase LUT, so an audit can compare identical q values.
+    void audit_states(const fs::path &input, const fs::path &output) {
+        std::ifstream in(input);
+        std::ofstream out(output);
+        if (!in || !out)
+            throw std::runtime_error("audit_states: cannot open input or output");
+        out << "dL,dR,d_min,task_error,joint_margin,collision\n";
+        out << std::setprecision(17);
+        std::string line;
+        size_t count = 0;
+        while (std::getline(in, line)) {
+            if (line.empty()) continue;
+            std::replace(line.begin(), line.end(), ',', ' ');
+            std::istringstream row(line);
+            double theta, s;
+            Q ql(7), qr(7);
+            if (!(row >> theta >> s))
+                throw std::runtime_error("audit_states: invalid task state at row " + std::to_string(count));
+            for (int j = 0; j < 7; j++)
+                if (!(row >> ql(j))) throw std::runtime_error("audit_states: invalid left q at row " + std::to_string(count));
+            for (int j = 0; j < 7; j++)
+                if (!(row >> qr(j))) throw std::runtime_error("audit_states: invalid right q at row " + std::to_string(count));
+            double extra;
+            if (row >> extra)
+                throw std::runtime_error("audit_states: extra value at row " + std::to_string(count));
+            set_config(ql, qr, theta, s);
+            double dl = wall_clearance(0), dr = wall_clearance(1);
+            out << dl << ',' << dr << ',' << std::min(dl, dr) << ',' << task_error() << ','
+                << joint_margin() << ',' << (collision() ? 1 : 0) << '\n';
+            count++;
+        }
+        std::cout << "audit_states: evaluated " << count << " states -> " << output << '\n';
+    }
+    // Step 1 (Route A / cross-language consistency): answer (theta,s,phi_L,phi_R) -> qL/qR/dL/dR/
+    // safe interval / branch using the exact trilinear query of manifold_lookup.py (PhiLUT above).
+    // Input rows are theta,s,phi_L,phi_R; output appends the 14-D config, interpolated d, the
+    // bilinear safe interval, and the conservative branch flag. The Python side compares this
+    // against ManifoldLookup.query bit-for-bit. Deliberately independent of the robot model so a
+    // query can be checked against Python without FK/IK.
+    void lut_query(const fs::path &manifold_dir, const fs::path &input, const fs::path &output) {
+        PhiLUT lut;
+        if (!lut.load(manifold_dir))
+            throw std::runtime_error("lut_query: cannot load manifold_phi (build it with TASKS=manifold_phi first)");
+        std::ifstream in(input);
+        std::ofstream out(output);
+        if (!in || !out)
+            throw std::runtime_error("lut_query: cannot open input or output");
+        out << "theta,s,phi_L,phi_R,qL1,qL2,qL3,qL4,qL5,qL6,qL7,qR1,qR2,qR3,qR4,qR5,qR6,qR7,"
+               "dL,dR,phi_safe_lo_L,phi_safe_hi_L,phi_safe_lo_R,phi_safe_hi_R,branch\n";
+        out << std::setprecision(17);
+        std::string line;
+        size_t count = 0;
+        while (std::getline(in, line)) {
+            if (line.empty()) continue;
+            std::replace(line.begin(), line.end(), ',', ' ');
+            std::istringstream row(line);
+            double theta, s, phi_L, phi_R;
+            if (!(row >> theta >> s >> phi_L >> phi_R))
+                throw std::runtime_error("lut_query: invalid row " + std::to_string(count));
+            double extra;
+            if (row >> extra)
+                throw std::runtime_error("lut_query: extra value at row " + std::to_string(count));
+            int i_th, i_s, i_pL, i_pR;
+            double w_th, w_s, w_pL, w_pR;
+            lut.frac(lut.theta_axis, theta, i_th, w_th);
+            lut.frac(lut.s_axis, s, i_s, w_s);
+            lut.frac(lut.phi_axis, phi_L, i_pL, w_pL);
+            lut.frac(lut.phi_axis, phi_R, i_pR, w_pR);
+            double qL[7], qR[7], dLv, dRv, safe[4];
+            lut.trilinear(lut.qL, i_th, i_s, i_pL, w_th, w_s, w_pL, qL, 7);
+            lut.trilinear(lut.qR, i_th, i_s, i_pR, w_th, w_s, w_pR, qR, 7);
+            lut.trilinear(lut.dL, i_th, i_s, i_pL, w_th, w_s, w_pL, &dLv, 1);
+            lut.trilinear(lut.dR, i_th, i_s, i_pR, w_th, w_s, w_pR, &dRv, 1);
+            lut.bilinear(lut.safe, i_th, i_s, w_th, w_s, safe, 4);
+            int br = lut.branch_max(i_th, i_s);
+            out << theta << ',' << s << ',' << phi_L << ',' << phi_R;
+            for (int j = 0; j < 7; j++) out << ',' << qL[j];
+            for (int j = 0; j < 7; j++) out << ',' << qR[j];
+            out << ',' << dLv << ',' << dRv;
+            for (int j = 0; j < 4; j++) out << ',' << safe[j];
+            out << ',' << br << '\n';
+            count++;
+        }
+        std::cout << "lut_query: answered " << count << " queries -> " << output << '\n';
     }
     // Step 4: verify the handle-axis rotation φ is physically legal — IK-reachable and
     // collision-free over its full 2π range at representative wheel poses. The grasp is a
@@ -1960,15 +2211,6 @@ class ClearanceTrajectory {
     // difference of the winning φ series (BLOCKER #4). Emits outdir/dp_demo/traj_<i>.csv.
     void record_dp(const fs::path &outdir, const fs::path &traj_dir, int n_threads) {
         const double qmax = 1.5;  // frozen joint-speed limit (rad/s)
-        const int K = 64;         // safe-arc candidate resolution
-        // Small phase-velocity regularization in the DP smoothness objective. At the
-        // θ=±50° singularity Q_φ→0, so φ is a "gauge" direction the joint-velocity-only
-        // objective cannot see; without this the DP emits a ±30 rad/s limit cycle in φ
-        // (q and d stay safe, but the action labels become degenerate). The weight is
-        // tiny so it only breaks the tie in that flat direction, leaving normal motion
-        // (Σ‖q̇‖²) untouched. This is the numeric counterpart of the plan's "continuous
-        // unwrap" requirement for the φ̃ series.
-        const double PHI_W = 1e-3;
 
         std::vector<fs::path> files;
         for (auto &e : fs::directory_iterator(traj_dir))
@@ -1981,24 +2223,15 @@ class ClearanceTrajectory {
         }
         fs::create_directories(outdir / "dp_demo");
 
-        // φ grid bounds = the manifold's global grid (anchor safe interval), read from phi.bin so
-        // the DP teacher's φ stays inside the lookable manifold range. Falls back to the frozen
-        // anchor grid if the manifold has not been built yet.
-        double grid_lo = -0.1, grid_hi = 0.15;
-        {
-            std::ifstream pf(outdir / "manifold_phi" / "phi.bin", std::ios::binary);
-            if (pf) {
-                std::vector<float> ph;
-                float v;
-                while (pf.read(reinterpret_cast<char *>(&v), sizeof(float)))
-                    ph.push_back(v);
-                if (ph.size() >= 2) {
-                    grid_lo = ph.front();
-                    grid_hi = ph.back();
-                }
-            }
-        }
-        std::cout << "record_dp: φ grid [" << grid_lo << ", " << grid_hi << "]\n";
+        // LUT-native DP (Route A): the DP solves directly on the LUT's canonical φ grid, so
+        // the candidates are the φ nodes of phi_axis and their configs are the trilinear query
+        // Q(x, φ_j) — bit-identical to manifold_lookup.py. The LUT is shared read-only across
+        // workers; each worker owns its own ClearanceTrajectory for the physical evaluator.
+        PhiLUT lut;
+        if (!lut.load(outdir / "manifold_phi"))
+            throw std::runtime_error("record_dp: cannot load manifold_phi (build it with TASKS=manifold_phi first)");
+        std::cout << "record_dp: LUT " << lut.n_theta << "x" << lut.n_s << "x" << lut.n_phi
+                  << " phi [" << lut.phi_axis.front() << ", " << lut.phi_axis.back() << "]\n";
 
         // Per-arm self-motion loop length (S¹ circumference in phase units) for the
         // continuous unwrap of φ̃ (Task 0.3 Step 2). Read from the manifold manifest;
@@ -2028,133 +2261,6 @@ class ClearanceTrajectory {
         std::cout << "record_dp: L_phi = [" << L_phi_L << ", " << L_phi_R << "]\n";
 
         struct Cand { double q[7], phi, d, res; };
-        struct Cost3 { double qd2, dqd2, negres; };
-
-        // Phase 1: minimax normalized joint speed (scalar). min over paths of max_t ‖q̇/qmax‖_∞.
-        auto minimax_speed = [](const std::vector<std::vector<Cand>> &cands, double dt, double qmax) {
-            int N = (int)cands.size();
-            std::vector<double> prev(cands[0].size(), 0.0), cur;
-            for (int k = 1; k < N; k++) {
-                size_t na = cands[k - 1].size(), nb = cands[k].size();
-                cur.assign(nb, 1e18);
-                for (size_t b = 0; b < nb; b++) {
-                    double best = 1e18;
-                    for (size_t a = 0; a < na; a++) {
-                        double w = 0;
-                        for (int j = 0; j < 7; j++)
-                            w = std::max(w, std::fabs(cands[k][b].q[j] - cands[k - 1][a].q[j]));
-                        best = std::min(best, std::max(prev[a], w / (qmax * dt)));
-                    }
-                    cur[b] = best;
-                }
-                prev.swap(cur);
-            }
-            double best = 1e18;
-            for (double v : prev)
-                best = std::min(best, v);
-            return best;
-        };
-
-        // Phase 2: second-order lexicographic DP (Σ‖q̇‖², Σ‖Δq̇‖², −ΣR_reserve) with hard speed cap.
-        // State at step k≥1 = (a,b): a = candidate at k−1, b = candidate at k (flattened a*K+b).
-        auto lex_dp_smooth = [PHI_W](const std::vector<std::vector<Cand>> &cands, double dt, double qmax,
-                                double v_cap, std::vector<int> &idx) {
-            int N = (int)cands.size();
-            int K = (int)cands[0].size();
-            idx.assign(N, 0);
-            const double INF = 1e18;
-            auto less3 = [](const Cost3 &a, const Cost3 &b) {
-                if (a.qd2 != b.qd2) return a.qd2 < b.qd2;
-                if (a.dqd2 != b.dqd2) return a.dqd2 < b.dqd2;
-                return a.negres < b.negres;
-            };
-            if (N == 1) {
-                idx[0] = 0;
-                return;
-            }
-            std::vector<Cost3> prev((size_t)K * K, Cost3{INF, INF, INF});
-            std::vector<int> bp((size_t)(N - 1) * K * K, -1);
-            for (int a = 0; a < K; a++)
-                for (int b = 0; b < K; b++) {
-                    double qd_inf = 0, qd2 = 0;
-                    for (int j = 0; j < 7; j++) {
-                        double qdj = (cands[1][b].q[j] - cands[0][a].q[j]) / dt;
-                        qd_inf = std::max(qd_inf, std::fabs(qdj) / qmax);
-                        qd2 += qdj * qdj;
-                    }
-                    double phid = (cands[1][b].phi - cands[0][a].phi) / dt;
-                    qd2 += PHI_W * phid * phid;
-                    if (qd_inf > v_cap + 1e-9)
-                        continue;
-                    prev[(size_t)a * K + b] = Cost3{qd2, 0.0, -cands[1][b].res};
-                    bp[(size_t)0 * K * K + a * K + b] = a;
-                }
-            for (int k = 2; k < N; k++) {
-                std::vector<Cost3> cur((size_t)K * K, Cost3{INF, INF, INF});
-                for (int b = 0; b < K; b++) {
-                    for (int c = 0; c < K; c++) {
-                        double qd_bc[7], qd_bc_inf = 0, qd_bc2 = 0;
-                        for (int j = 0; j < 7; j++) {
-                            qd_bc[j] = (cands[k][c].q[j] - cands[k - 1][b].q[j]) / dt;
-                            qd_bc_inf = std::max(qd_bc_inf, std::fabs(qd_bc[j]) / qmax);
-                            qd_bc2 += qd_bc[j] * qd_bc[j];
-                        }
-                        double phid_bc = (cands[k][c].phi - cands[k - 1][b].phi) / dt;
-                        qd_bc2 += PHI_W * phid_bc * phid_bc;
-                        if (qd_bc_inf > v_cap + 1e-9)
-                            continue;
-                        Cost3 best{INF, INF, INF};
-                        int best_a = -1;
-                        for (int a = 0; a < K; a++) {
-                            const Cost3 &pc = prev[(size_t)a * K + b];
-                            if (pc.qd2 >= INF)
-                                continue;
-                            double dqd2 = 0;
-                            for (int j = 0; j < 7; j++) {
-                                double qd_ab = (cands[k - 1][b].q[j] - cands[k - 2][a].q[j]) / dt;
-                                double dd = (qd_bc[j] - qd_ab) / dt;
-                                dqd2 += dd * dd;
-                            }
-                            Cost3 nc{pc.qd2 + qd_bc2, pc.dqd2 + dqd2, pc.negres - cands[k][c].res};
-                            if (less3(nc, best)) {
-                                best = nc;
-                                best_a = a;
-                            }
-                        }
-                        cur[(size_t)b * K + c] = best;
-                        bp[(size_t)(k - 1) * K * K + b * K + c] = best_a;
-                    }
-                }
-                prev.swap(cur);
-            }
-            Cost3 bestc{INF, INF, INF};
-            int best_a = -1, best_b = -1;
-            for (int a = 0; a < K; a++)
-                for (int b = 0; b < K; b++) {
-                    const Cost3 &c = prev[(size_t)a * K + b];
-                    if (less3(c, bestc)) {
-                        bestc = c;
-                        best_a = a;
-                        best_b = b;
-                    }
-                }
-            if (best_b < 0) {
-                best_a = 0;
-                best_b = 0;
-            }
-            idx[N - 1] = best_b;
-            idx[N - 2] = best_a;
-            int pa = best_a, pb = best_b;
-            for (int k = N - 1; k >= 2; k--) {
-                int a_prev = bp[(size_t)(k - 1) * K * K + pa * K + pb];
-                if (a_prev < 0)
-                    a_prev = pa;
-                idx[k - 2] = a_prev;
-                pb = pa;
-                pa = a_prev;
-            }
-        };
-
         std::atomic<size_t> next{0};
         std::atomic<int> n_done{0}, n_infeasible{0}, n_speed_fail{0};
         std::mutex mu;
@@ -2191,7 +2297,33 @@ class ClearanceTrajectory {
                 }
                 double dt = (N > 1) ? (t.v[N - 1] - t.v[0]) / (N - 1) : 0.01;
 
-                // ---- per-arm candidate collection (φ-carrying safe arc) ----
+                // ---- Route A: LUT-native candidate collection ----
+                // Candidates are the LUT φ nodes inside the bilinear safe box, each carrying the
+                // trilinear config Q(x, φ_j) (bit-identical to manifold_lookup.py) and the
+                // *physical* clearance at that config (decoupled: other arm held at its seed).
+                const double FK_TOL = 2e-3;  // task-pose orientation tolerance (rad), ~0.11 deg
+                Q other_seed[2] = {run.seeds[0], run.seeds[1]};
+
+                // Physical clearance of arm `side` at (th, s) with the joint config q7 (the other
+                // arm held at its seed). This is the Route-A physical evaluator: it never trusts
+                // the LUT's interpolated d.
+                auto phys_clear_q = [&](int side, double th, double s, const double *q7) -> double {
+                    Q ql(7), qr(7);
+                    if (side == 0) { for (int j = 0; j < 7; j++) { ql(j) = q7[j]; qr(j) = other_seed[1](j); } }
+                    else           { for (int j = 0; j < 7; j++) { qr(j) = q7[j]; ql(j) = other_seed[0](j); } }
+                    run.set_config(ql, qr, th, s);
+                    return run.wall_clearance(side);
+                };
+                // Trilinear LUT config Q(x, φ) into q7 (bit-identical to ManifoldLookup.query).
+                auto lut_q = [&](int side, double th, double s, double phi, double *q7) {
+                    int i_th, i_s, i_p;
+                    double w_th, w_s, w_p;
+                    lut.frac(lut.theta_axis, th, i_th, w_th);
+                    lut.frac(lut.s_axis, s, i_s, w_s);
+                    lut.frac(lut.phi_axis, phi, i_p, w_p);
+                    lut.trilinear(side == 0 ? lut.qL : lut.qR, i_th, i_s, i_p, w_th, w_s, w_p, q7, 7);
+                };
+
                 std::vector<std::vector<Cand>> cands[2];
                 std::vector<double> lo[2], hi[2];
                 for (int side = 0; side < 2; side++) {
@@ -2199,72 +2331,97 @@ class ClearanceTrajectory {
                     lo[side].assign(N, 0.0);
                     hi[side].assign(N, 0.0);
                 }
-                double mean_L[2] = {0.0, 0.0};
                 bool feasible = true;
                 int fail_k = -1, fail_side = -1;
-                double fail_th = 0, fail_s = 0, fail_l = 0, fail_h = 0, fail_dmin = 1e9;
+                double fail_th = 0, fail_s = 0;
                 std::string fail_reason;
-                // Continuation seeds along the trajectory: each point's φ=0 config is IK-seeded
-                // from the previous point's φ=0 config (matching build_manifold_phi's transport),
-                // so the safe branch stays continuous and the safe φ stays near φ=0.
-                Q seed_cont[2] = {run.seeds[0], run.seeds[1]};
+
                 for (int k = 0; k < N && feasible; k++) {
                     double th = x.v[k * 2], s = x.v[k * 2 + 1];
                     for (int side = 0; side < 2 && feasible; side++) {
-                        Q q0(7);
-                        // Primary seed = continuation (φ=0 transport). If its self-motion branch has
-                        // no safe arc (branch bifurcation near the θ=±50° singularity — plan
-                        // "Remaining risk"), re-seed from the static baseline. The two branches meet
-                        // at the singularity, so the re-seed is a small joint jump, not a full reset.
-                        bool got_safe = false;
-                        Q ref_cands[6] = {Q(7), Q(7), Q(7), Q(7), Q(7), Q(7)};
-                        ref_cands[0] = seed_cont[side];
-                        ref_cands[1] = run.seeds[side];
-                        for (int j = 0; j < 7; j++) {
-                            ref_cands[2](j) = 0.5 * (run.lower[side](j) + run.upper[side](j));       // mid
-                            ref_cands[3](j) = run.lower[side](j) + 0.25 * (run.upper[side](j) - run.lower[side](j));
-                            ref_cands[4](j) = run.lower[side](j) + 0.75 * (run.upper[side](j) - run.lower[side](j));
-                            ref_cands[5](j) = 2.0 * ref_cands[2](j) - run.seeds[side](j);           // mirror
+                        if (th < lut.th_min - 1e-9 || th > lut.th_max + 1e-9 ||
+                            s < lut.s_min - 1e-9 || s > lut.s_max + 1e-9) {
+                            feasible = false; fail_k = k; fail_side = side; fail_th = th; fail_s = s;
+                            fail_reason = "x outside LUT grid";
+                            break;
                         }
-                        for (int rc = 0; rc < 6 && !got_safe; rc++) {
-                            if (!run.ik_multi_seed(side, th, s, ref_cands[rc], atlas_seed(0, side, 0), q0))
+                        int i_th, i_s;
+                        double w_th, w_s;
+                        lut.frac(lut.theta_axis, th, i_th, w_th);
+                        lut.frac(lut.s_axis, s, i_s, w_s);
+                        int br = lut.branch_max(i_th, i_s);
+                        // Branch codes: 0 = valid, 1 = loop-open (self-motion arc does not
+                        // close but the safe box is still populated and FK-valid — near the
+                        // θ≈±50° wrist singularity the nullspace shrinks to a short open arc),
+                        // 2 = unreachable (transported φ=0 continuation seed failed; chart anchor
+                        // is stale), 3 = cycle-inconsistent (φ=0 config jumps between neighbors).
+                        // Loop-open cells are usable on the raw φ axis (Route A never unwraps),
+                        // so only the genuinely-corrupt charts (2/3) are hard-excluded here; the
+                        // per-φ-node physical gates (clearance / joint-margin / FK) still apply.
+                        if (br >= 2) {
+                            feasible = false; fail_k = k; fail_side = side; fail_th = th; fail_s = s;
+                            fail_reason = "branch-excluded cell";
+                            break;
+                        }
+                        double box[4];
+                        lut.bilinear(lut.safe, i_th, i_s, w_th, w_s, box, 4);
+                        double lo_s = box[2 * side], hi_s = box[2 * side + 1];
+                        lo[side][k] = lo_s;
+                        hi[side][k] = hi_s;
+                        int n_inbox = 0, n_d_fail = 0, n_margin_fail = 0, n_fk_fail = 0;
+                        double min_ori = 1e9, min_d = 1e9, min_margin = 1e9;
+                        for (int j = 0; j < lut.n_phi; j++) {
+                            double phj = lut.phi_axis[j];
+                            if (phj < lo_s - 1e-9 || phj > hi_s + 1e-9)
                                 continue;
-                            std::vector<double> phi, ds;
-                            std::vector<Q> qs;
-                            double L, l, h;
-                            int branch;
-                            run.self_motion_arc(side, q0, th, s, phi, qs, ds, L, l, h, branch);
-                            // Clamp the safe box to the manifold φ grid so the teacher's φ stays lookable.
-                            l = std::max(l, grid_lo);
-                            h = std::min(h, grid_hi);
-                            std::vector<size_t> safe_idx;
-                            for (size_t i = 0; i < qs.size(); i++)
-                                if (ds[i] >= d_safe && phi[i] >= l - 1e-9 && phi[i] <= h + 1e-9)
-                                    safe_idx.push_back(i);
-                            if (safe_idx.empty())
-                                continue;  // try the next seed
-                            seed_cont[side] = q0;  // transport φ=0 forward (from whichever branch won)
-                            lo[side][k] = l;
-                            hi[side][k] = h;
-                            mean_L[side] += L;
-                            cands[side][k].resize(K);
-                            int M = (int)safe_idx.size();
-                            for (int i = 0; i < K; i++) {
-                                int ii = (M == 1) ? 0 : std::min((int)std::lround(double(i) * (M - 1) / (K - 1)), M - 1);
-                                const Q &q = qs[safe_idx[ii]];
-                                for (int j = 0; j < 7; j++)
-                                    cands[side][k][i].q[j] = q(j);
-                                double ph = phi[safe_idx[ii]];
-                                cands[side][k][i].phi = ph;
-                                cands[side][k][i].d = ds[safe_idx[ii]];
-                                cands[side][k][i].res = std::min(ph - l, h - ph);
+                            n_inbox++;
+                            double q7[7];
+                            lut_q(side, th, s, phj, q7);
+                            double d = phys_clear_q(side, th, s, q7);
+                            min_d = std::min(min_d, d);
+                            if (d < d_safe) {
+                                n_d_fail++;
+                                continue;
                             }
-                            got_safe = true;
+                            Q qq(7);
+                            for (int jj = 0; jj < 7; jj++)
+                                qq(jj) = q7[jj];
+                            double mg = run.arm_margin(side, qq);
+                            min_margin = std::min(min_margin, mg);
+                            // Joint-limit feasibility = within the model's (already-margined)
+                            // joint range. The self-motion arc legitimately ends at a joint
+                            // limit (self_motion_arc clamps + stops there), so a node at the
+                            // arc endpoint has mg≈0; q_margin_target (1.7°) would double-margin
+                            // narrow posture joints like joint2 [84.5°,94.5°] and reject the whole
+                            // safe box at mid-reach task points. Only reject genuinely-out configs.
+                            if (mg < -1e-6) {
+                                n_margin_fail++;
+                                continue;
+                            }
+                            double pos_err, ori_err;
+                            run.arm_pose_error(side, pos_err, ori_err);
+                            min_ori = std::min(min_ori, ori_err);
+                            if (ori_err > FK_TOL) {
+                                n_fk_fail++;
+                                continue;
+                            }
+                            Cand c;
+                            for (int jj = 0; jj < 7; jj++)
+                                c.q[jj] = q7[jj];
+                            c.phi = phj;
+                            c.d = d;
+                            c.res = std::min(phj - lo_s, hi_s - phj);
+                            cands[side][k].push_back(c);
                         }
-                        if (!got_safe) {
-                            feasible = false; fail_k = k; fail_side = side;
-                            fail_th = th; fail_s = s;
-                            fail_reason = "no safe arc (even after baseline re-seed)";
+                        if (cands[side][k].empty()) {
+                            feasible = false; fail_k = k; fail_side = side; fail_th = th; fail_s = s;
+                            fail_reason = "no feasible φ node (all safe-box nodes fail the physical gate)";
+                            std::cerr << "  [diag] k=" << k << " side=" << side << " th=" << th * 180 / M_PI
+                                      << "deg s=" << s * 1e3 << "mm box=[" << lo_s << "," << hi_s
+                                      << "] inbox=" << n_inbox << " d_fail=" << n_d_fail
+                                      << " margin_fail=" << n_margin_fail << " fk_fail=" << n_fk_fail
+                                      << " min_d=" << min_d * 1e3 << "mm min_margin=" << min_margin
+                                      << " min_ori=" << min_ori << "rad\n";
                             break;
                         }
                     }
@@ -2275,55 +2432,163 @@ class ClearanceTrajectory {
                     std::lock_guard<std::mutex> lk(mu);
                     std::cout << "  record_dp [" << nd << "/" << files.size() << "] " << fp.filename()
                               << ": INFEASIBLE (" << fail_reason << " side=" << fail_side << " k=" << fail_k
-                              << " th=" << fail_th * 180 / M_PI << "deg s=" << fail_s * 1e3
-                              << "mm safe=[" << fail_l << "," << fail_h << "] dmin=" << fail_dmin * 1e3 << "mm)\n";
+                              << " th=" << fail_th * 180 / M_PI << "deg s=" << fail_s * 1e3 << "mm)\n";
                     continue;
                 }
-                mean_L[0] /= N;
-                mean_L[1] /= N;
 
-                // ---- Phase 1 + 2 DP ----
-                double bn_L = minimax_speed(cands[0], dt, qmax);
-                double bn_R = minimax_speed(cands[1], dt, qmax);
-                double v_cap = std::max(bn_L, bn_R);
-                if (v_cap > 1.0 + 1e-6) {
+                // ---- Route A DP: second-order (a,b)-pair Viterbi on the φ-node candidates ----
+                // State at stage k is the pair (a, b) = (candidate at k-1, candidate at k); the
+                // smoothness term needs (φ_a, φ_b, φ_c) so the pair carries the φ̇ memory. Hard
+                // edges: |Δφ| ≤ qmax·dt, ‖Δq‖∞/dt ≤ qmax, M=4 joint-space substeps clearance ≥
+                // d_safe. Lexicographic cost: (Σ φ̇², Σ Δφ̇², −Σ res).
+                struct PCost { double phid2, dphid2, negres; };
+                auto pc_add = [](const PCost &A, const PCost &B) -> PCost {
+                    return {A.phid2 + B.phid2, A.dphid2 + B.dphid2, A.negres + B.negres};
+                };
+                auto pc_less = [](const PCost &A, const PCost &B) -> bool {
+                    if (A.phid2 != B.phid2) return A.phid2 < B.phid2;
+                    if (A.dphid2 != B.dphid2) return A.dphid2 < B.dphid2;
+                    return A.negres < B.negres;
+                };
+                const PCost INF = {1e300, 1e300, 1e300};
+
+                std::vector<double> thv(N), sv(N);
+                for (int k = 0; k < N; k++) { thv[k] = x.v[k * 2]; sv[k] = x.v[k * 2 + 1]; }
+
+                // Per-arm variable-K Viterbi. Returns false if no path satisfies the hard edges.
+                auto phi_dp = [&](int side, std::vector<int> &path) -> bool {
+                    const auto &cs = cands[side];
+                    path.assign(N, -1);
+                    if (N < 2)
+                        return false;
+                    for (int k = 0; k < N; k++)
+                        if (cs[k].empty())
+                            return false;
+                    const double max_dphi = qmax * dt;
+                    const double kd = 1.0 / dt;
+                    const int M = 4;
+                    // Edge (a at knot kk-1 → b at knot kk) feasibility: phase step, joint speed,
+                    // and M interior joint-space substeps all physically clear.
+                    auto edge_ok = [&](int kk, int ia, int ib) -> bool {
+                        const Cand &a = cs[kk - 1][ia];
+                        const Cand &b = cs[kk][ib];
+                        double dphi = b.phi - a.phi;
+                        if (dphi > max_dphi || dphi < -max_dphi)
+                            return false;
+                        for (int j = 0; j < 7; j++)
+                            if (std::fabs(b.q[j] - a.q[j]) * kd > qmax + 1e-9)
+                                return false;
+                        double th_a = thv[kk - 1], s_a = sv[kk - 1], th_b = thv[kk], s_b = sv[kk];
+                        for (int m = 1; m <= M; m++) {
+                            double tt = double(m) / double(M + 1);
+                            double q7[7];
+                            for (int j = 0; j < 7; j++)
+                                q7[j] = a.q[j] + tt * (b.q[j] - a.q[j]);
+                            if (phys_clear_q(side, th_a + tt * (th_b - th_a), s_a + tt * (s_b - s_a), q7) < d_safe)
+                                return false;
+                        }
+                        return true;
+                    };
+
+                    std::vector<std::vector<int>> bt;  // bt[k-1] = stage-k back layer (idx a*K_k+b → a' in cs[k-2])
+                    std::vector<PCost> curCost;
+                    std::vector<char> curValid;
+                    // stage 1: pairs (a∈cs[0], b∈cs[1])
+                    {
+                        int K0 = (int)cs[0].size(), K1 = (int)cs[1].size();
+                        curCost.assign((size_t)K0 * K1, INF);
+                        curValid.assign((size_t)K0 * K1, 0);
+                        for (int a = 0; a < K0; a++)
+                            for (int b = 0; b < K1; b++)
+                                if (edge_ok(1, a, b)) {
+                                    double phid = (cs[1][b].phi - cs[0][a].phi) / dt;
+                                    curValid[(size_t)a * K1 + b] = 1;
+                                    curCost[(size_t)a * K1 + b] =
+                                        {phid * phid, 0.0, -(cs[0][a].res + cs[1][b].res)};
+                                }
+                        bt.push_back(std::vector<int>((size_t)K0 * K1, -1));  // placeholder (stage 1 has no back)
+                    }
+                    for (int k = 2; k < N; k++) {
+                        int Km1 = (int)cs[k - 1].size(), Kk = (int)cs[k].size();
+                        std::vector<PCost> bestCost(Km1, INF);
+                        std::vector<int> bestA(Km1, -1);
+                        for (int b = 0; b < Km1; b++)
+                            for (int a = 0; a < (int)cs[k - 2].size(); a++) {
+                                size_t idx = (size_t)a * Km1 + b;
+                                if (curValid[idx] && pc_less(curCost[idx], bestCost[b])) {
+                                    bestCost[b] = curCost[idx];
+                                    bestA[b] = a;
+                                }
+                            }
+                        std::vector<PCost> nextCost((size_t)Km1 * Kk, INF);
+                        std::vector<char> nextValid((size_t)Km1 * Kk, 0);
+                        std::vector<int> nextBack((size_t)Km1 * Kk, -1);
+                        bool any = false;
+                        for (int b = 0; b < Km1; b++) {
+                            if (bestA[b] < 0)
+                                continue;
+                            double phib = cs[k - 1][b].phi;
+                            double phid_prev = (phib - cs[k - 2][bestA[b]].phi) / dt;
+                            for (int c = 0; c < Kk; c++) {
+                                if (!edge_ok(k, b, c))
+                                    continue;
+                                double phid = (cs[k][c].phi - phib) / dt;
+                                PCost inc = {phid * phid, (phid - phid_prev) * (phid - phid_prev),
+                                             -cs[k][c].res};
+                                size_t idx = (size_t)b * Kk + c;
+                                nextValid[idx] = 1;
+                                nextCost[idx] = pc_add(bestCost[b], inc);
+                                nextBack[idx] = bestA[b];
+                                any = true;
+                            }
+                        }
+                        if (!any)
+                            return false;
+                        bt.push_back(std::move(nextBack));
+                        curCost.swap(nextCost);
+                        curValid.swap(nextValid);
+                    }
+                    // final pair (a∈cs[N-2], b∈cs[N-1]) with minimal cost
+                    int Kprev = (int)cs[N - 2].size(), Klast = (int)cs[N - 1].size();
+                    PCost best = INF;
+                    int b_end = -1, c_end = -1;
+                    for (int b = 0; b < Kprev; b++)
+                        for (int c = 0; c < Klast; c++) {
+                            size_t idx = (size_t)b * Klast + c;
+                            if (curValid[idx] && pc_less(curCost[idx], best)) {
+                                best = curCost[idx];
+                                b_end = b;
+                                c_end = c;
+                            }
+                        }
+                    if (c_end < 0)
+                        return false;
+                    path[N - 1] = c_end;
+                    path[N - 2] = b_end;
+                    for (int k = N - 1; k >= 2; k--) {
+                        int Kk = (int)cs[k].size();
+                        size_t idx = (size_t)path[k - 1] * Kk + path[k];
+                        path[k - 2] = bt[k - 1][idx];
+                    }
+                    return true;
+                };
+
+                std::vector<int> idxL, idxR;
+                if (!phi_dp(0, idxL) || !phi_dp(1, idxR)) {
                     n_speed_fail.fetch_add(1, std::memory_order_relaxed);
                     int nd = n_done.fetch_add(1, std::memory_order_relaxed) + 1;
                     std::lock_guard<std::mutex> lk(mu);
                     std::cout << "  record_dp [" << nd << "/" << files.size() << "] " << fp.filename()
-                              << ": SPEED-INFEASIBLE (minimax " << v_cap * qmax << " rad/s > " << qmax << ")\n";
+                              << ": DP-INFEASIBLE (no phase path meets |Δφ|≤" << qmax * dt
+                              << " and joint/substep constraints)\n";
                     continue;
-                }
-                std::vector<int> idxL, idxR;
-                lex_dp_smooth(cands[0], dt, qmax, v_cap, idxL);
-                lex_dp_smooth(cands[1], dt, qmax, v_cap, idxR);
-
-                // ---- continuous unwrap of φ̃ (plan Task 0.3 Step 2) ----
-                // The candidate arc-length can wind past one S¹ loop near the θ=±50°
-                // singularity (the transported seed wraps), so a raw forward-difference
-                // emits a spurious ±40 rad/s φ̇. Unwrap each arm's φ̃ by integer multiples
-                // of its loop length L_phi so φ̇ is the true continuous phase velocity.
-                double Lphi[2] = {L_phi_L, L_phi_R};
-                std::vector<double> phiu[2];
-                for (int side = 0; side < 2; side++) {
-                    const std::vector<int> &idxs = side == 0 ? idxL : idxR;
-                    phiu[side].resize(N);
-                    phiu[side][0] = cands[side][0][idxs[0]].phi;
-                    double half = 0.5 * Lphi[side];
-                    for (int k = 1; k < N; k++) {
-                        double p = cands[side][k][idxs[k]].phi;
-                        double prev = phiu[side][k - 1];
-                        while (p - prev > half) p -= Lphi[side];
-                        while (p - prev < -half) p += Lphi[side];
-                        phiu[side][k] = p;
-                    }
                 }
 
                 // ---- emit CSV ----
                 fs::path csv_path = outdir / "dp_demo" / (fp.stem().string() + ".csv");
                 std::ofstream f(csv_path);
                 f.precision(10);
-                f << "# L_phi_L=" << mean_L[0] << ",L_phi_R=" << mean_L[1] << "\n";
+                f << "# L_phi_L=" << L_phi_L << ",L_phi_R=" << L_phi_R << "\n";
                 f << "t,theta,s,theta_dot,s_dot,sin_phi_L,cos_phi_L,sin_phi_R,cos_phi_R,phi_dot_L,phi_dot_R,"
                      "qL1,qL2,qL3,qL4,qL5,qL6,qL7,qR1,qR2,qR3,qR4,qR5,qR6,qR7,"
                      "qdotL1,qdotL2,qdotL3,qdotL4,qdotL5,qdotL6,qdotL7,qdotR1,qdotR2,qdotR3,qdotR4,qdotR5,qdotR6,qdotR7,"
@@ -2336,8 +2601,10 @@ class ClearanceTrajectory {
                     double phid_L = 0, phid_R = 0;
                     double qdL[7] = {0}, qdR[7] = {0};
                     if (k < N - 1) {
-                        phid_L = (phiu[0][k + 1] - phiu[0][k]) / dt;
-                        phid_R = (phiu[1][k + 1] - phiu[1][k]) / dt;
+                        // canonical φ is already on the LUT grid; the DP's |Δφ|≤qmax·dt edge keeps
+                        // the forward difference bounded, so no unwrap is needed here.
+                        phid_L = (cands[0][k + 1][idxL[k + 1]].phi - cL.phi) / dt;
+                        phid_R = (cands[1][k + 1][idxR[k + 1]].phi - cR.phi) / dt;
                         for (int j = 0; j < 7; j++)
                             qdL[j] = (cands[0][k + 1][idxL[k + 1]].q[j] - cL.q[j]) / dt;
                         for (int j = 0; j < 7; j++)
@@ -2358,8 +2625,8 @@ class ClearanceTrajectory {
 
                     f << t.v[k] << ',' << x.v[k * 2] << ',' << x.v[k * 2 + 1] << ',' << xd.v[k * 2] << ','
                       << xd.v[k * 2 + 1] << ',';
-                    f << std::sin(phiu[0][k]) << ',' << std::cos(phiu[0][k]) << ','
-                      << std::sin(phiu[1][k]) << ',' << std::cos(phiu[1][k]) << ','
+                    f << std::sin(cL.phi) << ',' << std::cos(cL.phi) << ','
+                      << std::sin(cR.phi) << ',' << std::cos(cR.phi) << ','
                       << phid_L << ',' << phid_R << ',';
                     for (int j = 0; j < 7; j++)
                         f << cL.q[j] << ',';
@@ -2383,7 +2650,7 @@ class ClearanceTrajectory {
             }
         };
 
-        std::cout << "record_dp: " << files.size() << " trajectories, K=" << K << ", qmax=" << qmax
+        std::cout << "record_dp: " << files.size() << " trajectories, qmax=" << qmax
                   << " rad/s, " << n_threads << " threads\n";
         std::vector<std::thread> pool;
         for (int t = 0; t < n_threads; t++)
@@ -6885,6 +7152,24 @@ int main(int argc, char **argv) {
                 return 2;
             }
             run.record_dp(outdir, fs::path(argv[8]), std::max(1, nth));
+            return 0;
+        }
+        if (only.count("audit_states")) {
+            if (argc <= 8) {
+                std::cerr << "audit_states: argv[8] must be an input CSV of theta,s,qL1..qL7,qR1..qR7\n";
+                return 2;
+            }
+            run.audit_states(fs::path(argv[8]), outdir / "audit_states.csv");
+            return 0;
+        }
+        if (only.count("lut_query")) {
+            // Step 1 / cross-language consistency: argv[8] = input CSV of theta,s,phi_L,phi_R.
+            // Reads the LUT from outdir/manifold_phi and emits outdir/lut_query.csv.
+            if (argc <= 8) {
+                std::cerr << "lut_query: argv[8] must be an input CSV of theta,s,phi_L,phi_R\n";
+                return 2;
+            }
+            run.lut_query(outdir / "manifold_phi", fs::path(argv[8]), outdir / "lut_query.csv");
             return 0;
         }
         if (only.count("check_manifold")) {

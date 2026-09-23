@@ -4,7 +4,7 @@ Doc: docs/superpowers/plans/2026-09-22-aviator-v01-rl-training.md (Task 1.4)
 
 Uses a small synthetic 3-row CSV (no 100 MB manifold).  Verifies:
   - CSV parsing (47 columns, L_phi metadata comment)
-  - phi_dot_scale = max|phi_dot| * 1.1
+  - phi_dot_scale = clip(p95 |phi_dot|, floor=1.5, ceil=2.0)
   - 3 rows -> 3 transition dicts with correct keys / shapes / masks / dones
 """
 
@@ -64,16 +64,32 @@ def test_read_dp_csv(tmp_path):
     assert d["phi_dot_L"][0] == pytest.approx(0.5)
 
 
-def test_compute_phi_dot_scale(tmp_path):
-    p1 = _write_csv(tmp_path / "traj_0000.csv", n=3,
-                    phi_dot_L=[0.0, 0.0, 0.0], phi_dot_R=[0.0, 0.0, 0.0])
-    p2 = _write_csv(tmp_path / "traj_0001.csv", n=3,
-                    phi_dot_L=[0.0, 2.0, 0.0], phi_dot_R=[0.0, -1.5, 0.0])
-    m = compute_phi_dot_scale([p1, p2], headroom=1.1)
-    # max |phi_dot_L| = 2.0, |phi_dot_R| = 1.5 -> scale = 2.0 * 1.1
-    assert m["max_abs_phi_dot"] == [2.0, 1.5]
-    assert m["phi_dot_scale"] == pytest.approx(2.2)
-    assert m["n_trajs"] == 2
+def test_compute_phi_dot_scale_floors_at_1p5(tmp_path):
+    # demo |phi_dot| is hold-dominated: p95 = 0.5.  The scale must NOT collapse
+    # to 0.5 (that would saturate the actor at every 0.5 rad/s move); it is
+    # floored at 1.5 rad/s so a full-range action stays below the ~2.97 rad/s
+    # joint-speed ceiling.
+    p = _write_csv(tmp_path / "traj_0000.csv", n=4,
+                   phi_dot_L=[0.0, 0.5, 0.5, 0.0], phi_dot_R=[0.0, -0.5, -0.5, 0.0])
+    m = compute_phi_dot_scale([p])
+    assert m["p95_abs_phi_dot"] == pytest.approx(0.5)
+    assert m["phi_dot_scale"] == pytest.approx(1.5)
+    assert m["max_abs_phi_dot"] == [0.5, 0.5]
+    assert m["flag_exceeds_nominal"] is False
+
+
+def test_compute_phi_dot_scale_ignores_outlier(tmp_path):
+    # a single 9.5 glitch frame must not inflate the scale (max*headroom gave
+    # 10.45); p95 stays ~0, the scale is the 1.5 floor, and the manifest still
+    # records the outlier so build_transitions can clip it.
+    zeros = [0.0] * 20
+    p = _write_csv(tmp_path / "traj_0000.csv", n=21,
+                   phi_dot_L=zeros + [9.5], phi_dot_R=[0.0] * 21)
+    m = compute_phi_dot_scale([p])
+    assert m["max_abs_phi_dot"][0] == pytest.approx(9.5)
+    assert m["p95_abs_phi_dot"] == pytest.approx(0.0)
+    assert m["phi_dot_scale"] == pytest.approx(1.5)
+    assert m["flag_exceeds_nominal"] is True
 
 
 def test_build_transitions_keys_shapes_masks_dones(tmp_path):
@@ -83,7 +99,9 @@ def test_build_transitions_keys_shapes_masks_dones(tmp_path):
     scale = 1.0   # no normalization for this test
     tr = build_transitions(d, scale)
 
-    assert len(tr) == 3
+    # N rows -> N-1 transitions (the last lands on the final state and is
+    # terminal, carrying its real action -- no synthetic zero-action dummy).
+    assert len(tr) == 2
 
     expected_keys = {"observations", "next_observations", "actions",
                      "rewards", "masks", "dones"}
@@ -95,18 +113,16 @@ def test_build_transitions_keys_shapes_masks_dones(tmp_path):
         assert np.isscalar(t["rewards"]) or t["rewards"].shape == ()
         assert np.isscalar(t["masks"]) or t["masks"].shape == ()
 
-    # all-but-last: masks=1.0, dones=False
-    for t in tr[:2]:
-        assert t["masks"] == 1.0
-        assert t["dones"] is False
-    # last: terminal
+    # non-terminal first transition: mask=1.0, dones=False
+    assert tr[0]["masks"] == 1.0
+    assert tr[0]["dones"] is False
+    # last: terminal (mask=0, done=True) but keeps its real teacher action
     assert tr[-1]["dones"] is True
     assert tr[-1]["masks"] == 0.0
-    np.testing.assert_array_equal(tr[-1]["actions"], np.zeros(2))
 
-    # non-terminal actions carry the forward-difference teacher action
+    # actions carry the forward-difference teacher action (not a zero dummy)
     np.testing.assert_allclose(tr[0]["actions"], [0.5, -0.3])
-    np.testing.assert_allclose(tr[1]["actions"], [0.6, -0.4])
+    np.testing.assert_allclose(tr[-1]["actions"], [0.6, -0.4])
 
 
 def test_action_normalized_by_scale(tmp_path):
@@ -117,6 +133,13 @@ def test_action_normalized_by_scale(tmp_path):
     # action = phi_dot / scale
     np.testing.assert_allclose(tr[0]["actions"], [0.5, 0.0])
     np.testing.assert_allclose(tr[1]["actions"], [1.0, 0.0])
+
+
+def test_out_of_range_teacher_action_is_rejected(tmp_path):
+    p = _write_csv(tmp_path / "traj_0000.csv", n=3,
+                   phi_dot_L=[9.5, 0.0, 0.0], phi_dot_R=[0.0, 0.0, 0.0])
+    with pytest.raises(ValueError, match="not replayable"):
+        build_transitions(read_dp_csv(p), phi_dot_scale=1.5)
 
 
 def test_obs40_layout_matches_env(tmp_path):
@@ -138,10 +161,30 @@ def test_obs40_layout_matches_env(tmp_path):
     np.testing.assert_allclose(s0[16:24], np.tile([0.0, -0.1], 4))
 
 
+def test_prior_clearance_and_reward_use_online_lookup_value(tmp_path):
+    p = _write_csv(tmp_path / "traj_0000.csv", n=3)
+    data = read_dp_csv(p)
+
+    class FixedLookup:
+        def query(self, x, phi, check_safe=False):
+            assert x.shape == phi.shape == (3, 2)
+            return {"d_min": np.array([0.009, 0.008, 0.007])}
+
+    original = build_transitions(data, 1.5)
+    aligned = build_transitions(data, 1.5, lookup=FixedLookup())
+    np.testing.assert_allclose(
+        [aligned[0]["observations"]["state"][0, 12],
+         aligned[0]["next_observations"]["state"][0, 12],
+         aligned[1]["next_observations"]["state"][0, 12]],
+        [0.009, 0.008, 0.007],
+    )
+    assert aligned[0]["rewards"] != original[0]["rewards"]
+
+
 def test_phi_dot_scale_json_roundtrip(tmp_path):
     p = _write_csv(tmp_path / "traj_0000.csv", n=3,
                    phi_dot_L=[0.0, 1.5, 0.0], phi_dot_R=[0.0, 0.0, 0.0])
-    m = compute_phi_dot_scale([p], headroom=1.1)
-    assert m["phi_dot_scale"] == pytest.approx(1.65)
+    m = compute_phi_dot_scale([p])
+    assert m["phi_dot_scale"] == pytest.approx(1.5)
     assert m["flag_exceeds_nominal"] is False
     json.dumps(m)   # serializable
