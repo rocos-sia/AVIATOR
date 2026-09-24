@@ -1,0 +1,9 @@
+{
+  "online_paths": 800,
+  "valid_starts": 800,
+  "invalid_starts": [],
+  "below_clearance": 0,
+  "task_error_exceeds_tolerance": 0,
+  "contacts": 0,
+  "output": "data/aviator/online_start_audit_800/online_starts.csv"
+}
