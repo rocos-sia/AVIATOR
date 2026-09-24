@@ -19,7 +19,7 @@ J2 求解范围由姿态配置及规划余量决定。求解成功后再检查�
 MuJoCo 源码需要支持 C++20 的编译器。Ubuntu 22.04 提供的通用库由 apt 安装；
 Pinocchio、Coal、PIN-IK、MuJoCo 及少量没有系统包的依赖保留源码，编译到
 `build/dependencies/`。xCore SDK 保留厂商头文件和静态库。
-详细包名、来源和限制见 [third_party/README.md](third_party/README.md)。
+详细包名、来源和限制见 [根目录 third_party/README.md](../../third_party/README.md)。
 本次构建与 14 项回归结果见 [系统依赖验证记录](validation/APT_DEPENDENCIES.md)。
 `validation/` 内既有全源码集成记录作为历史记录保留。
 

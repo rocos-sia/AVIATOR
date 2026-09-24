@@ -2,7 +2,7 @@
 
 日期：2026-09-24。环境：Ubuntu 22.04.5 x86_64、GCC 11.4.0、CMake 3.22.1，Release。
 
-本次删除 13 个顶层依赖源码目录和 4 个 MuJoCo 内部依赖目录，改用 apt 开发包；第三方目录从约 1.2 GiB 缩减到 198 MiB。保留源码与 apt 包映射见 `../third_party/manifest.json`。
+本次删除 13 个顶层依赖源码目录和 4 个 MuJoCo 内部依赖目录，改用 apt 开发包；第三方目录从约 1.2 GiB 缩减到 198 MiB。保留源码与 apt 包映射见 [根目录依赖清单](../../../third_party/manifest.json)。
 
 已完成的检查：
 

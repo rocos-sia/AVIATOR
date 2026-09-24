@@ -1,0 +1,169 @@
+{
+  "format": 2,
+  "description": "Vendored source provenance. Archive hashes identify upstream downloads; local adaptations are documented in PATCHES.md. Tree hash = SHA256 of sorted relative POSIX filename + NUL + raw file SHA256, excluding .aviator-source.json.",
+  "packages": {
+    "coal-3.0.4": {
+      "version": "3.0.4",
+      "url": "https://github.com/coal-library/coal/tree/v3.0.4",
+      "note": "Imported existing vendored source including jrl-cmakemodules; no build artifacts.",
+      "source_tree_sha256": "c2e88cadc92d51fa22b9a5cdfe98b19c42dfb6fc457dea5a59266586200fa51f"
+    },
+    "mujoco-3.4.0": {
+      "version": "3.4.0",
+      "url": "https://codeload.github.com/google-deepmind/mujoco/tar.gz/refs/tags/3.4.0",
+      "archive_sha256": "adff5e9397aac20189ee1525aabf1fbecc63c43697e8ad66a61220222983810f",
+      "note": "System dependency integration changes are documented in PATCHES.md."
+    },
+    "lodepng-17d08dd26cac": {
+      "version": "17d08dd26cac4d63f43af217ebd70318bfb8189c",
+      "url": "https://codeload.github.com/lvandeve/lodepng/tar.gz/17d08dd26cac4d63f43af217ebd70318bfb8189c",
+      "archive_sha256": "83d828c5478ffe7bad0e8ed80678ef826206becbd8cf70097b6cc4d29549389b"
+    },
+    "marchingcubecpp-f03a1b3ec29b": {
+      "version": "f03a1b3ec29b1d7d865691ca8aea4f1eb2c2873d",
+      "url": "https://codeload.github.com/aparis69/MarchingCubeCpp/tar.gz/f03a1b3ec29b1d7d865691ca8aea4f1eb2c2873d",
+      "archive_sha256": "227c10b2cffe886454b92a0e9ef9f0c9e8e001d00ea156cc37c8fc43055c9ca6"
+    },
+    "trianglemeshdistance-2cb643de1436": {
+      "version": "2cb643de1436e1ba8e2be49b07ec5491ac604457",
+      "url": "https://codeload.github.com/InteractiveComputerGraphics/TriangleMeshDistance/tar.gz/2cb643de1436e1ba8e2be49b07ec5491ac604457",
+      "archive_sha256": "0221ec6446c1305aa9a9e2ec2e149dbb3993211c77c1f770ad4273ea10035a75"
+    },
+    "pinocchio-3.9.0": {
+      "version": "3.9.0",
+      "url": "https://github.com/stack-of-tasks/pinocchio/tree/v3.9.0",
+      "note": "Imported existing vendored source including jrl-cmakemodules; no build artifacts.",
+      "source_tree_sha256": "52930c27cca4f39f1e2f7272c590b9073b479fc4b1cd228a54adf597de179779"
+    },
+    "xcore-0.7.1": {
+      "version": "0.7.1",
+      "source": "xCoreSDK-CPP-main headers and previously integrated Linux x86_64 SDK static libraries",
+      "kind": "vendor headers and prebuilt static libraries",
+      "files_sha256": {
+        "include/rokae/base.h": "cd007061bf5ec18c0ad57e28e0c3cf31778ff89736bc438ea86b4bad85d19081",
+        "include/rokae/data_types.h": "ec49457af3c965e8a7a0a51c1df8bda1cc67b7baaaf70b74e9d6a190f2a9ca83",
+        "include/rokae/exception.h": "4e4aeddbc3ededefe900b93901e407614aacc4f00d719d040bc64337427099dc",
+        "include/rokae/force_control.h": "d11e856e0379b32d32bd39e9844ac20eda85ddf4169e8e27332e3803f04db7a9",
+        "include/rokae/model.h": "52945b9798c9cf70b11eeaebbb9b62421373276395ce8a0a16473a23d00fb0c8",
+        "include/rokae/motion_control_rt.h": "2b25db635d2b4bb461f89e24893f8eeba2311d1bd942b042c50b79eef61db02a",
+        "include/rokae/planner.h": "aa62a2ebf9bb8c4e1f8975669e7220e8a30a03f88eba11588af094b14dc919ee",
+        "include/rokae/robot.h": "51cec375ebc2611d0e371e1ada09e16185a502625ec98885af96a7b9fe01396b",
+        "include/rokae/upgrade.h": "1f3dd6a79352bdf90b5afedb430d504f63d5bf666d99cb8788b3c686cffd0dd2",
+        "include/rokae/utility.h": "1e1398000c3798fd7283f0995dec4bc55cd493fcd1eaa7e062bbbd2be20ec490",
+        "lib/linux-x86_64/libxCoreSDK.a": "e428a75c364cbdbbf0e25b35a344690b30f98598d0fc83d1763497de2fb01250",
+        "lib/linux-x86_64/libxMateModel.a": "105cb52b311d55b2023739911c55323bd7020fea4dabfcb331e3f5ba5777f400"
+      },
+      "note": "Closed-source SDK binaries embed KDL; retain existing licenses/orocos-kdl notices. The application does not build or link a standalone KDL library."
+    },
+    "pin_ik-2.2.0": {
+      "version": "2.2.0",
+      "source": "workspace pin_ik-main, imported 2026-09-22",
+      "upstream_snapshot_sha256": "d153e35bca4156b63fc99e763c44645ed2e59584cf42a74760102bcfe4901687",
+      "note": "Source snapshot before local adaptations; see README.vendor.md and ../PATCHES.md.",
+      "source_tree_sha256": "d184ac4c54fe9722d5e34686d1a0c856f472c50f87b8a80eb826124e4bf5cd68"
+    }
+  },
+  "system_packages": {
+    "assimp": {
+      "apt_packages": [
+        "libassimp-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "boost": {
+      "apt_packages": [
+        "libboost-filesystem-dev",
+        "libboost-system-dev",
+        "libboost-thread-dev",
+        "libboost-date-time-dev",
+        "libboost-serialization-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "console_bridge": {
+      "apt_packages": [
+        "libconsole-bridge-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "eigen": {
+      "apt_packages": [
+        "libeigen3-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "glfw": {
+      "apt_packages": [
+        "libglfw3-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "nlopt": {
+      "apt_packages": [
+        "libnlopt-dev",
+        "libnlopt-cxx-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "octomap": {
+      "apt_packages": [
+        "liboctomap-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "tinyxml": {
+      "apt_packages": [
+        "libtinyxml-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "tinyxml2": {
+      "apt_packages": [
+        "libtinyxml2-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "urdfdom": {
+      "apt_packages": [
+        "liburdfdom-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "urdfdom_headers": {
+      "apt_packages": [
+        "liburdfdom-headers-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "yaml-cpp": {
+      "apt_packages": [
+        "libyaml-cpp-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "zlib": {
+      "apt_packages": [
+        "zlib1g-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "ccd": {
+      "apt_packages": [
+        "libccd-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "qhull": {
+      "apt_packages": [
+        "libqhull-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    },
+    "tinyobjloader": {
+      "apt_packages": [
+        "libtinyobjloader-dev"
+      ],
+      "distribution": "Ubuntu 22.04 (jammy)"
+    }
+  }
+}

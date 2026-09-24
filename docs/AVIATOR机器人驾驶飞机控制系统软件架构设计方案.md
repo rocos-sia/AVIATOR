@@ -572,8 +572,8 @@ Logger 是正式运行节点；Monitor、Plotter 和 Replay 也统一放入 node
 
 | 依赖库 | 用途 | 使用位置与约束 |
 | --- | --- | --- |
-| Pinocchio | 机器人模型、正运动学、雅可比与动力学计算。 | aviator_core 的运动计算，以及 manipulator 按需使用的模型计算；源码放 third_party/pinocchio。能力依据见 [Pinocchio 官方项目](https://github.com/stack-of-tasks/pinocchio)。 |
-| pin_ik | 逆运动学：将末端位姿目标求解为关节目标。 | aviator_core 的运动规划；源码放 third_party/pin_ik。以当前仓库 pin_ik-main 为迁移来源，其 CMake 声明依赖 Pinocchio、Eigen3、NLopt 和 Threads；求解设置时间/迭代预算，失败时不发布为有效目标。 |
+| Pinocchio | 机器人模型、正运动学、雅可比与动力学计算。 | aviator_core 的运动计算，以及 manipulator 按需使用的模型计算；源码放 third_party/pinocchio-3.9.0。能力依据见 [Pinocchio 官方项目](https://github.com/stack-of-tasks/pinocchio)。 |
+| pin_ik | 逆运动学：将末端位姿目标求解为关节目标。 | aviator_core 的运动规划；源码放 third_party/pin_ik-2.2.0。以当前仓库 pin_ik-main 为迁移来源，其 CMake 声明依赖 Pinocchio、Eigen3、NLopt 和 Threads；求解设置时间/迭代预算，失败时不发布为有效目标。 |
 | Eigen3 | 向量、矩阵、位姿及数值计算基础。 | 运动算法及 Pinocchio、pin_ik 的共用依赖，统一版本。 |
 | NLopt | pin_ik 使用的数值优化求解依赖。 | 按 pin_ik 的构建要求链接，不向所有节点扩散。 |
 | spdlog | 异步输出运行日志，支持控制台与滚动文本文件。 | 各节点的非实时运行诊断，经 common/runtime 统一初始化队列、日志级别与输出位置；见 [spdlog 官方项目](https://github.com/gabime/spdlog)。 |

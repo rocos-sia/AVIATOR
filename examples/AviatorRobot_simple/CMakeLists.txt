@@ -39,10 +39,10 @@ if(AVIATOR_WITH_ROKAE)
         message(FATAL_ERROR "Vendored xCore SDK targets Linux x86_64; disable AVIATOR_WITH_ROKAE on other platforms")
     endif()
     target_include_directories(aviator_rokae_sdk PRIVATE
-        "${AVIATOR_VENDOR}/xcore/include")
+        "${AVIATOR_SOURCE_xcore}/include")
     target_link_libraries(aviator_rokae_sdk PRIVATE Eigen3::Eigen
-        "${AVIATOR_VENDOR}/xcore/lib/linux-x86_64/libxCoreSDK.a"
-        "${AVIATOR_VENDOR}/xcore/lib/linux-x86_64/libxMateModel.a"
+        "${AVIATOR_SOURCE_xcore}/lib/linux-x86_64/libxCoreSDK.a"
+        "${AVIATOR_SOURCE_xcore}/lib/linux-x86_64/libxMateModel.a"
         Threads::Threads ${CMAKE_DL_LIBS})
     target_link_options(aviator_rokae_sdk PRIVATE "-Wl,--exclude-libs,ALL" "-Wl,-Bsymbolic")
     target_sources(aviator_control PRIVATE src/DataLink_rokae.cpp)
@@ -83,9 +83,9 @@ if(BUILD_TESTING)
     target_link_libraries(aviator_pose_test PRIVATE aviator_dependencies)
     add_test(NAME aviator_pose COMMAND aviator_pose_test)
 
-    add_executable(aviator_pin_ik_test third_party/pin_ik/tests/standalone_tests.cpp)
+    add_executable(aviator_pin_ik_test "${AVIATOR_SOURCE_pin_ik}/tests/standalone_tests.cpp")
     target_link_libraries(aviator_pin_ik_test PRIVATE aviator_dependencies)
-    add_test(NAME aviator_pin_ik COMMAND aviator_pin_ik_test "${AVIATOR_VENDOR}/pin_ik/tests/robot.urdf")
+    add_test(NAME aviator_pin_ik COMMAND aviator_pin_ik_test "${AVIATOR_SOURCE_pin_ik}/tests/robot.urdf")
     set_tests_properties(aviator_pin_ik PROPERTIES TIMEOUT 60 ENVIRONMENT "LD_BIND_NOW=1")
 endif()
 if(BUILD_TESTING AND AVIATOR_WITH_SIMULATION)
