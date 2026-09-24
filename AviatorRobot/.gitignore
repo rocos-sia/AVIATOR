@@ -1,4 +1,0 @@
-/build/
-/logs/
-*.csv
-!/validation/cylinder_grasp/trajectory.csv

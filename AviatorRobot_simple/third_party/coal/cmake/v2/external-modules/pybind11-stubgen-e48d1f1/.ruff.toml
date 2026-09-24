@@ -1,3 +1,0 @@
-exclude = [
-    "pybind11_stubgen.py",
-]

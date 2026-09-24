@@ -18,3 +18,8 @@ xCoreSDK-CPP-main/
 AviatorRobot/third_party/build/
 AviatorRobot/third_party/_install/
 AviatorRobot_simple/build
+
+# New architecture: out-of-source builds and runtime recordings.
+/build/
+*.mcap
+*.mcap.*
