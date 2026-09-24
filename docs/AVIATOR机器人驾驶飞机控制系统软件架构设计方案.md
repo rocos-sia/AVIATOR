@@ -4,9 +4,9 @@
 
 ### 架构决策
 
-系统统一采用 C++17 开发，使用 CMake 维护工程、依赖、构建、测试与安装；系统采用多进程与 ZMQ 统一消息总线。独立 aviator_bus 进程通过 XSUB → zmq::proxy() → XPUB 转发全部连续控制和状态消息。各业务进程通过统一 Topic 与 JSON 协议通信，同机优先使用 IPC，远程监控按需通过受限 TCP 出口接入。
+系统统一采用 C++17 开发，使用 CMake 维护工程、依赖、构建、测试与安装；系统采用多进程与 ZMQ 统一消息总线。独立 aviator_bus 进程通过 XSUB → zmq::proxy() → XPUB 转发全部连续控制和状态消息。各业务进程通过统一 Topic 与 JSON 协议通信，统一使用 TCP，默认绑定本机回环地址。
 
-AVIATOR Core 负责输入源仲裁、整机状态机、运动目标生成与 FlightState 聚合；Arm Controller 和 Hand Controller 负责设备接入及本地安全执行。实时伺服闭环与 ZMQ 非实时通信域隔离。Monitor、Logger、Plotter 和 Replay 均采用 C++ 实现。独立数据记录节点 aviator_logger 使用 MCAP 统一记录全部机器人数据，覆盖总线消息、原始设备数据、原始图像、伺服周期数据、事件及配置；Replay 从 MCAP 提供复现能力。
+AVIATOR Core 负责输入源仲裁、整机状态机、运动目标生成与 FlightState 聚合；Manipulator 统一负责双臂双手的设备接入及本地安全执行。实时伺服闭环与 ZMQ 非实时通信域隔离。Monitor、Logger、Plotter 和 Replay 均采用 C++ 实现。独立数据记录节点 aviator_logger 使用 MCAP 统一记录全部机器人数据，覆盖总线消息、原始设备数据、原始图像、伺服周期数据、事件及配置；Replay 从 MCAP 提供复现能力。
 
 ### 适用范围
 
@@ -36,9 +36,9 @@ AVIATOR Core 负责输入源仲裁、整机状态机、运动目标生成与 Fli
 USB摇杆 ─USB─── Joystick Gateway ├─ PUB / SUB ─┐
                                │            │
 AVIATOR Core ───────────────────┤            │
-Arm Controller ────────────────┤            ▼
-Hand Controller ───────────────┤    aviator_bus 独立进程
-Camera Detector ───────────────┘    XSUB → proxy → XPUB
+                                            ▼
+Manipulator  ───────────────────┤    aviator_bus 独立进程
+Camera  ───────────────────────┘    XSUB → proxy → XPUB
                                             │
                         ┌───────────────────┘
                         ▼
@@ -46,7 +46,7 @@ Camera Detector ───────────────┘    XSUB → pro
                         │
               受限 TCP 监控出口（可选）
 
-Arm / Hand 内部：非实时通信 → 有界快照 → 实时伺服 → 设备
+Manipulator 内部：非实时通信 → 有界快照 → 实时伺服 → 设备
 设备/相机/伺服采集 → 独立只读记录通道 → aviator_logger → MCAP
 Replay：读取 MCAP，默认连接隔离回放总线，不接入运行中的执行器
 ```
@@ -70,31 +70,22 @@ Replay：读取 MCAP，默认连接隔离回放总线，不接入运行中的执
 | 进程 | 输入与输出 | 核心职责 |
 | --- | --- | --- |
 | aviator_bus | PUB 接入 → SUB 分发 | 仅转发消息与订阅，不解析业务、不进行控制仲裁。 |
-| flight_gateway | RS422 ↔ flight.* | 帧校验、百分比归一化、链路时效、状态编码回传。 |
-| joystick_gateway | USB → flight.command | 标定、死区、轴映射、使能键与拔出检测；测试配置启用。 |
-| aviator_core | 飞控和设备状态 → 设备命令、flight.state | 唯一业务仲裁者；状态机、规划、联合安全判定和整机状态聚合。 |
-| arm_controller | arm.command ↔ arm.state | 管理双臂，目标校验、实时插值、设备约束与本地安全。 |
-| hand_controller | hand.command ↔ hand.state | 管理双手，抓握控制、驱动映射与本地安全。 |
-| camera_detector | camera.command → camera.detection | 图像采集、方向盘检测、置信度与观测时间输出。 |
+| flight_gateway | RS422（或USB） ↔ flight.* | 帧校验、百分比归一化、链路时效、状态编码回传。可以用USB的joystick遥感模拟飞控系统，便于测试与调试。 |
+| aviator_core | 飞控和设备状态flight.command ↔ 设备命令、flight.state | 唯一业务仲裁者；状态机、规划、联合安全判定和整机状态聚合。 |
+| manipulator | arm.command ↔ arm.state；hand.command ↔ hand.state| 管理双臂与双手，目标校验、实时插值、设备约束与本地安全。 |
+| camera | camera.command → camera.detection | 图像采集、方向盘检测、置信度与观测时间输出。 |
 | aviator_monitor | 订阅所需 Topic | 整机仪表、频率、数据年龄、告警和连接状态。 |
 | aviator_logger | 全量总线 Topic + 原始设备/媒体/伺服记录通道 → MCAP | 独立 C++ 数据记录节点；全量采集、异步写盘、分卷、索引、完整性统计与会话管理。 |
 | aviator_plotter | 订阅或读取日志 | 趋势曲线、目标与反馈对齐、导出分析。 |
 | aviator_replay | 日志 → 隔离总线 | 原速、倍速、单步和算法输入回放。 |
 
-### 唯一控制源规则
-
-flight.command 允许 Flight Gateway 与 Joystick Gateway 使用相同协议，但任意时刻只允许一个获授权输入源影响控制。部署层默认互斥启动；Core 仍须校验 source、publisher_id、session_id 和控制授权，不能以“最后到达者优先”进行源选择。消息中的 source 字段只是身份声明，不构成认证。
-
-控制源取值为 FLIGHT_CONTROLLER、JOYSTICK、TEST、REPLAY、NONE。切换必须先退出 CONTROL、撤销旧授权、清空缓存、检查新源连续有效数据并重新使能；不得在真实飞控掉线后自动切到摇杆。初期可仅支持停止状态下修改配置并重启，后续通过可靠服务完成切换。
-
-双臂、双手各采用一个逻辑生产者，保证 arm.*、hand.* 内含 left 与 right 的一致结构。如未来拆成多个硬件进程，应由明确的聚合者发布统一 Topic，禁止多个设备向同一 Topic 发布无法区分的局部结构。
 
 ## 03 消息总线设计
 
 | 项 | 设计规定 |
 | --- | --- |
-| 发布入口 | ipc:///run/aviator/pub.ipc；Bus 的 XSUB bind，各业务 PUB connect。 |
-| 订阅出口 | ipc:///run/aviator/sub.ipc；Bus 的 XPUB bind，各业务 SUB connect。 |
+| 发布入口 | tcp://127.0.0.1:5555；Bus 的 XSUB bind，各业务 PUB connect。 |
+| 订阅出口 | tcp://127.0.0.1:5556；Bus 的 XPUB bind，各业务 SUB connect。 |
 | 总线实现 | 一对 XSUB/XPUB 与阻塞 proxy 转发循环；context 初始配置 1 个 I/O 线程。[1] |
 | 订阅规则 | Frame0 使用 ASCII Topic；ZMQ 为前缀匹配，业务接收后必须再做精确匹配。[2] |
 | 消息格式 | 恰好两帧：Frame0=Topic，Frame1=UTF-8 紧凑 JSON；整条接收后才解析。 |
@@ -110,11 +101,11 @@ flight.command 允许 Flight Gateway 与 Joystick Gateway 使用相同协议，�
 
 ### 启动与重连
 
-PUB/SUB 不提供持久历史或执行确认，新订阅者可能错过启动阶段消息。[[2]](#ref-2) 周期发布、就绪状态与连续有效数据检查共同完成启动同步，不依赖固定 sleep。Bus 重启后允许 ZMQ 重新连接，但 Core 和执行器维持安全锁存，等待重新授权。
+PUB/SUB 不提供持久历史或执行确认，新订阅者可能错过启动阶段消息。[[2]](#ref-2) 周期发布、就绪状态与连续有效数据检查共同完成启动同步，不依赖固定 sleep。Bus 重启后允许 ZMQ 重新连接。
 
 ### 远程监控出口
 
-建议增加可选 telemetry_bridge：本地 SUB 订阅白名单，按需降采样后通过 TCP PUB 提供只读观测。它仍是统一总线的工具订阅者，不形成第二条控制总线。远程端不得接入 XSUB 控制入口；出口使用绑定地址限制、防火墙与 CURVE/ZAP 或已受控隧道，限制客户端数量和带宽。
+[可选] 建议增加可选 telemetry_bridge：本地 SUB 订阅白名单，按需降采样后通过 TCP PUB 提供只读观测。它仍是统一总线的工具订阅者，不形成第二条控制总线。远程端不得接入 XSUB 控制入口；出口使用绑定地址限制、防火墙与 CURVE/ZAP 或已受控隧道，限制客户端数量和带宽。
 
 ## 04 Topic 定义与时效预算
 
@@ -160,7 +151,6 @@ arm.state、hand.state 包含设备状态与测量快照；camera.detection 包�
 | publisher_id / session_id | string | 稳定进程标识与每次启动新建的 UUID；区分重启与乱序。 |
 | valid | boolean | 业务数据是否有效；无效数据可用于显示但不可用于控制。 |
 | source | string | FlightCommand 必填，标识控制源。 |
-| control_epoch | string | 运动命令必填，匹配本次明确使能授权；旧授权禁止执行。 |
 
 为兼容通用 JSON 工具，整数约束为 0 至 2^53−1；超过范围前创建新会话，禁止静默溢出。timestamp 名称保留此前接口约定，单位固定为 μs。UTC 时钟校正不影响 watchdog；同机用 sample_mono_us 检查数据年龄，再用本地接收单调时间检查消息是否持续到达。
 
@@ -186,7 +176,7 @@ minor 版本只能增加可选字段；删除字段、变更类型、单位或�
   "sequence": 182736, "timestamp": 1790121600000000,
   "sample_mono_us": 12345678000, "clock_id": "hostA-boot1",
   "publisher_id": "joystick_gateway", "session_id": "joy-session-1",
-  "source": "JOYSTICK", "control_epoch": "enable-42",
+  "source": "JOYSTICK",
   "valid": true, "control": {"roll": 0.35, "pitch": -0.12}
 }
 ```
@@ -195,7 +185,7 @@ arm.command 的完整头部遵循第05章；下例展示业务扩展字段，合
 
 ```json
 {
-  "control_epoch": "enable-42", "mode": "JOINT_POSITION",
+  "mode": "JOINT_POSITION",
   "origin": {"publisher_id": "joystick_gateway",
     "session_id": "joy-session-1", "sequence": 182736,
     "sample_mono_us": 12345678000, "clock_id": "hostA-boot1"},
@@ -356,7 +346,7 @@ aviator_logger 是独立部署的基础节点，统一使用 MCAP 作为机器�
 | 服务与事件 | 可靠服务完整请求、响应、执行结果、授权变化、状态转换、故障与恢复 | 服务两端通过记录适配器采集；system.event 摘要不能替代完整服务记录。 |
 | 运行上下文 | 构建哈希、依赖清单、协议 Schema、设备清单、配置、标定、坐标变换及其版本、时钟同步状态 | 会话开始保存快照，运行中变更保存新版本及生效时间；剔除密码、密钥等凭据。 |
 
-原始媒体和高频伺服数据不经过控制 XSUB/XPUB，不受业务 JSON 的 64 KiB 上限约束，也不以 Base64 图像挤占控制总线。使用独立 IPC 记录入口（如 ipc:///run/aviator/record.ipc），由非实时适配器经有界队列发送版本化二进制记录信封；信封至少包含数据源、类型/版本、源会话、样本序号、采样时钟及负载长度。原始图像字节随信封进入 MCAP；共享内存仅作为传输优化时必须明确缓冲区所有权和释放确认，文件不能仅保存运行期共享内存句柄。该通道只承载记录副本，不接受执行器控制指令。
+原始媒体和高频伺服数据不经过控制 XSUB/XPUB，不受业务 JSON 的 64 KiB 上限约束，也不以 Base64 图像挤占控制总线。使用独立 ZMQ TCP 记录入口（默认 tcp://127.0.0.1:5557，由 aviator_logger bind，非实时采集适配器 connect），由非实时适配器经有界队列发送版本化二进制记录信封；信封至少包含数据源、类型/版本、源会话、样本序号、采样时钟及负载长度。原始图像字节随信封进入 MCAP；共享内存仅作为传输优化时必须明确缓冲区所有权和释放确认，文件不能仅保存运行期共享内存句柄。该通道只承载记录副本，不接受执行器控制指令。
 
 #### MCAP 数据映射
 
@@ -391,13 +381,13 @@ json、protobuf 与 jsonschema 的编码名称遵循 MCAP 官方注册表。[[8]
 | 模式 | 处理方式 | 边界 |
 | --- | --- | --- |
 | 查看回放 | 只读取日志，以原时间轴展示 | 不发布控制消息。 |
-| 算法回归 | 仅重放选定输入 Topic，Core 输出另行记录比较 | 独立 IPC 命名空间、模拟执行器；不同时回放历史 Core 输出。 |
+| 算法回归 | 仅重放选定输入 Topic，Core 输出另行记录比较 | 独立 TCP 端口、模拟执行器；不同时回放历史 Core 输出。 |
 | 消息复现 | 复现接收顺序、缺口、延迟、倍速或单步 | 源时间保持为元数据，使用可注入虚拟时钟或重映射时间。 |
 | 硬件在环 | 明确选择测试配置与允许的设备 | 显式测试授权、限幅和现场使能；禁止自动切入。 |
 
 Replay 与 Plotter 通过共用 MCAP Reader 按 Topic、时间和源会话读取；原始图像依帧号与检测结果关联，源采样时间用于分析，全局接收顺序用于消息复现。Schema 不兼容或会话存在缺口时显式提示，不能静默补齐数据。
 
-回放端点使用 ipc:///run/aviator-replay/...，默认拒绝生产端点。需要重发时分配新的 session_id 和 sequence，保留 original_header；不得沿用历史 control_epoch。倍速和单步回放必须统一算法时钟，不能一边暂停回放一边误用真实时钟触发全部超时。
+回放总线使用独立 TCP 端点：发布入口 tcp://127.0.0.1:6555，订阅出口 tcp://127.0.0.1:6556；默认拒绝生产端点。需要重发时分配新的 session_id 和 sequence，保留 original_header；不得沿用历史 control_epoch。倍速和单步回放必须统一算法时钟，不能一边暂停回放一边误用真实时钟触发全部超时。
 
 ## 11 资源开销与性能评估
 
@@ -475,9 +465,9 @@ CPU 占用不能仅凭频率给出百分比。应分别测量 encode/decode、�
 
 ### 路径与权限
 
-程序安装到 /opt/aviator/bin，配置位于 /etc/aviator，IPC 位于 /run/aviator，日志位于 /var/log/aviator。使用专用非 root 服务账户和设备访问组；为串口、USB、EtherCAT 设备分配最小权限。IPC 路径必须由受控目录管理，限制非授权发布者写入。[[4]](#ref-4)
+程序安装到 /opt/aviator/bin，配置位于 /etc/aviator，日志位于 /var/log/aviator。使用专用非 root 服务账户和设备访问组；为串口、USB、EtherCAT 设备分配最小权限。控制总线默认仅绑定 127.0.0.1，发布入口与订阅出口地址、端口由配置统一维护；端口占用时启动失败并报告错误。跨主机部署时显式配置 Bus 的受控网卡地址及客户端连接地址，沿用第03章的访问控制要求。独立记录通道同样采用 ZMQ TCP，默认使用 tcp://127.0.0.1:5557，与控制总线端口分离；地址与端口统一纳入配置。TCP 访问不依赖文件系统路径权限，跨主机接入按第03章配置网络访问限制与认证。
 
-Bus 持有单实例文件锁，并在确认旧实例不存在后处理残留端点；不能只假设 IPC bind 一定会拒绝重复实例。[[4]](#ref-4) 多个业务服务不要各自删除公共运行目录。生产与回放目录、服务目标和配置物理分离。
+Bus 持有单实例文件锁，两个 TCP 端点均 bind 成功后才报告就绪；任一端点绑定失败则释放已占用资源并退出。多个业务服务不要各自删除公共运行目录。生产与回放端口、目录、服务目标和配置分别隔离。
 
 ### 关闭与升级
 
@@ -529,51 +519,82 @@ Core、Gateway、Controller 服务建议使用 Wants=aviator-bus.service 与 Aft
 
 实时控制器单独配置允许的 memlock、实时优先级上限和设备权限，并由程序仅提升伺服线程。CPU 与 I/O 隔离经测量后配置；严苛 CPUQuota 可能引入调度停顿。部署前执行服务配置校验和总线故障恢复演练。
 
-## 15 建议工程目录与模块接口
+## 15 精简工程目录与模块接口
 
-```
+按“公共代码 + 运行节点 + 配置 + 测试”组织，目录与第02章进程一一对应。只提取多个节点确实共用的代码，节点私有的算法、驱动与安全逻辑留在节点目录，不预建多层框架。以下是目标工程结构，不表示当前仓库已完成迁移。
+
+```text
 aviator/
-  CMakeLists.txt
-  CMakePresets.json       # shared configure/build/test presets
-  cmake/                 # dependency adapters and toolchains
-  apps/
-    aviator_bus/          # XSUB XPUB proxy
-    flight_gateway/      # RS422 adapter
-    joystick_gateway/    # USB input adapter
-    aviator_core/        # orchestration and control
-    arm_controller/      # dual arm process
-    hand_controller/     # dual hand process
-    camera_detector/     # vision process
-    aviator_logger/      # C++ MCAP recording node
-  libs/
-    protocol/            # typed DTOs and JSON codecs
-    transport/           # PUB SUB and service wrappers
-    runtime/             # clock, mailbox, scheduling
-    control/             # mapping, planning, state machine
-    safety/              # validation, authorization, watchdog
-    drivers/             # hardware-specific adapters
-    recording/           # MCAP reader/writer, capture adapters, manifest
-  tools/
-    monitor/
-    plotter/
-    replay/
-  schemas/               # one JSON schema per msg_type/version
-  config/
-    flight/  joystick/  simulation/  replay/
-    robots/              # joints, limits, transforms
-  deploy/
-    systemd/  udev/  packaging/
-  tests/
-    protocol/  integration/  fault_injection/  timing/  recording/
-  docs/
-    architecture/  icd/  safety/  operations/
+├── CMakeLists.txt                 # 统一管理公共库、节点、测试与安装
+├── CMakePresets.json              # 构建与测试配置
+├── README.md
+├── cmake/                        # 依赖版本与构建配置
+├── third_party/                  # 需要随工程保存的第三方源码
+│   ├── README.md                 # 来源、版本/提交、许可证与本地补丁说明
+│   ├── pinocchio/                # 运动学与动力学
+│   └── pin_ik/                   # 逆运动学；其他源码依赖按需加入
+├── common/                       # 共用代码；头文件与源文件就近存放
+│   ├── CMakeLists.txt
+│   ├── protocol.hpp / .cpp        # 强类型消息、Topic、JSON 编解码与校验
+│   ├── transport.hpp / .cpp       # ZMQ context、收发与 TCP 端点
+│   ├── runtime.hpp / .cpp         # 时钟、有界队列、快照与 watchdog
+│   └── recording.hpp / .cpp       # 非实时采集适配、MCAP 读写与会话管理
+├── nodes/                        # 每个子目录对应一个可执行程序
+│   ├── aviator_bus/               # XSUB → proxy → XPUB，仅转发
+│   ├── flight_gateway/            # RS422 或 USB 摇杆，通过配置选择
+│   ├── aviator_core/              # 仲裁、状态机、规划与状态聚合
+│   ├── manipulator/               # 双臂双手共用 API，各自频率调度
+│   ├── camera/                    # 图像采集与检测
+│   ├── aviator_logger/            # 全量数据接入、MCAP 写盘与分卷
+│   ├── aviator_monitor/           # 状态监测
+│   ├── aviator_plotter/           # 实时与离线曲线
+│   └── aviator_replay/            # MCAP 读取与隔离回放
+├── config/
+│   ├── system.yaml               # 运行模式、输入源、端点、频率与超时
+│   ├── robot.yaml                # 臂手设备、关节、限位与标定
+│   ├── camera.yaml               # 相机与检测参数
+│   └── recording.yaml            # 全量数据清单、队列、MCAP 与磁盘配置
+├── schemas/                      # 消息 Schema 与记录信封定义
+├── tests/                        # 协议、集成、记录回放与故障测试
+├── deploy/                       # systemd 服务与必要的设备权限规则
+└── docs/                         # 架构、接口与使用说明
 ```
+
+图中 `protocol.hpp / .cpp` 等表示同名头文件与源文件。每个节点初期只需 `CMakeLists.txt`、`main.cpp` 及少量职责明确的 `.hpp/.cpp`；代码规模增长后再拆子目录。构建产物位于 `build/`，MCAP 数据写入配置指定的运行目录，均不纳入源码管理。
+
+flight_gateway 内保留 RS422 与 USB 两种输入适配，配置选择其中一种，不再单设 joystick_gateway。manipulator 内保留 arm 与 hand 各自的目标缓存、更新周期和状态发布，共用设备 API 与生命周期管理；继续使用 arm.*、hand.* Topic，不再单设 arm_controller 与 hand_controller。camera 统一使用第02章名称。
+
+Logger 是正式运行节点；Monitor、Plotter 和 Replay 也统一放入 nodes，避免 apps、nodes、tools 三套目录。暂不增加独立的 topic_echo、topic_hz、command_sender、启动脚本或多层公共库目录；确有需求时再新增。部署服务名称与节点名称对应，统一由 systemd 管理启停。
+
+### 第三方依赖与用途
+
+依赖按实际使用的模块链接，不要求每个节点加载全部库。下表为目标架构选型，现有工程中的其他实现按迁移计划替换，不表示当前代码已完成切换。
+
+| 依赖库 | 用途 | 使用位置与约束 |
+| --- | --- | --- |
+| Pinocchio | 机器人模型、正运动学、雅可比与动力学计算。 | aviator_core 的运动计算，以及 manipulator 按需使用的模型计算；源码放 third_party/pinocchio。能力依据见 [Pinocchio 官方项目](https://github.com/stack-of-tasks/pinocchio)。 |
+| pin_ik | 逆运动学：将末端位姿目标求解为关节目标。 | aviator_core 的运动规划；源码放 third_party/pin_ik。以当前仓库 pin_ik-main 为迁移来源，其 CMake 声明依赖 Pinocchio、Eigen3、NLopt 和 Threads；求解设置时间/迭代预算，失败时不发布为有效目标。 |
+| Eigen3 | 向量、矩阵、位姿及数值计算基础。 | 运动算法及 Pinocchio、pin_ik 的共用依赖，统一版本。 |
+| NLopt | pin_ik 使用的数值优化求解依赖。 | 按 pin_ik 的构建要求链接，不向所有节点扩散。 |
+| spdlog | 异步输出运行日志，支持控制台与滚动文本文件。 | 各节点的非实时运行诊断，经 common/runtime 统一初始化队列、日志级别与输出位置；见 [spdlog 官方项目](https://github.com/gabime/spdlog)。 |
+| yaml-cpp | 读取 YAML 配置并转换为强类型配置对象。 | 启动时读取 config/*.yaml，检查必填项、类型和范围；不在伺服周期解析配置。见 [yaml-cpp 官方项目](https://github.com/jbeder/yaml-cpp)。 |
+| nlohmann/json | 总线 JSON 消息的解析与序列化。 | common/protocol 使用；JSON 编解码与业务字段/Schema 校验分别实现，不将解析成功等同于协议有效。见 [JSON for Modern C++ 官方项目](https://github.com/nlohmann/json)。 |
+| libzmq + cppzmq | ZMQ 通信实现与 C++ 接口。 | aviator_bus 及 common/transport，实现前述 TCP 消息总线与独立记录通道。 |
+| MCAP C++ | 机器人全量数据文件的写入、读取与索引。 | common/recording，供 aviator_logger、aviator_replay 与 aviator_plotter 使用，见第10章。 |
+| Protobuf、Zstd / LZ4 | 二进制记录信封编码与 MCAP Chunk 压缩。 | common/recording；压缩库仅链接实际启用项，控制总线仍使用 JSON。 |
+| 设备与相机 SDK | 设备接入、命令执行及原始数据采集。 | 分别封装在 manipulator、camera、flight_gateway 内，按部署硬件启用。 |
+
+spdlog 负责面向开发与运维的文本日志，MCAP 负责带时间戳的全量机器人数据，两者独立配置。异步日志仍有入队、格式化与内存开销，不能视为硬实时安全接口：伺服线程只写预分配诊断队列，由非实时线程调用 spdlog。日志队列设置容量和溢出策略，实时相关路径不得等待文本日志落盘；必要事件同时进入 MCAP 记录链路，不能以文本打印替代数据记录。
+
+third_party 只存放确需保留的源码，例如需要本地修改、固定提交或离线构建的 Pinocchio、pin_ik；其余依赖优先使用锁定版本的安装包，经 find_package 接入，需要源码时再增加同名子目录。保留上游目录及许可证，来源、提交号、校验值、构建选项和补丁记录在 third_party/README.md，避免在多个节点下复制同一库。Pinocchio 的模型解析与碰撞等可选依赖按启用功能补齐，不强制引入全部组件。
+
+源码依赖由 cmake/ 统一接入：支持作为子工程的库使用 add_subdirectory；需要独立配置的库先构建并安装到 build/third_party/install，再通过指定前缀 find_package。依赖构建产物不写回 third_party 源码目录；同一依赖只选择一种来源，Pinocchio 与 pin_ik 使用同一套 Eigen、编译器及 ABI 配置。默认关闭不需要的第三方示例、测试与语言绑定。源码目录纳入版本管理或固定提交的子模块，构建与安装目录不入库。
 
 ### C++ 与 CMake 工程维护规定
 
-统一采用 C++17、RAII 和强类型接口；实时路径避免异常传播及不可预测分配，错误显式返回。业务算法不依赖 MCAP、ZMQ 或 UI 类型。依赖分层为 protocol/runtime/control/safety/drivers、transport 和 recording；recording 提供采集接口及 MCAP 存储适配，RT 仅依赖预分配采样接口，不调用 Writer。
+统一采用 C++17、RAII 和强类型接口；实时路径避免异常传播及不可预测分配，错误显式返回。业务算法不依赖 MCAP、ZMQ 或 UI 类型。共用协议、通信、运行基础与记录功能分别放在 common 的对应文件中；控制算法和设备适配留在所属节点。RT 仅依赖强类型数据与预分配采样接口，不调用 MCAP Writer。
 
-每个库和进程建立独立 CMake target，使用 target_link_libraries、target_include_directories 和 target_compile_features 表达依赖、头文件路径与 cxx_std_17，不使用全局目录堆叠。MCAP 官方 C++ 实现由项目适配 target 封装并链接 Zstd/LZ4 等实际启用依赖；具体 target 名称与集成方式以锁定源码版本为准。ZMQ/cppzmq、JSON、MCAP、Protobuf、压缩库和硬件 SDK 统一锁定版本与校验值，禁止构建时追踪浮动分支；支持受控依赖缓存与离线构建。
+common 中 protocol、transport、runtime、recording 按依赖建立小型库 target，由同一个 CMakeLists.txt 维护；每个节点建立独立可执行 target，使用 target_link_libraries、target_include_directories 和 target_compile_features 表达依赖、头文件路径与 cxx_std_17，不使用全局目录堆叠。MCAP 官方 C++ 实现由项目适配 target 封装并链接 Zstd/LZ4 等实际启用依赖；具体 target 名称与集成方式以锁定源码版本为准。Pinocchio、pin_ik、Eigen3、NLopt、spdlog、yaml-cpp、nlohmann/json、libzmq/cppzmq、MCAP、Protobuf、压缩库和硬件 SDK 统一锁定版本与校验值，禁止构建时追踪浮动分支；支持受控依赖缓存与离线构建。
 
 工程维护 CMakePresets.json，包含开发 Debug、发布 Release、仿真与回放配置及对应 build/test presets；本地路径放不入库的 CMakeUserPresets.json。Preset 用于共享可复现配置。[[9]](#ref-9) CMake 最低版本建议 3.24，采用其支持的 Preset 格式，最终编译器与工具版本在发布清单冻结。所有配置使用源码外构建目录；交叉编译使用 cmake/toolchains 下的 toolchain 文件。
 
@@ -590,7 +611,7 @@ CMake 统一维护安装规则、配置/Schema/服务文件和 CPack 发布包�
 
 ### 依赖方向
 
-apps 负责组装；control 只依赖强类型协议对象、时钟接口与安全接口，不依赖 JSON、ZMQ 或设备 SDK。drivers 不反向调用业务状态机。transport 负责完整消息接收与有界发送接口，protocol 负责序列化、Schema 与单位约定。
+nodes 中各节点负责组装，按需依赖 common 的库，不互相链接节点实现。aviator_core 内的控制算法只依赖强类型协议对象、时钟与安全接口，不依赖 JSON、ZMQ 或设备 SDK；节点内的设备适配代码不反向调用 Core 状态机。transport 负责完整消息收发，protocol 负责协议与编解码，recording 负责 MCAP 存储。manipulator 的实时执行路径只使用强类型数据和 runtime 的有界结构，通信、编解码与记录在非实时路径执行。
 
 ### 公共接口约定
 
@@ -638,7 +659,6 @@ RS422 波特率与线协议；双臂和双手自由度及反馈能力；坐标�
 | C++ 与 CMake | 交付节点统一 C++17；target 化依赖、版本锁定、Preset、测试与安装统一维护。 |
 | MCAP 全量记录 | 全部启用数据源按源频率记录，逐源对账；异常缺口显式标记，原始大数据不占控制总线。 |
 | 统一总线 | 连续业务消息全部经过 aviator_bus；不在模块间添加隐式控制旁路。 |
-| 控制权唯一 | 部署互斥与 Core 仲裁双重约束；切换需要退出控制并重新授权。 |
 | 最新且有效 | latest-value 按 Topic 管理；新到达不等于新采样，年龄和源会话必须检查。 |
 | 可靠性分层 | 周期目标可以覆盖；离散动作有确认、去重、期限和执行结果。 |
 | 实时隔离 | ZMQ 与 JSON 不进入伺服闭环；设备层安全不依赖总线存活。 |

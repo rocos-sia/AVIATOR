@@ -1,0 +1,4 @@
+add_executable(pin_ik_smoke EXCLUDE_FROM_ALL simple_test.cpp)
+target_link_libraries(pin_ik_smoke PRIVATE pin_ik)
+add_executable(pin_ik_model_debug EXCLUDE_FROM_ALL test_debug.cpp)
+target_link_libraries(pin_ik_model_debug PRIVATE pin_ik)
