@@ -9,19 +9,19 @@
     <collision name="aircraft_collision_0">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/aircraft_collision_0_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/aircraft_collision_0_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="aircraft_collision_1">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/aircraft_collision_1_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/aircraft_collision_1_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="aircraft_collision_2">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/aircraft_collision_2_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/aircraft_collision_2_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -46,271 +46,271 @@
     <collision name="steering_wheel_collision_0">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_0_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_0_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_1">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_1_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_1_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_2">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_2_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_2_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_3">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_3_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_3_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_4">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_4_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_4_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_5">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_5_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_5_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_6">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_6_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_6_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_7">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_7_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_7_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_8">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_8_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_8_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_9">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_9_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_9_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_10">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_10_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_10_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_11">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_11_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_11_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_12">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_12_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_12_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_13">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_13_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_13_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_14">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_14_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_14_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_15">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_15_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_15_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_16">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_16_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_16_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_17">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_17_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_17_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_18">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_18_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_18_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_19">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_19_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_19_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_20">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_20_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_20_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_21">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_21_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_21_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_22">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_22_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_22_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_23">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_23_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_23_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_24">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_24_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_24_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_25">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_25_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_25_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_26">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_26_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_26_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_27">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_27_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_27_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_28">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_28_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_28_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_29">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_29_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_29_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_30">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_30_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_30_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_31">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_31_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_31_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_32">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_32_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_32_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_33">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_33_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_33_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_34">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_34_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_34_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_35">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_35_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_35_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_36">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_36_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_36_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_37">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_37_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_37_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_38">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_38_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_38_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_39">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_39_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_39_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_40">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_40_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_40_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_41">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_41_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_41_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_42">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_42_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_42_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_43">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_43_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_43_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision name="steering_wheel_collision_44">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/steering_wheel_collision_44_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/steering_wheel_collision_44_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -365,7 +365,7 @@
     <collision name="AR5-5_07L-W4C4A2_base">
       <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07L-W4C4A2_base_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07L-W4C4A2_base_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -381,7 +381,7 @@
     <collision name="AR5-5_07L-W4C4A2_link1">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07L-W4C4A2_link1_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07L-W4C4A2_link1_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -397,7 +397,7 @@
     <collision name="AR5-5_07L-W4C4A2_link2">
       <origin xyz="0 0 0.0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07L-W4C4A2_link2_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07L-W4C4A2_link2_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -413,7 +413,7 @@
     <collision name="AR5-5_07L-W4C4A2_link3">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07L-W4C4A2_link3_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07L-W4C4A2_link3_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -429,7 +429,7 @@
     <collision name="AR5-5_07L-W4C4A2_link4">
       <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07L-W4C4A2_link4_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07L-W4C4A2_link4_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -445,7 +445,7 @@
     <collision name="AR5-5_07L-W4C4A2_link5">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07L-W4C4A2_link5_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07L-W4C4A2_link5_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -461,7 +461,7 @@
     <collision name="AR5-5_07L-W4C4A2_link6">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07L-W4C4A2_link6_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07L-W4C4A2_link6_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -477,7 +477,7 @@
     <collision name="AR5-5_07L-W4C4A2_link7">
       <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07L-W4C4A2_link7_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07L-W4C4A2_link7_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -510,7 +510,7 @@
     <collision name="AR5-5_07R-W4C4A2_base">
       <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07R-W4C4A2_base_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07R-W4C4A2_base_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -526,7 +526,7 @@
     <collision name="AR5-5_07R-W4C4A2_link1">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07R-W4C4A2_link1_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07R-W4C4A2_link1_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -542,7 +542,7 @@
     <collision name="AR5-5_07R-W4C4A2_link2">
       <origin xyz="0 0 0.0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07R-W4C4A2_link2_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07R-W4C4A2_link2_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -558,7 +558,7 @@
     <collision name="AR5-5_07R-W4C4A2_link3">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07R-W4C4A2_link3_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07R-W4C4A2_link3_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -574,7 +574,7 @@
     <collision name="AR5-5_07R-W4C4A2_link4">
       <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07R-W4C4A2_link4_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07R-W4C4A2_link4_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -590,7 +590,7 @@
     <collision name="AR5-5_07R-W4C4A2_link5">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07R-W4C4A2_link5_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07R-W4C4A2_link5_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -606,7 +606,7 @@
     <collision name="AR5-5_07R-W4C4A2_link6">
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07R-W4C4A2_link6_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07R-W4C4A2_link6_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
@@ -622,7 +622,7 @@
     <collision name="AR5-5_07R-W4C4A2_link7">
       <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://aviator_meshes/AR5-5_07R-W4C4A2_link7_ch.stl" scale="1 1 1" />
+        <mesh filename="meshes/AR5-5_07R-W4C4A2_link7_ch.stl" scale="1 1 1" />
       </geometry>
     </collision>
     <collision_checking>
