@@ -1,2 +1,0 @@
-# Upstream Makefiles are source, not local build output.
-!**/Makefile

@@ -33,17 +33,24 @@ if(AVIATOR_WITH_SIMULATION)
     target_compile_definitions(aviator_control PRIVATE AVIATOR_HAVE_MUJOCO=1)
 endif()
 if(AVIATOR_WITH_ROKAE)
-    # Keep SDK's embedded KDL private in a separate DSO; the bridge contains no KDL types.
-    add_library(aviator_rokae_sdk SHARED src/rokae_sdk.cpp)
+    # Add xCoreSDK as subdirectory using standard CMake approach
     if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
         message(FATAL_ERROR "Vendored xCore SDK targets Linux x86_64; disable AVIATOR_WITH_ROKAE on other platforms")
     endif()
+
+    # Configure xCoreSDK to use static libraries
+    set(XCORE_LINK_SHARED_LIBS OFF CACHE BOOL "Use static xCoreSDK libraries" FORCE)
+    add_subdirectory("${AVIATOR_SOURCE_xCoreSDK}" "${CMAKE_BINARY_DIR}/third_party/xCoreSDK")
+
+    # Keep SDK's embedded KDL private in a separate DSO; the bridge contains no KDL types.
+    add_library(aviator_rokae_sdk SHARED src/rokae_sdk.cpp)
     target_include_directories(aviator_rokae_sdk PRIVATE
-        "${AVIATOR_SOURCE_xcore}/include")
-    target_link_libraries(aviator_rokae_sdk PRIVATE Eigen3::Eigen
-        "${AVIATOR_SOURCE_xcore}/lib/linux-x86_64/libxCoreSDK.a"
-        "${AVIATOR_SOURCE_xcore}/lib/linux-x86_64/libxMateModel.a"
-        Threads::Threads ${CMAKE_DL_LIBS})
+        "${AVIATOR_SOURCE_xCoreSDK}/include")
+    target_link_libraries(aviator_rokae_sdk PRIVATE
+        Eigen3::Eigen
+        Rokae::Rokae
+        Threads::Threads
+        ${CMAKE_DL_LIBS})
     target_link_options(aviator_rokae_sdk PRIVATE "-Wl,--exclude-libs,ALL" "-Wl,-Bsymbolic")
     target_sources(aviator_control PRIVATE src/DataLink_rokae.cpp)
     target_link_libraries(aviator_control PRIVATE aviator_rokae_sdk)
