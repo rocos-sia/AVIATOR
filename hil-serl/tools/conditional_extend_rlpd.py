@@ -1,4 +1,4 @@
-"""Wait for the 400-rollout run, evaluate it, and conditionally train 200 more.
+"""Wait for the 400-rollout run, evaluate it, and train 200 more.
 
 Run from ``hil-serl``. The continuation restores the complete SAC checkpoint
 but starts a fresh online replay buffer; the first run does not persist replay.
@@ -93,14 +93,6 @@ def evaluate(step: int) -> dict:
             "mean_return": float(match.group(9)), "raw": result.stdout}
 
 
-def improvement_is_clear(baseline: dict, final: dict) -> bool:
-    # Five extra completed episodes out of the same 50 held-out tasks, with
-    # no material decrease in mean return. This gate is fixed before seeing
-    # the final result.
-    return (final["completion_rate"] - baseline["completion_rate"] >= 0.099
-            and final["mean_return"] >= 0.95 * baseline["mean_return"])
-
-
 def trajectory_fingerprint(path: Path) -> str:
     """Hash trajectory samples, independent of NPZ container metadata."""
     digest = hashlib.sha256()
@@ -177,7 +169,7 @@ def main() -> None:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if STATUS.exists():
             previous = json.loads(STATUS.read_text())
-            if previous.get("stage") in {"extension_running", "extension_complete", "no_extension"}:
+            if previous.get("stage") in {"extension_running", "extension_complete"}:
                 raise RuntimeError(f"task already acted on this run: {previous['stage']}")
         record("waiting_for_400", actor_pid=args.actor_pid, learner_pid=args.learner_pid)
         while alive(args.actor_pid) or alive(args.learner_pid):
@@ -206,16 +198,20 @@ def main() -> None:
             raise RuntimeError("cannot prove 400 episodes completed: latest checkpoint is periodic")
 
         record("evaluating", logged_episodes=logged_episodes, final_checkpoint=steps[-1])
-        baseline = evaluate(80000)
-        final = evaluate(steps[-1])
+        baseline = final = None
+        evaluation_error = None
+        try:
+            baseline = evaluate(80000)
+            final = evaluate(steps[-1])
+        except Exception as exc:
+            # The requested extension is unconditional; an evaluation error
+            # must not turn the comparison into another continuation gate.
+            evaluation_error = str(exc)
         (EXPERIMENT / "conditional_extend_rlpd_evaluation.json").write_text(
-            json.dumps({"baseline": baseline, "final": final}, indent=2) + "\n")
-        if not improvement_is_clear(baseline, final):
-            record("no_extension", baseline=baseline, final=final,
-                   reason="fixed val50 gain < 10 percentage points or mean return fell > 5%")
-            return
-
-        record("generating_200", baseline=baseline, final=final)
+            json.dumps({"baseline": baseline, "final": final,
+                        "evaluation_error": evaluation_error}, indent=2) + "\n")
+        record("generating_200", baseline=baseline, final=final,
+               evaluation_error=evaluation_error)
         manifest = make_trajectories()
         EXTENSION.mkdir(exist_ok=True)
         if (EXTENSION / "actor.log").exists() or (EXTENSION / "learner.log").exists():
@@ -227,9 +223,11 @@ def main() -> None:
             "source_checkpoint": str(source_checkpoint), "trajectory_source": str(TRAJECTORIES),
             "trajectory_count": manifest["selected_count"],
             "online_replay_restored": False, "dp_prior_reloaded": True,
-            "baseline": baseline, "final_400": final}, indent=2) + "\n")
+            "baseline": baseline, "final_400": final,
+            "evaluation_error": evaluation_error}, indent=2) + "\n")
         record("extension_running", baseline=baseline, final=final,
-               continuation_run=str(EXTENSION), trajectory_source=str(TRAJECTORIES))
+               evaluation_error=evaluation_error, continuation_run=str(EXTENSION),
+               trajectory_source=str(TRAJECTORIES))
         command = ["bash", str(EXPERIMENT / "launch_continuation_200.sh"),
                    str(EXTENSION), str(TRAJECTORIES)]
         subprocess.run(command, cwd=ROOT, check=True)

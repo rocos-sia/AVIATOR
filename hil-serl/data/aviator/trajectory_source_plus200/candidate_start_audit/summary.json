@@ -1,0 +1,9 @@
+{
+  "online_paths": 240,
+  "valid_starts": 240,
+  "invalid_starts": [],
+  "below_clearance": 0,
+  "task_error_exceeds_tolerance": 0,
+  "contacts": 0,
+  "output": "/home/rocos/sia/AVIATOR/hil-serl/data/aviator/trajectory_source_plus200/candidate_start_audit/online_starts.csv"
+}
