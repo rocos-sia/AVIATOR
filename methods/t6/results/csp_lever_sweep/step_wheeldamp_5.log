@@ -1,0 +1,5 @@
+step_probe_completed base_q0=1.40847 target_q0=1.40861 coordinated=1 wheel_step=0.0011 csv=/home/rocos/sia/AVIATOR/methods/t6/results/csp_lever_sweep/step_wheeldamp_5/joint_step_feedback.csv
+send_monotonic=29254.667751 receive_monotonic=29254.668599 delivery_delay_ms=0.848
+q_start=1.40846387 target=1.40860340 q_at_10ms=1.40866988 remaining_10ms_rad=-0.00006648 t90_ms=6.296 settled_5pct_ms=71.563
+wheel_start=-0.00000657 target=0.00109343 wheel_at_10ms=0.00092264 wheel_10ms_completion=0.845 wheel_settled_5pct_ms=63.072
+csv=/home/rocos/sia/AVIATOR/methods/t6/results/csp_lever_sweep/step_wheeldamp_5/joint_step_feedback.csv /home/rocos/sia/AVIATOR/methods/t6/results/csp_lever_sweep/step_wheeldamp_5/joint_step_send.csv /home/rocos/sia/AVIATOR/methods/t6/results/csp_lever_sweep/step_wheeldamp_5/joint_step_sim_1ms.csv

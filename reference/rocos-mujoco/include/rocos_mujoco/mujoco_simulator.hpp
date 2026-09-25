@@ -196,6 +196,15 @@ private:
     };
     std::vector<JointEntry> joints_;
 
+    // Optional one-joint step-response trace, enabled only by environment.
+    struct JointTraceSample {
+        double sim_time, monotonic_time, target, q_before, q_after;
+        int mode;
+    };
+    std::string step_trace_file_, step_trace_joint_;
+    int step_trace_joint_index_ = -1;
+    std::vector<JointTraceSample> step_trace_;
+
     // ---- FT sensor mapping --------------------------------------------
     struct FTEntry {
         int            slave_id      = -1;
@@ -257,10 +266,11 @@ private:
     bool        verbose_    = true;
 
     // ---- PID gains (position loop, applied via qfrc_applied) -----------
-    static constexpr double KP_ = 1000.0;   // 比例增益 [Nm/rad] (无内置执行器时使用)
+    static constexpr double KP_ = 10000.0;   // 比例增益 [Nm/rad] (无内置执行器时使用)
     static constexpr double KI_ = 0.0;   // 积分增益 [Nm/(rad·s)]
-    static constexpr double KD_ = 80.0;     // 速度阻尼 [Nm/(rad/s)] (无内置执行器时使用被动阻尼)
+    static constexpr double KD_ = 85.0;     // 速度阻尼 [Nm/(rad/s)] (无内置执行器时使用被动阻尼)
     static constexpr double KV_ = 50.0;
+    double position_kp_ = KP_, position_kd_ = KD_;
 };
 
 }  // namespace rocos_mujoco

@@ -18,7 +18,10 @@
 #include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <mutex>
@@ -279,11 +282,37 @@ MujocoSimulator::MujocoSimulator(const std::string &urdf_path,
     : urdf_path_(urdf_path),
       hw_config_path_(hw_config_path),
       cycle_time_us_(cycle_time_us) {
+    auto gain = [](const char* name, double fallback, double lo, double hi) {
+        const char* value = std::getenv(name);
+        if (!value) return fallback;
+        char* end = nullptr;
+        const double parsed = std::strtod(value, &end);
+        if (end == value || *end != '\0' || !std::isfinite(parsed) ||
+            parsed < lo || parsed > hi)
+            throw std::invalid_argument(std::string("Invalid ") + name);
+        return parsed;
+    };
+    position_kp_ = gain("AVIATOR_SIM_POSITION_KP", KP_, 100., 50000.);
+    position_kd_ = gain("AVIATOR_SIM_POSITION_KD", KD_, 0., 500.);
+    if (const char* file = std::getenv("AVIATOR_STEP_TRACE_FILE")) {
+        step_trace_file_ = file;
+        if (const char* joint = std::getenv("AVIATOR_STEP_TRACE_JOINT"))
+            step_trace_joint_ = joint;
+        step_trace_.reserve(50000);
+    }
     shm_ = new rocos::SharedMemoryConfig(ecat_id);
     aviator_bus_id_ = ecat_id;
 }
 
 MujocoSimulator::~MujocoSimulator() {
+    if (!step_trace_file_.empty()) {
+        std::ofstream out(step_trace_file_);
+        out << std::setprecision(17)
+            << "sim_time,monotonic_time,target,q_before,q_after,mode\n";
+        for (const auto& s : step_trace_)
+            out << s.sim_time << ',' << s.monotonic_time << ',' << s.target << ','
+                << s.q_before << ',' << s.q_after << ',' << s.mode << '\n';
+    }
     bool model_owned_by_visualizer = false;
 #ifdef ROCOS_MUJOCO_ENABLE_VISUALIZATION
     if (visualizer_ != nullptr) {
@@ -411,7 +440,27 @@ void MujocoSimulator::step() {
         readCommands();
     }
     applyControl();
+    if (!step_trace_file_.empty() && step_trace_joint_index_ < 0) {
+        for (std::size_t i = 0; i < joints_.size(); ++i)
+            if (joints_[i].joint_name == step_trace_joint_) {
+                step_trace_joint_index_ = static_cast<int>(i);
+                break;
+            }
+    }
+    JointTraceSample trace{};
+    const bool tracing = step_trace_joint_index_ >= 0;
+    if (tracing) {
+        const auto& j = joints_[step_trace_joint_index_];
+        trace = {sim_time_, aviator::monotonicTime(),
+                 j.mj_actuator >= 0 ? d_->ctrl[j.mj_actuator] :
+                     cntToUnit(j.target_position, j.cnt_per_unit, j.ratio, j.offset_pos_cnt),
+                 d_->qpos[j.mj_joint_qpos], 0., j.mode_of_operation};
+    }
     stepPhysics();
+    if (tracing) {
+        trace.q_after = d_->qpos[joints_[step_trace_joint_index_].mj_joint_qpos];
+        step_trace_.push_back(trace);
+    }
     updateDocking();
     updateCrawling();
     updateAviator();
@@ -567,7 +616,7 @@ bool MujocoSimulator::loadHardwareConfig(const std::string &yaml_path) {
                 }
                 // Without a built-in actuator, use joint forces for position
                 // control. Passive damping is integrated implicitly by MuJoCo.
-                if (j.mj_actuator < 0) m_->dof_damping[j.mj_joint_dof] += KD_;
+                if (j.mj_actuator < 0) m_->dof_damping[j.mj_joint_dof] += position_kd_;
 
                 joints_.push_back(j);
                 std::cout << "  Drive: slave=" << id
@@ -750,7 +799,7 @@ void MujocoSimulator::applyControl() {
             if (actuator >= 0) {
                 d_->ctrl[actuator] = target;
             } else {
-                d_->qfrc_applied[dof] += KP_ * (target - d_->qpos[qpos]);
+                d_->qfrc_applied[dof] += position_kp_ * (target - d_->qpos[qpos]);
             }
         };
         d_->qfrc_applied[dof] = 0.0;
@@ -784,7 +833,8 @@ void MujocoSimulator::applyControl() {
         case 8:   // CSP — 位置控制
         case 6: { // Homing
             // ---- CSP: MuJoCo 执行器跟踪 + 重力前馈 + 积分修正 -----------
-            //  1. ctrl = target → 执行器 kp=20000, kv=500 负责动态跟踪
+            //  1. 内置执行器使用 ctrl=target；否则使用 position_kp_ 和
+            //     position_kd_ 驱动关节。aviator.xml 当前没有内置执行器。
             //  2. qfrc_applied = qfrc_bias → 前馈抵消重力（执行器静态出力→0）
             //  3. qfrc_applied += KI*∫error → 积分补偿前馈残差
             double tp = cntToUnit(j.target_position, j.cnt_per_unit,

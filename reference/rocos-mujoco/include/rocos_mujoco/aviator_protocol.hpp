@@ -15,7 +15,7 @@
 
 namespace rocos_mujoco::aviator {
 constexpr uint32_t MAGIC = 0x41564941;
-constexpr uint32_t VERSION = 1;
+constexpr uint32_t VERSION = 2;
 enum class Command : uint32_t { None, Lock, Unlock, ResetFault };
 enum class Result : uint32_t { Ok, NotAligned, NotEnabled, Fault };
 
@@ -30,6 +30,7 @@ struct Feedback {
     double time = 0;
     double angle = 0, displacement = 0;
     double velocity[2]{};
+    double joints[14]{}; // left 0..6, right 7..13, same MuJoCo step as wheel state
     double position_error[2]{}, rotation_error[2]{}, relative_speed[2]{};
     uint32_t locked = 0, ready = 0, fault = 0;
     uint64_t ack = 0;

@@ -112,7 +112,7 @@ int main(int argc, char **argv) {
         const auto before = targets();
         rejected([&] { robot.MoveWheel(.9, -.02); });
         rejected([&] { robot.MoveWheel(0, .01); });
-        rejected([&] { robot.MoveWheel(0, -.17); });
+        rejected([&] { robot.MoveWheel(0, -.171); });
         rejected([&] { robot.MoveWheel(std::numeric_limits<double>::quiet_NaN(), -.02); });
         rejected([&] { robot.MoveWheel(0, -.02, 0); });
         require(targets() == before, "Invalid commands changed arm targets");

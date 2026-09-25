@@ -63,6 +63,9 @@ void MujocoSimulator::updateAviator() {
     f.time = d_->time;
     f.angle = d_->qpos[m_->jnt_qposadr[aviator_wheel_[0]]];
     f.displacement = d_->qpos[m_->jnt_qposadr[aviator_wheel_[1]]];
+    if (joints_.size() == 14)
+        for (int i = 0; i < 14; ++i)
+            f.joints[i] = d_->qpos[joints_[i].mj_joint_qpos];
     bool aligned = true;
     for (int side = 0; side < 2; ++side) {
         f.velocity[side] = d_->qvel[m_->jnt_dofadr[aviator_wheel_[side]]];

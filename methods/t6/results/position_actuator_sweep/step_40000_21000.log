@@ -1,0 +1,197 @@
+╔══════════════════════════════════════════════════════════════╗
+║  ROCOS MuJoCo 仿真器 (EtherCAT 主站模拟)                    ║
+╠══════════════════════════════════════════════════════════════╣
+║  模型:      /home/rocos/sia/AVIATOR/reference/rocos-mujoco/model/aviator_pos_40000_21000.xml║
+║  配置:      /home/rocos/sia/AVIATOR/reference/rocos-mujoco/build/aviator-visual/bin/config/hardware_aviator_config.yaml║
+║  ecat_id:   1283603                                          ║
+║  周期:      1000 us                                       ║
+║  可视化:    关闭 (无头模式)                            ║
+╚══════════════════════════════════════════════════════════════╝
+
+[1;32m[INFO][0m MujocoSimulator initializing...
+[1;32m[INFO][0m Model: 16 qpos, 16 dof, 14 actuators
+[1;32m[INFO][0m MuJoCo model loaded (16 DOFs, 14 actuators)
+  Drive: slave=0 joint=AR5-5_07L-W4C4A2_joint_1 mj_id=2 qpos=2 dof=2 actuator=0 pdo_in=30B pdo_out=17B
+  Drive: slave=1 joint=AR5-5_07L-W4C4A2_joint_2 mj_id=3 qpos=3 dof=3 actuator=1 pdo_in=30B pdo_out=17B
+  Drive: slave=2 joint=AR5-5_07L-W4C4A2_joint_3 mj_id=4 qpos=4 dof=4 actuator=2 pdo_in=30B pdo_out=17B
+  Drive: slave=3 joint=AR5-5_07L-W4C4A2_joint_4 mj_id=5 qpos=5 dof=5 actuator=3 pdo_in=30B pdo_out=17B
+  Drive: slave=4 joint=AR5-5_07L-W4C4A2_joint_5 mj_id=6 qpos=6 dof=6 actuator=4 pdo_in=30B pdo_out=17B
+  Drive: slave=5 joint=AR5-5_07L-W4C4A2_joint_6 mj_id=7 qpos=7 dof=7 actuator=5 pdo_in=30B pdo_out=17B
+  Drive: slave=6 joint=AR5-5_07L-W4C4A2_joint_7 mj_id=8 qpos=8 dof=8 actuator=6 pdo_in=30B pdo_out=17B
+  Drive: slave=7 joint=AR5-5_07R-W4C4A2_joint_1 mj_id=9 qpos=9 dof=9 actuator=7 pdo_in=30B pdo_out=17B
+  Drive: slave=8 joint=AR5-5_07R-W4C4A2_joint_2 mj_id=10 qpos=10 dof=10 actuator=8 pdo_in=30B pdo_out=17B
+  Drive: slave=9 joint=AR5-5_07R-W4C4A2_joint_3 mj_id=11 qpos=11 dof=11 actuator=9 pdo_in=30B pdo_out=17B
+  Drive: slave=10 joint=AR5-5_07R-W4C4A2_joint_4 mj_id=12 qpos=12 dof=12 actuator=10 pdo_in=30B pdo_out=17B
+  Drive: slave=11 joint=AR5-5_07R-W4C4A2_joint_5 mj_id=13 qpos=13 dof=13 actuator=11 pdo_in=30B pdo_out=17B
+  Drive: slave=12 joint=AR5-5_07R-W4C4A2_joint_6 mj_id=14 qpos=14 dof=14 actuator=12 pdo_in=30B pdo_out=17B
+  Drive: slave=13 joint=AR5-5_07R-W4C4A2_joint_7 mj_id=15 qpos=15 dof=15 actuator=13 pdo_in=30B pdo_out=17B
+[1;32m[INFO][0m Hardware config loaded (14 drives, 0 ft, 0 io)
+  Total PD input:  420 bytes
+  Total PD output: 238 bytes
+[1;32m[INFO][0m Shared memory created
+[AVIATOR] Passive wheel feedback and two grasp welds ready
+[1;32m[INFO][0m MujocoSimulator initialized.
+[1;32m[INFO][0m Simulation running (cycle=1000 us, visualize=no)
+[DEBUG] step=1000 ctrl=1.5708 q=-0.000268277 act=0 bias=0.000472483
+[DEBUG] step=2000 ctrl=1.57146 q=-0.000713069 act=0 bias=0.000472483
+[DEBUG] step=3000 ctrl=1.57547 q=-0.0011818 act=0 bias=0.000472483
+[DEBUG] step=4000 ctrl=1.58031 q=-0.00165377 act=0 bias=0.000472483
+[DEBUG] step=5000 ctrl=1.58207 q=-0.00212618 act=0 bias=0.000472483
+[DEBUG] step=6000 ctrl=1.58208 q=-0.00259866 act=0 bias=0.000472483
+[DEBUG] step=7000 ctrl=1.58318 q=-0.00307114 act=0 bias=0.000472483
+[DEBUG] step=8000 ctrl=1.59402 q=-0.00354362 act=0 bias=0.000472483
+[DEBUG] step=9000 ctrl=1.60093 q=-0.0040161 act=0 bias=0.000472483
+[DEBUG] step=10000 ctrl=1.60111 q=-0.00448859 act=0 bias=0.000472483
+[DEBUG] step=11000 ctrl=1.60111 q=-0.00496107 act=0 bias=0.000472483
+[DEBUG] step=12000 ctrl=1.60111 q=-0.00543355 act=0 bias=0.000472483
+[DEBUG] step=13000 ctrl=1.60111 q=-0.00590604 act=0 bias=0.000472483
+[DEBUG] step=14000 ctrl=1.60111 q=-0.00637852 act=0 bias=0.000472483
+[DEBUG] step=15000 ctrl=1.60111 q=-0.006851 act=0 bias=0.000472483
+
+[SHM] Create new SharedMemoryConfig instance: 1283603
+[1;32m [INFO][SHM] Shared memory ready.[0m
+joint < AR5-5_07L-W4C4A2_joint_1 >'s assigned slave <id: 0 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_2 >'s assigned slave <id: 1 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_3 >'s assigned slave <id: 2 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_4 >'s assigned slave <id: 3 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_5 >'s assigned slave <id: 4 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_6 >'s assigned slave <id: 5 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_7 >'s assigned slave <id: 6 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_1 >'s assigned slave <id: 7 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_2 >'s assigned slave <id: 8 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_3 >'s assigned slave <id: 9 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_4 >'s assigned slave <id: 10 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_5 >'s assigned slave <id: 11 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_6 >'s assigned slave <id: 12 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_7 >'s assigned slave <id: 13 > is a driver joint.
+[2026-09-24 23:32:24.548] [Robot] [info] Robot is initializing...
+[WARN] [1790263944.549542961] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[2026-09-24 23:32:24.549] [Robot] [info] Parsing drive parameters from urdf file: /home/rocos/sia/AVIATOR/AviatorRobot/config/aviator_control.urdf
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+[2026-09-24 23:32:24.549] [Robot] [info] All joint parameters:
+idx name                id    lower     upper     vel      acc      jerk     ratio     offset   cnt/unit     torque/unit     unit
+-----------------------------------------------------------------------------------------------------------------------------
+0   AR5-5_07L-W4C4A2_joint_10     -3.1067   3.1067    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+1   AR5-5_07L-W4C4A2_joint_21     -2.0944   2.0944    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+2   AR5-5_07L-W4C4A2_joint_32     -3.1067   3.1067    4.7124   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+3   AR5-5_07L-W4C4A2_joint_43     -1.0472   2.5307    5.2360   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+4   AR5-5_07L-W4C4A2_joint_54     -3.1067   3.1067    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+5   AR5-5_07L-W4C4A2_joint_65     -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+6   AR5-5_07L-W4C4A2_joint_76     -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+
+Drive Guard is running on thread 7d9371785600
+[2026-09-24 23:32:24.549] [Robot] [info] Kinematics initialized successfully.
+[2026-09-24 23:32:24.549] [Robot] [info] Dynamics initialized successfully.
+[2026-09-24 23:32:24.549] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 23:32:24.549] [Robot] [info] Robot is initializing...
+[WARN] [1790263944.550809139] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[2026-09-24 23:32:24.550] [Robot] [info] Parsing drive parameters from urdf file: /home/rocos/sia/AVIATOR/AviatorRobot/config/aviator_control.urdf
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+[2026-09-24 23:32:24.551] [Robot] [info] All joint parameters:
+idx name                id    lower     upper     vel      acc      jerk     ratio     offset   cnt/unit     torque/unit     unit
+-----------------------------------------------------------------------------------------------------------------------------
+0   AR5-5_07R-W4C4A2_joint_17     -3.1067   3.1067    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+1   AR5-5_07R-W4C4A2_joint_28     -2.0944   2.0944    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+2   AR5-5_07R-W4C4A2_joint_39     -3.1067   3.1067    4.7124   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+3   AR5-5_07R-W4C4A2_joint_410    -1.0472   2.5307    5.2360   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+4   AR5-5_07R-W4C4A2_joint_511    -3.1067   3.1067    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+5   AR5-5_07R-W4C4A2_joint_612    -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+6   AR5-5_07R-W4C4A2_joint_713    -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+
+[2026-09-24 23:32:24.551] [Robot] [info] Kinematics initialized successfully.
+[2026-09-24 23:32:24.551] [Robot] [info] Dynamics initialized successfully.
+[2026-09-24 23:32:24.551] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 23:32:24.551] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 23:32:24.551] [Robot] [info] Robot Enabling.....
+[2026-09-24 23:32:24.630] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 23:32:24.630] [Robot] [info] Robot Enabling.....
+step_probe_failed: Settle timeout: wheel=-0.000000,-0.007246 grasp errors=0.005033,0.005035
+Drive Guard thread is terminated.
+
+Traceback (most recent call last):
+  File "/home/rocos/sia/AVIATOR/AviatorRobot/tests/run_joint_step_probe.py", line 54, in <module>
+    raise RuntimeError(probe_log.read_text())
+RuntimeError: [SHM] Create new SharedMemoryConfig instance: 1283603
+[1;32m [INFO][SHM] Shared memory ready.[0m
+joint < AR5-5_07L-W4C4A2_joint_1 >'s assigned slave <id: 0 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_2 >'s assigned slave <id: 1 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_3 >'s assigned slave <id: 2 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_4 >'s assigned slave <id: 3 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_5 >'s assigned slave <id: 4 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_6 >'s assigned slave <id: 5 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_7 >'s assigned slave <id: 6 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_1 >'s assigned slave <id: 7 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_2 >'s assigned slave <id: 8 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_3 >'s assigned slave <id: 9 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_4 >'s assigned slave <id: 10 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_5 >'s assigned slave <id: 11 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_6 >'s assigned slave <id: 12 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_7 >'s assigned slave <id: 13 > is a driver joint.
+[2026-09-24 23:32:24.548] [Robot] [info] Robot is initializing...
+[WARN] [1790263944.549542961] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[2026-09-24 23:32:24.549] [Robot] [info] Parsing drive parameters from urdf file: /home/rocos/sia/AVIATOR/AviatorRobot/config/aviator_control.urdf
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+[2026-09-24 23:32:24.549] [Robot] [info] All joint parameters:
+idx name                id    lower     upper     vel      acc      jerk     ratio     offset   cnt/unit     torque/unit     unit
+-----------------------------------------------------------------------------------------------------------------------------
+0   AR5-5_07L-W4C4A2_joint_10     -3.1067   3.1067    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+1   AR5-5_07L-W4C4A2_joint_21     -2.0944   2.0944    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+2   AR5-5_07L-W4C4A2_joint_32     -3.1067   3.1067    4.7124   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+3   AR5-5_07L-W4C4A2_joint_43     -1.0472   2.5307    5.2360   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+4   AR5-5_07L-W4C4A2_joint_54     -3.1067   3.1067    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+5   AR5-5_07L-W4C4A2_joint_65     -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+6   AR5-5_07L-W4C4A2_joint_76     -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+
+Drive Guard is running on thread 7d9371785600
+[2026-09-24 23:32:24.549] [Robot] [info] Kinematics initialized successfully.
+[2026-09-24 23:32:24.549] [Robot] [info] Dynamics initialized successfully.
+[2026-09-24 23:32:24.549] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 23:32:24.549] [Robot] [info] Robot is initializing...
+[WARN] [1790263944.550809139] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[2026-09-24 23:32:24.550] [Robot] [info] Parsing drive parameters from urdf file: /home/rocos/sia/AVIATOR/AviatorRobot/config/aviator_control.urdf
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+[2026-09-24 23:32:24.551] [Robot] [info] All joint parameters:
+idx name                id    lower     upper     vel      acc      jerk     ratio     offset   cnt/unit     torque/unit     unit
+-----------------------------------------------------------------------------------------------------------------------------
+0   AR5-5_07R-W4C4A2_joint_17     -3.1067   3.1067    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+1   AR5-5_07R-W4C4A2_joint_28     -2.0944   2.0944    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+2   AR5-5_07R-W4C4A2_joint_39     -3.1067   3.1067    4.7124   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+3   AR5-5_07R-W4C4A2_joint_410    -1.0472   2.5307    5.2360   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+4   AR5-5_07R-W4C4A2_joint_511    -3.1067   3.1067    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+5   AR5-5_07R-W4C4A2_joint_612    -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+6   AR5-5_07R-W4C4A2_joint_713    -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+
+[2026-09-24 23:32:24.551] [Robot] [info] Kinematics initialized successfully.
+[2026-09-24 23:32:24.551] [Robot] [info] Dynamics initialized successfully.
+[2026-09-24 23:32:24.551] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 23:32:24.551] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 23:32:24.551] [Robot] [info] Robot Enabling.....
+[2026-09-24 23:32:24.630] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 23:32:24.630] [Robot] [info] Robot Enabling.....
+step_probe_failed: Settle timeout: wheel=-0.000000,-0.007246 grasp errors=0.005033,0.005035
+Drive Guard thread is terminated.
+

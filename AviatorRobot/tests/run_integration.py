@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='aviator-test-') as work:
             control_log.flush()
             output = control_path.read_text()
             if result.returncode or 'INTEGRATION PASS' not in output:
-                raise RuntimeError(output)
+                raise RuntimeError(f'Controller exit code: {result.returncode}\n{output}')
             for line in output.splitlines():
                 if 'Verified ' in line or 'Expected rejection:' in line or 'INTEGRATION PASS' in line:
                     print(line)

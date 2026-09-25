@@ -71,6 +71,24 @@ add_custom_target(aviator_assets
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SIM_DIR}/model/aviator.xml" "${CMAKE_BINARY_DIR}/bin/model/aviator.xml"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${SIM_DIR}/model/aviator_meshes" "${CMAKE_BINARY_DIR}/bin/model/aviator_meshes")
 add_dependencies(aviatorAppMain aviator_assets)
+
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../methods/t6" "${CMAKE_BINARY_DIR}/t6_method" EXCLUDE_FROM_ALL)
+add_executable(aviatorT6Sine src/t6_sine_main.cpp)
+target_link_libraries(aviatorT6Sine PRIVATE aviator aviator_t6)
+target_compile_definitions(aviatorT6Sine PRIVATE AVIATOR_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config")
+add_dependencies(aviatorT6Sine aviator_assets)
+
+# Joystick-driven variant of the t6 controller. The USB joystick library is
+# compiled directly into this target (single process, no HTTP round-trip).
+set(JOYSTICK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../methods/t6/joystick")
+add_executable(aviatorT6Joystick src/t6_joystick_main.cpp "${JOYSTICK_DIR}/src/joystick.cpp")
+target_include_directories(aviatorT6Joystick PRIVATE "${JOYSTICK_DIR}/include")
+target_link_libraries(aviatorT6Joystick PRIVATE aviator aviator_t6)
+target_compile_definitions(aviatorT6Joystick PRIVATE AVIATOR_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config")
+add_dependencies(aviatorT6Joystick aviator_assets)
+add_executable(aviator_joint_step_probe tests/joint_step_probe.cpp)
+target_link_libraries(aviator_joint_step_probe PRIVATE aviator aviator_t6)
+add_dependencies(aviator_joint_step_probe aviator_assets)
 include(CTest)
 if(BUILD_TESTING)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
@@ -83,4 +101,24 @@ if(BUILD_TESTING)
             "${AVIATOR_TEST_SIMULATOR}" "$<TARGET_FILE:aviator_integration_test>"
             "${CMAKE_CURRENT_SOURCE_DIR}/config/aviator.yaml")
     set_tests_properties(aviator_dual_arm_integration PROPERTIES TIMEOUT 180)
+    add_test(NAME aviator_t6_sine_integration
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_t6_sine.py"
+            "${AVIATOR_TEST_SIMULATOR}" "$<TARGET_FILE:aviatorT6Sine>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../methods/t6/actor_60k.onnx"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../hil-serl/data/aviator/manifold_phi")
+    set_tests_properties(aviator_t6_sine_integration PROPERTIES TIMEOUT 90)
+    add_test(NAME aviator_t6_wheel50_integration
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_t6_sine.py"
+            "${AVIATOR_TEST_SIMULATOR}" "$<TARGET_FILE:aviatorT6Sine>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../methods/t6/actor_60k.onnx"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../hil-serl/data/aviator/manifold_phi"
+            10 0.1 0.01 0.1)
+    set_tests_properties(aviator_t6_wheel50_integration PROPERTIES TIMEOUT 90)
+    add_test(NAME aviator_t6_joystick_integration
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_t6_joystick.py"
+            "${AVIATOR_TEST_SIMULATOR}" "$<TARGET_FILE:aviatorT6Joystick>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../methods/t6/actor_60k.onnx"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../hil-serl/data/aviator/manifold_phi"
+            2 /dev/input/js_nonexistent)
+    set_tests_properties(aviator_t6_joystick_integration PROPERTIES TIMEOUT 90)
 endif()

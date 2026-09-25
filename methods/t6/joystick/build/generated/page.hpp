@@ -1,0 +1,140 @@
+#pragma once
+constexpr char kPage[] = R"JOYSTICK_HTML(<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>USB 飞行摇杆</title>
+<style>
+body{font:16px system-ui;background:#101827;color:#e5edf9;max-width:860px;margin:40px auto;padding:0 20px}
+h1{font-size:28px}section{background:#1c293d;padding:20px;border-radius:12px;margin:18px 0}
+#status{color:#7dd3fc;overflow-wrap:anywhere}.axis{display:grid;grid-template-columns:70px 1fr 130px;gap:12px;align-items:center;margin:14px 0}
+meter{width:100%;height:24px}output{text-align:right;font-variant-numeric:tabular-nums}
+#buttons{display:flex;flex-wrap:wrap;gap:10px}.button{padding:12px;background:#334155;border-radius:8px}.pressed{background:#22c55e;color:#052e16}
+button{min-width:150px;font:inherit;padding:14px 24px;border:0;border-radius:8px;background:#38bdf8;color:#082f49;touch-action:none;user-select:none;cursor:pointer}button:disabled{opacity:.45;cursor:default}button.held{background:#22c55e}
+small{color:#aabbd2}@media(max-width:500px){.axis{grid-template-columns:45px 1fr 110px;gap:6px}}
+</style>
+<h1>USB 飞行摇杆</h1>
+<p id="status" role="status">正在连接服务…</p>
+<small>轴显示原始值与归一化值（−1～1）。轴编号由驱动决定，油门、旋转轴、苦力帽通常也以轴呈现。</small>
+<section><h2>震动</h2><button id="rumble" disabled>按住震动</button> <small id="rumbleInfo">等待设备</small></section>
+<section><h2>摇杆轴</h2><div id="axes">等待设备</div></section>
+<section><h2>按钮</h2><div id="buttons">等待设备</div></section>
+<script>
+const status = document.getElementById('status');
+const axes = document.getElementById('axes');
+const buttons = document.getElementById('buttons');
+const rumble = document.getElementById('rumble');
+const rumbleInfo = document.getElementById('rumbleInfo');
+let held = false, timer, generation = 0, pointer = null, commandError = '', commands = Promise.resolve();
+// 串行发送，确保松开指令排在已经发出的启动指令后面。
+function command(enabled, version = generation) {
+  commands = commands.catch(() => {}).then(async () => {
+    if (enabled && (!held || version !== generation)) return;
+    const r = await fetch('/api/rumble/' + (enabled ? 'start' : 'stop'), {
+      method:'POST', keepalive:true, signal:AbortSignal.timeout(1500)
+    });
+    if (!r.ok) {
+      const s = await r.json();
+      throw new Error(s.rumble_error || '震动不可用');
+    }
+  });
+  return commands;
+}
+function release() {
+  if (!held) return;
+  held = false;
+  ++generation;
+  if (pointer !== null && rumble.hasPointerCapture(pointer)) rumble.releasePointerCapture(pointer);
+  pointer = null;
+  clearTimeout(timer);
+  rumble.classList.remove('held');
+  rumble.textContent = '按住震动';
+  command(false).catch(e => { commandError = e.message; rumbleInfo.textContent = commandError; });
+}
+async function pulse(version) {
+  try {
+    await command(true, version);
+    if (held && version === generation) timer = setTimeout(() => pulse(version), 200);
+  } catch (e) {
+    if (version !== generation) return;
+    release(); commandError = e.message; rumbleInfo.textContent = commandError;
+  }
+}
+function press() {
+  if (held || rumble.disabled) return;
+  held = true;
+  commandError = '';
+  ++generation;
+  rumble.classList.add('held');
+  rumble.textContent = '震动中…';
+  pulse(generation);
+}
+rumble.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || held || rumble.disabled) return;
+  e.preventDefault();
+  pointer = e.pointerId;
+  rumble.setPointerCapture(pointer);
+  press();
+});
+for (const name of ['pointerup', 'pointercancel']) window.addEventListener(name, e => {
+  if (e.pointerId === pointer) release();
+});
+rumble.addEventListener('lostpointercapture', release);
+rumble.addEventListener('pointermove', e => {
+  if (e.pointerId !== pointer) return;
+  const r = rumble.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) release();
+});
+rumble.addEventListener('contextmenu', e => e.preventDefault());
+rumble.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); press(); }
+});
+rumble.addEventListener('keyup', e => {
+  if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); release(); }
+});
+rumble.addEventListener('blur', release);
+window.addEventListener('blur', release);
+window.addEventListener('pagehide', release);
+document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+let shape = '';
+function clear(message) { shape = ''; axes.textContent = buttons.textContent = message; }
+async function update() {
+  try {
+    const response = await fetch('/api/state', {cache:'no-store', signal:AbortSignal.timeout(2000)});
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const s = await response.json();
+    rumble.disabled = !s.connected || !s.rumble_available;
+    if (rumble.disabled) release();
+    if (!held) rumble.textContent = rumble.disabled ? '震动不可用' : '按住震动';
+    rumbleInfo.textContent = commandError || s.rumble_error || (s.rumble_available ? '按住开始，松开停止' : '等待设备');
+    if (!s.connected) {
+      status.textContent = '设备未连接 · ' + s.error;
+      clear('等待设备连接');
+    } else {
+      status.textContent = `${s.name} · 已连接 · ${s.axes.length} 轴 / ${s.buttons.length} 按钮`;
+      const next = `${s.axes.length}/${s.buttons.length}`;
+      if (next !== shape) {
+        shape = next;
+        axes.innerHTML = s.axes.map((_,i) => `<div class="axis"><span>轴 ${i}</span><meter min="-32767" max="32767" value="0"></meter><output></output></div>`).join('');
+        buttons.innerHTML = s.buttons.map((_,i) => `<span class="button" id="b${i}"></span>`).join('');
+      }
+      s.axes.forEach((v,i) => {
+        axes.children[i].querySelector('meter').value = v;
+        axes.children[i].querySelector('output').textContent = `${v} (${Math.max(-1,v/32767).toFixed(3)})`;
+      });
+      s.buttons.forEach((v,i) => {
+        const b = buttons.children[i];
+        b.classList.toggle('pressed', !!v);
+        b.textContent = `${i} · ${v ? '按下' : '松开'}`;
+      });
+    }
+  } catch (e) {
+    release(); rumble.disabled = true;
+    status.textContent = '服务连接失败，请确认 joystick_web 正在运行';
+    clear('数据不可用');
+  } finally { setTimeout(update, 50); }
+}
+update();
+</script>
+</html>
+)JOYSTICK_HTML";

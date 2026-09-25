@@ -1,0 +1,6 @@
+WARNING:absl:The transformations API will eventually be replaced by an upgraded design. The current API will not be removed until this point, but it will no longer be actively worked on.
+evaluating on 50 'val' trajectories
+
+policy        comp%  clear%   spd%  joint%  grid% max|qdot| min_d_mm  reserve         J
+---------------------------------------------------------------------------------------
+rlpd           98.0     0.0    2.0     0.0    0.0     1.767     6.11    0.616   822.203

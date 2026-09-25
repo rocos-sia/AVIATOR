@@ -4,7 +4,10 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <mujoco/mujoco.h>
 #include <mutex>
@@ -173,7 +176,7 @@ class Aviator::Impl {
         }
         return result;
     }
-    void check(const Joints &q, double angle, double translation) {
+    void check(const Joints &q, double angle, double translation, bool raw = false) {
         checkElbows(q);
         auto *m = model.get();
         auto *d = data.get();
@@ -185,13 +188,17 @@ class Aviator::Impl {
         }
         d->qpos[m->jnt_qposadr[wheel_ids[0]]] = angle;
         d->qpos[m->jnt_qposadr[wheel_ids[1]]] = translation;
+        if (raw) return; // raw mode: keep isfinite/joint-limit, skip collision detection
         mj_forward(m, d);
         for (int c = 0; c < d->ncon; ++c) {
             const auto &contact = d->contact[c];
             if (contact.dist < -.001) {
-                throw std::runtime_error(std::string("Planned collision: ") +
-                                         mj_id2name(m, mjOBJ_GEOM, contact.geom1) + " / " +
-                                         mj_id2name(m, mjOBJ_GEOM, contact.geom2));
+                auto name = [&](int geom) {
+                    const char *value = mj_id2name(m, mjOBJ_GEOM, geom);
+                    return value ? std::string(value) : "geom#" + std::to_string(geom);
+                };
+                throw std::runtime_error("Planned collision: " + name(contact.geom1) +
+                                         " / " + name(contact.geom2));
             }
         }
     }
@@ -606,6 +613,89 @@ void Aviator::MoveWheel(double angle, double translation, double duration) {
     } catch (...) {
         if (started)
             p.hold();
+        p.phase = 7;
+        throw;
+    }
+}
+void Aviator::RunJointFeedback(
+    double duration,
+    const std::function<std::optional<JointTarget>(const rocos_mujoco::aviator::Feedback &)> &controller) {
+    auto &p = *impl_;
+    std::lock_guard<std::mutex> operation(p.operation);
+    require(std::isfinite(duration) && controller,
+            "Invalid joint-feedback run arguments");
+    auto first = p.status();
+    require(first.locked == 3 && !first.fault && p.arms[0]->IsEnabled() && p.arms[1]->IsEnabled(),
+            "Both arms must be enabled and handles locked");
+    p.cancel = false;
+    p.phase = 6;
+    try {
+        std::ofstream send_trace;
+        if (const char* file = std::getenv("AVIATOR_JOINT_SEND_TRACE_FILE")) {
+            send_trace.open(file);
+            send_trace << "feedback_sim_time,monotonic_time,q0_target\n";
+        }
+        constexpr double period = .01;
+        const bool raw = std::getenv("AVIATOR_T6_RAW") != nullptr;
+        const bool infinite = duration <= 0;
+        const long long cycles = infinite ? 0 : static_cast<long long>(std::ceil(duration / period));
+        for (long long cycle = 0; infinite || cycle <= cycles; ++cycle) {
+            const double expected = first.time + cycle * period;
+            auto feedback = p.status();
+            while (feedback.time + 1e-6 < expected) {
+                p.waitTick();
+                feedback = p.status();
+            }
+            require(!p.cancel, "Joint-feedback run was stopped");
+            const double lateness = feedback.time - expected;
+            require(lateness <= .005,
+                    "Joint-feedback cycle missed its 10 ms simulation deadline: cycle=" +
+                        std::to_string(cycle) + ", late=" +
+                        std::to_string(lateness * 1000) + " ms");
+            require(!feedback.fault && feedback.locked == 3 &&
+                        p.arms[0]->IsEnabled() && p.arms[1]->IsEnabled(),
+                    "Grasp or drive fault during joint-feedback run");
+            Joints actual{};
+            std::copy(std::begin(feedback.joints), std::end(feedback.joints), actual.begin());
+            p.checkElbows(actual);
+            if (!raw) {
+                for (int axis = 0; axis < 14; ++axis)
+                    require(std::abs(actual[axis] - p.last_target[axis]) < p.tracking,
+                            "Tracking error on axis " + std::to_string(axis));
+            }
+            const auto target = controller(feedback);
+            if (!target) {
+                p.hold();
+                continue;
+            }
+            for (int axis = 0; axis < 14; ++axis) {
+                require(std::isfinite(target->q[axis]),
+                        "Non-finite joint target on axis " + std::to_string(axis));
+                if (!raw)
+                    require(std::abs(target->q[axis] - actual[axis]) / period <=
+                                std::min(p.max_speed, p.arms[axis / 7]->getJntVelLimit(axis % 7)),
+                            "Joint-feedback speed limit on axis " + std::to_string(axis));
+            }
+            p.check(target->q, target->next_task[0], target->next_task[1], raw);
+            Joints midpoint{};
+            for (int axis = 0; axis < 14; ++axis)
+                midpoint[axis] = .5 * (actual[axis] + target->q[axis]);
+            p.check(midpoint, .5 * (feedback.angle + target->next_task[0]),
+                    .5 * (feedback.displacement + target->next_task[1]), raw);
+            {
+                ipc::Channel::Guard guard(*p.channel);
+                for (int axis = 0; axis < 14; ++axis)
+                    p.arms[axis / 7]->setJointPosition(axis % 7, target->q[axis]);
+            }
+            if (send_trace)
+                send_trace << std::setprecision(17) << feedback.time << ','
+                           << ipc::monotonicTime() << ',' << target->q[0] << '\n';
+            p.last_target = target->q;
+        }
+        p.hold();
+        p.phase = 5;
+    } catch (...) {
+        p.hold();
         p.phase = 7;
         throw;
     }
