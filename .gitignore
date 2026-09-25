@@ -12,3 +12,5 @@ _deps
 CMakeUserPresets.json
 reference/rocos-mujoco/build
 logs/
+/.cache
+/build
