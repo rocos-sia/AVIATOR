@@ -28,3 +28,7 @@ AviatorRobot_simple/build
 /AviatorRobot/build
 /methods/t6/.deps
 /methods/t6/__pycache__
+*.pyc
+*.csv
+*.mp4
+/examples/aviator_clearance_hand/out

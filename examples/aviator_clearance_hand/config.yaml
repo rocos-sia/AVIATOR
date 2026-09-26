@@ -1,0 +1,11 @@
+# build_manifold_phi config for the HAND + WALL model (RH56E2 gripper, dev branch).
+#
+# Paths are resolved relative to THIS file's directory.  `urdf` / `model` point
+# into the repo's models/ tree (the hand URDF and the hand MJCF with the
+# aviator_wall_* geoms); `grasp` / `posture` are the grasp-conditioned calibration
+# data copied verbatim (the wheel + handle geometry is identical across the two
+# models, so the grasp frame and approach seeds transfer unchanged).
+urdf: ../../models/urdf/aviator.urdf
+model: ../../models/mjcf/aviator.xml
+grasp: grasp.json
+posture: posture.json

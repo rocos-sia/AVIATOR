@@ -1,0 +1,32 @@
+{
+  "sine": {
+    "frames": 250,
+    "max_closure_mm": 0.0006909700258380376,
+    "max_orientation_deg": 4.010175463437654e-05,
+    "hand_drift_mm": [
+      0.0006786422859669121,
+      0.0007013175816143102
+    ],
+    "min_thumb_up_along_handle_mm": 27.073901233005788
+  },
+  "roll_pull": {
+    "frames": 250,
+    "max_closure_mm": 0.0006743566412020181,
+    "max_orientation_deg": 4.0075766509513696e-05,
+    "hand_drift_mm": [
+      0.0006861078305844746,
+      0.0006159452664835086
+    ],
+    "min_thumb_up_along_handle_mm": 27.073920748356798
+  },
+  "random": {
+    "frames": 250,
+    "max_closure_mm": 0.0006992228142600922,
+    "max_orientation_deg": 4.006031254463707e-05,
+    "hand_drift_mm": [
+      0.0008815586619875627,
+      0.0010708270876414626
+    ],
+    "min_thumb_up_along_handle_mm": 27.073917628101206
+  }
+}
