@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AVIATOR 状态监控</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101820;color:#e0e9ef}body{margin:0;padding:28px;max-width:1500px;margin:auto}header{display:flex;justify-content:space-between;align-items:center}h1{font-size:24px;margin:0}small,.muted{color:#9bacb9}#connection{padding:8px 14px;border-radius:20px;background:#293c49}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0}.card{background:#1b2935;padding:18px;border:1px solid #304350;border-radius:10px}.card strong{display:block;margin-top:8px;font-size:22px}.panel{background:#182530;border:1px solid #304350;border-radius:10px;padding:18px;margin-top:18px}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;white-space:nowrap;font-size:13px}th{text-align:left;color:#9bacb9;font-weight:500}td,th{padding:10px;border-bottom:1px solid #2b3c49}tbody tr{cursor:pointer}tbody tr:hover,tbody tr.selected{background:#263e50}.FRESH{color:#7ae2b5}.STALE,.INVALID,.FUTURE,.STALE_ORIGIN{color:#ffab99}.CLOCK_UNKNOWN{color:#f7d67a}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:450px;overflow:auto;font-size:12px}h2{font-size:16px;margin-top:0}#notice{color:#ffbe92;min-height:22px}#freshness{margin-top:12px;color:#b8c9d5}a{color:#93c9ff}@media(max-width:750px){body{padding:14px}.cards{grid-template-columns:1fr 1fr}header{display:block}}
+</style>
+<header><div><h1>AVIATOR <span class="muted">/ 系统监控</span></h1><small>只读观测 · 2 秒接收频率窗口 · 每 100 ms 刷新</small></div><span id="connection">等待监控服务</span></header>
+<div class="cards"><div class="card">整机状态<strong id="system">等待数据</strong></div><div class="card">控制来源<strong id="source">—</strong></div><div class="card">当前 / 历史错误<strong id="errors">—</strong></div><div class="card">有效 / 已观测数据流<strong id="streams">0 / 0</strong></div></div>
+<div id="notice"></div><div id="freshness">尚无 FlightState 聚合反馈</div>
+<section class="panel"><h2>总线数据流 <small id="counts"></small></h2><div class="scroll"><table><thead><tr><th>Topic / 生产者</th><th>会话</th><th>数据状态</th><th>Hz</th><th>样本年龄 ms</th><th>接收间隔 ms</th><th>序号</th><th>缺口 / 重复乱序</th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted">点击任意行查看完整消息。FRESH 仅表示头部有效且新鲜，不代表执行器已就绪或具备控制授权。</p></section>
+<section class="panel"><h2 id="detail-title">消息详情</h2><pre id="detail">选择数据流以查看双臂、双手、视觉及其他原始字段。</pre></section>
+<script>
+let selected=null, busy=false;
+const el=id=>document.getElementById(id), text=(id,value)=>el(id).textContent=value??'—';
+const num=v=>typeof v==='number'?v.toFixed(1):'—';
+async function get(path){const r=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(2500)});if(!r.ok)throw Error('HTTP '+r.status);return r.json()}
+async function refresh(){if(busy)return;busy=true;try{
+ const data=await get('/api/state'), rows=data.streams;
+ text('connection','监控服务在线');text('streams',rows.filter(x=>x.status==='FRESH').length+' / '+rows.length);
+ text('counts',`拒绝 ${data.rejected} · 缓存淘汰 ${data.evicted}`);
+ const live=rows.filter(x=>x.topic==='flight.state'&&x.status==='FRESH');
+ const flight=live.length===1?live[0]:null;
+ text('system',live.length>1?'来源冲突':flight?.summary.state??'无有效整机反馈');
+ text('source',flight?.summary.source);text('errors',flight?`${flight.summary.error??'—'} / ${flight.summary.last_error??'—'}`:'—');
+ text('freshness',flight?['arm','hand','camera'].map(k=>`${k}: ${flight.summary[k]?.valid===true&&typeof flight.summary[k]?.age_ms==='number'&&flight.summary[k].age_ms<(k==='camera'?200:50)?'新鲜':'过期/无效/未知'}，当前年龄 ${num(flight.summary[k]?.age_ms)} ms`).join(' · '):'FlightState 尚未收到、已失效、时钟域未知或存在多个新鲜来源');
+ text('notice',live.length>1?'检测到多个新鲜 FlightState 来源，请核对部署。':data.error?`最近接收异常：${data.error}`:'');
+ el('rows').replaceChildren();
+ for(const row of rows){const tr=document.createElement('tr');if(row.id===selected)tr.className='selected';
+ const cells=[row.topic+' / '+row.publisher,row.session.slice(0,8),row.status,num(row.hz),num(row.age_ms),num(row.receive_age_ms),row.sequence,row.gaps+' / '+row.duplicates];
+ cells.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(i===2)td.className=row.status;if(i===1)td.title=row.session;tr.append(td)});
+ tr.onclick=()=>{selected=row.id;};el('rows').append(tr)}
+ if(selected!==null){const row=rows.find(x=>x.id===selected);if(!row){selected=null;text('detail','该数据流已被缓存淘汰')}else{
+ text('detail-title',row.topic+' / '+row.publisher+' · '+row.status);const detail=await get('/api/message?id='+selected);text('detail',JSON.stringify(detail,null,2));}}
+ }catch(error){text('connection','监控服务不可用');text('system','状态未知');text('source','—');text('errors','—');text('streams','—');text('freshness','连接已中断，页面保留值不可用于判断当前状态');text('notice',error.message);el('rows').replaceChildren();text('detail-title','消息详情（旧快照）');}finally{busy=false}}
+refresh();setInterval(refresh,100);
+</script></html>

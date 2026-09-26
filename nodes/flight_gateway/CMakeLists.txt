@@ -1,3 +1,5 @@
-# Reserved for the flight_gateway executable; no runnable implementation yet.
-# Add main.cpp, add_executable(), target_compile_features(... cxx_std_17),
-# target_link_libraries() and install(TARGETS ...) together with implementation.
+find_package(Threads REQUIRED)
+add_executable(flight_gateway main.cpp gateway.cpp)
+target_compile_features(flight_gateway PRIVATE cxx_std_17)
+target_link_libraries(flight_gateway PRIVATE aviator_transport aviator_runtime Threads::Threads)
+install(TARGETS flight_gateway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

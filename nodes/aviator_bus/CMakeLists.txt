@@ -1,3 +1,5 @@
-# Reserved for the aviator_bus executable; no runnable implementation yet.
-# Add main.cpp, add_executable(), target_compile_features(... cxx_std_17),
-# target_link_libraries() and install(TARGETS ...) together with implementation.
+find_package(Threads REQUIRED)
+add_executable(aviator_bus main.cpp)
+target_compile_features(aviator_bus PRIVATE cxx_std_17)
+target_link_libraries(aviator_bus PRIVATE aviator_transport Threads::Threads)
+install(TARGETS aviator_bus RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

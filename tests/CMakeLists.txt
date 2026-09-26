@@ -1,1 +1,38 @@
-# Register protocol, integration, recording/replay and fault tests as implemented.
+add_executable(aviator_communication_test communication_test.cpp)
+target_link_libraries(aviator_communication_test PRIVATE
+  aviator_transport aviator_runtime)
+add_test(NAME communication COMMAND aviator_communication_test)
+set_tests_properties(communication PROPERTIES TIMEOUT 20)
+
+find_package(Threads REQUIRED)
+add_executable(aviator_bus_test bus_test.cpp)
+target_link_libraries(aviator_bus_test PRIVATE aviator_transport Threads::Threads)
+add_dependencies(aviator_bus_test aviator_bus)
+add_test(NAME bus_process COMMAND aviator_bus_test $<TARGET_FILE:aviator_bus>)
+set_tests_properties(bus_process PROPERTIES TIMEOUT 20)
+add_test(NAME bus_help COMMAND aviator_bus --help)
+set_tests_properties(bus_help PROPERTIES TIMEOUT 5)
+
+add_executable(aviator_gateway_test gateway_test.cpp ../nodes/flight_gateway/gateway.cpp)
+target_include_directories(aviator_gateway_test PRIVATE ../nodes/flight_gateway)
+target_link_libraries(aviator_gateway_test PRIVATE aviator_runtime)
+add_test(NAME gateway COMMAND aviator_gateway_test)
+add_test(NAME gateway_help COMMAND flight_gateway --help)
+add_test(NAME gateway_rs422_unavailable COMMAND flight_gateway --source rs422)
+add_test(NAME gateway_invalid_device COMMAND flight_gateway --device /dev/null)
+set_tests_properties(gateway gateway_help PROPERTIES TIMEOUT 5)
+set_tests_properties(gateway_rs422_unavailable gateway_invalid_device PROPERTIES TIMEOUT 5 WILL_FAIL TRUE)
+
+add_executable(aviator_monitor_test monitor_test.cpp ../nodes/aviator_monitor/monitor.cpp)
+target_include_directories(aviator_monitor_test PRIVATE ../nodes/aviator_monitor)
+target_link_libraries(aviator_monitor_test PRIVATE aviator_runtime aviator_transport)
+add_test(NAME monitor_state COMMAND aviator_monitor_test)
+add_test(NAME monitor_help COMMAND aviator_monitor --help)
+set_tests_properties(monitor_state monitor_help PROPERTIES TIMEOUT 5)
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME monitor_http COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/monitor_http_test.py
+    $<TARGET_FILE:aviator_monitor> $<TARGET_FILE:aviator_monitor_test>)
+  set_tests_properties(monitor_http PROPERTIES TIMEOUT 20)
+endif()

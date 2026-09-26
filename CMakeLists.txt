@@ -31,13 +31,14 @@ set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
 #------------------------------------------------------------------------------
 # Third-party dependencies
 #------------------------------------------------------------------------------
-include(cmake/ThirdPartyDependencies.cmake)
+option(AVIATOR_COMMUNICATION_ONLY "Build communication libraries/tests without robotics dependencies" OFF)
+if(NOT AVIATOR_COMMUNICATION_ONLY)
+  include(cmake/ThirdPartyDependencies.cmake)
+endif()
 
 #------------------------------------------------------------------------------
 # Project components
 #------------------------------------------------------------------------------
-# Directory scaffold only. Add target_compile_features(... cxx_std_17)
-# and target-scoped dependencies when each implementation is introduced.
 add_subdirectory(common)
 add_subdirectory(nodes)
 
@@ -46,7 +47,7 @@ add_subdirectory(nodes)
 #------------------------------------------------------------------------------
 option(AVIATOR_BUILD_EXAMPLES "Build example projects" ON)
 
-if(AVIATOR_BUILD_EXAMPLES)
+if(AVIATOR_BUILD_EXAMPLES AND NOT AVIATOR_COMMUNICATION_ONLY)
     message(STATUS "Building examples...")
     add_subdirectory(examples)
 endif()
@@ -66,7 +67,7 @@ install(FILES README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
 install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
 # Install third-party libraries
-if(AVIATOR_BUILD_ROBOTICS_LIBS OR AVIATOR_BUILD_MUJOCO)
+if(NOT AVIATOR_COMMUNICATION_ONLY AND (AVIATOR_BUILD_ROBOTICS_LIBS OR AVIATOR_BUILD_MUJOCO))
     install(DIRECTORY "${AVIATOR_DEPS_DIR}/lib/" DESTINATION ${CMAKE_INSTALL_LIBDIR}
         FILES_MATCHING PATTERN "*.so*")
 endif()

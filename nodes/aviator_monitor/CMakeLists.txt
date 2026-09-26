@@ -1,3 +1,9 @@
-# Reserved for the aviator_monitor executable; no runnable implementation yet.
-# Add main.cpp, add_executable(), target_compile_features(... cxx_std_17),
-# target_link_libraries() and install(TARGETS ...) together with implementation.
+find_package(Threads REQUIRED)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/index.html" MONITOR_HTML)
+configure_file(page.hpp.in generated/page.hpp @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS index.html)
+add_executable(aviator_monitor main.cpp monitor.cpp)
+target_include_directories(aviator_monitor PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_compile_features(aviator_monitor PRIVATE cxx_std_17)
+target_link_libraries(aviator_monitor PRIVATE aviator_transport aviator_runtime Threads::Threads)
+install(TARGETS aviator_monitor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
