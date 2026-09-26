@@ -1,0 +1,5 @@
+step_probe_completed base_q0=1.40847 target_q0=1.40861 coordinated=1 wheel_step=0.0011 csv=/home/rocos/sia/AVIATOR/methods/t6/results/csp_inertia_sweep/step_izz_0.00003/joint_step_feedback.csv
+send_monotonic=29530.561256 receive_monotonic=29530.562113 delivery_delay_ms=0.857
+q_start=1.40846281 target=1.40860979 q_at_10ms=1.40852837 remaining_10ms_rad=0.00008142 t90_ms=18.947 settled_5pct_ms=54.782
+wheel_start=0.00000494 target=0.00110494 wheel_at_10ms=-0.00028457 wheel_10ms_completion=-0.263 wheel_settled_5pct_ms=94.818
+csv=/home/rocos/sia/AVIATOR/methods/t6/results/csp_inertia_sweep/step_izz_0.00003/joint_step_feedback.csv /home/rocos/sia/AVIATOR/methods/t6/results/csp_inertia_sweep/step_izz_0.00003/joint_step_send.csv /home/rocos/sia/AVIATOR/methods/t6/results/csp_inertia_sweep/step_izz_0.00003/joint_step_sim_1ms.csv

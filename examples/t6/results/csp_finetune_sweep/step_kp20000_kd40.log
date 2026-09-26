@@ -1,0 +1,5 @@
+step_probe_completed base_q0=1.40847 target_q0=1.40861 coordinated=1 wheel_step=0.0011 csv=/home/rocos/sia/AVIATOR/methods/t6/results/csp_finetune_sweep/step_kp20000_kd40/joint_step_feedback.csv
+send_monotonic=29804.087393 receive_monotonic=29804.088284 delivery_delay_ms=0.891
+q_start=1.40846457 target=1.40860979 q_at_10ms=1.40862971 remaining_10ms_rad=-0.00001992 t90_ms=7.377 settled_5pct_ms=99.998
+wheel_start=-0.00000599 target=0.00109401 wheel_at_10ms=0.00121342 wheel_10ms_completion=1.109 wheel_settled_5pct_ms=63.024
+csv=/home/rocos/sia/AVIATOR/methods/t6/results/csp_finetune_sweep/step_kp20000_kd40/joint_step_feedback.csv /home/rocos/sia/AVIATOR/methods/t6/results/csp_finetune_sweep/step_kp20000_kd40/joint_step_send.csv /home/rocos/sia/AVIATOR/methods/t6/results/csp_finetune_sweep/step_kp20000_kd40/joint_step_sim_1ms.csv

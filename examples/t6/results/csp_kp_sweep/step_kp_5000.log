@@ -1,0 +1,5 @@
+step_probe_completed base_q0=1.40847 target_q0=1.40861 coordinated=1 wheel_step=0.0011 csv=/home/rocos/sia/AVIATOR/methods/t6/results/csp_kp_sweep/step_kp_5000/joint_step_feedback.csv
+send_monotonic=28236.506360 receive_monotonic=28236.507160 delivery_delay_ms=0.800
+q_start=1.40846715 target=1.40860979 q_at_10ms=1.40860371 remaining_10ms_rad=0.00000608 t90_ms=9.469 settled_5pct_ms=59.843
+wheel_start=0.00000879 target=0.00110879 wheel_at_10ms=0.00090905 wheel_10ms_completion=0.818 wheel_settled_5pct_ms=73.362
+csv=/home/rocos/sia/AVIATOR/methods/t6/results/csp_kp_sweep/step_kp_5000/joint_step_feedback.csv /home/rocos/sia/AVIATOR/methods/t6/results/csp_kp_sweep/step_kp_5000/joint_step_send.csv /home/rocos/sia/AVIATOR/methods/t6/results/csp_kp_sweep/step_kp_5000/joint_step_sim_1ms.csv

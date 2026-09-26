@@ -1,0 +1,32 @@
+
+# regenerated Aviator pipeline intermediates (large; rebuilt by the C++ engine + build_dp_dataset.py)
+data/aviator/manifold_phi/
+data/aviator/dp_demo/*.csv
+data/aviator/dp_demo/*.pkl
+data/aviator/prior_state_audit/
+data/aviator/phase_registration/
+data/aviator/phase_registration_sub4/
+data/aviator/online_start_audit/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# large vendored binaries not needed for proprio-only training
+examples/experiments/resnet10_params.pkl
+docs/images/
+
+# Python build artifacts
+*.egg-info/
+
+# training checkpoints + wandb (regenerated)
+examples/experiments/aviator_manifold/debug/
+examples/experiments/aviator_manifold/debug_rlpd/
+examples/experiments/aviator_manifold/smoke_unshielded_*/
+examples/experiments/aviator_manifold/unshielded_rlpd_pilot/
+examples/experiments/aviator_manifold/route_a_lut_native_rlpd/
+wandb/
+
+# overnight run logs (nohup output)
+examples/experiments/aviator_manifold/rlpd_*.log
+examples/experiments/aviator_manifold/unshielded_*.log

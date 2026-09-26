@@ -1,0 +1,80 @@
+[SHM] Create new SharedMemoryConfig instance: 583364
+[1;32m [INFO][SHM] Shared memory ready.[0m
+joint < AR5-5_07L-W4C4A2_joint_1 >'s assigned slave <id: 0 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_2 >'s assigned slave <id: 1 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_3 >'s assigned slave <id: 2 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_4 >'s assigned slave <id: 3 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_5 >'s assigned slave <id: 4 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_6 >'s assigned slave <id: 5 > is a driver joint.
+joint < AR5-5_07L-W4C4A2_joint_7 >'s assigned slave <id: 6 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_1 >'s assigned slave <id: 7 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_2 >'s assigned slave <id: 8 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_3 >'s assigned slave <id: 9 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_4 >'s assigned slave <id: 10 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_5 >'s assigned slave <id: 11 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_6 >'s assigned slave <id: 12 > is a driver joint.
+joint < AR5-5_07R-W4C4A2_joint_7 >'s assigned slave <id: 13 > is a driver joint.
+[2026-09-24 19:37:14.016] [Robot] [info] Robot is initializing...
+[WARN] [1790249834.017272221] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[2026-09-24 19:37:14.017] [Robot] [info] Parsing drive parameters from urdf file: /home/rocos/sia/AVIATOR/AviatorRobot/config/aviator_control.urdf
+Curr Drive State: SwitchOnDisabled
+Drive Guard is running on thread 75eb9b254600
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+[2026-09-24 19:37:14.017] [Robot] [info] All joint parameters:
+idx name                id    lower     upper     vel      acc      jerk     ratio     offset   cnt/unit     torque/unit     unit
+-----------------------------------------------------------------------------------------------------------------------------
+0   AR5-5_07L-W4C4A2_joint_10     -3.1067   3.1067    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+1   AR5-5_07L-W4C4A2_joint_21     -2.0944   2.0944    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+2   AR5-5_07L-W4C4A2_joint_32     -3.1067   3.1067    4.7124   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+3   AR5-5_07L-W4C4A2_joint_43     -1.0472   2.5307    5.2360   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+4   AR5-5_07L-W4C4A2_joint_54     -3.1067   3.1067    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+5   AR5-5_07L-W4C4A2_joint_65     -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+6   AR5-5_07L-W4C4A2_joint_76     -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+
+[2026-09-24 19:37:14.017] [Robot] [info] Kinematics initialized successfully.
+[2026-09-24 19:37:14.017] [Robot] [info] Dynamics initialized successfully.
+[2026-09-24 19:37:14.017] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 19:37:14.017] [Robot] [info] Robot is initializing...
+[WARN] [1790249834.018723256] [kdl_parser]: The root link aircraft has an inertia specified in the URDF, but KDL does not support a root link with an inertia.  As a workaround, you can add an extra dummy link to your URDF.
+[2026-09-24 19:37:14.018] [Robot] [info] Parsing drive parameters from urdf file: /home/rocos/sia/AVIATOR/AviatorRobot/config/aviator_control.urdf
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+Curr Drive State: SwitchOnDisabled
+[2026-09-24 19:37:14.018] [Robot] [info] All joint parameters:
+idx name                id    lower     upper     vel      acc      jerk     ratio     offset   cnt/unit     torque/unit     unit
+-----------------------------------------------------------------------------------------------------------------------------
+0   AR5-5_07R-W4C4A2_joint_17     -3.1067   3.1067    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+1   AR5-5_07R-W4C4A2_joint_28     -2.0944   2.0944    3.0543   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+2   AR5-5_07R-W4C4A2_joint_39     -3.1067   3.1067    4.7124   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+3   AR5-5_07R-W4C4A2_joint_410    -1.0472   2.5307    5.2360   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+4   AR5-5_07R-W4C4A2_joint_511    -3.1067   3.1067    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+5   AR5-5_07R-W4C4A2_joint_612    -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+6   AR5-5_07R-W4C4A2_joint_713    -1.0472   1.0472    4.1888   10.0000  150.0000 1.0000    0        156455.6780  1.0000          rad
+
+[2026-09-24 19:37:14.018] [Robot] [info] Kinematics initialized successfully.
+[2026-09-24 19:37:14.019] [Robot] [info] Dynamics initialized successfully.
+[2026-09-24 19:37:14.019] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 19:37:14.019] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 19:37:14.019] [Robot] [info] Robot Enabling.....
+[2026-09-24 19:37:14.098] [Robot] [error] joints[0] is not Enabled
+[2026-09-24 19:37:14.098] [Robot] [info] Robot Enabling.....
+sin center theta=0 s=-0.08; initial feedback=2.63566e-06,-0.0799963; amp=0,-0.079; frequency=0.02 Hz; wheel_command_frequency=50 Hz; max_joint_speed=1.5 rad/s
+[2026-09-24 19:37:56.340] [Robot] [info] Robot Disabling.....
+[2026-09-24 19:37:56.372] [Robot] [info] Robot Disabling.....
+samples=2501 csv=/home/rocos/sia/AVIATOR/methods/t6/results/mujoco_60k_slide_1mm_margin.csv
+theta_rms=0.000729251 rad theta_max=0.00306166 rad
+slide_rms=0.000521061 m slide_max=0.000762246 m
+joint_tracking_rms=0.00345143 rad joint_tracking_max=0.00848176 rad
+phase_reconstruction_max=0.00123613 rad lut_clearance_min=0.00796668 m
+t6_compute_mean=0.125655 ms t6_compute_p99=0.306084 ms t6_compute_max=0.521478 ms
+TEST COMPLETED
+Drive Guard thread is terminated.
