@@ -1,0 +1,12 @@
+{
+  "task_index": 30,
+  "checkpoint_step": 60000,
+  "checkpoint_run": "route_a_lut_native_rlpd_800x64",
+  "dp_phase": "representation-mode registration to LUT coordinate",
+  "max_dp_joint_reconstruction_error_rad": 0.0033385302429511654,
+  "rl_termination": "end",
+  "rl_steps": 864,
+  "attempts": [],
+  "interpretation": "DP curve is a registered approximation; RL curve is an actual deterministic environment rollout. LUT safe bounds do not certify physical clearance.",
+  "v2_changes": "Okabe-Ito colours, on-axis labels, start/end markers, nature style; combined 3x2 figure (overview/detail/top-down)"
+}

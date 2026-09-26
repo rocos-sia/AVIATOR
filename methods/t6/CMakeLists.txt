@@ -20,6 +20,8 @@ add_executable(t6_feedback_smoke feedback_smoke.cpp)
 target_link_libraries(t6_feedback_smoke PRIVATE aviator_t6)
 add_executable(t6_lut_probe lut_probe.cpp)
 target_link_libraries(t6_lut_probe PRIVATE aviator_t6)
+add_executable(t6_bench bench.cpp)
+target_link_libraries(t6_bench PRIVATE aviator_t6)
 enable_testing()
 add_test(NAME t6_feedback_smoke COMMAND t6_feedback_smoke
          ${CMAKE_CURRENT_SOURCE_DIR}/actor_60k.onnx
