@@ -1186,10 +1186,10 @@ class ClearanceTrajectory {
     // whichever *disconnected* component is joint-space-closest to home, breaking the
     // dL(θ,s)≈dR(-θ,s) symmetry with a very different max clearance.) Only when home fails
     // — a false negative at 1° grid resolution — fall back to a deterministic bank and
-    // keep the solution closest to home. Each call is seeded via setSeed() (reproducible).
+    // keep the solution closest to home.
     bool ik_multi_seed(int side, double theta, double s, const Q &ref, unsigned int seed_base, Q &out) {
+        (void)seed_base;  // TRAC-IK's per-call setSeed had no PIN-IK equivalent (RNG seed only)
         Q q(7);
-        ik[side]->setSeed(seed_base);
         // Warm-start from `ref` (the continuation / transported φ=0 config), NOT the static
         // baseline: this is what makes φ continuous across x. Callers that pass seeds[side]
         // as `ref` are unchanged.
@@ -1214,7 +1214,6 @@ class ClearanceTrajectory {
             Q seed(7);
             for (int j = 0; j < 7; j++)
                 seed(j) = std::clamp(bank[t](j), lower[side](j), upper[side](j));
-            ik[side]->setSeed(seed_base + 1u + (unsigned int)t);  // per-trial deterministic stream
             Q qq(7);
             if (ik[side]->CartToJnt(seed, target(side, theta, s), qq) >= 0) {
                 double d = distW(side, qq, ref);
@@ -4626,7 +4625,6 @@ class ClearanceTrajectory {
                     reachable[idx] = 1;
                     TraceResult tr[2];
                     for (int side = 0; side < 2; side++) {
-                        run.ik[side]->setSeed(atlas_seed(idx, side, 1000));  // fixed trace stream
                         run.self_motion_trace_ex(side, q0[side], q0[1 - side], theta, s, run.handle[side].M, tr[side]);
                     }
                     dL[idx] = float(tr[0].d_max);
@@ -4857,7 +4855,6 @@ class ClearanceTrajectory {
                     n_reach.fetch_add(1, std::memory_order_relaxed);
                     TraceResult tr[2];
                     for (int side = 0; side < 2; side++) {
-                        run.ik[side]->setSeed(atlas_seed(idx, side, 1000));
                         run.self_motion_trace_ex(side, q0[side], q0[1 - side], theta, s, run.handle[side].M, tr[side]);
                     }
                     if (tr[0].has_safe && tr[1].has_safe) {
@@ -5282,7 +5279,6 @@ class ClearanceTrajectory {
                         cd[side][k].push_back(-1.0);
                         continue;
                     }
-                    run.ik[side]->setSeed(atlas_seed(k, side, 1000));
                     Q q_safe, q_max;
                     double d_safe_at, d_max;
                     bool has_safe;
@@ -5617,7 +5613,6 @@ class ClearanceTrajectory {
                         low_margin[k] = 1;
                         continue;
                     }
-                    run.ik[side]->setSeed(atlas_seed(0, side, 1000));
                     Q q_safe, q_max;
                     double d_safe_at, d_max;
                     bool has_safe;
@@ -6369,7 +6364,6 @@ class ClearanceTrajectory {
                         has_safe[side][idx] = 0;
                         continue;
                     }
-                    run.ik[side]->setSeed(atlas_seed(0, side, 1000));
                     Q prev = q0[side];
                     double qrho = 0.0;
                     int lo = 0, hi = 0;
@@ -6618,7 +6612,6 @@ class ClearanceTrajectory {
             double th = stream[k + 1][0], s = stream[k + 1][1];
             Q qcont[2]{Q(7), Q(7)}, qnext[2]{Q(7), Q(7)};
             for (int side = 0; side < 2; side++) {
-                ik[side]->setSeed(atlas_seed(0, side, 1000));
                 if (ik[side]->CartToJnt(qt[side], target(side, th, s), qcont[side]) < 0)
                     qcont[side] = qt[side];
             }
@@ -6808,7 +6801,6 @@ class ClearanceTrajectory {
                 }
                 std::vector<Row> local;
                 for (int side = 0; side < 2; side++) {
-                    run.ik[side]->setSeed(atlas_seed(0, side, 1000));
                     std::vector<Q> cand;
                     std::vector<double> cd;
                     Q q_safe, q_max;

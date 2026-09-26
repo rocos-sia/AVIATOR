@@ -33,7 +33,10 @@ class Vector {
 
     Vector() = default;
     Vector(double x, double y, double z) : v(x, y, z) {}
-    Vector(const Eigen::Vector3d &e) : v(e) {}
+    // Accept any 3-vector Eigen expression (Vector3d, and the lazy expression
+    // templates produced by +,-,*,/), so `return v + o.v;` converts in one step.
+    template <typename Derived>
+    Vector(const Eigen::MatrixBase<Derived> &e) : v(e) {}
 
     double x() const { return v.x(); }
     double y() const { return v.y(); }
@@ -43,6 +46,7 @@ class Vector {
 
     Vector operator+(const Vector &o) const { return v + o.v; }
     Vector operator-(const Vector &o) const { return v - o.v; }
+    Vector operator-() const { return -v; }
     Vector operator*(double s) const { return v * s; }
     Vector operator/(double s) const { return v / s; }
     friend Vector operator*(double s, const Vector &a) { return a.v * s; }
@@ -79,6 +83,7 @@ class Rotation {
 
     Rotation Inverse() const { return Rotation(m.transpose()); }
     Rotation operator*(const Rotation &o) const { return Rotation(m * o.m); }
+    Vector operator*(const Vector &o) const { return Vector(m * o.v); }
 
     // KDL::Rotation::GetRot() returns the axis-angle vector (angle * axis).
     Vector GetRot() const {
@@ -88,25 +93,24 @@ class Rotation {
 };
 
 // --- Frame ------------------------------------------------------------------
-// Thin wrapper over pinocchio::SE3 exposing the KDL::Frame API used by the tool:
-// {Rotation, Vector} construction, .M / .p accessors, composition (*) and
-// inverse.  It converts implicitly to pinocchio::SE3 so it can be handed
-// directly to PIN_IK::CartToJnt.
+// Thin wrapper over Eigen/Pinocchio exposing the KDL::Frame API used by the tool.
+// KDL stores the rotation and translation as PUBLIC DATA MEMBERS .M / .p, so
+// this class mirrors that (the source reads them without parentheses).  It
+// converts implicitly to pinocchio::SE3 so it can be handed directly to
+// PIN_IK::CartToJnt.
 class Frame {
   public:
-    pinocchio::SE3 t{pinocchio::SE3::Identity()};
+    Rotation M;   // rotation part (default identity)
+    Vector p;     // translation part (default zero)
 
     Frame() = default;
-    Frame(const pinocchio::SE3 &s) : t(s) {}
-    Frame(const Rotation &R, const Vector &p) : t(R.m, p.v) {}
+    Frame(const Rotation &R, const Vector &P) : M(R), p(P) {}
+    Frame(const pinocchio::SE3 &s) : M(s.rotation()), p(s.translation()) {}
 
-    Rotation M() const { return Rotation(t.rotation()); }
-    Vector p() const { return Vector(t.translation()); }
+    Frame Inverse() const { return Frame(M.Inverse(), -(M.Inverse() * p)); }
+    Frame operator*(const Frame &o) const { return Frame(M * o.M, M * o.p + p); }
 
-    Frame Inverse() const { return Frame(t.inverse()); }
-    Frame operator*(const Frame &o) const { return Frame(t * o.t); }
-
-    operator const pinocchio::SE3 &() const { return t; }
+    operator pinocchio::SE3() const { return pinocchio::SE3(M.m, p.v); }
 };
 
 } // namespace KDL

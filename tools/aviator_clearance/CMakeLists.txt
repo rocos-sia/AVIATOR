@@ -15,7 +15,10 @@
 # Eigen/Pinocchio wrappers), so only the IK backend and the URDF-chain setup
 # changed in clearance_trajectory.cpp.
 cmake_minimum_required(VERSION 3.22)
-project(aviator_clearance LANGUAGES CXX)
+# MuJoCo is a C + C++ project (its libccd precision check compiles C), so the
+# C language must be enabled here or the vendored ExternalProject configure
+# fails with "No CMAKE_C_COMPILER could be found".
+project(aviator_clearance LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
