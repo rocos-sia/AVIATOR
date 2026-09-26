@@ -5,9 +5,10 @@ set -euo pipefail
 usage() {
     cat <<'HELP'
 用法：
-  sudo scripts/setup_joystick_udev.sh --device /dev/input/by-id/...-event-joystick [--user 用户名]
+  sudo scripts/setup_joystick_udev.sh [--device /dev/input/by-id/...-event-joystick] [--user 用户名]
   scripts/setup_joystick_udev.sh --device /dev/input/eventN --dry-run
 
+--device 默认 /dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick。
 自动读取 USB VID/PID，仅匹配被 udev 识别为 joystick 的 event 设备。
 将用户加入 aviator 组，并安装 MODE=0640 的规则；不修改整个 /dev。
 --user 默认使用 sudo 的原始用户；直接以 root 运行时必须指定普通用户。
@@ -16,7 +17,7 @@ HELP
 }
 fail() { echo "错误：$*" >&2; exit 1; }
 
-device=''
+device='/dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick'
 target_user=${SUDO_USER:-${USER:-}}
 dry_run=false
 while (($#)); do
@@ -30,7 +31,6 @@ while (($#)); do
         *) fail "未知参数：$1（使用 --help 查看用法）" ;;
     esac
 done
-[[ -n $device ]] || fail '请通过 --device 指定摇杆 event 设备路径'
 for tool in udevadm readlink getent id; do
     command -v "$tool" >/dev/null || fail "缺少命令：$tool"
 done

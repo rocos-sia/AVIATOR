@@ -1,16 +1,16 @@
 # 设备配置脚本
 
-`setup_joystick_udev.sh` 为 USB 摇杆配置普通用户读取权限，供 flight_gateway 使用。
+`setup_joystick_udev.sh` 为 USB 摇杆配置普通用户读取权限，供 flight_gateway 使用。脚本和网关的 `--device` 均默认 `/dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick`；其他摇杆可通过 `--device` 指定实际 event 路径。
 
 ```bash
 # 找到实际摇杆的稳定 event 路径（不是 js 路径）。
 ls -l /dev/input/by-id/*event-joystick
 
-# 先预览，将路径替换成实际设备路径。
-./scripts/setup_joystick_udev.sh --device /dev/input/by-id/usb-YOUR_JOYSTICK-event-joystick --dry-run
+# 先预览，省略 --device 使用默认 PXN-F16。
+./scripts/setup_joystick_udev.sh --dry-run
 
 # 正式安装；默认授权运行 sudo 的用户。
-sudo ./scripts/setup_joystick_udev.sh --device /dev/input/by-id/usb-YOUR_JOYSTICK-event-joystick
+sudo ./scripts/setup_joystick_udev.sh
 
 # 直接以 root 登录时，显式指定普通用户。
 sudo ./scripts/setup_joystick_udev.sh --device /dev/input/eventN --user YOUR_USER

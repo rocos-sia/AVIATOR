@@ -75,3 +75,5 @@ ctest --test-dir build/communication --output-on-failure
 ```
 
 `monitor_state` 验证时效、跨时钟域、缺口、重复及缓存界限；`monitor_http` 使用真实 TCP 发布者和 HTTP 子进程验证数据、原始消息接口、慢连接、断流和退出（仅测试阶段需要 Python3 标准库）；`monitor_help` 验证入口。另已使用无头 Chrome 实际渲染实时状态页面。运行节点没有 Python 依赖。
+
+启动成功后，终端会提示 `请在浏览器打开：http://127.0.0.1:8081/`；使用 `--port` 时显示实际配置端口。

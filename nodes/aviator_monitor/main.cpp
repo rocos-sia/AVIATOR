@@ -125,7 +125,8 @@ int main(int argc, char** argv) {
             ~Join() { stop.store(true); thread.join(); }
         } join{stop, receiver};
         std::array<Client, 8> clients;
-        std::cout << "Open http://127.0.0.1:" << port << " subscribe=" << endpoint << std::endl;
+        std::cout << "aviator_monitor 已启动，请在浏览器打开：http://127.0.0.1:" << port << "/\n"
+                  << "subscribe=" << endpoint << std::endl;
         while (!stop.load()) {
             pollfd ready[]{{server.value, POLLIN, 0}, {signal_fd.value, POLLIN, 0}};
             if (::poll(ready, 2, 10) < 0 && errno != EINTR) throw std::runtime_error("HTTP poll failed");

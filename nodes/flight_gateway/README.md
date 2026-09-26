@@ -13,17 +13,17 @@ cmake --build build/communication --parallel
 # 先在另一个终端启动总线。
 ./build/communication/bin/aviator_bus
 
-# event 路径须替换为实际 USB 摇杆设备。
+# 使用默认 LiteStar PXN-F16 稳定路径，可省略 --device。
 ./build/communication/bin/flight_gateway \
-  --device /dev/input/by-id/usb-YOUR_JOYSTICK-event-joystick
+  --device /dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick
 ```
 
-使用 Linux evdev `/dev/input/event*` 或其稳定符号链接，**不是 `/dev/input/js*`**。省略 `--device` 时尝试 `/dev/input/event0`。默认或显式指定路径不存在、无权限、不是 evdev 设备或不支持所选轴时，会打印原因并提示输入新路径；可重复重试，空行或 EOF 退出。非交互启动应显式提供正确路径。需要设备读取权限。默认轴为 ABS_X（0）、ABS_Y（1），启动时通过 ioctl 获取轴范围；不支持所选绝对轴或单调事件时钟的设备会提示重新输入路径。仅打开指定设备，不自动扫描或选择其他输入。
+使用 Linux evdev `/dev/input/event*` 或其稳定符号链接，**不是 `/dev/input/js*`**。省略 `--device` 时尝试 `/dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick`。默认或显式指定路径不存在、无权限、不是 evdev 设备或不支持所选轴时，会打印原因并提示输入新路径；可重复重试，空行或 EOF 退出。其他型号摇杆通过 `--device` 覆盖默认路径；非交互启动须确保设备路径有效。稳定链接可避免插拔后 event 编号变化。需要设备读取权限。默认轴为 ABS_X（0）、ABS_Y（1），启动时通过 ioctl 获取轴范围；不支持所选绝对轴或单调事件时钟的设备会提示重新输入路径。仅打开指定设备，不自动扫描或选择其他输入。
 
 | 参数 | 默认值 | 含义 |
 | --- | --- | --- |
 | `--source` | `joystick` | 当前仅此模式可用；`rs422` 明确返回未实现错误。 |
-| `--device` | `/dev/input/event0` | evdev 设备路径；不可用时提示手动输入。 |
+| `--device` | `/dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick` | evdev 设备路径；不可用时提示手动输入。 |
 | `--publish` | `tcp://127.0.0.1:5555` | 连接 Bus XSUB 的入口。 |
 | `--subscribe` | `tcp://127.0.0.1:5556` | 连接 Bus XPUB 的出口。 |
 | `--roll-axis` / `--pitch-axis` | `0` / `1` | Linux ABS 事件代码，必须不同，不是 js 轴序号。 |
@@ -33,6 +33,8 @@ cmake --build build/communication --parallel
 | `--lock-file` | `/tmp/flight_gateway-<uid>.lock` | 单实例锁；退出释放锁但不删除文件。 |
 | `--help` / `-h` | — | 查看用法。 |
 
+启动后以最多 10 Hz 打印归一化控制值 `roll=... pitch=...`（范围 `[-1, 1]`，保留四位小数），终端中在同一行刷新，退出或输出其他日志前自动换行；重定向到文件或管道时逐行输出。不再打印 `input=VALID/INVALID`。首个完整输入报告前输出初始值 0，输入超时后显示最后采样值；控制消息的有效性与超时判定不变。
+
 生产者固定为 `flight_gateway`，source 固定为 `JOYSTICK`。启动打印本次 session 和 clock_id，Core 应通过自己的授权流程接纳该会话；打印 STARTED 仅说明节点已初始化，不代表总线已连通或控制已获授权。
 
 ## 普通用户设备权限
@@ -40,7 +42,7 @@ cmake --build build/communication --parallel
 出现 `Permission denied` 时，可使用根目录的 udev 配置脚本：
 
 ```bash
-sudo ./scripts/setup_joystick_udev.sh --device /dev/input/by-id/usb-YOUR_JOYSTICK-event-joystick
+sudo ./scripts/setup_joystick_udev.sh --device /dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick
 ```
 
 脚本自动读取 USB VID/PID，为当前 sudo 用户配置专用组的读取权限。执行后注销并重新登录，必要时拔插设备。支持 `--dry-run` 预览及 `--user` 指定用户，详见 [scripts 使用说明](../../scripts/README.md)。

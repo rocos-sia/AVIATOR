@@ -5,6 +5,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
+#include <iomanip>
 #include <memory>
 #include <pthread.h>
 #include <signal.h>
@@ -29,8 +30,13 @@ void require(bool condition, const std::string& reason) {
 }
 int main(int argc, char** argv) {
     int device = -1, signals_fd = -1, lock_fd = -1, result = 0;
+    const bool inline_output = isatty(STDOUT_FILENO);
+    bool value_line = false;
+    const auto finish_value_line = [&] {
+        if (value_line) { std::cout << std::endl; value_line = false; }
+    };
     try {
-        std::string source = "joystick", path = "/dev/input/event0", core_session;
+        std::string source = "joystick", path = "/dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick", core_session;
         std::string pub_endpoint = aviator::publish_endpoint, sub_endpoint = aviator::subscribe_endpoint;
         std::string lock = "/tmp/flight_gateway-" + std::to_string(getuid()) + ".lock";
         unsigned roll_axis = ABS_X, pitch_axis = ABS_Y, timeout_ms = 100;
@@ -38,7 +44,7 @@ int main(int argc, char** argv) {
         for (int i = 1; i < argc; ++i) {
             const std::string key = argv[i];
             if (key == "--help" || key == "-h") {
-                std::cout << "Usage: flight_gateway [--device /dev/input/event0] [options]\n"
+                std::cout << "Usage: flight_gateway [--device /dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick] [options]\n"
                     "Invalid/unavailable device: enter another evdev path at the prompt.\n"
                     "  --source joystick|rs422 (rs422 requires an external ICD; unavailable)\n"
                     "  --publish tcp://127.0.0.1:5555 --subscribe tcp://127.0.0.1:5556\n"
@@ -85,7 +91,7 @@ int main(int argc, char** argv) {
             else break;
             if (device >= 0) { close(device); device = -1; }
             std::cerr << "flight_gateway: " << path << ": " << reason << '\n'
-                      << "请输入 USB 摇杆设备路径（/dev/input/eventN，空行退出）：" << std::flush;
+                      << "请输入 USB 摇杆设备路径（/dev/input/by-id/...-event-joystick 或 /dev/input/eventN，空行退出）：" << std::flush;
             if (!std::getline(std::cin, path)) throw std::runtime_error("no device path provided (EOF)");
             const auto first = path.find_first_not_of(" \t\r");
             if (first == std::string::npos) throw std::runtime_error("device selection cancelled");
@@ -125,7 +131,8 @@ int main(int argc, char** argv) {
         aviator::ReceiveState receive_state;
         std::uint64_t sequence = 0, next_publish = aviator::monotonic_us();
         std::string error, payload, last_status = "STALE", system_state;
-        bool running = true, last_valid = false;
+        bool running = true;
+        std::uint64_t next_print = 0;
         const auto publish = [&](std::uint64_t now) {
             require(sequence < aviator::max_json_integer, "sequence exhausted; restart required");
             auto message = flight_gateway::command(sample, session, clock, ++sequence, now,
@@ -133,9 +140,12 @@ int main(int argc, char** argv) {
             if (!aviator::encode(message, payload, error))
                 throw std::runtime_error("encode: " + error);
             aviator::send(pub, "flight.command", payload);
-            if (message.header.valid != last_valid) {
-                last_valid = message.header.valid;
-                std::cout << "input=" << (last_valid ? "VALID" : "INVALID") << std::endl;
+            if (running && now >= next_print) {
+                std::cout << (inline_output ? "\r\033[2K" : "") << std::fixed << std::setprecision(4)
+                          << "roll=" << sample.roll_value << " pitch=" << sample.pitch_value;
+                if (inline_output) { std::cout << std::flush; value_line = true; }
+                else std::cout << std::endl;
+                next_print = now + 100000; // Limit console output to 10 Hz.
             }
         };
         while (running) {
@@ -154,6 +164,7 @@ int main(int argc, char** argv) {
                     else if (n < 0 && errno == EAGAIN) break;
                     else { sample.failed = true; sample.valid = false; }
                     if (sample.failed) {
+                        finish_value_line();
                         std::cerr << "flight_gateway: input lost/corrupt; restart required\n";
                         close(device); device = -1;
                         break;
@@ -175,6 +186,7 @@ int main(int argc, char** argv) {
             if (feedback) {
                 const auto status = feedback->expired(current) ? "STALE" : system_state;
                 if (status != last_status) {
+                    finish_value_line();
                     std::cout << "feedback=" << status << std::endl;
                     last_status = status;
                 }
@@ -187,8 +199,10 @@ int main(int argc, char** argv) {
         sample.valid = false;
         publish(aviator::monotonic_us()); // Best effort; PUB/SUB has no delivery ACK.
     } catch (const std::exception& error) {
+        finish_value_line();
         std::cerr << "flight_gateway: " << error.what() << '\n'; result = 1;
     }
+    finish_value_line();
     if (device >= 0) close(device);
     if (signals_fd >= 0) close(signals_fd);
     if (lock_fd >= 0) close(lock_fd);
