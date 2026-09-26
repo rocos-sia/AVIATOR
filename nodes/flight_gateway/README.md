@@ -35,6 +35,16 @@ cmake --build build/communication --parallel
 
 生产者固定为 `flight_gateway`，source 固定为 `JOYSTICK`。启动打印本次 session 和 clock_id，Core 应通过自己的授权流程接纳该会话；打印 STARTED 仅说明节点已初始化，不代表总线已连通或控制已获授权。
 
+## 普通用户设备权限
+
+出现 `Permission denied` 时，可使用根目录的 udev 配置脚本：
+
+```bash
+sudo ./scripts/setup_joystick_udev.sh --device /dev/input/by-id/usb-YOUR_JOYSTICK-event-joystick
+```
+
+脚本自动读取 USB VID/PID，为当前 sudo 用户配置专用组的读取权限。执行后注销并重新登录，必要时拔插设备。支持 `--dry-run` 预览及 `--user` 指定用户，详见 [scripts 使用说明](../../scripts/README.md)。
+
 ## 输入及发布语义
 
 - 设备事件通过 `EVIOCSCLOCKID` 指定为 CLOCK_MONOTONIC。EV_ABS 更新待提交轴值，SYN_REPORT 才提交完整快照，使用事件原始时刻而非读到事件的时刻。
