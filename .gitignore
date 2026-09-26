@@ -24,3 +24,7 @@ AviatorRobot_simple/build
 *.mcap
 *.mcap.*
 /.cache
+/.codegraph
+/AviatorRobot/build
+/methods/t6/.deps
+/methods/t6/__pycache__
