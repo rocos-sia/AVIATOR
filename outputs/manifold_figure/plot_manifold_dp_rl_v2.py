@@ -212,7 +212,7 @@ def plot(index: int, task: dict[str, np.ndarray], trace: np.ndarray,
         ax.set_zticks([-0.3, 0, 0.3])
         ax.set_title(f"{'a' if arm == 0 else 'b'}   {'Left' if arm == 0 else 'Right'} arm",
                      loc="left", weight="bold", pad=0, fontsize=9)
-        ax.view_init(elev=23, azim=-62)
+        ax.view_init(elev=(90 if top_down else 23), azim=-62)
         ax.set_box_aspect((1.3, 1.2, 0.88), zoom=0.9)
         ax.xaxis.pane.fill = False
         ax.yaxis.pane.fill = False
@@ -229,14 +229,17 @@ def plot(index: int, task: dict[str, np.ndarray], trace: np.ndarray,
     fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.955),
                ncol=2, frameon=False, fontsize=8)
     fig.suptitle("Bimanual redundancy manifold: DP and RLPD phase paths" +
-                 (" (detail)" if zoom else ""),
+                 {"detail": " (detail)", "top-down": " (top-down)"}.get(view, ""),
                  y=0.995, fontsize=12, weight="bold")
     fig.text(0.5, 0.026,
              f"DP task {index:04d} · DP registration max joint error {registration_error:.4f} rad · "
-             "○ start / ■ end · blue = cycle-consistent loop, purple = loop-open arc (both valid)",
+             "○ start / ■ end · blue = cycle-consistent loop, purple = loop-open arc (both valid)" +
+             (" · top-down collapses φ (shows θ–s footprint)" if top_down else ""),
              ha="center", fontsize=7, color="#4b5563")
     fig.subplots_adjust(left=0.025, right=0.98, bottom=0.10, top=0.89, wspace=0.02)
-    stem = "manifold_dp_rl_v2_detail" if zoom else "manifold_dp_rl_v2"
+    stem = {"overview": "manifold_dp_rl_v2",
+            "detail": "manifold_dp_rl_v2_detail",
+            "top-down": "manifold_dp_rl_v2_top_down"}[view]
     require_matplotlib_panel_alignment(fig, json_out=str(OUT / f"{stem}.alignment.json"),
                                        overlay_svg=str(OUT / f"{stem}.alignment.svg"),
                                        tolerance_pt=1.5, gutter_tolerance_pt=1.5,
@@ -392,8 +395,9 @@ def main():
         assert len(task["x"]) == len(dp_phi) == len(trace), "Selected paths must complete"
         save_trace(trace)
 
-    plot(index, task, trace, dp_phi, registration_error)
-    plot(index, task, trace, dp_phi, registration_error, zoom=True)
+    plot(index, task, trace, dp_phi, registration_error, view="overview")
+    plot(index, task, trace, dp_phi, registration_error, view="detail")
+    plot(index, task, trace, dp_phi, registration_error, view="top-down")
     plot_combined(index, task, trace, dp_phi, registration_error)
     (OUT / "figure_metadata_v2.json").write_text(json.dumps({
         "task_index": index, "checkpoint_step": CHECKPOINT_STEP,
