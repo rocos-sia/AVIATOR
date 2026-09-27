@@ -1,0 +1,43 @@
+#pragma once
+#include "runtime.hpp"
+#include <mujoco/mujoco.h>
+#include <array>
+#include <memory>
+#include <vector>
+
+namespace simulation {
+using Json = nlohmann::json;
+struct Authorization {
+    std::string publisher = "aviator_core", session, epoch;
+    std::string origin_publisher = "flight_gateway", origin_session;
+    std::uint64_t camera_timeout_us = 200000;
+};
+class Simulation {
+public:
+    explicit Simulation(const std::string& path, const Authorization& authorization = {});
+    bool command(const aviator::Message& message, std::uint64_t now, std::string& error);
+    void step(std::uint64_t now);
+    aviator::Message state(bool hand, std::uint64_t now);
+    aviator::Message detection(std::uint64_t now, bool captured, bool in_roi);
+    const Json& camera_command() const { return camera_command_; }
+    mjModel* model() const { return model_.get(); }
+    mjData* data() const { return data_.get(); }
+    const std::string& session() const { return session_; }
+    const std::string& clock() const { return clock_; }
+private:
+    struct Joint { int q, v; double low, high, target; };
+    std::unique_ptr<mjModel, decltype(&mj_deleteModel)> model_{nullptr, mj_deleteModel};
+    std::unique_ptr<mjData, decltype(&mj_deleteData)> data_{nullptr, mj_deleteData};
+    std::array<std::vector<Joint>, 2> arms_, hands_;
+    std::array<int, 2> tcp_{};
+    int roll_ = -1, pitch_ = -1;
+    std::array<std::unique_ptr<aviator::InputGuard>, 3> guards_;
+    std::array<bool, 2> active_{};
+    std::array<Json, 3> references_{Json(nullptr), Json(nullptr), Json(nullptr)};
+    Json camera_command_ = Json::object();
+    std::string session_, clock_;
+    std::array<std::uint64_t, 3> sequences_{};
+    std::uint64_t frame_ = 0;
+    aviator::Message envelope(aviator::Topic topic, int slot, std::uint64_t now, bool valid);
+};
+}

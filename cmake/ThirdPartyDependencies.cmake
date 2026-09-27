@@ -1,85 +1,7 @@
 # Third-party dependencies management for AVIATOR project
 # This file handles both system packages and vendored libraries
 
-include(ExternalProject)
-
-# Path to vendored third-party libraries
-set(AVIATOR_VENDOR_DIR "${CMAKE_SOURCE_DIR}/third_party" CACHE PATH "Third-party vendor directory")
-
-# Build output directory for third-party libraries
-set(AVIATOR_DEPS_DIR "${CMAKE_BINARY_DIR}/third_party/install" CACHE PATH "Third-party install directory")
-file(MAKE_DIRECTORY "${AVIATOR_DEPS_DIR}/include" "${AVIATOR_DEPS_DIR}/lib")
-
-# Parallel build jobs for third-party projects
-set(AVIATOR_DEPENDENCY_JOBS 2 CACHE STRING "Parallel compiler jobs per third-party project")
-
-# Custom target to build all third-party dependencies
-add_custom_target(aviator_third_party_all)
-
-#------------------------------------------------------------------------------
-# Helper function to build source-based third-party libraries
-#------------------------------------------------------------------------------
-function(aviator_add_third_party_source name)
-    cmake_parse_arguments(ARG "" "SOURCE_DIR" "DEPENDS;CMAKE_ARGS;LIBRARIES" ${ARGN})
-
-    if(NOT ARG_SOURCE_DIR)
-        set(ARG_SOURCE_DIR "${AVIATOR_VENDOR_DIR}/${name}")
-    endif()
-
-    if(NOT EXISTS "${ARG_SOURCE_DIR}/CMakeLists.txt")
-        message(WARNING "Third-party ${name} source not found at ${ARG_SOURCE_DIR}")
-        return()
-    endif()
-
-    # Build list of library outputs for dependency tracking
-    set(outputs "")
-    foreach(lib IN LISTS ARG_LIBRARIES)
-        list(APPEND outputs "${AVIATOR_DEPS_DIR}/lib/lib${lib}.so")
-    endforeach()
-
-    # Prepare prefix path for nested dependencies
-    set(dependency_prefixes "${AVIATOR_DEPS_DIR};${CMAKE_PREFIX_PATH}")
-    list(REMOVE_DUPLICATES dependency_prefixes)
-    string(REPLACE ";" "|" dependency_prefixes "${dependency_prefixes}")
-
-    ExternalProject_Add(third_party_${name}
-        LIST_SEPARATOR |
-        SOURCE_DIR "${ARG_SOURCE_DIR}"
-        BINARY_DIR "${CMAKE_BINARY_DIR}/third_party/build/${name}"
-        PREFIX "${CMAKE_BINARY_DIR}/third_party/stamps/${name}"
-        DOWNLOAD_COMMAND ""
-        UPDATE_COMMAND ""
-        PATCH_COMMAND ""
-        DEPENDS ${ARG_DEPENDS}
-        CMAKE_ARGS
-            -DCMAKE_BUILD_TYPE=Release
-            -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-            -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
-            -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-            -DCMAKE_INSTALL_PREFIX=${AVIATOR_DEPS_DIR}
-            -DCMAKE_INSTALL_LIBDIR=lib
-            "-DCMAKE_PREFIX_PATH=${dependency_prefixes}"
-            -DCMAKE_INSTALL_RPATH=$ORIGIN
-            -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF
-            -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF
-            -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF
-            -DFETCHCONTENT_FULLY_DISCONNECTED=ON
-            -DBUILD_SHARED_LIBS=ON
-            -DBUILD_TESTING=OFF
-            ${ARG_CMAKE_ARGS}
-        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel ${AVIATOR_DEPENDENCY_JOBS}
-            COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
-        INSTALL_COMMAND ""
-        BUILD_ALWAYS ON
-        BUILD_BYPRODUCTS ${outputs}
-        LOG_CONFIGURE ON
-        LOG_BUILD ON
-        LOG_INSTALL ON
-        LOG_OUTPUT_ON_FAILURE ON
-    )
-
-    add_dependencies(aviator_third_party_all third_party_${name})
-endfunction()
+include(${CMAKE_CURRENT_LIST_DIR}/ThirdPartySource.cmake)
 
 #------------------------------------------------------------------------------
 # System packages - required for all builds
@@ -216,40 +138,8 @@ endif()
 option(AVIATOR_BUILD_MUJOCO "Build MuJoCo simulation library" ON)
 
 if(AVIATOR_BUILD_MUJOCO)
-    message(STATUS "Building MuJoCo simulation library...")
-
-    find_package(Qhull REQUIRED)
-    find_package(ccd REQUIRED)
-    find_package(tinyobjloader REQUIRED)
-
-    # Prepare FetchContent source directories for MuJoCo dependencies
-    set(mujoco_cmake_args "")
-    foreach(dep lodepng marchingcubecpp trianglemeshdistance)
-        string(TOUPPER "${dep}" dep_upper)
-        list(APPEND mujoco_cmake_args
-            "-DFETCHCONTENT_SOURCE_DIR_${dep_upper}=${AVIATOR_VENDOR_DIR}/${dep}"
-        )
-    endforeach()
-
-    aviator_add_third_party_source(mujoco-3.4.0
-        LIBRARIES mujoco
-        CMAKE_ARGS
-            ${mujoco_cmake_args}
-            -DMUJOCO_BUILD_EXAMPLES=OFF
-            -DMUJOCO_BUILD_SIMULATE=OFF
-            -DMUJOCO_BUILD_STUDIO=OFF
-            -DMUJOCO_BUILD_TESTS=OFF
-            -DMUJOCO_TEST_PYTHON_UTIL=OFF
-            -DMUJOCO_WITH_USD=OFF
-            -DMUJOCO_USE_FILAMENT=OFF
-    )
-
-    # Create imported target for MuJoCo
-    add_library(mujoco_imported SHARED IMPORTED GLOBAL)
-    set_target_properties(mujoco_imported PROPERTIES
-        IMPORTED_LOCATION "${AVIATOR_DEPS_DIR}/lib/libmujoco.so"
-    )
-    add_dependencies(mujoco_imported third_party_mujoco-3.4.0)
+    include(${CMAKE_CURRENT_LIST_DIR}/MujocoDependency.cmake)
+    aviator_add_mujoco()
 endif()
 
 #------------------------------------------------------------------------------

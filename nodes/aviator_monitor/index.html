@@ -10,10 +10,38 @@
 <section class="panel"><h2>总线数据流 <small id="counts"></small></h2><div class="scroll"><table><thead><tr><th>Topic / 生产者</th><th>会话</th><th>数据状态</th><th>Hz</th><th>样本年龄 ms</th><th>接收间隔 ms</th><th>序号</th><th>缺口 / 重复乱序</th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted">点击任意行查看完整消息。FRESH 仅表示头部有效且新鲜，不代表执行器已就绪或具备控制授权。</p></section>
 <section class="panel"><h2 id="detail-title">消息详情</h2><pre id="detail">选择数据流以查看双臂、双手、视觉及其他原始字段。</pre></section>
 <script>
-let selected=null, busy=false;
+let selected=null, busy=false, detailRequest=0;
+const streamRows=new Map();
 const el=id=>document.getElementById(id), text=(id,value)=>el(id).textContent=value??'—';
 const num=v=>typeof v==='number'?v.toFixed(1):'—';
 async function get(path){const r=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(2500)});if(!r.ok)throw Error('HTTP '+r.status);return r.json()}
+async function showDetail(row){
+ const request=++detailRequest;
+ text('detail-title',row.topic+' / '+row.publisher+' · '+row.status);
+ try{const detail=await get('/api/message?id='+row.id);
+ if(selected===row.id&&request===detailRequest)text('detail',JSON.stringify(detail,null,2));
+ }catch(error){if(selected===row.id&&request===detailRequest)text('detail','消息详情加载失败：'+error.message);}
+}
+function renderRows(rows){
+ const body=el('rows'), ids=new Set(rows.map(row=>row.id));
+ for(const [id,tr] of streamRows)if(!ids.has(id)){tr.remove();streamRows.delete(id)}
+ rows.forEach((row,index)=>{
+ let tr=streamRows.get(row.id);
+ if(!tr){tr=document.createElement('tr');tr.tabIndex=0;
+ for(let i=0;i<8;i++)tr.append(document.createElement('td'));
+ const select=()=>{selected=tr.stream.id;
+ for(const [id,node] of streamRows)node.classList.toggle('selected',id===selected);
+ text('detail','正在加载消息…');showDetail(tr.stream);};
+ tr.onclick=select;tr.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select()}};
+ streamRows.set(row.id,tr);}
+ tr.stream=row;tr.classList.toggle('selected',row.id===selected);
+ const cells=[row.topic+' / '+row.publisher,row.session.slice(0,8),row.status,num(row.hz),num(row.age_ms),num(row.receive_age_ms),row.sequence,row.gaps+' / '+row.duplicates];
+ cells.forEach((value,i)=>{const td=tr.children[i];if(td.textContent!==String(value))td.textContent=value;if(i===2)td.className=row.status;if(i===1)td.title=row.session});
+ // Keep live rows attached across polls: replacing them between pointer-down
+ // and pointer-up loses the browser click and keyboard focus.
+ if(body.children[index]!==tr)body.insertBefore(tr,body.children[index]??null);
+ });
+}
 async function refresh(){if(busy)return;busy=true;try{
  const data=await get('/api/state'), rows=data.streams;
  text('connection','监控服务在线');text('streams',rows.filter(x=>x.status==='FRESH').length+' / '+rows.length);
@@ -24,13 +52,8 @@ async function refresh(){if(busy)return;busy=true;try{
  text('source',flight?.summary.source);text('errors',flight?`${flight.summary.error??'—'} / ${flight.summary.last_error??'—'}`:'—');
  text('freshness',flight?['arm','hand','camera'].map(k=>`${k}: ${flight.summary[k]?.valid===true&&typeof flight.summary[k]?.age_ms==='number'&&flight.summary[k].age_ms<(k==='camera'?200:50)?'新鲜':'过期/无效/未知'}，当前年龄 ${num(flight.summary[k]?.age_ms)} ms`).join(' · '):'FlightState 尚未收到、已失效、时钟域未知或存在多个新鲜来源');
  text('notice',live.length>1?'检测到多个新鲜 FlightState 来源，请核对部署。':data.error?`最近接收异常：${data.error}`:'');
- el('rows').replaceChildren();
- for(const row of rows){const tr=document.createElement('tr');if(row.id===selected)tr.className='selected';
- const cells=[row.topic+' / '+row.publisher,row.session.slice(0,8),row.status,num(row.hz),num(row.age_ms),num(row.receive_age_ms),row.sequence,row.gaps+' / '+row.duplicates];
- cells.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(i===2)td.className=row.status;if(i===1)td.title=row.session;tr.append(td)});
- tr.onclick=()=>{selected=row.id;};el('rows').append(tr)}
- if(selected!==null){const row=rows.find(x=>x.id===selected);if(!row){selected=null;text('detail','该数据流已被缓存淘汰')}else{
- text('detail-title',row.topic+' / '+row.publisher+' · '+row.status);const detail=await get('/api/message?id='+selected);text('detail',JSON.stringify(detail,null,2));}}
- }catch(error){text('connection','监控服务不可用');text('system','状态未知');text('source','—');text('errors','—');text('streams','—');text('freshness','连接已中断，页面保留值不可用于判断当前状态');text('notice',error.message);el('rows').replaceChildren();text('detail-title','消息详情（旧快照）');}finally{busy=false}}
+ renderRows(rows);
+ if(selected!==null){const row=rows.find(x=>x.id===selected);if(!row){selected=null;++detailRequest;text('detail-title','消息详情');text('detail','该数据流已被缓存淘汰')}else await showDetail(row);}
+ }catch(error){text('connection','监控服务不可用');text('system','状态未知');text('source','—');text('errors','—');text('streams','—');text('freshness','连接已中断，页面保留值不可用于判断当前状态');text('notice',error.message);el('rows').replaceChildren();streamRows.clear();++detailRequest;text('detail-title','消息详情（旧快照）');}finally{busy=false}}
 refresh();setInterval(refresh,100);
 </script></html>
