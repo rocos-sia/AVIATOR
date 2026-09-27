@@ -14,8 +14,8 @@
 //
 // Channel mapping to Foxglove:
 //   * every bus topic          -> JSON channel (payload passed through as-is)
-//   * camera.image             -> foxglove.CompressedImage (JSON encoding,
-//                                 JPEG base64 in `data`)
+//   * camera.image             -> foxglove.CompressedImage (protobuf encoding,
+//                                 raw JPEG bytes in `data`, no base64)
 // Every outgoing foxglove message carries its timestamp in the binary frame
 // header (nanoseconds since Unix epoch), so Studio plots and the image panel
 // are time-synchronized across topics.
@@ -39,7 +39,8 @@
 #include <zmq.hpp>
 #include <nlohmann/json.hpp>
 
-#include "base64.hpp"
+#include "foxglove/CompressedImage.pb.h"
+#include "foxglove_schema.hpp"
 
 #include <atomic>
 #include <csignal>
@@ -94,16 +95,24 @@ struct Channel {
   bool is_image = false;
 };
 
-// Foxglove JSON-encoded schemas. `data` carries the base64 JPEG bytes.
-constexpr const char* kCompressedImageSchema =
-    "{\"type\":\"object\",\"properties\":{"
-    "\"timestamp\":{\"type\":\"object\",\"properties\":{"
-    "\"sec\":{\"type\":\"integer\"},\"nsec\":{\"type\":\"integer\"}}},"
-    "\"frame_id\":{\"type\":\"string\"},"
-    "\"data\":{\"type\":\"string\",\"contentEncoding\":\"base64\"},"
-    "\"format\":{\"type\":\"string\"}}}";
-
+// Schema for the generic JSON passthrough channels. The image channel's
+// protobuf schema (base64 FileDescriptorSet) lives in foxglove_schema.hpp.
 constexpr const char* kJsonMessageSchema = "{\"type\":\"object\"}";
+
+// Build the foxglove `advertise` text frame for one channel. `schema` is
+// always a string (JSON Schema text for json encoding, base64 FileDescriptorSet
+// for protobuf encoding); nlohmann handles the escaping.
+std::string make_advertise(const Channel& ch) {
+  return nlohmann::json{
+      {"op", "advertise"},
+      {"channels", nlohmann::json::array(
+                       {{{"id", ch.id},
+                         {"topic", ch.topic},
+                         {"encoding", ch.encoding},
+                         {"schemaName", ch.schema_name},
+                         {"schema", ch.schema}}})}}
+      .dump();
+}
 
 // ---------------------------------------------------------------------------
 // Forward declarations
@@ -190,13 +199,10 @@ void Session::on_accept(beast::error_code ec) {
 
   // serverInfo first, then advertise every channel already known.
   send_json("{\"op\":\"serverInfo\",\"name\":\"aviator-foxglove-bridge\","
-            "\"capabilities\":[],\"supportedEncodings\":[\"json\"],"
+            "\"capabilities\":[],\"supportedEncodings\":[\"json\",\"protobuf\"],"
             "\"metadata\":{}}");
   for (const auto& [id, ch] : bridge_.channels()) {
-    send_json("{\"op\":\"advertise\",\"channels\":[{\"id\":" +
-              std::to_string(ch.id) + ",\"topic\":\"" + ch.topic +
-              "\",\"encoding\":\"" + ch.encoding + "\",\"schemaName\":\"" +
-              ch.schema_name + "\",\"schema\":" + ch.schema + "}]}");
+    send_json(make_advertise(ch));
   }
   do_read();
 }
@@ -279,12 +285,14 @@ Channel& Bridge::channel_for(const std::string& bus_topic) {
   Channel ch;
   ch.id = next_id_++;
   ch.topic = "/" + bus_topic;
-  ch.encoding = "json";
   if (bus_topic == "camera.image") {
+    // Image channel: protobuf encoding, raw JPEG bytes in `data` (no base64).
+    ch.encoding = "protobuf";
     ch.schema_name = "foxglove.CompressedImage";
-    ch.schema = kCompressedImageSchema;
+    ch.schema = foxglove_schema::kCompressedImage;
     ch.is_image = true;
   } else {
+    ch.encoding = "json";
     ch.schema_name = "JsonMessage";
     ch.schema = kJsonMessageSchema;
   }
@@ -294,10 +302,7 @@ Channel& Bridge::channel_for(const std::string& bus_topic) {
   topic_to_id_[bus_topic] = ch.id;
 
   // Lazy advertise: tell every connected client about the new channel.
-  const std::string adv =
-      "{\"op\":\"advertise\",\"channels\":[{\"id\":" + std::to_string(ch.id) +
-      ",\"topic\":\"" + ch.topic + "\",\"encoding\":\"json\",\"schemaName\":\"" +
-      ch.schema_name + "\",\"schema\":" + ch.schema + "}]}";
+  const std::string adv = make_advertise(ch);
   for (auto& [ptr, session] : sessions_) session->send_json(adv);
 
   return channels_[ch.id];
@@ -312,19 +317,22 @@ void Bridge::handle_incoming(const std::string& bus_topic,
 
   std::string foxglove_payload;
   if (ch.is_image) {
-    // Wrap JPEG + metadata into foxglove.CompressedImage (JSON encoding).
+    // Encode foxglove.CompressedImage as protobuf: `data` carries the raw
+    // JPEG bytes directly — no base64, no text serialization.
     const auto m = nlohmann::json::parse(meta, nullptr, false);
     const std::string frame_id =
         (m.is_object() && m.contains("frame"))
             ? ("camera/frame_" + std::to_string(m["frame"].get<std::uint64_t>()))
             : "camera";
-    nlohmann::json img;
-    img["timestamp"]["sec"] = ts_ns / 1'000'000'000ULL;
-    img["timestamp"]["nsec"] = ts_ns % 1'000'000'000ULL;
-    img["frame_id"] = frame_id;
-    img["data"] = aviator::base64_encode(payload);
-    img["format"] = "jpeg";
-    foxglove_payload = img.dump();
+    foxglove::CompressedImage img;
+    img.mutable_timestamp()->set_sec(
+        static_cast<std::int64_t>(ts_ns / 1'000'000'000ULL));
+    img.mutable_timestamp()->set_nsec(
+        static_cast<std::uint32_t>(ts_ns % 1'000'000'000ULL));
+    img.set_data(payload);
+    img.set_format("jpeg");
+    img.set_frame_id(frame_id);
+    foxglove_payload = img.SerializeAsString();
   } else {
     foxglove_payload = payload;  // already a JSON document
   }

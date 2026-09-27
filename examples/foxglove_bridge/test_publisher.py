@@ -12,14 +12,18 @@ bridge (and Foxglove Studio) with zero camera / no running AVIATOR stack:
         Frame2 = JSON metadata {frame, timestamp µs, width, height, format}
 
 Usage:
-    python3 test_publisher.py            # run until Ctrl-C
+    python3 test_publisher.py                 # fake data + fake image (no hardware)
+    python3 test_publisher.py --data-only     # fake data only (run next to camera_pub)
 
 Run foxglove_bridge first, then this, then test_client.py (or Foxglove Studio).
+`--data-only` skips the camera.image channel (does not bind :5558) so it can run
+alongside `camera_pub`, which supplies the real image.
 Requires: pyzmq
 """
 
 import base64
 import json
+import math
 import time
 
 import zmq
@@ -43,11 +47,21 @@ _JPEG = base64.b64decode(
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data-only", action="store_true",
+                    help="publish only the data topics (no camera.image), "
+                         "so this can run alongside camera_pub")
+    args = ap.parse_args()
+
     ctx = zmq.Context()
     data = ctx.socket(zmq.PUB)
     data.bind("tcp://127.0.0.1:5556")
-    image = ctx.socket(zmq.PUB)
-    image.bind("tcp://127.0.0.1:5558")
+
+    image = None
+    if not args.data_only:
+        image = ctx.socket(zmq.PUB)
+        image.bind("tcp://127.0.0.1:5558")
 
     # Give the bridge's SUB sockets a moment to connect (PUB/SUB drops frames
     # until the subscription has propagated).
@@ -55,30 +69,40 @@ def main():
 
     seq = 0
     frame = 0
-    print("publishing flight.command@50Hz, arm.state@100Hz, camera.image@33Hz; Ctrl-C to stop")
+    t0 = time.time()
+    mode = "data-only" if args.data_only else "data + image"
+    print(f"publishing {mode}: flight.command@50Hz, arm.state@100Hz"
+          + ("" if args.data_only else ", camera.image@33Hz") + "; Ctrl-C to stop")
     while True:
         now_us = int(time.time() * 1_000_000)
+        t = time.time() - t0  # seconds since start (drives the sin curves)
 
-        # arm.state @ 100 Hz (every tick)
+        # arm.state @ 100 Hz (every tick) — 7 joints as phase-shifted sin waves
         seq += 1
+        joints = [0.5 * math.sin(2 * math.pi * 0.10 * t + 0.7 * i)
+                  for i in range(7)]
         arm = json.dumps({
             "msg_type": "ArmState", "version": "1.0", "sequence": seq,
             "timestamp": now_us, "valid": True,
-            "joint_position": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7],
+            "joint_position": joints,
         })
         data.send_multipart([b"arm.state", arm.encode()])
 
-        # flight.command @ 50 Hz (every other tick)
+        # flight.command @ 50 Hz (every other tick) — sin roll/pitch/yaw
         if seq % 2 == 0:
             cmd = json.dumps({
                 "msg_type": "FlightCommand", "version": "1.0", "sequence": seq,
                 "timestamp": now_us, "valid": True, "source": "JOYSTICK",
-                "control": {"roll": 0.1, "pitch": -0.1},
+                "control": {
+                    "roll": 0.4 * math.sin(2 * math.pi * 0.20 * t),
+                    "pitch": 0.3 * math.sin(2 * math.pi * 0.13 * t + 1.0),
+                    "yaw": 0.2 * math.sin(2 * math.pi * 0.07 * t),
+                },
             })
             data.send_multipart([b"flight.command", cmd.encode()])
 
-        # camera.image @ ~33 Hz (every third tick)
-        if seq % 3 == 0:
+        # camera.image @ ~33 Hz (every third tick), unless --data-only
+        if image is not None and seq % 3 == 0:
             frame += 1
             meta = json.dumps({
                 "frame": frame, "timestamp": now_us,

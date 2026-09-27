@@ -8,8 +8,9 @@ Connects to the bridge as a minimal Foxglove Studio stand-in and checks:
   3. advertise frames describe each channel (topic / encoding / schema),
   4. subscribing yields binary message frames with the correct layout
      [0x01][u32 subscriptionId LE][u64 timestamp_ns LE][payload],
-  5. camera.image payloads decode to a foxglove.CompressedImage JSON object
-     whose base64 `data` round-trips to a valid JPEG (starts with 0xFFD8),
+  5. camera.image is advertised with encoding "protobuf" and its payload
+     decodes to foxglove.CompressedImage whose `data` field is the raw JPEG
+     bytes (starts with 0xFFD8, no base64),
   6. data topics arrive as JSON with a sensible timestamp.
 
 Usage:
@@ -19,13 +20,50 @@ Exit code 0 = all checks passed. Requires: websocket-client.
 """
 
 import argparse
-import base64
 import json
 import struct
 import time
 
 import websocket
 from websocket import ABNF
+
+
+def parse_varint(data, pos):
+    """Decode a protobuf varint at `pos`; return (value, next_pos)."""
+    result = 0
+    shift = 0
+    while True:
+        b = data[pos]
+        pos += 1
+        result |= (b & 0x7F) << shift
+        if not (b & 0x80):
+            return result, pos
+        shift += 7
+
+
+def parse_protobuf(data):
+    """Decode a protobuf message into {field_number: (wire_type, value)}."""
+    fields = {}
+    pos = 0
+    while pos < len(data):
+        key, pos = parse_varint(data, pos)
+        field, wire = key >> 3, key & 7
+        if wire == 0:            # varint
+            value, pos = parse_varint(data, pos)
+        elif wire == 2:          # length-delimited (bytes / string / message)
+            length, pos = parse_varint(data, pos)
+            value = data[pos:pos + length]
+            pos += length
+        elif wire == 1:          # fixed64
+            value = data[pos:pos + 8]
+            pos += 8
+        elif wire == 5:          # fixed32
+            value = data[pos:pos + 4]
+            pos += 4
+        else:
+            raise ValueError(f"unsupported wire type {wire}")
+        fields[field] = (wire, value)
+    return fields
 
 
 def main():
@@ -90,12 +128,19 @@ def main():
 
             info = channels.get(channel_id, {})
             if info.get("schemaName") == "foxglove.CompressedImage":
-                img = json.loads(payload.decode())
-                jpeg = base64.b64decode(img["data"])
-                if jpeg[:2] == b"\xff\xd8":
+                # Protobuf foxglove.CompressedImage: 1=timestamp, 2=data,
+                # 3=format, 4=frame_id.
+                fields = parse_protobuf(payload)
+                jpeg = fields[2][1]
+                fmt = fields[3][1].decode()
+                frame_id = fields[4][1].decode()
+                ts = parse_protobuf(fields[1][1])  # foxglove.Timestamp
+                ts_sec, ts_nsec = ts[1][1], ts[2][1]
+                if jpeg[:2] == b"\xff\xd8" and fmt == "jpeg" \
+                        and info.get("encoding") == "protobuf":
                     image_ok = True
-                print(f"     image ts={ts_ns/1e9:.3f}s frame_id={img['frame_id']!r} "
-                      f"format={img['format']!r} bytes={len(jpeg)}")
+                print(f"     image ts={ts_sec + ts_nsec/1e9:.3f}s "
+                      f"frame_id={frame_id!r} format={fmt!r} bytes={len(jpeg)}")
             else:
                 doc = json.loads(payload.decode())
                 data_ok = True
@@ -108,7 +153,7 @@ def main():
     ok = server_info and bool(channels) and image_ok and data_ok
     for cond, name in [(server_info, "serverInfo"),
                        (bool(channels), "advertise"),
-                       (image_ok, "image decoded"),
+                       (image_ok, "image decoded (protobuf)"),
                        (data_ok, "data received")]:
         print(("OK  " if cond else "FAIL"), name)
 

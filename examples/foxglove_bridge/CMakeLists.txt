@@ -31,7 +31,13 @@ endif()
 find_path(AVIATOR_ZMQ_INCLUDE_DIR zmq.h REQUIRED)
 find_library(AVIATOR_ZMQ_LIBRARY NAMES zmq REQUIRED)
 
+# protobuf runtime (foxglove.CompressedImage encoding). The generated .pb.cc
+# and the base64 FileDescriptorSet are vendored in src/generated/ (regenerate
+# with scripts/regenerate_proto.sh).
+find_library(PROTOBUF_LIBRARY NAMES protobuf REQUIRED)
+
 set(CPPZMQ_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cppzmq-4.11.0")
+set(GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/generated")
 
 # --- camera_pub: OpenCV capture -> JPEG -> ZMQ PUB (dedicated image channel) ---
 add_executable(camera_pub src/camera_pub.cpp)
@@ -40,11 +46,13 @@ target_link_libraries(camera_pub PRIVATE
   ${AVIATOR_ZMQ_LIBRARY} ${OpenCV_LIBS} nlohmann_json::nlohmann_json)
 
 # --- foxglove_bridge: ZMQ SUB (data + image) -> Boost.Beast WebSocket ---
-add_executable(foxglove_bridge src/foxglove_bridge.cpp)
+add_executable(foxglove_bridge
+  src/foxglove_bridge.cpp
+  ${GENERATED_DIR}/foxglove/CompressedImage.pb.cc)
 target_include_directories(foxglove_bridge PRIVATE
-  ${CPPZMQ_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  ${CPPZMQ_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src ${GENERATED_DIR})
 target_link_libraries(foxglove_bridge PRIVATE
-  ${AVIATOR_ZMQ_LIBRARY} nlohmann_json::nlohmann_json
+  ${AVIATOR_ZMQ_LIBRARY} ${PROTOBUF_LIBRARY} nlohmann_json::nlohmann_json
   Boost::headers Threads::Threads)
 
 # Smoke tests: --help must parse and exit 0.

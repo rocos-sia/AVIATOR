@@ -1,0 +1,25 @@
+// foxglove.CompressedImage — matches the well-known type of the same name so
+// Foxglove Studio's Image panel decodes it natively.
+//
+// Both messages live in one file (package foxglove) so the FileDescriptorSet
+// produced by protoc is self-contained (no imports). Field numbers/names match
+// the upstream foxglove/schemas definition exactly.
+
+syntax = "proto3";
+
+package foxglove;
+
+// A compressed image (JPEG/PNG/...). `data` carries the raw encoded bytes
+// directly — no base64, no text serialization.
+message CompressedImage {
+  Timestamp timestamp = 1;  // capture time
+  bytes data = 2;           // compressed image bytes
+  string format = 3;        // "jpeg", "png", "webp", ...
+  string frame_id = 4;      // frame of reference (optical center of camera)
+}
+
+// A point in time, relative to the Unix epoch.
+message Timestamp {
+  int64 sec = 1;   // seconds since epoch
+  uint32 nsec = 2; // nanoseconds within the second
+}
