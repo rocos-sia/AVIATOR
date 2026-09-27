@@ -27,8 +27,7 @@ function(aviator_add_third_party_source name)
     endif()
 
     if(NOT EXISTS "${ARG_SOURCE_DIR}/CMakeLists.txt")
-        message(WARNING "Third-party ${name} source not found at ${ARG_SOURCE_DIR}")
-        return()
+        message(FATAL_ERROR "Third-party ${name} source not found at ${ARG_SOURCE_DIR}")
     endif()
 
     # Build list of library outputs for dependency tracking

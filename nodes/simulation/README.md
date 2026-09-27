@@ -23,13 +23,11 @@ MuJoCo 3.4.0 已验证。相机使用 EGL OpenGL 离屏渲染，需要可用的 
 
 ## 启动
 
-默认连接隔离测试总线 `6555/6556`，`publisher_id=simulation`。上层消费者应将此生产者和启动时打印的会话登记到测试授权配置。
+默认连接与 `aviator_bus`、`aviator_monitor` 一致的总线 `5555/5556`，`publisher_id=simulation`。上层消费者应将此生产者和启动时打印的会话登记到测试授权配置。
 
 ```bash
-# 终端 1：独立测试总线
-build/simulation-node/bin/aviator_bus \
-  --input tcp://127.0.0.1:6555 --output tcp://127.0.0.1:6556 \
-  --lock-file /tmp/aviator-simulation-bus.lock
+# 终端 1：总线
+build/simulation-node/bin/aviator_bus
 
 # 终端 2：窗口 + 相机，无命令授权时保持初始姿态
 build/simulation-node/bin/simulation
@@ -41,8 +39,10 @@ build/simulation-node/bin/simulation --headless
 build/simulation-node/bin/simulation --headless --no-camera
 
 # 可选观测工具
-build/simulation-node/bin/aviator_monitor --subscribe tcp://127.0.0.1:6556
+build/simulation-node/bin/aviator_monitor
 ```
+
+完整工程构建时，将上述 `build/simulation-node/bin/` 换为 `build/bin/`。监控页面为 http://127.0.0.1:8081/，话题列表可查看 `arm.state`、`hand.state` 和 `camera.detection`。
 
 窗口复用示例中的鼠标旋转、平移、缩放、R 复位视角与 Esc 退出。窗口相机与固定的仿真传感器相机独立。SIGINT/SIGTERM 正常退出；`--duration 10` 可用于有限时间运行。
 

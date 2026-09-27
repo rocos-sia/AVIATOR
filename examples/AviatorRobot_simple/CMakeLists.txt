@@ -152,13 +152,14 @@ install(DIRECTORY config model
 #------------------------------------------------------------------------------
 if(BUILD_TESTING)
     # Basic pose and kinematics tests (no backend required)
-    add_executable(aviator_pose_test tests/test_pose.cpp)
+    aviator_add_test_executable(aviator_pose_test tests/test_pose.cpp)
     target_include_directories(aviator_pose_test PRIVATE include)
-    target_link_libraries(aviator_pose_test PRIVATE aviator_system_deps)
+    # Pose.hpp exposes Pinocchio types; propagate its includes and build order.
+    target_link_libraries(aviator_pose_test PRIVATE aviator_robotics_deps)
     add_test(NAME aviator_pose COMMAND aviator_pose_test)
 
     # PIN-IK standalone test
-    add_executable(aviator_pin_ik_test
+    aviator_add_test_executable(aviator_pin_ik_test
         "${AVIATOR_VENDOR_DIR}/pin_ik-2.2.0/tests/standalone_tests.cpp"
     )
     target_link_libraries(aviator_pin_ik_test PRIVATE aviator_robotics_deps)
@@ -183,7 +184,7 @@ if(BUILD_TESTING)
         )
 
         foreach(test_name IN LISTS sim_test_names)
-            add_executable(aviator_${test_name}_test tests/test_${test_name}.cpp)
+            aviator_add_test_executable(aviator_${test_name}_test tests/test_${test_name}.cpp)
             target_link_libraries(aviator_${test_name}_test PRIVATE
                 aviator_control
                 mujoco_imported
@@ -229,7 +230,7 @@ if(BUILD_TESTING)
     endif()
 
     # Controller safety test (no simulation required)
-    add_executable(aviator_controller_safety_test tests/test_controller_safety.cpp)
+    aviator_add_test_executable(aviator_controller_safety_test tests/test_controller_safety.cpp)
     target_link_libraries(aviator_controller_safety_test PRIVATE aviator_control)
     target_compile_definitions(aviator_controller_safety_test PRIVATE
         AVIATOR_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
@@ -237,13 +238,13 @@ if(BUILD_TESTING)
     add_test(NAME aviator_controller_safety COMMAND aviator_controller_safety_test)
 
     # Open loop test
-    add_executable(aviator_open_loop_test tests/test_open_loop.cpp)
+    aviator_add_test_executable(aviator_open_loop_test tests/test_open_loop.cpp)
     target_include_directories(aviator_open_loop_test PRIVATE include)
     add_test(NAME aviator_open_loop COMMAND aviator_open_loop_test)
 
     # Viewer test (manual, requires display)
     if(AVIATOR_WITH_VIEWER)
-        add_executable(aviator_viewer_test tests/test_viewer.cpp)
+        aviator_add_test_executable(aviator_viewer_test tests/test_viewer.cpp)
         target_link_libraries(aviator_viewer_test PRIVATE aviator_viewer)
         target_compile_definitions(aviator_viewer_test PRIVATE
             AVIATOR_MODEL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/model"

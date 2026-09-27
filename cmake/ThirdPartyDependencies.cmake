@@ -97,7 +97,6 @@ if(AVIATOR_BUILD_ROBOTICS_LIBS)
 
     # Create interface library for robotics stack
     add_library(aviator_robotics_deps INTERFACE)
-    add_dependencies(aviator_robotics_deps aviator_third_party_all)
     target_include_directories(aviator_robotics_deps SYSTEM INTERFACE
         "${AVIATOR_DEPS_DIR}/include"
     )
@@ -111,7 +110,13 @@ if(AVIATOR_BUILD_ROBOTICS_LIBS)
         set_target_properties(${lib_name}_imported PROPERTIES
             IMPORTED_LOCATION "${AVIATOR_DEPS_DIR}/lib/lib${lib_name}.so"
         )
-        add_dependencies(${lib_name}_imported third_party_pinocchio-3.9.0 third_party_pin_ik-2.2.0)
+        if(lib_name STREQUAL "coal")
+            add_dependencies(${lib_name}_imported third_party_coal-3.0.4)
+        elseif(lib_name STREQUAL "pin_ik")
+            add_dependencies(${lib_name}_imported third_party_pin_ik-2.2.0)
+        else()
+            add_dependencies(${lib_name}_imported third_party_pinocchio-3.9.0)
+        endif()
         target_link_libraries(aviator_robotics_deps INTERFACE ${lib_name}_imported)
     endforeach()
 

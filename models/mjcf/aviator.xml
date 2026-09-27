@@ -259,7 +259,8 @@
                       <geom name="AR5-5_07L-W4C4A2_link7_visual_0" class="visual" mesh="AR5-5_07L-W4C4A2_link7" pos="0.0 0.0 0.0" quat="1 0 0 0" material="white" />
                       <geom name="AR5-5_07L-W4C4A2_link7_collision_0" class="collision" mesh="AR5-5_07L-W4C4A2_link7" pos="0.0 0.0 0.0" quat="1 0 0 0" />
                       <body name="AR5-5_07L-W4C4A2_flan_link" pos="0 0 0.097" quat="1 0 0 0">
-                        <body name="l_base_link" pos="0 0 -0.018" quat="1 0 0 0">
+                        <!-- Left Hand -->
+                        <body name="l_base_link" pos="0 0 -0.018" quat="0.707 0 0 0.707">
                           <inertial fullinertia="0.000598818638734576 0.000469648299351442 0.000281460993349068 -1.87721402728399E-06 -4.35025076731854E-06 -6.72838967541838E-08" mass="0.638115692832655" pos="-0.00162630839186209 0.000562629486704047 0.0782826838990815" />
                           <geom class="visual" mesh="l_base_link" name="l_base_link_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
                           <geom class="collision" conaffinity="7" contype="4" mesh="l_base_link" name="l_base_link_collision_0" pos="0 0 0" quat="1 0 0 0" />
@@ -478,7 +479,8 @@
                       <geom name="AR5-5_07R-W4C4A2_link7_visual_0" class="visual" mesh="AR5-5_07R-W4C4A2_link7" pos="0.0 0.0 0.0" quat="1 0 0 0" material="white" />
                       <geom name="AR5-5_07R-W4C4A2_link7_collision_0" class="collision" mesh="AR5-5_07R-W4C4A2_link7" pos="0.0 0.0 0.0" quat="1 0 0 0" />
                       <body name="AR5-5_07R-W4C4A2_flan_link" pos="0 0 0.097" quat="1 0 0 0">
-                        <body name="r_base_link" pos="0 0 -0.018" quat="1 0 0 0">
+                        <!-- Right Hand -->
+                        <body name="r_base_link" pos="0 0 -0.018" quat="0.707 0 0 -0.707">
                           <inertial fullinertia="0.000598971964889212 0.000469779024452203 0.000281581133822564 1.86164377832369E-06 -4.15140660547643E-06 9.13428071917767E-08" mass="0.640548028870977" pos="-0.00171664715226715 -7.60146921452102E-05 0.0795784130733925" />
                           <geom class="visual" mesh="r_base_link" name="r_base_link_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.866666666666667 0.866666666666667 0.890196078431372 1" />
                           <geom class="collision" conaffinity="7" contype="4" mesh="r_base_link" name="r_base_link_collision_0" pos="0 0 0" quat="1 0 0 0" />

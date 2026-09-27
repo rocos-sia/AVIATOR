@@ -1,3 +1,4 @@
+#include "startup.hpp"
 #include "monitor.hpp"
 #include "page.hpp"
 #include "runtime.hpp"
@@ -127,6 +128,15 @@ int main(int argc, char** argv) {
         std::array<Client, 8> clients;
         std::cout << "aviator_monitor 已启动，请在浏览器打开：http://127.0.0.1:" << port << "/\n"
                   << "subscribe=" << endpoint << std::endl;
+        aviator::print_startup("aviator_monitor", {
+            {"HTTP listen", "http://127.0.0.1:" + std::to_string(port) + "/"},
+            {"SUB connect", endpoint},
+            {"SUB topics", "* (all topics; empty ZMQ subscription filter)"},
+            {"PUB topics", "None (read-only monitor)"},
+            {"Transport", "Async connect; HTTP availability does not confirm bus traffic."},
+            {"Inspect", "/api/state  |  Web UI topic list and message details"},
+            {"Exit", "Ctrl+C"}
+        });
         while (!stop.load()) {
             pollfd ready[]{{server.value, POLLIN, 0}, {signal_fd.value, POLLIN, 0}};
             if (::poll(ready, 2, 10) < 0 && errno != EINTR) throw std::runtime_error("HTTP poll failed");

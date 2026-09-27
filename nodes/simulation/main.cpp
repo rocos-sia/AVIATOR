@@ -1,3 +1,4 @@
+#include "startup.hpp"
 #include "simulation.hpp"
 #include "camera.hpp"
 #include "transport.hpp"
@@ -18,7 +19,7 @@ void usage() {
         "  [--pub-endpoint endpoint] [--sub-endpoint endpoint]\n"
         "  [--core-session UUID --control-epoch UUID --origin-session UUID]\n"
         "  [--core-publisher id] [--origin-publisher id] [--camera-timeout-ms ms]\n"
-        "Defaults: replay bus 6555/6556; no command authorization; EGL camera 640x480.\n"
+        "Defaults: bus 5555/5556; no command authorization; EGL camera 640x480.\n"
         "--headless disables the viewer; --no-camera disables EGL and reports OFFLINE.\n";
 }
 std::string default_model() {
@@ -34,7 +35,7 @@ std::string default_model() {
 int main(int argc,char** argv) {
     try {
         simulation::Authorization auth;
-        std::string model=default_model(), pub_endpoint=aviator::replay_publish_endpoint, sub_endpoint=aviator::replay_subscribe_endpoint;
+        std::string model=default_model(), pub_endpoint=aviator::publish_endpoint, sub_endpoint=aviator::subscribe_endpoint;
         bool headless=false, no_camera=false; double duration=0;
         for (int i=1;i<argc;++i) {
             std::string arg=argv[i];
@@ -85,6 +86,20 @@ int main(int argc,char** argv) {
         const auto timestep=static_cast<std::uint64_t>(sim.model()->opt.timestep*1000000);
         if(timestep==0) throw std::runtime_error("timestep below scheduling precision");
         std::cout << "READY session=" << sim.session() << " clock_id=" << sim.clock() << " model=" << model << std::endl;
+        aviator::print_startup("simulation", {
+            {"PUB connect", pub_endpoint},
+            {"PUB topics", "arm.state (100 Hz), hand.state (100 Hz)"},
+            {"", "camera.detection (30 Hz; target rates)"},
+            {"SUB connect", sub_endpoint},
+            {"SUB topics", "arm.command, hand.command, camera.command"},
+            {"Viewer", headless ? "HEADLESS" : "GLFW window"},
+            {"Camera", no_camera ? "OFFLINE (--no-camera); detection still published" : "EGL 640x480"},
+            {"Authorization", auth.session.empty() ? "UNCONFIGURED (state publishing remains enabled)" : "Configured Core session: " + auth.session},
+            {"Session", sim.session()},
+            {"Model", model},
+            {"Transport", "Async connect; bus connectivity is not yet confirmed."},
+            {"Exit", "Ctrl+C"}
+        });
         while(!stopping) {
             auto now=aviator::monotonic_us();
             if(duration>0 && (now-start)/1e6>=duration) break;

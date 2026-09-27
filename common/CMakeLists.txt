@@ -28,5 +28,5 @@ target_link_libraries(aviator_runtime PUBLIC aviator_protocol Threads::Threads)
 install(TARGETS aviator_protocol aviator_transport aviator_runtime
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES protocol.hpp transport.hpp runtime.hpp
+install(FILES protocol.hpp transport.hpp runtime.hpp startup.hpp
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/aviator)

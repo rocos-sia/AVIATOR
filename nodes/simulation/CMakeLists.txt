@@ -26,7 +26,7 @@ target_compile_definitions(simulation PRIVATE AVIATOR_SIMULATION_MODEL="${PROJEC
 install(TARGETS simulation RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/mjcf ${PROJECT_SOURCE_DIR}/models/meshes DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/models)
 if(BUILD_TESTING)
-  add_executable(aviator_simulation_test test_simulation.cpp)
+  aviator_add_test_executable(aviator_simulation_test test_simulation.cpp)
   target_link_libraries(aviator_simulation_test PRIVATE aviator_simulation_model aviator_transport)
   add_test(NAME simulation_model COMMAND aviator_simulation_test ${PROJECT_SOURCE_DIR}/models/mjcf/aviator.xml)
   add_test(NAME simulation_help COMMAND simulation --help)

@@ -41,6 +41,7 @@ function(aviator_add_mujoco)
     add_library(mujoco_imported SHARED IMPORTED GLOBAL)
     set_target_properties(mujoco_imported PROPERTIES
         IMPORTED_LOCATION "${AVIATOR_DEPS_DIR}/lib/libmujoco.so"
+        INTERFACE_INCLUDE_DIRECTORIES "${AVIATOR_DEPS_DIR}/include"
     )
     add_dependencies(mujoco_imported third_party_mujoco-3.4.0)
 endfunction()

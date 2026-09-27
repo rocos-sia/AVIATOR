@@ -1,3 +1,4 @@
+#include "startup.hpp"
 #include "gateway.hpp"
 #include "transport.hpp"
 
@@ -128,6 +129,17 @@ int main(int argc, char** argv) {
         pub.connect(pub_endpoint); sub.connect(sub_endpoint);
         std::cout << "STARTED source=JOYSTICK session=" << session << " clock=" << clock
                   << " feedback=" << (feedback ? "STALE" : "UNCONFIGURED") << std::endl;
+        aviator::print_startup("flight_gateway", {
+            {"Device", path},
+            {"PUB connect", pub_endpoint},
+            {"PUB topics", "flight.command (50 Hz target)"},
+            {"SUB connect", sub_endpoint},
+            {"SUB topics", "flight.state"},
+            {"Feedback", feedback ? "Configured; waiting for fresh Core feedback" : "UNCONFIGURED (--core-session not set)"},
+            {"Session", session},
+            {"Transport", "Async connect; bus connectivity is not yet confirmed."},
+            {"Exit", "Ctrl+C"}
+        });
         aviator::ReceiveState receive_state;
         std::uint64_t sequence = 0, next_publish = aviator::monotonic_us();
         std::string error, payload, last_status = "STALE", system_state;

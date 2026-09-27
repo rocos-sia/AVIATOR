@@ -1,3 +1,4 @@
+#include "startup.hpp"
 #include "transport.hpp"
 
 #include <cerrno>
@@ -65,6 +66,14 @@ int main(int argc, char** argv) {
         auto proxy = std::async(std::launch::async, [&] {
             aviator::run_bus(context, input, output, [&] {
                 std::cout << "READY input=" << input << " output=" << output << std::endl;
+                aviator::print_startup("aviator_bus", {
+                    {"XSUB bind", input + "  <- publishers connect here"},
+                    {"XPUB bind", output + "  -> subscribers connect here"},
+                    {"Topics", "Transparent forwarding of subscribed topics (no fixed list)"},
+                    {"State", "Both local sockets bound; no peer health check."},
+                    {"Lock file", lock_path},
+                    {"Exit", "Ctrl+C"}
+                });
             });
         });
         while (proxy.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {

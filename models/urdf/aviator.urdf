@@ -319,7 +319,7 @@
   <joint name="RH56E2_L_joint" type="fixed">
     <parent link="AR5-5_07L-W4C4A2_flan_link"/>
     <child link="l_base_link"/>
-    <origin rpy="0 0 0" xyz="0 0 -0.018"/>
+    <origin rpy="0 0 1.5708" xyz="0 0 -0.018"/>
   </joint>
 
 <!--RH56E2_L Base-->
@@ -1568,7 +1568,7 @@
   <joint name="RH56E2_R_joint" type="fixed">
     <parent link="AR5-5_07R-W4C4A2_flan_link"/>
     <child link="r_base_link"/>
-    <origin rpy="0 0 0" xyz="0 0 -0.018"/>
+    <origin rpy="0 0 -1.5708" xyz="0 0 -0.018"/>
   </joint>
 
 <!--RH56E2_R Base-->
