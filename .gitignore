@@ -32,3 +32,5 @@ AviatorRobot_simple/build
 *.csv
 *.mp4
 /examples/aviator_clearance_hand/out
+/examples/aviator_t6_joystick/build
+*.TXT
