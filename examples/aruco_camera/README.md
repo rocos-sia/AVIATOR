@@ -18,6 +18,30 @@ ZMQ 节点体系，发布到 `camera.detection` topic，并提供一个订阅端
 
 无需额外 pip 安装。
 
+## 配置（YAML）
+
+相机型号/分辨率与 ChArUco 尺寸从 YAML 读取，默认 [config/camera.yaml](../../config/camera.yaml)，
+`--config` 可指向其他文件；命令行 `--width/--height/--fps/--square-length/--marker-length/
+--board-size/--min-corners` 仅在显式给出时覆盖 YAML。
+
+```yaml
+camera:
+  model: "D436"          # 型号标签；多设备时按名称子串匹配选择（不区分大小写）
+  serial: ""             # 序列号；非空则精确选择该设备（优先于 model）
+  width: 1280
+  height: 720
+  fps: 30
+
+charuco:
+  board_size: [5, 5]        # 格子数 (列, 行)
+  square_length: 0.016      # 方块边长，米
+  marker_length: 0.015      # 标记边长，米
+  dictionary: "DICT_4X4_50" # cv2.aruco 预定义字典名
+  min_corners: 6
+```
+
+设备选择顺序：`serial`（精确）→ `model`（名称子串）→ 第一台。
+
 ## 消息格式（`camera.detection` / `CameraDetection`）
 
 复用 [AVIATOR ZMQ 协议 §12](../../docs/AVIATOR_ZMQ协议格式说明.md) 的公共 Header 与
@@ -91,9 +115,9 @@ ZMQ 节点体系，发布到 `camera.detection` topic，并提供一个订阅端
 ~/miniconda3/envs/apriltag_realsense/bin/python camera_publisher.py
 ```
 
-发布端常用参数：`--show`（开可视化窗口）、`--camera-id`、`--min-corners`、
-`--board-size 5x5`、`--square-length` / `--marker-length`、`--endpoint` / `--bind`。
-两脚本均 `--help` 查看完整选项。
+发布端常用参数：`--show`（开可视化窗口）、`--camera-id`、`--endpoint` / `--bind`。
+采集/检测几何参数来自 YAML，`--config` 指定文件；`--width/--height/--fps/--square-length/
+--marker-length/--board-size/--min-corners` 显式给出时覆盖 YAML。两脚本均 `--help` 查看完整选项。
 
 ## 说明 / 限制
 

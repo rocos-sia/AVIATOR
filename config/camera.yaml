@@ -1,3 +1,15 @@
 # 相机设备、采集格式与检测参数
-# 目录占位：字段与参数待接口冻结，不可用于设备运行。
-{}
+# 由 examples/aruco_camera/camera_publisher.py 读取（--config 默认指向本文件）。
+camera:
+  model: "D436"          # 型号标签；多设备时按名称子串匹配选择（不区分大小写）
+  serial: ""             # 序列号；非空则精确选择该设备（优先于 model）
+  width: 1280            # 彩色流分辨率
+  height: 720
+  fps: 30
+
+charuco:
+  board_size: [5, 5]        # 格子数 (列, 行)
+  square_length: 0.016      # 方块边长，米
+  marker_length: 0.015      # 标记边长，米
+  dictionary: "DICT_4X4_50" # cv2.aruco 预定义字典名
+  min_corners: 6            # solvePnP 所需最少角点

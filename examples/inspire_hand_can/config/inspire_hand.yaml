@@ -1,0 +1,25 @@
+# Inspire 灵巧手（因时手）SocketCAN 节点配置
+#
+# 六指顺序（所有 6 元素数组统一使用）:
+#   [拇指旋转, 拇指, 食指, 中指, 无名指, 小指]
+# 数值 0-1000：1000 = 张开/伸直，0 = 闭合。
+
+can:
+  interface: can0                 # SocketCAN 接口名（需先 `ip link set can0 up type can bitrate 500000`）
+
+hand:
+  right_id: 1                     # 右手 CAN hand_id
+  left_id: 2                      # 左手 CAN hand_id
+  speed: [1000, 1000, 1000, 1000, 1000, 1000]  # 上电时设置的五指速度 (0-1000)
+  force: [500, 500, 500, 500, 500, 500]         # 上电时设置的五指力 (0-1000)
+  safe_pose: [1000, 1000, 1000, 1000, 1000, 1000] # valid=false / 超时回落姿态 (默认张开)
+
+zmq:
+  subscribe_endpoint: tcp://127.0.0.1:5556   # AVIATOR 总线订阅出口
+  publish_endpoint: tcp://127.0.0.1:5555     # AVIATOR 总线发布入口（回发 hand.state）
+
+node:
+  publisher_id: inspire_hand
+  supported_modes: [NORMALIZED_POSITION, GRASP_SETPOINT]
+  timeout_ms: 100                  # 超过该时长未收到合法命令 -> 回落 safe_pose
+  state_rate_hz: 10                # hand.state 心跳频率
