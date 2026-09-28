@@ -78,13 +78,13 @@
   <joint name="left_arm_base" type="fixed">
     <parent link="aircraft"/>
     <child link="AR5-5_07L-W4C4A2_base"/>
-    <origin xyz="-0.91333 0.008 0.12156" rpy="-1.5707 -0.1745329 0"/>
+    <origin xyz="-0.91333 0.008 0.12156" rpy="-1.5707 1.3962671 0"/> <!-- -0.1745329 + 1.5708 -->
   </joint>
 
   <joint name="right_arm_base" type="fixed">
     <parent link="aircraft"/>
     <child link="AR5-5_07R-W4C4A2_base"/>
-    <origin xyz="-0.91333 0.008 0.12156" rpy="1.5707 -0.1745329 0"/>
+    <origin xyz="-0.91333 0.008 0.12156" rpy="1.5707 1.3962671 0"/> <!-- -0.1745329 + 1.5708 -->
   </joint>
 
 
