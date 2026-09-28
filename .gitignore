@@ -35,3 +35,5 @@ AviatorRobot_simple/build
 /examples/aviator_t6_joystick/build
 *.TXT
 *.TXT
+/outputs/hand_mount_check
+/hil-serl/data/aviator

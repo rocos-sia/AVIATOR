@@ -134,16 +134,19 @@ def overlay(frame, title, d_mm):
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
 
-def render_frames(m, d, ids, cam, renderer, kf, dvals, walls, wall_rgba, title):
+def render_frames(m, d, ids, cam, renderer, kf, dvals, walls, wall_rgba, title,
+                  plain=False):
     frames = []
     for k in range(len(kf)):
         set_config(m, d, ids, kf[k])
         d_mm = float(dvals[k]) * 1e3
-        rgba = (0.9, 0.1, 0.1, 0.7) if dvals[k] < 0.0 else wall_rgba
+        rgba = (0, 0, 0, 0) if plain else ((0.9, 0.1, 0.1, 0.7)
+                                          if dvals[k] < 0.0 else wall_rgba)
         for g in walls:
             m.geom_rgba[g] = rgba
         renderer.update_scene(d, camera=cam)
-        frames.append(overlay(renderer.render(), title, d_mm))
+        frame = renderer.render()
+        frames.append(frame if plain else overlay(frame, title, d_mm))
     return frames
 
 
@@ -173,6 +176,10 @@ def main():
     ap.add_argument("--height", type=int, default=720)
     ap.add_argument("--views", default="front",
                     help="comma-separated view names (or 'all'); see VIEWS dict")
+    ap.add_argument("--profiles", default=",".join(PROFILES),
+                    help="comma-separated trajectory profiles to render")
+    ap.add_argument("--plain", action="store_true",
+                    help="hide wall and old clearance overlay for a clean hand/wheel view")
     ap.add_argument("--suffix", default="", help="appended to each output filename before .mp4")
     args = ap.parse_args()
 
@@ -182,6 +189,10 @@ def main():
     for v in views:
         if v not in VIEWS:
             sys.exit(f"unknown view '{v}' (available: {', '.join(VIEWS)})")
+    profiles = [p.strip() for p in args.profiles.split(",") if p.strip()]
+    for p in profiles:
+        if p not in PROFILES:
+            sys.exit(f"unknown profile '{p}' (available: {', '.join(PROFILES)})")
 
     directory = Path(args.dir)
     m, d = load_model(args.model)
@@ -198,7 +209,7 @@ def main():
     renderer = mujoco.Renderer(m, args.height, args.width)
     outdir = Path(args.out)
 
-    for profile in PROFILES:
+    for profile in profiles:
         kf_csv = directory / f"keyframes_t0_{profile}.csv"
         tr_csv = directory / f"trajectory_t0_{profile}.csv"
         if not (kf_csv.exists() and tr_csv.exists()):
@@ -213,7 +224,7 @@ def main():
             cam.azimuth = az
             cam.elevation = el
             frames = render_frames(m, d, ids, cam, renderer, kf, dvals, walls, wall_rgba,
-                                   TITLE[profile])
+                                   TITLE[profile], plain=args.plain)
             encode(frames, outdir / f"t0_{profile}_collision_{vname}{args.suffix}.mp4",
                    args.fps, args.width, args.height)
 

@@ -33,19 +33,21 @@ struct SimState {
 // left/right grasp welds. Adapted from
 // examples/AviatorRobot_simple/src/DataLink_direct.cpp (MuJoCoDirectDataLink) —
 // same gravity-feedforward + proportional servo, joint damping, and TCP/handle
-// alignment + lost-grip detection. The only additions are (a) hand-joint servo
-// for the full RH56E2 model and (b) a force-lock path for robustness probing.
+// alignment + lost-grip detection. This backend also servos the full RH56E2
+// hand; callers must check alignment before activating the grasp welds.
 class Sim {
   public:
     // hand_grip: 12 independent hand-joint targets, order
     //   [L index_1, L middle_1, L ring_1, L little_1, L thumb_1, L thumb_2,
     //    R index_1, ... ]  (the *_2 / thumb_3 / thumb_4 joints follow via mimic
     //    equality constraints in the MJCF).
-    Sim(const std::string& model_path, const Vec12& hand_grip, bool realtime = true);
+    Sim(const std::string& model_path, const Vec12& hand_grip,
+        const Vec14& initial_arm_q, bool realtime = true,
+        bool start_at_grasp = false);
     ~Sim();
 
     void setArmTarget(const Vec14& q);
-    void lock();        // force: activate both welds regardless of alignment
+    void lock();        // caller checks alignment before activating welds
     void unlock();
     void resetFault();
     SimState state() const;   // thread-safe snapshot
@@ -64,6 +66,8 @@ class Sim {
 
     std::array<int, 14> arm_qadr_{}, arm_dofadr_{};
     std::array<int, 12> hand_qadr_{}, hand_dofadr_{};
+    std::array<int, 12> mimic_qadr_{}, mimic_dofadr_{};
+    Vec12 mimic_target_{};
     int roll_qadr_ = -1, roll_dofadr_ = -1, pitch_qadr_ = -1, pitch_dofadr_ = -1;
     int tcp_[2]{}, handle_[2]{}, weld_[2]{};
 
@@ -79,6 +83,7 @@ class Sim {
     double stable_time_ = 0.0;
     double lost_time_ = 0.0;
     bool fault_ = false;
+    bool grasp_probe_ = false;
 };
 
 }  // namespace aviator

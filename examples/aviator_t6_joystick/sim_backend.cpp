@@ -29,8 +29,10 @@ int sid(mjModel* m, const char* n) { return mj_name2id(m, mjOBJ_SITE, n); }
 int eid(mjModel* m, const char* n) { return mj_name2id(m, mjOBJ_EQUALITY, n); }
 }  // namespace
 
-Sim::Sim(const std::string& model_path, const Vec12& hand_grip, bool realtime)
-    : hand_grip_(hand_grip), realtime_(realtime) {
+Sim::Sim(const std::string& model_path, const Vec12& hand_grip,
+         const Vec14& initial_arm_q, bool realtime, bool start_at_grasp)
+    : hand_grip_(hand_grip), realtime_(realtime),
+      grasp_probe_(start_at_grasp) {
     char err[1024];
     m_ = mj_loadXML(model_path.c_str(), nullptr, err, sizeof(err));
     if (!m_) throw std::runtime_error(std::string("mj_loadXML failed: ") + err);
@@ -42,6 +44,46 @@ Sim::Sim(const std::string& model_path, const Vec12& hand_grip, bool realtime)
     mj_forward(m_, d_);
 
     initMapping();
+    // Start at the same grasp-manifold configuration as the first arm target.
+    // The old aviator_home arm pose put the hands through the floor and forced
+    // a large collision-driven approach before the controller could weld.
+    for (int i = 0; i < 14; ++i) {
+        d_->qpos[arm_qadr_[i]] = initial_arm_q[i];
+        arm_target_[i] = initial_arm_q[i];
+    }
+    if (grasp_probe_) {
+        // Start from the physical pinch instead of closing fingers through
+        // the handle. The passive mimic joints are also servoed below.
+        for (int i = 0; i < 12; ++i) d_->qpos[hand_qadr_[i]] = hand_grip_[i];
+        for (int i = 0; i < 12; ++i) d_->qpos[mimic_qadr_[i]] = mimic_target_[i];
+    }
+    mj_forward(m_, d_);
+    if (grasp_probe_) {
+        for (int s = 0; s < 2; ++s) {
+            const double error = mju_dist3(d_->site_xpos + 3 * tcp_[s],
+                                           d_->site_xpos + 3 * handle_[s]);
+            if (error > kPositionTol)
+                throw std::runtime_error("candidate TCP is not aligned with its handle");
+            d_->eq_active[weld_[s]] = 1;
+        }
+        mj_forward(m_, d_);
+    }
+    const int wheel_body = mj_name2id(m_, mjOBJ_BODY, "steering_wheel");
+    const int left_palm = mj_name2id(m_, mjOBJ_BODY, "l_base_link");
+    const int right_palm = mj_name2id(m_, mjOBJ_BODY, "r_base_link");
+    double deepest_palm_overlap = 0.0;
+    for (int i = 0; i < d_->ncon; ++i) {
+        const auto& c = d_->contact[i];
+        const int a = m_->geom_bodyid[c.geom1], b = m_->geom_bodyid[c.geom2];
+        if ((a == wheel_body && (b == left_palm || b == right_palm)) ||
+            (b == wheel_body && (a == left_palm || a == right_palm)))
+            deepest_palm_overlap = std::min(deepest_palm_overlap, double(c.dist));
+    }
+    if (deepest_palm_overlap < -0.005)
+        std::fprintf(stderr, "initial palm/wheel collision penetration: %.1f mm; "
+                             "the grasp geometry must be corrected before welding%s\n",
+                     -1000.0 * deepest_palm_overlap,
+                     grasp_probe_ ? "" : "; recalibrate the fixed-mount grasp before welding");
 
     running_.store(true);
     th_ = std::thread(&Sim::physicsLoop, this);
@@ -96,6 +138,36 @@ void Sim::initMapping() {
         }
     }
 
+    if (grasp_probe_) {
+        const char* finger2[4] = {"index", "middle", "ring", "little"};
+        for (int s = 0; s < 2; ++s) {
+            const char* side = hand_side[s];
+            const int base = s * 6;
+            for (int f = 0; f < 4; ++f) {
+                char name[64];
+                std::snprintf(name, sizeof(name), "%s_%s_2_joint", side,
+                              finger2[f]);
+                const int id = jid(m_, name);
+                if (id < 0) throw std::runtime_error(std::string("missing mimic joint ") + name);
+                mimic_qadr_[base + f] = m_->jnt_qposadr[id];
+                mimic_dofadr_[base + f] = m_->jnt_dofadr[id];
+                mimic_target_[base + f] = 1.0843 * hand_grip_[base + f];
+                m_->dof_damping[mimic_dofadr_[base + f]] += kHandDamping;
+            }
+            for (int t = 3; t <= 4; ++t) {
+                char name[64];
+                std::snprintf(name, sizeof(name), "%s_thumb_%d_joint", side, t);
+                const int id = jid(m_, name);
+                if (id < 0) throw std::runtime_error(std::string("missing mimic joint ") + name);
+                const int i = base + 4 + (t - 3);
+                mimic_qadr_[i] = m_->jnt_qposadr[id];
+                mimic_dofadr_[i] = m_->jnt_dofadr[id];
+                mimic_target_[i] = (t == 3 ? 0.8392 : 0.891 * 0.8392) * hand_grip_[base + 5];
+                m_->dof_damping[mimic_dofadr_[i]] += kHandDamping;
+            }
+        }
+    }
+
     // Passive wheel joints.
     roll_qadr_ = m_->jnt_qposadr[jid(m_, "roll_input_joint")];
     roll_dofadr_ = m_->jnt_dofadr[jid(m_, "roll_input_joint")];
@@ -103,15 +175,18 @@ void Sim::initMapping() {
     pitch_dofadr_ = m_->jnt_dofadr[jid(m_, "pitch_input_joint")];
 
     // TCP / handle sites + grasp welds.
-    tcp_[0] = sid(m_, "left_tcp");
-    tcp_[1] = sid(m_, "right_tcp");
+    const bool physical_sites = grasp_probe_;
+    tcp_[0] = sid(m_, physical_sites ? "left_physical_tcp" : "left_tcp");
+    tcp_[1] = sid(m_, physical_sites ? "right_physical_tcp" : "right_tcp");
     handle_[0] = sid(m_, "left_handle");
     handle_[1] = sid(m_, "right_handle");
-    weld_[0] = eid(m_, "left_grasp");
-    weld_[1] = eid(m_, "right_grasp");
+    weld_[0] = eid(m_, physical_sites ? "left_physical_grasp" : "left_grasp");
+    weld_[1] = eid(m_, physical_sites ? "right_physical_grasp" : "right_grasp");
     if (tcp_[0] < 0 || tcp_[1] < 0 || handle_[0] < 0 || handle_[1] < 0 || weld_[0] < 0 ||
         weld_[1] < 0)
-        throw std::runtime_error("missing tcp/handle site or grasp weld");
+        throw std::runtime_error(physical_sites
+            ? "--grasp-only requires physical_tcp and physical_grasp sites absent from this model"
+            : "missing legacy tcp/handle site or grasp weld");
 }
 
 void Sim::setArmTarget(const Vec14& q) {
@@ -214,6 +289,11 @@ void Sim::physicsLoop() {
                 d_->qfrc_applied[hand_dofadr_[i]] =
                     d_->qfrc_bias[hand_dofadr_[i]] +
                     kHandGain * (hand_grip_[i] - d_->qpos[hand_qadr_[i]]);
+            if (grasp_probe_)
+                for (int i = 0; i < 12; ++i)
+                    d_->qfrc_applied[mimic_dofadr_[i]] =
+                        d_->qfrc_bias[mimic_dofadr_[i]] +
+                        kHandGain * (mimic_target_[i] - d_->qpos[mimic_qadr_[i]]);
             mj_step(m_, d_);
             updateAlignmentLocked();
         }
