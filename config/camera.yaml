@@ -6,6 +6,7 @@ camera:
   width: 1280            # 彩色流分辨率
   height: 720
   fps: 30
+  warmup_s: 5.0          # 启动后跳过发布的热身秒数（0 禁用）
 
 charuco:
   board_size: [5, 5]        # 格子数 (列, 行)

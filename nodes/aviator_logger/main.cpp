@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <iostream>
@@ -29,6 +30,19 @@ void usage() {
     std::cout << "Usage: aviator_logger [--output aviator_YYYY-MM-DD_HH-MM-SS.mcap]\n"
                  "                       [--subscribe tcp://127.0.0.1:5556] [--session UUID]\n"
                  "Writes bus traffic to a single MCAP file; SIGINT/SIGTERM finalizes.\n";
+}
+
+// Log times are stored as UTC ns; render an ISO-8601 timestamp (ms) for stdout.
+std::string format_utc_ns(std::uint64_t ns) {
+    const std::time_t secs = static_cast<std::time_t>(ns / 1'000'000'000ULL);
+    const int ms = static_cast<int>((ns % 1'000'000'000ULL) / 1'000'000ULL);
+    std::tm utc{};
+    gmtime_r(&secs, &utc);
+    char buffer[40];
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%S", &utc);
+    const std::size_t length = std::strlen(buffer);
+    std::snprintf(buffer + length, sizeof(buffer) - length, ".%03dZ", ms);
+    return buffer;
 }
 } // namespace
 
@@ -90,10 +104,17 @@ int main(int argc, char** argv) {
         stop.store(true);
         worker.join();
 
-        std::cout << "recorded " << summary.messages << " messages ("
-                  << summary.invalid << " invalid, " << summary.rejected
-                  << " rejected, " << summary.channels << " channels) -> "
-                  << summary.path << '\n';
+        std::cout << "recorded " << summary.messages << " messages across "
+                  << summary.topics.size() << " topic(s) -> " << summary.path << '\n';
+        for (const auto& [topic, stats] : summary.topics)
+            std::cout << "  " << topic << "  (" << stats.type << ")  "
+                      << stats.messages << " msgs\n";
+        if (summary.messages != 0)
+            std::cout << "  window (UTC): " << format_utc_ns(summary.start_log_ns)
+                      << " -> " << format_utc_ns(summary.end_log_ns) << '\n';
+        if (summary.invalid || summary.rejected)
+            std::cout << "  skipped: " << summary.invalid << " invalid, "
+                      << summary.rejected << " rejected\n";
         if (failed.load()) result = 1;
     } catch (const std::exception& error) {
         std::cerr << "aviator_logger: " << error.what() << '\n';

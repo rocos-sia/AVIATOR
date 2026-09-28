@@ -129,19 +129,57 @@ RecorderSummary record_bus(const std::string& subscribe_endpoint,
                 ++summary.channels;
             }
 
+            const std::uint64_t log_ns = clock.now();
+            const std::uint64_t publish_ns = decoded.header.timestamp * 1000ULL;
+
             mcap::Message message;
             message.channelId = channel_it->second;
             message.sequence = static_cast<std::uint32_t>(decoded.header.sequence);
-            message.logTime = clock.now();
-            message.publishTime = decoded.header.timestamp * 1000ULL;
+            message.logTime = log_ns;
+            message.publishTime = publish_ns;
             message.data = reinterpret_cast<const std::byte*>(wire.payload.data());
             message.dataSize = wire.payload.size();
             const auto write_status = writer.write(message);
             if (write_status.code != mcap::StatusCode::Success)
                 throw std::runtime_error("writer.write: " + write_status.message);
+
+            auto& topic_stats = summary.topics[topic];
+            topic_stats.type = type;
+            ++topic_stats.messages;
+            if (summary.messages == 0) {  // first message seeds the window
+                summary.start_log_ns = summary.end_log_ns = log_ns;
+                summary.start_publish_ns = summary.end_publish_ns = publish_ns;
+            } else {
+                summary.start_log_ns = std::min(summary.start_log_ns, log_ns);
+                summary.end_log_ns = std::max(summary.end_log_ns, log_ns);
+                summary.start_publish_ns = std::min(summary.start_publish_ns, publish_ns);
+                summary.end_publish_ns = std::max(summary.end_publish_ns, publish_ns);
+            }
             ++summary.messages;
         }
     }
+
+    // Final summary metadata (SAD §10 session manifest): per-topic breakdown and
+    // the recorded time window. Written last, just before the summary section.
+    nlohmann::json topics_json = nlohmann::json::array();
+    for (const auto& [topic, stats] : summary.topics)
+        topics_json.push_back({{"topic", topic}, {"type", stats.type}, {"messages", stats.messages}});
+
+    mcap::Metadata summary_meta;
+    summary_meta.name = "summary";
+    summary_meta.metadata = {
+        {"session_id", session_id},
+        {"message_count", std::to_string(summary.messages)},
+        {"topic_count", std::to_string(summary.topics.size())},
+        {"start_log_ns", std::to_string(summary.start_log_ns)},
+        {"end_log_ns", std::to_string(summary.end_log_ns)},
+        {"start_publish_ns", std::to_string(summary.start_publish_ns)},
+        {"end_publish_ns", std::to_string(summary.end_publish_ns)},
+        {"topics", topics_json.dump()},
+    };
+    const auto summary_status = writer.write(summary_meta);
+    if (summary_status.code != mcap::StatusCode::Success)
+        throw std::runtime_error("writer.write(summary): " + summary_status.message);
 
     writer.close();
     std::filesystem::rename(partial, output_path);

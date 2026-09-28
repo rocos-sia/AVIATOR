@@ -178,6 +178,8 @@ def parse_args(argv):
                    help="PUB 改为 bind 而非 connect（直连测试，绕过总线）")
     p.add_argument("--camera-id", default="cockpit_camera", help="camera_id 字段")
     p.add_argument("--show", action="store_true", help="开启 OpenCV 可视化窗口")
+    p.add_argument("--warmup-s", type=float, default=None,
+                   help="启动后跳过发布的热身秒数（0 禁用；默认以 YAML 为准）")
     # 以下几何/采集参数默认 None = 以 YAML 为准，命令行显式给出时才覆盖。
     p.add_argument("--width", type=int, default=None)
     p.add_argument("--height", type=int, default=None)
@@ -197,6 +199,8 @@ def main(argv):
     width = args.width if args.width is not None else required(camera, "width", "camera")
     height = args.height if args.height is not None else required(camera, "height", "camera")
     fps = args.fps if args.fps is not None else required(camera, "fps", "camera")
+    warmup_s = float(args.warmup_s if args.warmup_s is not None
+                     else required(camera, "warmup_s", "camera"))
     model = camera.get("model", "")    # 空 = 自动选择
     serial = camera.get("serial", "")  # 空 = 自动选择
 
@@ -258,8 +262,9 @@ def main(argv):
     print(f"camera_publisher: board={bx}x{by} square={square_length} marker={marker_length} "
           f"dict={charuco['dictionary']} min_corners={min_corners}")
     print(f"camera_publisher: endpoint={args.endpoint} bind={args.bind}")
-    print(f"camera_publisher: session={session} clock={clock}")
+    print(f"camera_publisher: session={session} clock={clock} warmup_s={warmup_s}")
 
+    warmup_until = monotonic_us() + int(warmup_s * 1e6)
     sequence = 0
     frame_id = 0
     try:
@@ -294,11 +299,12 @@ def main(argv):
                                         "qz": float(qz), "qw": float(qw)},
                     }
 
-            sequence += 1
-            message = make_message(args.camera_id, frame_id, sequence, sample_mono_us,
-                                   session, clock, w, h, status, confidence, pose)
-            payload = json.dumps(message)
-            pub.send_multipart([b"camera.detection", payload.encode("utf-8")])
+            if monotonic_us() >= warmup_until:
+                sequence += 1
+                message = make_message(args.camera_id, frame_id, sequence, sample_mono_us,
+                                       session, clock, w, h, status, confidence, pose)
+                payload = json.dumps(message)
+                pub.send_multipart([b"camera.detection", payload.encode("utf-8")])
 
             if args.show:
                 display = image.copy()

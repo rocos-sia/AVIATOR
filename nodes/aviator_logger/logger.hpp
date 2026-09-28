@@ -2,9 +2,15 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <string>
 
 namespace aviator {
+
+struct TopicStats {
+    std::string type;          // message type name (e.g. "ArmState")
+    std::uint64_t messages = 0;
+};
 
 struct RecorderSummary {
     std::uint64_t messages = 0;  // valid bus messages written
@@ -12,6 +18,11 @@ struct RecorderSummary {
     std::uint64_t rejected = 0;  // transport-level rejections (bad multipart)
     std::uint64_t channels = 0;  // distinct topics recorded
     std::string path;            // final (renamed) MCAP path
+    std::map<std::string, TopicStats> topics;  // topic -> {type, count}
+    std::uint64_t start_log_ns = 0;      // first receive (UTC ns)
+    std::uint64_t end_log_ns = 0;        // last receive (UTC ns)
+    std::uint64_t start_publish_ns = 0;  // first source timestamp (UTC ns)
+    std::uint64_t end_publish_ns = 0;    // last source timestamp (UTC ns)
 };
 
 // Records bus traffic to `output_path` (written as `.partial`, atomically

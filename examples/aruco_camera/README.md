@@ -21,7 +21,7 @@ ZMQ 节点体系，发布到 `camera.detection` topic，并提供一个订阅端
 ## 配置（YAML）
 
 相机型号/分辨率与 ChArUco 尺寸从 YAML 读取，默认 [config/camera.yaml](../../config/camera.yaml)，
-`--config` 可指向其他文件；命令行 `--width/--height/--fps/--square-length/--marker-length/
+`--config` 可指向其他文件；命令行 `--width/--height/--fps/--warmup-s/--square-length/--marker-length/
 --board-size/--min-corners` 仅在显式给出时覆盖 YAML。
 
 ```yaml
@@ -31,6 +31,7 @@ camera:
   width: 1280
   height: 720
   fps: 30
+  warmup_s: 5.0          # 启动后跳过发布的热身秒数（0 禁用）
 
 charuco:
   board_size: [5, 5]        # 格子数 (列, 行)
@@ -115,9 +116,13 @@ charuco:
 ~/miniconda3/envs/apriltag_realsense/bin/python camera_publisher.py
 ```
 
-发布端常用参数：`--show`（开可视化窗口）、`--camera-id`、`--endpoint` / `--bind`。
+发布端常用参数：`--show`（开可视化窗口）、`--camera-id`、`--warmup-s`（启动后跳过发布的
+热身秒数，0 禁用；默认以 YAML 为准）、`--endpoint` / `--bind`。
 采集/检测几何参数来自 YAML，`--config` 指定文件；`--width/--height/--fps/--square-length/
 --marker-length/--board-size/--min-corners` 显式给出时覆盖 YAML。两脚本均 `--help` 查看完整选项。
+
+热身期内照常采图与检测但不发布（让 auto-exposure 收敛）；`sequence` 仍从 1 起，`frame_id`
+按采集帧递增，故首条消息的 `frame_id` 是热身后的帧号。
 
 ## 说明 / 限制
 
