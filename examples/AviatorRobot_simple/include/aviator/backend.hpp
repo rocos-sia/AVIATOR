@@ -50,7 +50,8 @@ struct BackendContext {
 struct RokaeConfig {
     std::string left_ip;
     std::string right_ip;
-    std::string local_ip;
+    std::string left_local_ip;
+    std::string right_local_ip;
     std::string grasp_mode = "open_loop";
     std::array<double, 7> joint_stiffness{{500, 500, 500, 500, 50, 50, 50}}; // Nm/rad
     // 关节跟踪容差等在真机上可另行收紧，这里只放连接与安全相关项。
