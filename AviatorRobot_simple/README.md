@@ -122,13 +122,16 @@ model: ../model/aviator.xml
 ```yaml
 backend: rokae
 rokae:
-  left_ip: 192.168.0.100
-  right_ip: 192.168.0.101
-  local_ip: 192.168.0.1
+  left_ip: 192.168.0.160
+  right_ip: 192.168.1.160
+  left_local_ip: 192.168.0.100
+  right_local_ip: 192.168.1.100
   grasp_mode: open_loop
   joint_stiffness: [500, 500, 500, 500, 50, 50, 50] # Nm/rad，J1…J7
 ```
 
+`left_local_ip`、`right_local_ip` 分别传入左右臂的 SDK 连接，替代原来的共享 `local_ip`。
+本地地址须已配置在上位机对应网卡上，YAML 不会修改系统网络配置。
 填写实际 IP，并确认模型中的双臂安装变换、工具变换及轴方向与实物一致。
 按用户指定，真机**仅有双臂状态反馈，轮盘开环控制**：
 

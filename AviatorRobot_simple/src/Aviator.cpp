@@ -576,7 +576,8 @@ class Aviator::Impl {
             return;
         rokae_.left_ip = rk["left_ip"].as<std::string>("");
         rokae_.right_ip = rk["right_ip"].as<std::string>("");
-        rokae_.local_ip = rk["local_ip"].as<std::string>("");
+        rokae_.left_local_ip = rk["left_local_ip"].as<std::string>("");
+        rokae_.right_local_ip = rk["right_local_ip"].as<std::string>("");
         rokae_.grasp_mode = rk["grasp_mode"].as<std::string>("open_loop");
         if (rk["joint_stiffness"]) {
             const auto stiffness = rk["joint_stiffness"].as<std::vector<double>>();

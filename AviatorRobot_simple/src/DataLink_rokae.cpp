@@ -97,9 +97,12 @@ class RokaeDataLink final : public DataLink {
         require(!config.left_ip.empty() && !config.right_ip.empty(),
                 "rokae.left_ip / rokae.right_ip 未配置");
         require(config.grasp_mode == "open_loop", "当前真机仅支持 rokae.grasp_mode: open_loop");
-        require(!config.local_ip.empty(), "rokae.local_ip 未配置");
-        require(config.left_ip != config.right_ip && config.local_ip != config.left_ip &&
-                    config.local_ip != config.right_ip, "双臂与上位机 IP 必须不同");
+        require(!config.left_local_ip.empty(), "rokae.left_local_ip 未配置");
+        require(!config.right_local_ip.empty(), "rokae.right_local_ip 未配置");
+        require(config.left_ip != config.right_ip, "左右臂控制器 IP 必须不同");
+        for (const auto &local_ip : {config.left_local_ip, config.right_local_ip})
+            require(local_ip != config.left_ip && local_ip != config.right_ip,
+                    "上位机 IP 不能与机械臂控制器 IP 相同");
 
         for (int i = 0; i < 7; ++i)
             require(std::isfinite(config.joint_stiffness[i]) && config.joint_stiffness[i] > 0 &&
@@ -121,8 +124,9 @@ class RokaeDataLink final : public DataLink {
         }
 
         const char *ip[2] = {config.left_ip.c_str(), config.right_ip.c_str()};
+        const std::string local_ip[2] = {config.left_local_ip, config.right_local_ip};
         for (int side = 0; side < 2; ++side) {
-            arms_[side] = std::make_unique<RokaeArm>(ip[side], config.local_ip,
+            arms_[side] = std::make_unique<RokaeArm>(ip[side], local_ip[side],
                                                      poseToRowMajor(geometry.tool), config.joint_stiffness);
             joint_pos_[side] = arms_[side]->position();
             for (int axis = 0; axis < 7; ++axis)
