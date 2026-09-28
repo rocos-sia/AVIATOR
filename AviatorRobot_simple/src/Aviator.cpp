@@ -237,38 +237,50 @@ class Aviator::Impl {
         setState("APPROACHING");
 
         try {
-            auto start = measured();
-            checkElbows(start);
+            // 第一阶段：当前位置 → home，双臂实际到位并停稳后才能继续。
+            moveJoints(home_);
+            const double deadline = datalink_->time() + 5.0;
+            double stable_since = -1;
+            bool arrived = false;
+            while (datalink_->time() < deadline) {
+                datalink_->waitTick();
+                require(!cancel_, "Motion stopped");
+                require(!grasp().fault, "Backend grasp fault while homing");
+                require(datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right),
+                        "A drive is no longer enabled");
+                const auto actual = measured();
+                checkElbows(actual);
+                bool settled = true;
+                for (int i = 0; i < 14; ++i) {
+                    const double error = std::abs(actual[i] - home_[i]);
+                    require(error < tracking_tolerance_, "Tracking error while homing on axis " + std::to_string(i));
+                    settled = settled && error < 0.01 &&
+                        std::abs(datalink_->getJointVelocity(static_cast<Side>(i / 7), i % 7)) < 0.02;
+                }
+                const double now = datalink_->time();
+                if (!settled) stable_since = -1;
+                else if (stable_since < 0) stable_since = now;
+                if (stable_since >= 0 && now - stable_since >= 0.15) {
+                    arrived = true;
+                    break;
+                }
+            }
+            require(arrived, "Home arrival timeout");
 
-            // 第一阶段：关节空间运动到预接近位置
+            // 第二阶段：从 home 实测位置规划到预接近位置。
             auto wheel0 = grasp();
             Joints seed = approach_seed_;
             auto goal = solve({target(0, wheel0.angle, wheel0.displacement, approach_distance_),
                               target(1, wheel0.angle, wheel0.displacement, approach_distance_)},
                              seed);
 
-            double duration = approach_duration_;
-            for (int i = 0; i < 14; ++i)
-                duration = std::max(duration, 2.0 * std::abs(goal[i] - start[i]) / joint_speed_);
+            moveJoints(goal);
 
+            // 第三阶段：笛卡尔空间精确对准
+            auto wheel1 = grasp();
+            double duration = final_approach_duration_;
             size_t steps = static_cast<size_t>(std::ceil(duration / planning_period_));
             Path path;
-            for (size_t k = 0; k <= steps; ++k) {
-                double s = smooth(double(k) / steps);
-                Joints q{};
-                for (int i = 0; i < 14; ++i)
-                    q[i] = start[i] + s * (goal[i] - start[i]);
-                path.push_back({q, wheel0.angle, wheel0.displacement});
-            }
-
-            validate(path, duration);
-            execute(path, duration, false);
-
-            // 第二阶段：笛卡尔空间精确对准
-            auto wheel1 = grasp();
-            duration = final_approach_duration_;
-            steps = static_cast<size_t>(std::ceil(duration / planning_period_));
-            path.clear();
 
             seed = measured();
             pinocchio::SE3 from[2];
@@ -692,6 +704,30 @@ class Aviator::Impl {
             check(mid, 0.5 * (path[k].angle + path[k - 1].angle),
                   0.5 * (path[k].translation + path[k - 1].translation));
         }
+    }
+
+    // 双臂共用一条关节轨迹和时长；当前位置来自后端实测值。
+    void moveJoints(const Joints &goal) {
+        const auto start = measured();
+        const auto w = grasp();
+        double duration = approach_duration_;
+        for (int i = 0; i < 14; ++i) {
+            const double speed = std::min(joint_speed_,
+                datalink_->jointVelLimit(static_cast<Side>(i / 7), i % 7));
+            require(std::isfinite(speed) && speed > 0, "Invalid joint velocity limit");
+            duration = std::max(duration, 2.0 * std::abs(goal[i] - start[i]) / speed);
+        }
+        const size_t steps = static_cast<size_t>(std::ceil(duration / planning_period_));
+        Path path;
+        for (size_t k = 0; k <= steps; ++k) {
+            const double s = smooth(double(k) / steps);
+            Joints q{};
+            for (int i = 0; i < 14; ++i)
+                q[i] = start[i] + s * (goal[i] - start[i]);
+            path.push_back({q, w.angle, w.displacement});
+        }
+        validate(path, duration);
+        execute(path, duration, false);
     }
 
     void execute(const Path &path, double duration, bool locked, bool servo_segment = false) {

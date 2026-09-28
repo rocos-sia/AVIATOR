@@ -110,6 +110,12 @@ if(BUILD_TESTING)
     add_test(NAME aviator_open_loop COMMAND aviator_open_loop_test)
 endif()
 if(BUILD_TESTING)
+    add_executable(aviator_home_test tests/test_home.cpp)
+    target_link_libraries(aviator_home_test PRIVATE aviator_control)
+    target_compile_definitions(aviator_home_test PRIVATE AVIATOR_CONFIG_DIR="${PROJECT_SOURCE_DIR}/config")
+    add_test(NAME aviator_home COMMAND aviator_home_test)
+    set_tests_properties(aviator_home PROPERTIES TIMEOUT 60 ENVIRONMENT "LD_BIND_NOW=1")
+
     add_executable(aviator_controller_safety_test tests/test_controller_safety.cpp)
     target_link_libraries(aviator_controller_safety_test PRIVATE aviator_control)
     target_compile_definitions(aviator_controller_safety_test PRIVATE

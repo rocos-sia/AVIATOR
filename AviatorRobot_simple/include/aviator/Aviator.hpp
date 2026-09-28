@@ -60,7 +60,7 @@ class Aviator {
     void Enable();
     void Disable();
 
-    // 接近把手（预接近 + 精确对准）
+    // 接近把手（当前位置 → home 并确认到位 → 预接近 → 精确对准）
     void ApproachHandles();
 
     // 锁定抓取

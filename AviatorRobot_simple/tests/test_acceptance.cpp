@@ -21,6 +21,12 @@ int main() {
         const int home = mj_name2id(model.get(), mjOBJ_KEY, "aviator_home");
         check(data && home >= 0, "Missing simulation data or aviator_home");
         mj_resetDataKeyframe(model.get(), data.get(), home);
+        // 双臂从偏离 home 的位置启动，验证回 home 后仍可完成抓握与轮盘运动。
+        for (const char *name : {"AR5-5_07L-W4C4A2_joint_1", "AR5-5_07R-W4C4A2_joint_1"}) {
+            const int joint = mj_name2id(model.get(), mjOBJ_JOINT, name);
+            check(joint >= 0, "Missing arm joint");
+            data->qpos[model->jnt_qposadr[joint]] += .03;
+        }
         mj_forward(model.get(), data.get());
         const int roll = mj_name2id(model.get(), mjOBJ_JOINT, "roll_input_joint");
         const int slide = mj_name2id(model.get(), mjOBJ_JOINT, "pitch_input_joint");

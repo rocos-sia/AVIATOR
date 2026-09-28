@@ -68,6 +68,12 @@ cmake --install build --prefix "$PWD/dist"
 
 演示流程直接写在 [src/main.cpp](src/main.cpp) 的 `main()` 中：
 `Init → Enable → ApproachHandles → LockHandles → 目标循环 → UnlockHandles → Disable`。
+
+`Enable()` 保持当前位置；`ApproachHandles()` 先从实测关节角运动到 `posture.json` 的
+`left_home_deg` / `right_home_deg`，再到预接近位置，最后沿笛卡尔路径对准把手。
+仿真和真机采用同一流程，两段关节运动各以 `approach_duration` 为基准时长，并按关节限速自动延长。
+home 轨迹结束后，双臂所有关节须连续 0.15 s 满足位置误差小于 0.01 rad、速度小于 0.02 rad/s；
+最多等待 5 s，超时或运动校验失败则停止后续动作并进入 `FAULT`。
 `--demo` 分支直接调用 `MoveWheel`；目标表每行是 `{转角 rad, 推拉 m, 速度倍率 v}`，
 修改该表即可改变演示目标。`--servo-demo` 分支直接展示每 20 ms 调用 `ServoWheel`，
 然后 `Stop` 并等待 Servo 结束。两个分支均使用同一个 `robot` 对象，仿真与真机由配置选择。
