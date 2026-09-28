@@ -25,6 +25,7 @@ struct RecordingLink final : DataLink {
     double tick_time = 0;
     explicit RecordingLink(std::unique_ptr<DataLink> link) : io(std::move(link)) {}
     double getJointPosition(Side s, int j) const override { return io->getJointPosition(s,j); }
+    std::array<double, 14> jointTargets() const override { return io->jointTargets(); }
     double getJointVelocity(Side s, int j) const override { return io->getJointVelocity(s,j); }
     double jointVelLimit(Side s, int j) const override { return std::min(speed_cap, io->jointVelLimit(s,j)); }
     bool isEnabled(Side s) const override { return io->isEnabled(s); }

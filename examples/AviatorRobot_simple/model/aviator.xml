@@ -154,10 +154,10 @@
         <geom name="steering_wheel_collision_42" class="collision" mesh="steering_wheel_collision_42" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_43" class="collision" mesh="steering_wheel_collision_43" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_44" class="collision" mesh="steering_wheel_collision_44" pos="0 0 0" quat="1 0 0 0" />
-        <site name="left_handle" pos="-0.127136948196 -0.0201231581361 0.438508597025" quat="0.566245865199 -0.411390821583 -0.388818103402 -0.599119098786" size="0.008" rgba="0.2 1 0.2 1" />
-        <site name="right_handle" pos="0.124968289802 -0.031250388122 0.43824357303" quat="-0.493604596516 0.350445269072 0.445462893102 0.659625216735" size="0.008" rgba="0.2 1 0.2 1" />
+        <site name="left_handle" pos="-0.1255586209018023 0.0078306440680708 0.449283281487693" quat="0.5662458651985139 -0.4113908215826059 -0.3888181034017549 -0.5991190987860738" size="0.008" rgba="0.2 1 0.2 1" />
+        <site name="right_handle" pos="0.1256450900990586 -0.003241190938976828 0.448968628485075" quat="-0.5754801085989294 0.4055917364265505 0.3959096097453678 0.5895537031184951" size="0.008" rgba="0.2 1 0.2 1" />
       </body>
-      <body name="AR5-5_07L-W4C4A2_base" pos="-0.91333 0.010 0.12156" quat="0.5416752 -0.5416752 0.4545195 0.4545195">
+      <body name="AR5-5_07L-W4C4A2_base" pos="-0.91333 0.010 0.12156" quat="0.5417004681704998 -0.5416482904136246 0.4545423700616205 0.4544985875606479">
         <geom name="AR5-5_07L-W4C4A2_base_visual_0" class="visual" mesh="AR5-5_07L-W4C4A2_base" pos="0.0 0.0 0.0" quat="1 0 0 0" material="white" />
         <geom name="AR5-5_07L-W4C4A2_base_collision_0" class="collision" mesh="AR5-5_07L-W4C4A2_base" pos="0.0 0.0 0.0" quat="1 0 0 0" />
         <body name="AR5-5_07L-W4C4A2_link1" pos="0.0 0.0 0.0" quat="1 0 0 0">
@@ -211,7 +211,7 @@
           </body>
         </body>
       </body>
-      <body name="AR5-5_07R-W4C4A2_base" pos="-0.91333 -0.010 0.12156" quat="0.5416752 0.5416752 0.4545195 -0.4545195">
+      <body name="AR5-5_07R-W4C4A2_base" pos="-0.91333 -0.010 0.12156" quat="0.5417004681704998 0.5416482904136246 0.4545423700616205 -0.4544985875606479">
         <geom name="AR5-5_07R-W4C4A2_base_visual_0" class="visual" mesh="AR5-5_07R-W4C4A2_base" pos="0.0 0.0 0.0" quat="1 0 0 0" material="white" />
         <geom name="AR5-5_07R-W4C4A2_base_collision_0" class="collision" mesh="AR5-5_07R-W4C4A2_base" pos="0.0 0.0 0.0" quat="1 0 0 0" />
         <body name="AR5-5_07R-W4C4A2_link1" pos="0.0 0.0 0.0" quat="1 0 0 0">
@@ -279,6 +279,6 @@
     <exclude body1="AR5-5_07R-W4C4A2_link5" body2="AR5-5_07R-W4C4A2_link7" />
   </contact>
   <keyframe>
-    <key name="aviator_home" qpos="0 0 0.376916304 1.57079632679 -1.37618323285 2.04981289676 0.156860282066 0.0729290021534 0.156918313879 -0.277807417 1.57079632679 1.11467509058 1.93698015773 -0.180011079028 0.0687414348287 -0.693679354889" />
+    <key name="aviator_home" qpos="0 0 0.49382155455415 1.5695821871449 -1.346184706546 2.1974597504366 0.19283575378095 0.038052309155631 0.16446436883395 -0.4739805273376401 1.4922565104552 1.2558442519948 2.1564160123437 -0.11159380706888 0.078174317591534 -0.31328630161801" />
   </keyframe>
 </mujoco>

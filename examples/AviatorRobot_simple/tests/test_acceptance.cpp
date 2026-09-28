@@ -2,6 +2,7 @@
 #include "aviator/Aviator.hpp"
 #include "aviator/backend.hpp"
 #include "../src/DataLink_direct.hpp"
+#include <yaml-cpp/yaml.h>
 #include <cmath>
 #include <iostream>
 #include <memory>
@@ -60,6 +61,8 @@ int main() {
                                   {-.87266, 0, .5},
                                   {0, 0, .5},
                                   {0, -.170, .5},
+                                  {.87266, -.170, .5},
+                                  {-.87266, -.170, .5},
                                   {0, 0, .5}}) {
             robot.MoveWheel(target[0], target[1], target[2]);
             const auto s = robot.GetStatus();
@@ -77,7 +80,10 @@ int main() {
 
         const auto range = simulation->elbowRange();
         std::cout << "J2 range=" << range[0]*180/M_PI << " ... " << range[1]*180/M_PI << " deg\n";
-        check(range[0] >= 85*M_PI/180 && range[1] <= 95*M_PI/180, "J2 outside [85,95] degrees");
+        const auto posture = YAML::LoadFile(AVIATOR_CONFIG_DIR "/posture.json");
+        const auto limits = posture["joint2_limits_deg"].as<std::vector<double>>();
+        check(range[0] >= limits[0]*M_PI/180 && range[1] <= limits[1]*M_PI/180,
+              "J2 outside configured limits");
         rejected = false;
         try { robot.MoveWheel(2, 0, .5); } catch (const std::exception &) { rejected = true; }
         check(rejected, "Out-of-range target accepted");

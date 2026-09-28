@@ -2,6 +2,7 @@
 
 #include "rokae_sdk.hpp"
 #include "OpenLoopGrasp.hpp"
+#include "CommandContinuity.hpp"
 #include <atomic>
 #include <cmath>
 #include <limits>
@@ -22,6 +23,8 @@
 #include <thread>
 #include <time.h>
 #include <vector>
+#include <iomanip>
+#include <sstream>
 
 namespace aviator {
 
@@ -35,9 +38,13 @@ double monotonic() {
 }
 
 [[noreturn]] void fail(const std::string &message) { throw std::runtime_error(message); }
-void require(bool ok, const std::string &message) {
+void require(bool ok, const char *message) {
     if (!ok)
         fail(message);
+}
+
+void require(bool ok, const std::string &message) {
+    if (!ok) fail(message);
 }
 
 // 在 URDF 里沿固定关节链求 link 在 root 系下的位姿。
@@ -126,8 +133,14 @@ class RokaeDataLink final : public DataLink {
         const char *ip[2] = {config.left_ip.c_str(), config.right_ip.c_str()};
         const std::string local_ip[2] = {config.left_local_ip, config.right_local_ip};
         for (int side = 0; side < 2; ++side) {
-            arms_[side] = std::make_unique<RokaeArm>(ip[side], local_ip[side],
-                                                     poseToRowMajor(geometry.tool), config.joint_stiffness);
+            endpoints_[side] = std::string(side == 0 ? "left" : "right") +
+                " robot=" + ip[side] + " local=" + local_ip[side];
+            try {
+                arms_[side] = std::make_unique<RokaeArm>(ip[side], local_ip[side],
+                                                         poseToRowMajor(geometry.tool), config.joint_stiffness);
+            } catch (const std::exception &e) {
+                throw std::runtime_error("Rokae connect/configure " + endpoints_[side] + ": " + e.what());
+            }
             joint_pos_[side] = arms_[side]->position();
             for (int axis = 0; axis < 7; ++axis)
                 target_[7 * side + axis] = joint_pos_[side][axis];
@@ -166,9 +179,18 @@ class RokaeDataLink final : public DataLink {
 
     void setJointPositions(const std::array<double, 14> &q) override {
         // 目标只在此处更新；由 setControlLoop 的回调（SDK RT 线程）按 1 ms 取走下发。
-        std::lock_guard<std::mutex> lock(state_mutex_);
         for (double value : q) require(std::isfinite(value), "Nonfinite joint target");
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        for (int side = 0; side < 2; ++side)
+            require(!powered_[side] || consumed_sequence_[side] == command_sequence_,
+                    "Previous dual-arm command has not been consumed");
         target_ = q;
+        ++command_sequence_;
+    }
+
+    std::array<double, 14> jointTargets() const override {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return target_;
     }
 
     double jointVelLimit(Side side, int axis) const override {
@@ -180,6 +202,16 @@ class RokaeDataLink final : public DataLink {
     void enable(Side side) override {
         const int i = static_cast<int>(side);
         if (powered_[i]) return;
+        if (!powered_[0] && !powered_[1]) {
+            callback_fault_ = false;
+            // 两臂的阻塞初始化均在第一个周期线程启动前完成。
+            try { for (auto &arm : arms_) arm->prepare(); }
+            catch (...) {
+                auto error = std::current_exception();
+                for (auto &arm : arms_) { try { arm->stop(); } catch (...) {} }
+                std::rethrow_exception(error);
+            }
+        }
         // Refresh after a disabled interval: never replay the construction-time pose.
         const auto q = arms_[i]->position();
         {
@@ -188,22 +220,52 @@ class RokaeDataLink final : public DataLink {
             std::copy(q.begin(), q.end(), target_.begin() + 7 * i);
             tcp_pose_valid_[i] = joint_vel_valid_[i] = false;
             feedback_time_[i] = 0;
+            feedback_count_[i] = 0;
+            max_feedback_gap_[i] = 0;
         }
         arms_[i]->start([this, i](const RokaeSample &sample) {
-            std::lock_guard<std::mutex> lock(state_mutex_);
+          try {
+            require(!callback_fault_, "Dual-arm realtime command fault");
             for (double value : sample.position) require(std::isfinite(value), "Invalid joint feedback");
             for (double value : sample.velocity) require(std::isfinite(value), "Invalid velocity feedback");
             for (double value : sample.tcp) require(std::isfinite(value), "Invalid TCP feedback");
-            if (!tcp_pose_valid_[i])
+            // 周期线程不等待业务线程释放锁；竞争时重发上一条已发送目标。
+            // 不确认新序号，轨迹线程会继续等待，不能因此覆盖/跳过目标。
+            std::unique_lock<std::mutex> lock(state_mutex_, std::try_to_lock);
+            if (!lock.owns_lock()) return sent_[i];
+            if (!tcp_pose_valid_[i]) {
                 std::copy(sample.position.begin(), sample.position.end(), target_.begin() + 7 * i);
+                sent_[i] = sample.position;
+            }
             joint_pos_[i] = sample.position;
             joint_vel_[i] = sample.velocity;
             tcp_pose_[i] = sample.tcp;
             tcp_pose_valid_[i] = joint_vel_valid_[i] = true;
-            feedback_time_[i] = monotonic();
+            const double now = monotonic();
+            if (feedback_time_[i] > 0)
+                max_feedback_gap_[i] = std::max(max_feedback_gap_[i], now - feedback_time_[i]);
+            feedback_time_[i] = now;
+            ++feedback_count_[i];
             std::array<double, 7> q{};
             std::copy_n(target_.begin() + 7 * i, 7, q.begin());
+            const int bad = excessiveJointStep(sent_[i], q, vel_limit_[i]);
+            if (bad >= 0)
+                fail("Rejected discontinuous realtime command: J" + std::to_string(bad + 1) +
+                     " previous=" + std::to_string(sent_[i][bad]) + " next=" + std::to_string(q[bad]) +
+                     " max_step_rad=" + std::to_string(vel_limit_[i][bad] * 0.001));
+            sent_[i] = q;
+            consumed_sequence_[i] = command_sequence_;
             return q;
+          } catch (...) {
+            callback_fault_ = true; // 一臂出错时，另一臂也拒绝后续位置指令。
+            throw;
+          }
+        }, [this, i](const std::array<double, 7> &q) {
+            // startMove 前使用刚刷新的关节位置初始化保持目标。
+            // 不标记实时反馈已就绪；使能仍需等待 startLoop 后的第一帧。
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            joint_pos_[i] = sent_[i] = q;
+            std::copy(q.begin(), q.end(), target_.begin() + 7 * i);
         });
         powered_[i] = true;
         const double deadline = monotonic() + 0.5;
@@ -212,11 +274,22 @@ class RokaeDataLink final : public DataLink {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 if (tcp_pose_valid_[i]) break;
             }
+            if (arms_[i]->motionFailed()) {
+                const auto details = diagnostics();
+                disable(side);
+                fail("Rokae realtime startup failed\n" + details);
+            }
             if (monotonic() > deadline) {
                 disable(side);
                 fail("Rokae realtime feedback timeout during enable");
             }
             std::this_thread::sleep_for(kTick);
+        }
+        if (powered_[0] && powered_[1]) {
+            const auto snapshot = captureState();
+            for (int side = 0; side < 2; ++side)
+                if (arms_[side]->motionFailed() || monotonic() - snapshot.feedback_time[side] > 0.1)
+                    fail("Rokae dual-arm startup health check failed\n" + diagnostics());
         }
     }
 
@@ -230,19 +303,32 @@ class RokaeDataLink final : public DataLink {
 
     // Only arm feedback is available: lock/unlock acknowledge a software control phase.
     GraspState graspState() const override {
-        std::lock_guard<std::mutex> lock(state_mutex_);
+        std::lock_guard<std::mutex> lock(grasp_mutex_);
         return updateGraspLocked();
     }
 
+    std::string diagnostics() const override {
+        std::string result;
+        {
+            std::lock_guard<std::mutex> lock(grasp_mutex_);
+            result = fault_snapshot_.empty() ? formatSnapshot(monotonic(), grasp_.state(), captureState()) : fault_snapshot_;
+        }
+        // 不持有反馈锁调用 SDK；首次故障快照与当前 SDK 错误状态分开标注。
+        result += "\nCurrent SDK status:";
+        for (int side = 0; side < 2; ++side)
+            if (arms_[side]) result += "\n  " + endpoints_[side] + " " + arms_[side]->diagnostics();
+        return result;
+    }
+
     uint64_t sendGraspCommand(GraspCommand command) override {
-        std::lock_guard<std::mutex> lock(state_mutex_);
+        std::lock_guard<std::mutex> lock(grasp_mutex_);
         updateGraspLocked();
         return grasp_.command(command);
     }
 
     void setWheelReference(double angle, double displacement) override {
         require(std::isfinite(angle) && std::isfinite(displacement), "Invalid wheel reference");
-        std::lock_guard<std::mutex> lock(state_mutex_);
+        std::lock_guard<std::mutex> lock(grasp_mutex_);
         grasp_.reference(angle, displacement);
     }
 
@@ -255,29 +341,113 @@ class RokaeDataLink final : public DataLink {
         if (next_tick_ < now - kTick) next_tick_ = now;
         next_tick_ += kTick;
         std::this_thread::sleep_until(next_tick_);
-        // 命令下发与状态读取已在 RT 回调里完成，此处只提供算法侧 1 ms 节拍。
+        // 两个独立 SDK 回调都取走上一条目标后才允许推进，不能覆盖尚未消费的目标。
+        // 这里只约束指令顺序，不宣称两台控制器有硬件时钟同步。
+        const double deadline = monotonic() + 0.1;
+        for (;;) {
+            for (int side = 0; side < 2; ++side) {
+                if (powered_[side] && arms_[side]->motionFailed()) callback_fault_ = true;
+            }
+            if (callback_fault_) fail("Rokae realtime command failed\n" + diagnostics());
+            bool consumed = true;
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                for (int side = 0; side < 2; ++side)
+                    consumed = consumed && (!powered_[side] || consumed_sequence_[side] == command_sequence_);
+            }
+            if (consumed) return;
+            if (monotonic() >= deadline) {
+                callback_fault_ = true;
+                fail("Rokae command acknowledgement timeout (>100 ms)\n" + diagnostics());
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
     }
 
     double time() const override { return monotonic(); }
 
   private:
+    struct StateSnapshot {
+        std::array<double, 7> position[2], velocity[2];
+        std::array<double, 16> tcp[2];
+        std::array<double, 14> target;
+        bool powered[2], tcp_valid[2], velocity_valid[2];
+        double feedback_time[2], max_gap[2];
+        uint64_t callbacks[2];
+    };
+    StateSnapshot captureState() const {
+        StateSnapshot snapshot{};
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        for (int side = 0; side < 2; ++side) {
+            snapshot.position[side] = joint_pos_[side];
+            snapshot.velocity[side] = joint_vel_[side];
+            snapshot.tcp[side] = tcp_pose_[side];
+            snapshot.powered[side] = powered_[side];
+            snapshot.tcp_valid[side] = tcp_pose_valid_[side];
+            snapshot.velocity_valid[side] = joint_vel_valid_[side];
+            snapshot.feedback_time[side] = feedback_time_[side];
+            snapshot.max_gap[side] = max_feedback_gap_[side];
+            snapshot.callbacks[side] = feedback_count_[side];
+        }
+        snapshot.target = target_;
+        return snapshot;
+    }
+
     GraspState updateGraspLocked() const {
+        const auto snapshot = captureState();
         const double now = monotonic();
         double feedback = now, speed = 0;
         double position[2], rotation[2];
         const auto reference = grasp_.state();
         for (int side = 0; side < 2; ++side) {
-            if (powered_[side]) feedback = std::min(feedback, feedback_time_[side]);
+            if (snapshot.powered[side]) feedback = std::min(feedback, snapshot.feedback_time[side]);
             position[side] = rotation[side] = std::numeric_limits<double>::infinity();
-            if (tcp_pose_valid_[side]) {
-                const auto actual = poseFromRowMajor(tcp_pose_[side]);
+            if (snapshot.tcp_valid[side]) {
+                const auto actual = poseFromRowMajor(snapshot.tcp[side]);
                 const auto desired = desiredCylinderPose(side, reference.angle, reference.displacement);
                 position[side] = (actual.translation() - desired.translation()).norm();
                 rotation[side] = rotationError(actual, desired);
             }
-            for (double value : joint_vel_[side]) speed = std::max(speed, std::abs(value));
+            for (double value : snapshot.velocity[side]) speed = std::max(speed, std::abs(value));
         }
-        return grasp_.update(now, feedback, powered_[0] && powered_[1], position, rotation, speed);
+        auto state = grasp_.update(now, feedback, snapshot.powered[0] && snapshot.powered[1], position, rotation, speed);
+        if (!reference.fault && state.fault)
+            fault_snapshot_ = "First fault snapshot:\n" + formatSnapshot(now, state, snapshot);
+        if (!state.fault) fault_snapshot_.clear();
+        return state;
+    }
+
+    // 在反馈锁外计算/格式化；SDK 周期线程不访问 grasp_mutex_。
+    std::string formatSnapshot(double now, const GraspState &state, const StateSnapshot &snapshot) const {
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(4)
+            << "Rokae reason=" << (state.fault_reason.empty() ? "none latched" : state.fault_reason)
+            << " time_s=" << now << " fault=" << state.fault << " locked=" << state.locked
+            << " ready=" << state.ready << " wheel_ref_rad=" << state.angle
+            << " wheel_ref_m=" << state.displacement;
+        auto values = [&](const auto &q) { for (double x : q) out << ' ' << x; };
+        for (int side = 0; side < 2; ++side) {
+            out << "\n  " << endpoints_[side] << " enabled=" << snapshot.powered[side]
+                << " tcp_valid=" << snapshot.tcp_valid[side] << " velocity_valid=" << snapshot.velocity_valid[side]
+                << " callbacks=" << snapshot.callbacks[side] << " feedback_age_ms=";
+            if (snapshot.feedback_time[side] > 0) out << (now-snapshot.feedback_time[side])*1000;
+            else out << "no feedback";
+            out << " max_callback_gap_ms=" << snapshot.max_gap[side]*1000
+                << " TCP_position_error_mm=" << state.position_error[side]*1000
+                << " TCP_rotation_error_rad=" << state.rotation_error[side];
+            out << "\n    q_rad:"; values(snapshot.position[side]);
+            out << "\n    dq_rad_s:"; values(snapshot.velocity[side]);
+            out << "\n    target_rad:";
+            for (int j = 0; j < 7; ++j) out << ' ' << snapshot.target[7*side+j];
+            if (snapshot.tcp_valid[side]) {
+                const auto desired = desiredCylinderPose(side, state.angle, state.displacement);
+                out << "\n    TCP_actual_xyz_m:";
+                for (int j = 0; j < 3; ++j) out << ' ' << snapshot.tcp[side][4*j+3];
+                out << " TCP_expected_xyz_m:";
+                for (int j = 0; j < 3; ++j) out << ' ' << desired.translation()[j];
+            }
+        }
+        return out.str();
     }
     // 目标"抓取圆柱中心"位姿 = 臂基座 → 轮盘 × 轮盘(θ, d) × handle
     //
@@ -312,12 +482,19 @@ class RokaeDataLink final : public DataLink {
     std::array<double, 16> tcp_pose_[2]{};
     bool tcp_pose_valid_[2] = {false, false};
     std::array<double, 14> target_{};
+    std::array<double, 7> sent_[2]{};
+    uint64_t command_sequence_ = 0, consumed_sequence_[2]{};
+    std::atomic<bool> callback_fault_{false};
 
     GraspGeometry geometry_;
     pinocchio::SE3 mounting_[2]{pinocchio::SE3::Identity(), pinocchio::SE3::Identity()};
 
     std::atomic<bool> powered_[2]{{false}, {false}};
     double feedback_time_[2]{};
+    uint64_t feedback_count_[2]{};
+    double max_feedback_gap_[2]{};
+    std::string endpoints_[2];
+    mutable std::string fault_snapshot_;
     mutable OpenLoopGrasp grasp_;
 
     std::chrono::steady_clock::time_point next_tick_{};
@@ -325,6 +502,7 @@ class RokaeDataLink final : public DataLink {
     // 保护 joint_pos_ / tcp_pose_ / target_ 跨线程访问：
     // 算法线程写 target_、读 joint_pos_；SDK RT 线程（回调）读 target_、写 joint_pos_。
     mutable std::mutex state_mutex_;
+    mutable std::mutex grasp_mutex_; // 状态计算、日志及软件锁定，RT 回调不获取此锁。
 };
 
 std::unique_ptr<DataLink> makeRokaeDataLink(const std::string &urdf_path,

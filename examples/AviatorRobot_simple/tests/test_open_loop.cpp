@@ -26,13 +26,19 @@ int main() {
         g.update(2, 2, true, p, r, 0);
         g.update(2.11, 2.11, true, p, r, 0);
         check(g.state().fault, "sustained TCP loss not detected");
+        check(g.state().fault_reason.find("TCP alignment") != std::string::npos, "TCP fault reason missing");
         g.command(GraspCommand::ResetFault);
         check(g.state().result == GraspResult::Fault, "reset while locked accepted");
         g.command(GraspCommand::Unlock);
         g.command(GraspCommand::ResetFault);
         check(!g.state().locked && !g.state().fault, "unlock/reset failed");
+        check(g.state().fault_reason.empty(), "ResetFault retained old reason");
         g.update(3, 2.8, true, p, r, 0);
         check(g.state().fault, "stale arm feedback not detected");
+        check(g.state().fault_reason.find("feedback timeout") != std::string::npos, "Feedback timeout reason missing");
+        const auto reason = g.state().fault_reason;
+        g.update(3.1, 3.1, true, p, r, 0);
+        check(g.state().fault_reason == reason, "Recovered feedback erased the latched fault reason");
         std::cout << "Open-loop phase, references, timing and arm feedback faults passed\n";
     } catch (const std::exception &e) { std::cerr << e.what() << '\n'; return 1; }
 }

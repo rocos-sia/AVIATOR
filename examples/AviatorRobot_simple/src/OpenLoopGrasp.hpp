@@ -20,7 +20,10 @@ public:
         state_.heartbeat = feedback_time;
         bool aligned = enabled && std::isfinite(speed) && speed < 0.02;
         bool lost = !enabled;
-        if (enabled && now - feedback_time > 0.1) state_.fault = 1;
+        if (enabled && now - feedback_time > 0.1) {
+            if (!state_.fault) state_.fault_reason = "Realtime feedback timeout (>100 ms)";
+            state_.fault = 1;
+        }
         for (int side = 0; side < 2; ++side) {
             state_.position_error[side] = position[side];
             state_.rotation_error[side] = rotation[side];
@@ -33,6 +36,7 @@ public:
         if (!state_.locked || !lost) lost_since_ = -1;
         else if (lost_since_ < 0) lost_since_ = now;
         if (state_.locked && lost_since_ >= 0 && now - lost_since_ > 0.1) {
+            if (!state_.fault) state_.fault_reason = "TCP alignment lost or arm disabled (>100 ms)";
             state_.fault = 1; state_.ready = 0;
         }
         return state_;
@@ -53,7 +57,7 @@ public:
             break;
         case GraspCommand::ResetFault:
             if (state_.locked) state_.result = GraspResult::Fault;
-            else { state_.fault = 0; state_.ready = 0; aligned_since_ = lost_since_ = -1; }
+            else { state_.fault = 0; state_.fault_reason.clear(); state_.ready = 0; aligned_since_ = lost_since_ = -1; }
             break;
         }
         return state_.ack;

@@ -3,6 +3,20 @@
 
 include(${CMAKE_CURRENT_LIST_DIR}/ThirdPartySource.cmake)
 
+# Ruckig is built from pinned local sources; keep its generic options scoped here.
+function(aviator_add_ruckig)
+    set(BUILD_EXAMPLES OFF)
+    set(BUILD_TESTS OFF)
+    set(BUILD_BENCHMARK OFF)
+    set(BUILD_PYTHON_MODULE OFF)
+    set(BUILD_CLOUD_CLIENT OFF)
+    set(BUILD_SHARED_LIBS OFF)
+    add_subdirectory("${AVIATOR_VENDOR_DIR}/ruckig-0.15.3"
+                     "${CMAKE_BINARY_DIR}/third_party/ruckig" EXCLUDE_FROM_ALL)
+endfunction()
+aviator_add_ruckig()
+add_dependencies(aviator_third_party_all ruckig)
+
 #------------------------------------------------------------------------------
 # System packages - required for all builds
 #------------------------------------------------------------------------------

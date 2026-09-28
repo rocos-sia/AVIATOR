@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include <mutex>
+#include <string>
 
 namespace aviator {
 
@@ -16,6 +17,7 @@ struct GraspState {
     uint32_t locked = 0;               // bit0=左侧，bit1=右侧；两侧锁定为 3
     uint32_t ready = 0;                // 0=未就绪, 1=就绪
     uint32_t fault = 0;                // 0=正常, 1=故障
+    std::string fault_reason;          // 保留首次故障原因，ResetFault 时清除
     double position_error[2]{};        // 左右抓取位置误差 (m)
     double rotation_error[2]{};        // 左右抓取旋转误差 (rad)
     double angle = 0;                  // 轮盘当前转角 (rad)
@@ -33,6 +35,8 @@ class DataLink {
     virtual double getJointPosition(Side side, int axis) const = 0;
     virtual double getJointVelocity(Side side, int axis) const = 0;
     virtual void setJointPositions(const std::array<double, 14> &q) = 0;
+    // 使能后读取后端实际保持的目标，不能用实测反馈替代上一条指令。
+    virtual std::array<double, 14> jointTargets() const = 0;
     virtual double jointVelLimit(Side side, int axis) const = 0;
     virtual bool isEnabled(Side side) const = 0;
     virtual void enable(Side side) = 0;   // 失败抛 std::runtime_error
@@ -40,6 +44,8 @@ class DataLink {
 
     // 抓取IO
     virtual GraspState graspState() const = 0;
+    // 仅在错误路径调用；不能在实时回调中进行格式化/打印。
+    virtual std::string diagnostics() const { return {}; }
     virtual uint64_t sendGraspCommand(GraspCommand command) = 0; // 返回请求序号
 
     // 周期同步
@@ -49,7 +55,7 @@ class DataLink {
     virtual void waitTick() = 0; // 推进/等待一个控制周期（1 ms）
 
     // 控制用的单调时间源（秒）。仿真是仿真时间，真机是墙钟时间。
-    // 轨迹插值、驻留以它为准；Servo 输入超时单独使用墙钟，监测真实输入流。
+    // 用于反馈时效和驻留；轨迹每次 waitTick 最多推进 1 ms，不追赶漏掉的周期。
     virtual double time() const = 0;
 
     // 是否按真实时间节拍推进。

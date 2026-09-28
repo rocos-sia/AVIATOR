@@ -35,6 +35,7 @@ int main() {
         const double lo = (limits[0] + margin) * M_PI / 180;
         const double hi = (limits[1] - margin) * M_PI / 180;
         auto pin = aviator::makePinIkKinematics(AVIATOR_CONFIG_DIR "/aviator_control.urdf", lo, hi);
+        auto collision_pin = aviator::makePinIkKinematics(AVIATOR_MODEL_DIR "/aviator_collision.urdf", lo, hi);
         std::mt19937 random(20260922);
         std::uniform_real_distribution<double> unit(0., 1.);
         double max_fk_position = 0, max_fk_rotation = 0;
@@ -67,6 +68,11 @@ int main() {
                 pinocchio::SE3 actual;
                 check(pin->solveFk(side,q,actual), "FK failed");
                 const auto expected = referenceFk(q);
+                pinocchio::SE3 collision_pose;
+                check(collision_pin->solveFk(side,q,collision_pose), "Collision-model FK failed");
+                check((collision_pose.translation()-actual.translation()).norm() < 1e-8 &&
+                      aviator::rotationError(collision_pose,actual) < 1e-8,
+                      "Control/collision URDF transform mismatch");
                 max_fk_position = std::max(max_fk_position,(actual.translation()-expected.translation()).norm());
                 max_fk_rotation = std::max(max_fk_rotation,aviator::rotationError(actual,expected));
                 check(max_fk_position < 1e-8 && max_fk_rotation < 1e-8, "FK mapping/transform mismatch");

@@ -53,7 +53,7 @@ target_include_directories(aviator_control
 
 target_link_libraries(aviator_control
     PUBLIC aviator_robotics_deps
-    PRIVATE Threads::Threads
+    PRIVATE Threads::Threads ruckig::ruckig
 )
 
 # Add simulation backend
@@ -89,6 +89,11 @@ if(AVIATOR_WITH_ROKAE)
     target_compile_definitions(aviator_control PUBLIC AVIATOR_HAVE_ROKAE=1)
 
     install(TARGETS aviator_rokae_sdk LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+    # 手动真机诊断，不加入 CTest，也不链接 Aviator/Pinocchio/MuJoCo。
+    add_executable(aviator_rokae_hold_test tests/test_rokae_hold.cpp)
+    target_include_directories(aviator_rokae_hold_test PRIVATE "${AVIATOR_VENDOR_DIR}/xCoreSDK-0.7.1/include")
+    target_link_libraries(aviator_rokae_hold_test PRIVATE Rokae::Rokae Eigen3::Eigen Threads::Threads ${CMAKE_DL_LIBS})
 endif()
 
 #------------------------------------------------------------------------------
@@ -202,7 +207,7 @@ if(BUILD_TESTING)
 
         # Demo tests
         add_test(NAME aviator_demo
-            COMMAND aviator --demo --headless
+            COMMAND aviator --demo --headless --config "${CMAKE_CURRENT_SOURCE_DIR}/config/aviator.yaml"
         )
         set_tests_properties(aviator_demo PROPERTIES
             TIMEOUT 600
@@ -210,7 +215,7 @@ if(BUILD_TESTING)
         )
 
         add_test(NAME aviator_servo_demo
-            COMMAND aviator --servo-demo --headless
+            COMMAND aviator --servo-demo --headless --config "${CMAKE_CURRENT_SOURCE_DIR}/config/aviator.yaml"
         )
         set_tests_properties(aviator_servo_demo PROPERTIES
             TIMEOUT 60
@@ -224,6 +229,7 @@ if(BUILD_TESTING)
                 COMMAND ${Python3_EXECUTABLE}
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_interactive.py"
                     "$<TARGET_FILE:aviator>"
+                    --config "${CMAKE_CURRENT_SOURCE_DIR}/config/aviator.yaml"
             )
             set_tests_properties(aviator_interactive PROPERTIES TIMEOUT 30)
         endif()
@@ -236,6 +242,16 @@ if(BUILD_TESTING)
         AVIATOR_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
     )
     add_test(NAME aviator_controller_safety COMMAND aviator_controller_safety_test)
+
+    foreach(test_name IN ITEMS continuity home)
+        aviator_add_test_executable(aviator_${test_name}_test tests/test_${test_name}.cpp)
+        target_link_libraries(aviator_${test_name}_test PRIVATE aviator_control)
+        target_compile_definitions(aviator_${test_name}_test PRIVATE
+            AVIATOR_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
+        )
+        add_test(NAME aviator_${test_name} COMMAND aviator_${test_name}_test)
+        set_tests_properties(aviator_${test_name} PROPERTIES TIMEOUT 120 ENVIRONMENT "LD_BIND_NOW=1")
+    endforeach()
 
     # Open loop test
     aviator_add_test_executable(aviator_open_loop_test tests/test_open_loop.cpp)

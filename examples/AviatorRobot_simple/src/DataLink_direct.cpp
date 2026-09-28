@@ -276,6 +276,11 @@ void MuJoCoDirectDataLink::setJointPositions(const std::array<double, 14> &q) {
     target_ = q;
 }
 
+std::array<double, 14> MuJoCoDirectDataLink::jointTargets() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return target_;
+}
+
 double MuJoCoDirectDataLink::jointVelLimit(Side side, int axis) const {
     require(axis >= 0 && axis < 7, "Joint axis out of range");
     return joint_vel_limit_[sideOffset(side) + axis];

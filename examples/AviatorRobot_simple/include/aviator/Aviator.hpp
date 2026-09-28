@@ -72,7 +72,7 @@ class Aviator {
     // v: 速度比例 (0, 1]，同时约束轮盘转速、推拉速度与各关节速度。
     void MoveWheel(double angle_rad, double displacement_m, double v = 0.5);
 
-    // 发布最新绝对目标，立即返回；建议每 20 ms 更新，超过 servo_timeout 则保持。
+    // 发布最新绝对目标，立即返回；建议每 20 ms 更新，超过 servo_timeout 则减速保持。
     // 先锁定把手；异步错误见 Status.motion_error / GetState()。
     // Stop 后等待状态离开 SERVO，再执行其他动作。
     void ServoWheel(double angle_rad, double displacement_m, double v = 0.5);
@@ -83,7 +83,7 @@ class Aviator {
     // 重置故障
     void ResetFault();
 
-    // 停止运动（可从另一线程调用）
+    // 请求减速停止（可从另一线程调用）；反馈/控制故障时转为停止后端控制。
     void Stop() noexcept;
 
     // 是否按真实时间节拍推进（转发给后端）。

@@ -7,6 +7,10 @@ import sys
 import time
 
 args = [sys.argv[1]]
+if '--config' in sys.argv:
+    i = sys.argv.index('--config')
+    args.extend(['--config', sys.argv[i + 1]])
+eof_args = args + ['--headless']
 if '--viewer' not in sys.argv:
     args.append('--headless')
 proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -59,7 +63,7 @@ try:
     assert proc.wait(timeout=5) == 0
 
     # EOF 前没有换行，最后一条命令仍应执行。
-    eof = subprocess.run([sys.argv[1], '--headless'], input='status', text=True,
+    eof = subprocess.run(eof_args, input='status', text=True,
                          capture_output=True, timeout=10)
     assert eof.returncode == 0 and 'state=INITIALIZED' in eof.stdout
     print('Interactive parsing, status/stop, EOF and clean exit passed')

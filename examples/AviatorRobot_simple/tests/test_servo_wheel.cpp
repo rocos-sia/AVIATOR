@@ -65,12 +65,17 @@ int main() {
         // 直接按 20 ms 周期发布；第二个目标覆盖第一个，不排队。
         for (const auto target : {std::array<double, 3>{.02, -.002, .5}, {-.015, -.001, .5}}) {
             double longest_call = 0;
-            for (int tick = 0; tick < 100; ++tick) {
+            const auto deadline = Clock::now() + std::chrono::seconds(8);
+            // 执行延迟会延长运动：持续发布直到到位，仍保留有限的总超时。
+            while (Clock::now() < deadline) {
                 const auto start = Clock::now();
                 robot.ServoWheel(target[0], target[1], target[2]);
                 longest_call = std::max(longest_call, std::chrono::duration<double>(Clock::now()-start).count());
                 check(robot.GetState() == "SERVO", robot.GetStatus().motion_error);
                 std::this_thread::sleep_until(start + std::chrono::milliseconds(20));
+                const auto status = robot.GetStatus();
+                if (std::abs(status.angle-target[0]) < .0001 &&
+                    std::abs(status.displacement-target[1]) < .00002) break;
             }
             const auto s = robot.GetStatus();
             std::cout << "target=" << target[0] << ',' << target[1] << " reference=" << s.angle << ','

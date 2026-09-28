@@ -91,9 +91,10 @@ int main(int argc, char **argv) {
                     std::cout << "DEMO approaching handles" << std::endl;
                     robot.ApproachHandles();
                     status(robot);
+                    std::cout << "robot.ApproachHandles() done" << std::endl;
                     robot.LockHandles();
                     status(robot);
-
+                    std::cout << "robot.LockHandles() done" << std::endl;
                     if (demo) {
                         // 每行依次为：转角 rad、推拉 m、速度倍率 v。
                         for (const auto target : {std::array<double, 3>{.87266, 0, .5},
@@ -160,7 +161,9 @@ static void status(aviator::Aviator &robot) {
     std::cout << "state=" << robot.GetState() << " angle=" << s.angle
               << " displacement=" << s.displacement << " locked=" << s.locked
               << " mode=" << (s.open_loop ? "open_loop" : "simulation")
-              << " error=" << s.motion_error << " ready=" << s.ready << " fault=" << s.fault << std::endl;
+              << " error=" << s.motion_error << " ready=" << s.ready << " fault=" << s.fault
+              << " tcp_position_error_mm=[" << s.position_error[0]*1000 << ',' << s.position_error[1]*1000
+              << "] tcp_rotation_error_rad=[" << s.rotation_error[0] << ',' << s.rotation_error[1] << ']' << std::endl;
 }
 
 static void interactive(aviator::Aviator &robot, std::atomic<bool> &exit) {

@@ -33,6 +33,7 @@ class MuJoCoDirectDataLink final : public DataLink {
     double getJointPosition(Side side, int axis) const override;
     double getJointVelocity(Side side, int axis) const override;
     void setJointPositions(const std::array<double, 14> &q) override;
+    std::array<double, 14> jointTargets() const override;
     double jointVelLimit(Side side, int axis) const override;
     bool isEnabled(Side side) const override;
     void enable(Side side) override;

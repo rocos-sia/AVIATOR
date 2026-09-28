@@ -15,7 +15,11 @@ public:
              const std::array<double, 16> &tool, const std::array<double, 7> &stiffness);
     ~RokaeArm();
     std::array<double, 7> position() const;
-    void start(std::function<std::array<double, 7>(const RokaeSample &)> callback);
+    std::string diagnostics() const;
+    bool motionFailed() const;
+    void prepare(); // 上电、订阅、设置参数；不启动周期运动。
+    void start(std::function<std::array<double, 7>(const RokaeSample &)> callback,
+               std::function<void(const std::array<double, 7> &)> initialize_target);
     void stop();
 private:
     class Impl;
