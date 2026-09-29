@@ -1,0 +1,17 @@
+# Enable useful families, but avoid broad style churn on existing code.
+Checks: >-
+  -*,
+  bugprone-*,
+  performance-*,
+  modernize-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -modernize-use-trailing-return-type,
+  -modernize-use-auto,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-convert-member-functions-to-static
+WarningsAsErrors: ''
+HeaderFilterRegex: '(^|/)(common|nodes|tests)/|(^|/)examples/AviatorRobot_simple/(src|include|tests)/'
+FormatStyle: file

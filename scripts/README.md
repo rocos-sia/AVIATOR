@@ -1,4 +1,42 @@
-# 设备配置脚本
+# 项目配置脚本
+
+## 安装 apt 依赖（Ubuntu 22.04）
+
+```bash
+# 一键安装主工程全部 apt 依赖和开发工具，普通用户执行时会调用 sudo。
+./scripts/install_dependencies.sh
+
+# 预览命令，不运行 sudo、不下载、不修改系统。
+./scripts/install_dependencies.sh --dry-run
+
+# 加装独立 Foxglove 示例的 OpenCV、Protobuf 和 protoc。
+./scripts/install_dependencies.sh --with-examples
+```
+
+默认包含 GCC/G++、CMake、Ninja、pkg-config、Python 3、clangd、clang-format、
+clang-tidy、GDB，以及 Eigen、Boost、NLopt C/C++、URDF、Assimp、OctoMap、YAML、
+XML、ZeroMQ、JSON、GLFW/OpenGL/EGL 和 MuJoCo 所需系统库。
+`libnlopt-cxx-dev` 提供 PIN-IK 必需的 `nlopt.hpp`，仅安装 `libnlopt-dev` 不够。
+
+脚本执行 `apt-get update` 和依赖安装，允许重复运行；不会卸载包、添加 PPA 或修改软件源。
+需启用 Ubuntu jammy universe。当前仅支持项目已验证的 Ubuntu 22.04。
+仓库中的 Coal、Pinocchio、PIN-IK、MuJoCo、Ruckig 等仍由 CMake 构建，cppzmq/MCAP
+和 xCoreSDK 继续使用仓库版本。脚本不安装 VS Code 扩展、ONNX Runtime、Python/pip
+环境或设备 udev 规则；独立 T6 示例及 hil-serl 的额外环境需按各自文档配置。
+旧 `examples/AviatorRobot_simple/scripts/install_dependencies.sh` 转调同一入口。
+
+Ubuntu 22.04 apt 提供的 clangd 14 在本机解析机器人依赖时仍会报告 `_mm_getcsr`
+内建函数兼容诊断；VS Code 已安装的 clangd 22 检查通过。脚本不更改 VS Code 的
+`clangd.path`，当前工作区继续使用已配置的 clangd 22。
+
+安装后从仓库根目录执行：
+
+```bash
+cmake --preset debug
+cmake --build --preset debug
+```
+
+## 摇杆设备权限
 
 `setup_joystick_udev.sh` 为 USB 摇杆配置普通用户读取权限，供 flight_gateway 使用。脚本和网关的 `--device` 均默认 `/dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick`；其他摇杆可通过 `--device` 指定实际 event 路径。
 
