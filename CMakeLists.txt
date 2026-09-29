@@ -69,7 +69,8 @@ endif()
 #------------------------------------------------------------------------------
 # Installation
 #------------------------------------------------------------------------------
-# Draft configuration and deployment files are deliberately not installed.
+# Motion-node configuration/model installation is owned by nodes/aviator_core.
+# Remaining draft deployment files are not installed.
 install(FILES README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
 install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DOCDIR})
 

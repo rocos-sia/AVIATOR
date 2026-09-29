@@ -1,5 +1,6 @@
 find_package(Threads REQUIRED)
+find_package(yaml-cpp REQUIRED)
 add_executable(aviator_bus main.cpp)
 target_compile_features(aviator_bus PRIVATE cxx_std_17)
-target_link_libraries(aviator_bus PRIVATE aviator_transport Threads::Threads)
+target_link_libraries(aviator_bus PRIVATE aviator_transport Threads::Threads yaml-cpp)
 install(TARGETS aviator_bus RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

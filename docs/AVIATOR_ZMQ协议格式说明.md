@@ -943,3 +943,43 @@ RT 执行侧再次检查本地命令年龄、origin、授权和本地安全约�
 联调至少覆盖：八个 Topic 的完整消息编解码；两帧/多帧异常与精确 Topic 匹配；缺字段、重复键、空值、未知版本/模式、数组长度错误；重复/乱序/旧会话；旧样本换新 sequence；Core 新目标携带过期 origin；UTC 跳变和 clock_id 不匹配；失效视觉不回中；双侧反馈不同步；Bus/Core 重启不自动使能；服务超时重试不重复执行；记录超限/缺口可见；回放端点、授权和时钟隔离。
 
 本文仅新增文档。Schema、编解码器、运行节点及上述联调检查需在实现阶段落地；本次文档示例的语法检查不能替代协议实现与设备验证。
+
+## 19. 双臂节点迁移采用的协议能力
+
+本节记录 `nodes/aviator_core` / `nodes/manipulator` 当前采用的具体能力。前文“尚未实现”的历史说明不能替代当前代码；common 已实现公共编解码、来源/会话/时效校验，完整系统的所有可选业务模式并未全部实现。
+
+### 19.1 本地任务与配置
+
+本次承接原示例的 Demo、Servo Demo 和交互操作，origin.topic 显式为 `local.task`，publisher_id 为 aviator_core，session_id 为当前 Core 会话。origin.sample_mono_us 是 Core 主线程最近一次任务监督采样时间；通信线程不能自行刷新它。此来源只在显式 authorize/enable 后生效，不伪造 flight.command。现有 InputGuard 默认仍只授权 flight.command，Manipulator 明确配置 local.task 策略。
+
+system.yaml 统一配置总线与服务端点，开发默认服务 tcp://127.0.0.1:5558，三者仅接受本机回环地址。当前身份白名单是受控本机进程约束，JSON 身份字段不构成密码学认证。生产跨主机访问需要另行实现认证及可靠时钟映射。
+
+### 19.2 JOINT_TRAJECTORY / SYNCHRONIZED_TICKS
+
+本地执行采用明确能力字段 `execution:"SYNCHRONIZED_TICKS"`，其他模式拒绝。它补充第 6.3 节的执行约定：
+
+- arm.command 以 100 Hz 更新窗口，双侧每条 2—32 个点，time_from_start_us 为 0、2000、4000…，均含完整 7 轴位置和速度。
+- 新增 trajectory_id（当前 epoch 内递增）、first_tick、total_ticks，tick 单位 1 ms；first_tick/total_ticks 为偶数，total_ticks 不超过 3,600,000。每个窗口最多覆盖 62 ms。
+- trajectory_start_mono_us 是本窗口的名义时间起点；实际进度由执行游标决定。发生调度延迟只延长执行，不按墙钟跳过轨迹点。该字段不延长授权或 watchdog。
+- Manipulator 线性插值得到 1 ms 位置点，每个执行步双臂共同推进一次；SDK 回调之间只协调消费顺序，不提供硬件同步保证。
+- 同一轨迹的新窗口须覆盖当前游标，并与该游标的已下发指令一致；替换尚未执行的窗口，不建立无界追加队列。新轨迹必须从 tick=0、上一段已完成的最后指令开始。
+- wheel_reference 为每个线上点对应的 `[angle_rad, displacement_m]` 数组，长度与 points 相同；它是业务几何参考，真机没有轮盘测量反馈。
+- 实际下发前再次检查时效、关节限位与相邻指令速度上限。Core 完整规划并检查 IK、碰撞和速度后再发布；Home 使用 Ruckig，传输采样与本地插值会产生离散近似，不能宣称 SDK 输出严格保留连续曲线的所有高阶导数。
+
+arm.state.execution 包含 trajectory_id、tick、target[14]、stopping、fault、error。accepted_command 仍只表示接纳；执行游标表示指令进度，不能用作实际到位证明。software_lock 表示软件操作阶段，wheel_reference 表示当前指令参考。只有 MuJoCo 发布 wheel_measurement，供观测与独立仿真测试使用。
+
+### 19.3 服务与生命周期
+
+本次采用 REQ/REP 单帧服务。describe 只读返回 server_session、q、target、speed、backend 和 config_id；authorize 在未使能且无故障、无进行中操作时绑定 Core 会话，返回 control_epoch。其余操作为 enable、disable、stop、lock、unlock、reset_fault。
+
+除 describe/get_result 外 parameters 必须恰好包含 server_session 与 config_id。请求身份、时钟、期限、目标、操作和参数均校验；deadline_ms 范围 1—10000 ms。长操作返回 ACCEPTED/RUNNING，客户端重发完全相同的请求查询状态，完成后返回原结果。它不重新执行原动作，也不刷新原始期限；另支持 get_result：parameters 增加 original_request_id/original_client_session_id，使用新的查询请求期限读取原结果，外层 COMPLETED 表示查询完成，原动作状态放在 result 内。未知记录返回 UNKNOWN，不重新执行。停止通过 stop 服务执行，当前未提供通用 cancel 操作。
+
+去重按 `(client_session_id, request_id)`（固定 client_id=aviator_core）保存，最多 1024 项，容量耗尽拒绝新请求，不淘汰后重做既有动作。服务进程重启更换 server_session，旧请求因前置会话不匹配而拒绝；不跨重启自动重放动作。超时仍表示结果未知。stop/disable/enable/reset 建立命令时间屏障，屏障前积压目标不能重新进入执行。
+
+初次 enable 后只保持实际起始位置，允许最多 1 s 接入目标流；第一条命令后执行配置的 50 ms 命令/100 ms 来源时效检查。正常停止本地减速；失效或故障停止并失能双臂，锁存错误。重新运行须显式处理故障、重新使能，不因总线重连自动恢复。
+
+### 19.4 当前范围
+
+保留原示例已废除的判据：不按 TCP 偏差、关节跟踪偏差、grasp.ready 或抓握丢失阻断执行。软件锁定不等于独立抓握验证。缺失手部与视觉测量为 null/invalid，不阻止当前仅双臂的本地开环任务；它们不能伪装成有效测量。
+
+本次没有实现飞控 roll/pitch 到机械行程的标定映射、真实手部控制、视觉闭环、完整 system.event 服务审计、全量 MCAP 或跨主机控制。离散服务与短轨迹能力只对明确支持本节约定的节点开放，既有 simulation 节点不能直接消费此轨迹模式。
