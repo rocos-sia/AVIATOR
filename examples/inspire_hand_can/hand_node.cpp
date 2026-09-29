@@ -46,7 +46,8 @@ void on_signal(int) { g_running = false; }
 // Config
 // ---------------------------------------------------------------------------
 struct Config {
-    std::string can_interface = "can0";
+    std::string right_interface = "can0";
+    std::string left_interface = "can1";
     int right_id = 1;
     int left_id = 2;
     std::array<int, 6> speed{1000, 1000, 1000, 1000, 1000, 1000};
@@ -71,7 +72,10 @@ Config load_config(const std::string& path) {
     const YAML::Node root = YAML::LoadFile(path);
     Config cfg;
     if (const auto& n = root["can"]) {
-        if (n["interface"]) cfg.can_interface = n["interface"].as<std::string>();
+        if (n["right_interface"])
+            cfg.right_interface = n["right_interface"].as<std::string>();
+        if (n["left_interface"])
+            cfg.left_interface = n["left_interface"].as<std::string>();
     }
     if (const auto& n = root["hand"]) {
         if (n["right_id"]) cfg.right_id = n["right_id"].as<int>();
@@ -270,19 +274,23 @@ public:
         session_id_ = new_session_id();
         clock_id_ = local_clock_id();
 
-        // --- CAN ---
+        // --- CAN (one interface per hand) ---
         try {
-            can_.open(cfg_.can_interface);
+            can_right_.open(cfg_.right_interface);
+            can_left_.open(cfg_.left_interface);
         } catch (const std::exception& e) {
             std::cerr << "CAN open failed: " << e.what() << "\n";
-            std::cerr << "  bring the interface up first, e.g.:\n"
-                      << "  sudo ip link set " << cfg_.can_interface
+            std::cerr << "  bring the interfaces up first, e.g.:\n"
+                      << "  sudo ip link set " << cfg_.right_interface
+                      << " up type can bitrate 500000\n"
+                      << "  sudo ip link set " << cfg_.left_interface
                       << " up type can bitrate 500000\n";
             return 1;
         }
-        InspireHand hand(can_);
-        InspireAction right(hand, cfg_.right_id);
-        InspireAction left(hand, cfg_.left_id);
+        InspireHand hand_right(can_right_);
+        InspireHand hand_left(can_left_);
+        InspireAction right(hand_right, cfg_.right_id);
+        InspireAction left(hand_left, cfg_.left_id);
 
         // Apply speed/force defaults on startup.
         const std::vector<int> speed(cfg_.speed.begin(), cfg_.speed.end());
@@ -308,8 +316,11 @@ public:
         pub.set(zmq::sockopt::sndtimeo, 0);
         pub.connect(cfg_.publish_endpoint);
 
-        std::cout << "inspire_hand: can=" << cfg_.can_interface
-                  << " sub=" << cfg_.subscribe_endpoint
+        std::cout << "inspire_hand: right=" << cfg_.right_interface
+                  << "(id " << cfg_.right_id << ")"
+                  << " left=" << cfg_.left_interface
+                  << "(id " << cfg_.left_id << ")\n";
+        std::cout << "inspire_hand: sub=" << cfg_.subscribe_endpoint
                   << " pub=" << cfg_.publish_endpoint
                   << " publisher_id=" << cfg_.publisher_id << "\n";
         std::cout << "inspire_hand: session=" << session_id_
@@ -347,9 +358,10 @@ public:
             }
         }
 
-        // Graceful shutdown: move to the safe pose before releasing the bus.
+        // Graceful shutdown: move to the safe pose before releasing the buses.
         apply_safe(right, left);
-        can_.close();
+        can_right_.close();
+        can_left_.close();
         std::cout << "inspire_hand: stopped\n";
         return 0;
     }
@@ -507,7 +519,7 @@ private:
     }
 
     Config cfg_;
-    SocketCan can_;
+    SocketCan can_right_, can_left_;
     Guard guard_;
     std::string session_id_, clock_id_;
     bool last_valid_ = false;

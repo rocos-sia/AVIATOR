@@ -65,6 +65,6 @@ set_tests_properties(camera_recording PROPERTIES TIMEOUT 40)
 if(Python3_Interpreter_FOUND)
   add_test(NAME camera_adapter COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/camera_adapter_test.py $<TARGET_FILE:aviator_camera_recording_test>
-    ${PROJECT_SOURCE_DIR}/examples/aruco_camera/recording_client.py)
+    ${PROJECT_SOURCE_DIR}/nodes/camera/recording_client.py)
   set_tests_properties(camera_adapter PROPERTIES TIMEOUT 10)
 endif()

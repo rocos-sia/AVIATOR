@@ -46,6 +46,12 @@ std::size_t number(const YAML::Node& n, std::size_t limit = INT_MAX, bool zero =
     require((zero || value > 0) && value <= limit, "integer out of range");
     return value;
 }
+bool boolean(const YAML::Node& n) {
+    require(n.IsScalar() && (n.Tag() == "?" || n.Tag() == "tag:yaml.org,2002:bool"),
+            "expected boolean");
+    require(n.Scalar() == "true" || n.Scalar() == "false", "expected true or false");
+    return n.Scalar() == "true";
+}
 void fixed(const YAML::Node& n, const char* value) {
     require(string(n) == value, std::string("expected ") + value);
 }
@@ -95,11 +101,13 @@ RecordingConfig load_recording_config(const std::string& path) {
             camera.sources.clear();
             for (const auto& source : sources) {
                 keys(source, {"camera_id", "rgb_topic", "depth_topic", "rgb_pixel_format",
-                              "depth_pixel_format"});
+                              "depth_pixel_format", "record_depth"});
                 fixed(source["rgb_pixel_format"], "RGB8");
                 fixed(source["depth_pixel_format"], "Z16");
                 camera.sources.push_back({string(source["camera_id"]), string(source["rgb_topic"]),
-                                          string(source["depth_topic"])});
+                                          string(source["depth_topic"]),
+                                          source["record_depth"] ? boolean(source["record_depth"])
+                                                                 : true});
             }
         }
         if (const auto enc = n["compressed"]) {
@@ -171,6 +179,7 @@ nlohmann::json recording_config_json(const RecordingConfig& c) {
         sources.push_back({{"camera_id", s.camera_id},
                            {"rgb_topic", s.rgb_topic},
                            {"depth_topic", s.depth_topic},
+                           {"record_depth", s.record_depth},
                            {"rgb_pixel_format", "RGB8"},
                            {"depth_pixel_format", "Z16"}});
     return {{"config_version", 1},

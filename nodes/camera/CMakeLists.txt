@@ -1,3 +1,2 @@
-# Reserved for the camera executable; no runnable implementation yet.
-# Add main.cpp, add_executable(), target_compile_features(... cxx_std_17),
-# target_link_libraries() and install(TARGETS ...) together with implementation.
+# Python RealSense node; run nodes/camera/main.py with its camera environment.
+# No C++ target or CMake-only dependency is required.

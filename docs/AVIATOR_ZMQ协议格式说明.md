@@ -552,7 +552,9 @@ Frame0：`camera.command`。
 | `yoke.roll/yoke.pitch` | number 或 null | 有效检测时为 `[-1,1]`；其他情况下均为 null。 |
 | `command_ref` | object 或 null，可选 | 使用的相机命令的 `publisher_id/session_id/sequence`，用于追踪 ROI 与检测条件。 |
 
-头部 `sample_mono_us` 使用图像采集时刻，timestamp 使用检测快照生成时刻。当前图像 MCAP 使用 `ImageFrame`，以 `(publisher_id, session_id, camera_id, frame_id)` 与检测消息关联；推理队列可以跳帧，不要求检测 frame_id 连续。重复发布同一帧时不得改变 frame_id 或采样时间。
+头部 `sample_mono_us` 使用主机接收 frameset 的单调时刻，timestamp 使用检测快照生成时刻。当前图像 MCAP 使用 Logger 的 `aviator.record.v1.CameraPacket`，以 `(publisher_id, session_id, camera_id, frame_id)` 与检测消息关联；推理队列可以跳帧，不要求检测 frame_id 连续。重复发布同一帧时不得改变 frame_id 或采样时间。
+
+当前 Python 相机节点按 `config/camera.yaml` 的 `detector.type` 单选 `charuco` 或 `apriltag`，在自由 JSON body 中补充 `detector`；AprilTag 识别到配置 ID 时另附 `tag_id` 和原始 `decision_margin`。两种模式均复用相同的公共头部、`status/valid` 与 `pose`，`confidence` 为各自的启发式质量指示，不应解释为概率。
 
 控制可用时须同时满足顶层 valid=true、status=TRACKING、detected=true、置信度达标以及年龄合格。SEARCHING/LOST 等状态可正常上报，但 valid=false、detected=false、roll/pitch=null。未获取任何图像的状态报告使用生成时刻并标 valid=false。
 
@@ -763,7 +765,7 @@ REQ/REP 一次请求只能有一次响应：短操作可直接返回终态；长
 
 ### 15.1 传输约定
 
-当前彩色图像由相机进程直接写独立 MCAP，Schema 为 `schemas/record_image.proto`，不经过 `5557`。本节的 `5557` 与通用 `RecordEnvelope` 是其他原始设备和伺服数据的后续设计，尚未实现。以下均为补充拟定：
+当前相机节点通过独立 `5557` PUSH/PULL 入口发送 `aviator.record.v1.CameraPacket`，由 Logger 将业务 JSON 与图像写入同一个 MCAP。该相机专用接口见 `schemas/recording/camera_packet.proto` 和 Logger 实现说明。以下通用 `RecordEnvelope` 面向其他原始设备和伺服数据，仍为草案：
 
 - 非实时采集适配器用 PUSH connect，Logger 用单一 PULL bind；每条消息恰好一帧，内容是序列化的 `RecordEnvelope`。
 - 原始 bytes 嵌入信封，不使用 Base64，不把大图送入 `5555/5556`。该入口只接纳记录副本，不能传执行命令。
@@ -851,7 +853,7 @@ message InvalidMessageMetadata {
 | `record.service.request`、`record.service.reply` | ServiceRequest / json、ServiceReply / json | 完整服务 JSON UTF-8 原始字节，不只是 system.event 摘要。 |
 | `record.invalid` | InvalidMultipart / raw | invalid 元数据保留各帧；payload 为空，payload_length=0，避免重复存储帧字节。 |
 
-以上 `RecordEnvelope` 图像行属于通用信封草案；当前直接写盘的相机使用 `ImageFrame`。图像 frame_id 与 CameraDetection 关联，记录 sequence 与帧号不是同一计数器。图像副本在推理前入队，队列溢出时显式计数；当前实现尚不能保证每帧均落盘。PNG 为无损编码；JPEG 等有损编码不得替代承诺保留的原始图像。
+以上 `RecordEnvelope` 图像行属于通用信封草案；当前相机使用 Logger 的 `CameraPacket`。图像 frame_id 与 CameraDetection 关联，记录 sequence 与帧号不是同一计数器。图像副本在推理前入队，队列溢出时显式计数；当前实现尚不能保证每帧均落盘。Logger 的 raw 模式保留原始 RGB8/Z16；compressed 模式的 H.264/H.265 RGB 是有损编码，不能视为原始像素等价物。
 
 payload_length 只核对 payload，不包含 protobuf 元数据。使用压缩图像时它是编码后长度。所有乘法、微秒转纳秒和缓冲区计算必须检查溢出。未知 payload_type/schema_id 不允许猜测解码；登记为不可解码数据并报告配置不一致。记录数据源的布局定义须随 MCAP 保存，否则只有 bytes 不足以形成可复现记录。
 

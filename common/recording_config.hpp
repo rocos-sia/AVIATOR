@@ -8,6 +8,7 @@ struct CameraSource {
     std::string camera_id = "cockpit";
     std::string rgb_topic = "record.camera.cockpit.rgb";
     std::string depth_topic = "record.camera.cockpit.depth";
+    bool record_depth = true;
 };
 struct CameraRecordingOptions {
     std::string mode = "disabled";

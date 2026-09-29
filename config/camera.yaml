@@ -1,15 +1,26 @@
-# 相机设备、采集格式与检测参数
-# 由 examples/aruco_camera/camera_publisher.py 读取（--config 默认指向本文件）。
+# 相机设备、采集格式与检测参数；每次只启用一种码的检测器。
+# 由 nodes/camera/main.py 读取（--config 默认指向本文件）。
 camera:
   model: "D436"          # 型号标签；多设备时按名称子串匹配选择（不区分大小写）
   serial: ""             # 序列号；非空则精确选择该设备（优先于 model）
   width: 1280            # 彩色流分辨率
   height: 720
   fps: 30
-  depth:                 # 仅传入启用图像的 --recording-config 时启用 Z16；fps 沿用彩色流
+  depth:                 # recording.yaml 对应源 record_depth=true 时才启用 Z16；fps 沿用彩色流
     width: 1280
     height: 720
   warmup_s: 5.0          # 启动后跳过发布的热身秒数（0 禁用）
+
+detector:
+  type: "apriltag"      # apriltag | charuco；切换此项即可选择识别哪一种码
+
+apriltag:
+  family: "tag36h11"
+  tag_id: 0             # 用户提供的 AprilTag 示例只处理 ID=0
+  tag_size_m: 0.05      # 黑白码外边长，米；按实际打印尺寸校准
+  use_distortion: false # 与用户提供示例一致；彩色帧若未经去畸变，应按实际标定改为 true
+  min_decision_margin: 0.0
+  confidence_margin: 50.0 # decision_margin 达到此值时报告 confidence=1；启发式指标
 
 charuco:
   board_size: [5, 5]        # 格子数 (列, 行)

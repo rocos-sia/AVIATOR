@@ -86,6 +86,7 @@ struct Decoder {
 void config_tests(const std::filesystem::path& dir, const char* config_path) {
     auto cfg = aviator::load_recording_config(config_path);
     check(cfg.options.camera.mode == "disabled", "default camera disabled");
+    check(!cfg.options.camera.sources[0].record_depth, "sample config disables depth");
     const auto file = dir / "config.yaml";
     for (const auto* bad :
          {"config_version: 2", "config_version: 1\nconfig_version: 1",
@@ -107,6 +108,31 @@ void config_tests(const std::filesystem::path& dir, const char* config_path) {
     cfg = aviator::load_recording_config(file.string());
     check(cfg.options.camera.mode == "raw" && cfg.options.chunk_size_bytes == 65536,
           "partial config merges defaults");
+    check(cfg.options.camera.sources[0].record_depth, "omitted record_depth stays enabled");
+    {
+        std::ofstream out(file);
+        out << "config_version: 1\ncamera:\n  mode: raw\n  sources:\n"
+               "    - camera_id: cockpit\n      rgb_topic: record.camera.cockpit.rgb\n"
+               "      depth_topic: record.camera.cockpit.depth\n"
+               "      rgb_pixel_format: RGB8\n      depth_pixel_format: Z16\n"
+               "      record_depth: false\n";
+    }
+    auto rgb_only = aviator::load_recording_config(file.string());
+    check(!rgb_only.options.camera.sources[0].record_depth, "parse RGB-only source");
+    check(aviator::recording_config_json(rgb_only)["camera"]["sources"][0]["record_depth"] == false,
+          "effective config records depth choice");
+    rejects([&] {
+        aviator::validate_camera_frame(frame(false, 1), rgb_only.options.camera);
+    });
+    {
+        std::ofstream out(file);
+        out << "config_version: 1\ncamera:\n  sources:\n"
+               "    - camera_id: cockpit\n      rgb_topic: record.camera.cockpit.rgb\n"
+               "      depth_topic: record.camera.cockpit.depth\n"
+               "      rgb_pixel_format: RGB8\n      depth_pixel_format: Z16\n"
+               "      record_depth: 'false'\n";
+    }
+    rejects([&] { aviator::load_recording_config(file.string()); });
     {
         zmq::context_t context(1);
         zmq::socket_t occupied(context, zmq::socket_type::pull);
@@ -136,12 +162,13 @@ void config_tests(const std::filesystem::path& dir, const char* config_path) {
     rejects([&] { aviator::parse_camera_frame("not protobuf"); });
 }
 void transport(const std::filesystem::path& dir, const std::string& mode, const std::string& codec,
-               bool overflow = false) {
+               bool overflow = false, bool rgb_only = false) {
     aviator::RecorderOptions options;
     options.camera.mode = mode;
     options.camera.codec = codec;
     options.camera.encoder = "software";
     options.camera.keyframe_interval = 3;
+    options.camera.sources[0].record_depth = !rgb_only;
     if (overflow)
         options.camera.max_record_bytes = options.camera.queue_bytes = 20000;
     zmq::context_t context(1);
@@ -155,7 +182,8 @@ void transport(const std::filesystem::path& dir, const std::string& mode, const 
     std::atomic<bool> stop{false};
     std::promise<void> ready;
     auto ready_future = ready.get_future();
-    const auto path = (dir / (mode + codec + (overflow ? "-overflow" : "") + ".mcap")).string();
+    const auto path = (dir / (mode + codec + (overflow ? "-overflow" : "") +
+                              (rgb_only ? "-rgb-only" : "") + ".mcap")).string();
     auto task = std::async(std::launch::async, [&] {
         return aviator::record_bus("tcp://127.0.0.1:59999", path, "logger", stop, options,
                                    [&] { ready.set_value(); });
@@ -169,6 +197,8 @@ void transport(const std::filesystem::path& dir, const std::string& mode, const 
             push.connect(options.camera.record_endpoint);
             for (unsigned sequence = 1; sequence <= 8; ++sequence) {
                 for (bool rgb : {true, false}) {
+                    if (!rgb && rgb_only)
+                        continue;
                     auto input = frame(rgb, sequence);
                     if (overflow) {
                         input.metadata["padding"] = "";
@@ -189,7 +219,8 @@ void transport(const std::filesystem::path& dir, const std::string& mode, const 
         stop.store(true);
         check(task.wait_for(10s) == std::future_status::ready, "camera drain timeout");
         const auto summary = task.get();
-        check(summary.camera_messages == (mode == "disabled" || overflow ? 0 : 16),
+        check(summary.camera_messages == (mode == "disabled" || overflow ? 0 :
+                                          (rgb_only ? 8 : 16)),
               "camera message count");
         check(summary.dropped == (overflow ? 16 : 0), "image queue overflow count");
         check(summary.rejected == (mode == "disabled" ? 0 : 2), "camera reject count");
@@ -226,7 +257,8 @@ void transport(const std::filesystem::path& dir, const std::string& mode, const 
         }
         if (mode == "compressed")
             check(decoder.frames == 8, "all RGB frames decode");
-        check(rgb_count == depth_count && rgb_count == (mode == "disabled" || overflow ? 0 : 8),
+        check(depth_count == (rgb_only ? 0 : rgb_count) &&
+                  rgb_count == (mode == "disabled" || overflow ? 0 : 8),
               "all frames retained");
     } catch (...) {
         stop.store(true);
@@ -264,6 +296,8 @@ int main(int argc, char** argv) {
         transport(dir, "raw", "h264", true);
         transport(dir, "compressed", "h264");
         transport(dir, "compressed", "h265");
+        transport(dir, "raw", "h264", false, true);
+        transport(dir, "compressed", "h264", false, true);
         std::filesystem::remove_all(dir);
         std::cout << "camera recording tests passed\n";
         return 0;

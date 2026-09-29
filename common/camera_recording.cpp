@@ -228,9 +228,14 @@ std::string validate_camera_frame(const CameraFrame& f, const CameraRecordingOpt
                   "invalid depth_scale");
         if (rgb && o.mode == "compressed")
             valid(width % 2 == 0 && height % 2 == 0, "yuv420p requires even dimensions");
-        for (const auto& s : o.sources)
-            if (s.camera_id == m["camera_id"])
-                return rgb ? s.rgb_topic : s.depth_topic;
+        for (const auto& s : o.sources) {
+            if (s.camera_id == m["camera_id"]) {
+                if (rgb)
+                    return s.rgb_topic;
+                valid(s.record_depth, "depth recording disabled for camera_id");
+                return s.depth_topic;
+            }
+        }
         throw std::invalid_argument("unregistered camera_id");
     } catch (const nlohmann::json::exception&) {
         throw std::invalid_argument("invalid camera metadata types");

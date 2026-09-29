@@ -110,7 +110,7 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
                 for (const auto& source : options.camera.sources) {
                     if (!streams.count(source.rgb_topic))
                         missing.push_back(source.rgb_topic);
-                    if (!streams.count(source.depth_topic))
+                    if (source.record_depth && !streams.count(source.depth_topic))
                         missing.push_back(source.depth_topic);
                 }
             const bool degraded =

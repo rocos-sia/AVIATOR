@@ -1,4 +1,4 @@
-"""Non-real-time, bounded raw-camera recording adapter for the Python example.
+"""Non-real-time, bounded raw-camera recording adapter for the camera node.
 
 CameraPacket protobuf encoding has two length-delimited fields (see checked-in
 .proto); no generated Python bindings or image Base64 conversion are needed.
@@ -27,6 +27,7 @@ def camera_packet(metadata, data):
 class RecordingClient:
     def __init__(self, path, camera_id):
         self.enabled = False
+        self.record_depth = False
         self.dropped = 0
         self.sent = 0
         self._pending_bytes = 0
@@ -34,6 +35,7 @@ class RecordingClient:
         self._stop = threading.Event()
         self._queue = queue.Queue()
         self._thread = None
+        self.error = None
         if not path:
             return
         import yaml
@@ -47,8 +49,13 @@ class RecordingClient:
             raise ValueError("invalid camera.mode")
         if mode == "disabled":
             return
-        if camera_id not in [source["camera_id"] for source in camera.get("sources", [{"camera_id": "cockpit"}])]:
+        source = next((source for source in camera.get("sources", [{"camera_id": "cockpit"}])
+                       if source["camera_id"] == camera_id), None)
+        if source is None:
             raise ValueError("--camera-id must match recording camera.sources")
+        self.record_depth = source.get("record_depth", True)
+        if not isinstance(self.record_depth, bool):
+            raise ValueError("record_depth must be a boolean")
         self.endpoint = camera.get("record_endpoint", "tcp://127.0.0.1:5557")
         self.limit = camera.get("max_record_bytes", 16777216)
         self.budget = camera.get("queue_bytes", 268435456)
@@ -81,17 +88,18 @@ class RecordingClient:
                             with self._lock:
                                 self.dropped += 1
         except Exception as error:
-            self._error = error
+            self.error = error
 
     def submit(self, metadata, data):
         if not self.enabled:
             return
+        if self._stop.is_set():
+            raise RuntimeError("camera recording sender is closed")
         if self._thread is None:
-            self._error = None
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
-        if self._error:
-            raise RuntimeError("camera recording sender failed") from self._error
+        if self.error:
+            raise RuntimeError("camera recording sender failed") from self.error
         packet = camera_packet(metadata, data)
         with self._lock:
             if len(packet) > self.limit or self._pending_bytes + len(packet) > self.budget:
@@ -106,5 +114,5 @@ class RecordingClient:
             self._thread.join()
         if self.enabled:
             print(f"camera recording: queued-to-zmq={self.sent}, dropped={self.dropped}")
-            if getattr(self, "_error", None):
-                print(f"camera recording ERROR: {self._error}")
+            if self.error:
+                raise RuntimeError("camera recording sender failed") from self.error

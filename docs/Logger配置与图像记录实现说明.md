@@ -4,7 +4,7 @@
 
 将 `config/recording.yaml` 从格式草案接入实际 C++ Logger，支持三种保存模式：不保存图像、保存未压缩 RGB8/Z16、保存 H.264/H.265 RGB 与无损 Zstd 深度。业务消息继续记录到同一 MCAP，图像不经过控制总线。实现保留原来的命令行启动、信号退出、文件覆盖保护及 `.partial` 收尾方式。
 
-本次还扩展了现有 `examples/aruco_camera`，作为 RealSense 图像记录适配示例。没有把 Python 示例变成正式运行节点，也没有宣称其同线程采集/推理循环具备全量 30 Hz 保证。
+RealSense 图像记录适配器位于 `nodes/camera`，以 Python 节点运行。其采集和推理仍共用主循环，不能据此宣称全量 30 Hz 采集保证。
 
 ## 相比配置草案的实施调整
 
@@ -24,7 +24,7 @@
 | `nodes/aviator_logger/main.cpp` | `--config`、显式 CLI 覆盖、信号和启动/结束输出。 |
 | `nodes/aviator_logger/logger.cpp` | SUB/PULL 接收、有界双队列、编码/写盘线程、专项统计。 |
 | `schemas/recording/camera_packet.proto` | 相机入口与 MCAP 图像消息的 Protobuf 结构。 |
-| `examples/aruco_camera/recording_client.py` | 示例的有界发送队列、单线程 PUSH 所有权、发送失败统计。 |
+| `nodes/camera/recording_client.py` | 相机节点的有界发送队列、单线程 PUSH 所有权、发送失败统计。 |
 
 ```text
 业务生产者 → Bus XPUB :5556 → SUB → 业务队列 ──────────┐
@@ -84,21 +84,21 @@ message CameraPacket {
 
 RGB 解码结果是 YUV420P，允许有损；深度解压目标大小为 `original_size_bytes`，恢复原始 Z16 帧。读取外部文件时应在分配前校验解码尺寸/长度，不能无条件信任这些值。该自定义 Schema 不能直接获得 Foxglove 的通用视频面板支持，需要转换到相应视频 Schema 或实现专用 Reader。
 
-## RealSense 示例接入
+## RealSense 相机节点接入
 
 把 `recording.yaml` 的 `camera.mode` 设置为 `raw` 或 `compressed`，先启动 Logger，再启动：
 
 ```bash
-python examples/aruco_camera/camera_publisher.py \
+python nodes/camera/main.py \
   --config config/camera.yaml --camera-id cockpit \
   --recording-config config/recording.yaml
 ```
 
-相机逻辑 ID 必须与 `camera.sources` 一致。示例同时启用彩色流和 Z16，深度尺寸取 `camera.yaml` 的 `camera.depth.width/height`，fps 沿用彩色设置。无该选项或模式禁用时保留原来的仅彩色检测行为。
+相机逻辑 ID 必须与 `camera.sources` 一致。节点同时启用彩色流和 Z16，深度尺寸取 `camera.yaml` 的 `camera.depth.width/height`，fps 沿用彩色设置。无该选项或模式禁用时保留仅彩色检测行为。
 
-示例在热身结束后、推理前提交 RGB/深度帧副本，RGB 从已有 BGR8 转换为 RGB8。硬件帧号作为记录源序号，检测关联帧号另存为 frame_id；深度保存比例尺与标定快照。`sample_mono_us` 是主机收到 frameset 的时间，元数据明确标记 `sample_time_basis=host_frameset_receive`，同时保留传感器 timestamp/domain；不能把主机收帧时刻冒充曝光时刻。
+节点在热身结束后、推理前提交 RGB/深度帧副本，RGB 从已有 BGR8 转换为 RGB8。硬件帧号作为记录源序号，检测关联帧号另存为 frame_id；深度保存比例尺与标定快照。`sample_mono_us` 是主机收到 frameset 的时间，元数据明确标记 `sample_time_basis=host_frameset_receive`，同时保留传感器 timestamp/domain；不能把主机收帧时刻冒充曝光时刻。
 
-后台线程独占 PUSH，启用 IMMEDIATE 和非阻塞发送；应用队列预算采用 recording.yaml 图像队列大小，另有 ZMQ HWM。输出 queued-to-zmq 和 dropped，前者仅表示入 ZMQ 队列，不表示已落盘。发送器与 Logger 的配置必须一致，目前没有自动握手。生产部署还需从该示例抽出独立高频采集适配器。
+后台线程独占 PUSH，启用 IMMEDIATE 和非阻塞发送；应用队列预算采用 recording.yaml 图像队列大小，另有 ZMQ HWM。输出 queued-to-zmq 和 dropped，前者仅表示入 ZMQ 队列，不表示已落盘。发送器与 Logger 的配置必须一致，目前没有自动握手。若要保证读取每个传感器样本，仍需实现独立高频采集适配器。
 
 ## 失败处理与统计
 

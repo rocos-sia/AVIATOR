@@ -20,12 +20,12 @@ ctest --test-dir build/communication --output-on-failure
 配置默认 `camera.mode: "disabled"`。启用 `raw` 或 `compressed` 后，相机端也需接入记录入口。例如在已配置 RealSense/OpenCV 环境的另一个终端：
 
 ```bash
-python examples/aruco_camera/camera_publisher.py \
+python nodes/camera/main.py \
   --config config/camera.yaml --camera-id cockpit \
   --recording-config config/recording.yaml
 ```
 
-Python 仅用于现有相机示例，不是 Logger 的生产运行依赖。该示例在推理前提交图像记录副本，但采集和检测仍在同一循环，**不保证传感器每个 30 Hz 样本都能被应用读取**；生产部署需要独立采集线程和实机吞吐验收。先停止生产者，再停止 Logger；接收端停止时不保证排空网络/ZMQ 内尚未入应用队列的数据。
+Python 相机节点不是 Logger 的运行依赖。相机在推理前提交图像记录副本，但采集和检测仍在同一循环，**不保证传感器每个 30 Hz 样本都能被应用读取**；需实机吞吐验收。先停止生产者，再停止 Logger；接收端停止时不保证排空网络/ZMQ 内尚未入应用队列的数据。
 
 ## 配置文件与优先级
 

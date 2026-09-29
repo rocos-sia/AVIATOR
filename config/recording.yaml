@@ -37,8 +37,9 @@ camera:
     - camera_id: "cockpit"
       rgb_topic: "record.camera.cockpit.rgb"
       depth_topic: "record.camera.cockpit.depth"
+      record_depth: false             # 默认只录彩色；true 时同时采集并记录 Z16 深度
       rgb_pixel_format: "RGB8"       # 记录接口的未压缩输入格式
-      depth_pixel_format: "Z16"      # 16 位深度数值，必须同时保存 depth_scale
+      depth_pixel_format: "Z16"      # 启用深度时为 16 位数值，并保存 depth_scale
 
   # 本段仅在 mode=compressed 时生效，raw 模式完全绕过编码器。
   compressed:

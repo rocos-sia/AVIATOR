@@ -11,19 +11,19 @@ AVIATOR 总线上的 `hand.command` 订阅节点：收到命令 → 校验 → �
 | `can_writer.hpp` | SocketCAN 裸写器（RAII，扩展帧、2 字节小端） |
 | `inspire_hand.hpp` | 完整移植 `Inspire` + `InspireAction`：位置/速度/力寄存器、五指动作、动作序列/手势 |
 | `hand_node.cpp` | ZMQ SUB 节点：订阅 `hand.command` → 校验/守卫 → 驱动双手 → 回发 `hand.state` |
-| `config/inspire_hand.yaml` | 配置（can 接口、双手 id、速度/力、安全姿态、端点、支持模式、超时） |
+| `config/inspire_hand.yaml` | 配置（双手各自 CAN 接口、双手 id、速度/力、安全姿态、端点、支持模式、超时） |
 | `CMakeLists.txt` | 独立构建（libzmq + cppzmq + nlohmann/json + yaml-cpp + pthread） |
 
-## 前置：把 CAN 口拉起来
+## 前置：把两个 CAN 口拉起来
 
 ```bash
-sudo ip link set can0 down
-sudo ip link set can0 up type can bitrate 500000
+sudo ip link set can0 up type can bitrate 500000   # 右手
+sudo ip link set can1 up type can bitrate 500000   # 左手
 ```
 
-> 因时手波特率 500k。若你的接口名不是 `can0`，改 `config/inspire_hand.yaml` 的
-> `can.interface`。需要 `can-utils` 可用 `sudo apt install can-utils`（`candump can0`
-> 可用来观察总线帧）。
+> 因时手波特率 500k。接口名在 `config/inspire_hand.yaml` 的
+> `can.right_interface` / `can.left_interface` 里改。需要 `can-utils` 可
+> `sudo apt install can-utils`（`candump can0` / `candump can1` 观察总线帧）。
 
 ## 构建
 
@@ -86,7 +86,7 @@ cmake --build build
 ## 测试
 
 用一个最小发布脚本发一条 `NORMALIZED_POSITION` 命令即可观察手动作（需先起 aviator_bus，
-或把 `subscribe_endpoint` 临时改成直连的 PUB 地址）。参考 `examples/aruco_camera` 的
+或把 `subscribe_endpoint` 临时改成直连的 PUB 地址）。参考 `nodes/camera/main.py` 的
 `pub.connect/publish` 写法。
 
 ```bash
