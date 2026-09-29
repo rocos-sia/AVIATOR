@@ -1,4 +1,5 @@
 #include "startup.hpp"
+#include <yaml-cpp/yaml.h>
 #include "transport.hpp"
 
 #include <cerrno>
@@ -17,7 +18,7 @@
 
 namespace {
 void usage() {
-    std::cout << "Usage: aviator_bus [--input tcp://address:port]\n"
+    std::cout << "Usage: aviator_bus [--config system.yaml] [--input tcp://address:port]\n"
                  "                   [--output tcp://address:port] [--lock-file path]\n"
                  "Defaults: input tcp://127.0.0.1:5555, output tcp://127.0.0.1:5556\n"
                  "SIGINT/SIGTERM stop the proxy. Use a separate lock file for replay.\n";
@@ -34,11 +35,16 @@ int main(int argc, char** argv) {
         for (int i = 1; i < argc; ++i) {
             const std::string argument = argv[i];
             if (argument == "--help" || argument == "-h") { usage(); return 0; }
-            if (argument != "--input" && argument != "--output" && argument != "--lock-file")
+            if (argument != "--input" && argument != "--output" && argument != "--lock-file" && argument != "--config")
                 throw std::runtime_error("unknown argument: " + argument);
             if (++i == argc || std::string(argv[i]).empty())
                 throw std::runtime_error("missing value for " + argument);
-            if (argument == "--input") input = argv[i];
+            if (argument == "--config") {
+                const auto config = YAML::LoadFile(argv[i]);
+                input = config["bus"]["publish"].as<std::string>();
+                output = config["bus"]["subscribe"].as<std::string>();
+            }
+            else if (argument == "--input") input = argv[i];
             else if (argument == "--output") output = argv[i];
             else lock_path = argv[i];
         }

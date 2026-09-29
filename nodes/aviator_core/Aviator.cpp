@@ -1,0 +1,864 @@
+#include "aviator/Aviator.hpp"
+#include "aviator/Kinematics.hpp"
+#include "aviator/CollisionChecker.hpp"
+#include "aviator/backend.hpp"
+#include <yaml-cpp/yaml.h>
+#include "aviator/Pose.hpp"
+#include <ruckig/ruckig.hpp>
+#include <condition_variable>
+#include <atomic>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <filesystem>
+#include <iostream>
+#include <mutex>
+#include <thread>
+#include <vector>
+
+namespace aviator {
+
+using Joints = std::array<double, 14>;
+
+namespace {
+[[noreturn]] void fail(const std::string &message) { throw std::runtime_error(message); }
+
+void require(bool ok, const std::string &message) {
+    if (!ok)
+        fail(message);
+}
+
+double smooth(double u) { return u * u * u * (10 + u * (-15 + 6 * u)); }
+
+constexpr double radians = M_PI / 180.0;
+constexpr double command_period = 0.001;
+
+struct ServoTimeout : std::runtime_error {
+    ServoTimeout() : std::runtime_error("Servo command timeout; holding position") {}
+};
+
+pinocchio::SE3 parseFrame(const YAML::Node &node) {
+    const auto p = node["position"].as<std::vector<double>>();
+    const auto q = node["quaternion"].as<std::vector<double>>();
+    require(p.size() == 3 && q.size() == 4, "Invalid frame dimensions");
+    for (double value : p) require(std::isfinite(value), "Nonfinite frame position");
+    double norm = 0;
+    for (double val : q) norm += val * val;
+    require(std::abs(norm - 1) < 1e-6, "Quaternion must be normalized (wxyz)");
+    return {Eigen::Quaterniond(q[0], q[1], q[2], q[3]).normalized(),
+            Eigen::Vector3d(p[0], p[1], p[2])};
+}
+
+} // namespace
+
+// Aviator 实现类
+class Aviator::Impl {
+  public:
+    Impl(std::unique_ptr<DataLink> datalink, std::unique_ptr<Kinematics> kinematics,
+         std::unique_ptr<CollisionChecker> collision_checker, const std::string &config_file)
+        : datalink_(std::move(datalink)), kinematics_(std::move(kinematics)),
+          collision_checker_(std::move(collision_checker)), config_file_(config_file) {}
+
+    ~Impl() {
+        cancel_ = true;
+        shutdown_ = true;
+        servo_cv_.notify_all();
+        if (servo_thread_.joinable()) servo_thread_.join();
+    }
+
+    void Init() {
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Another control operation is running");
+
+        require(GetState() == "UNINITIALIZED", "Init may only be called once");
+        // 加载配置
+        YAML::Node config = YAML::LoadFile(config_file_);
+        collision_check_enabled_ = config["collision_check_enabled"].as<bool>(true);
+        std::cout << "Planning collision checks: "
+                  << (collision_check_enabled_ ? "enabled" : "disabled") << std::endl;
+
+        home_speed_ = config["home_speed"].as<double>(0.1);
+        approach_speed_ = config["approach_speed"].as<double>(0.1);
+        joint_acceleration_ = config["joint_acceleration"].as<double>(0.2);
+        joint_jerk_ = config["joint_jerk"].as<double>(1.0);
+        final_approach_duration_ = config["final_approach_duration"].as<double>(3.0);
+        planning_period_ = config["planning_period"].as<double>(0.02);
+        joint_speed_ = config["joint_speed"].as<double>(1.9);
+        stop_acceleration_ = config["stop_acceleration"].as<double>(2.0);
+        settle_duration_ = config["settle_duration"].as<double>(1.5);
+        wheel_angular_speed_ = config["wheel_angular_speed"].as<double>(0.4);
+        wheel_linear_speed_ = config["wheel_linear_speed"].as<double>(0.08);
+        servo_period_ = config["servo_period"].as<double>(0.02);
+        servo_timeout_ = config["servo_timeout"].as<double>(0.25);
+
+        // 加载抓取配置
+        std::string config_dir = std::filesystem::absolute(config_file_).parent_path().string();
+        YAML::Node grasp = YAML::LoadFile(resolvePath(config, "grasp", config_dir));
+
+        handles_[0] = parseFrame(grasp["left"]);
+        handles_[1] = parseFrame(grasp["right"]);
+        tool_ = parseFrame(grasp["tool"]);
+        wheel_origin_ = parseFrame(grasp["wheel_origin"]);
+        approach_distance_ = grasp["approach_distance"].as<double>();
+
+        // 加载姿态配置
+        YAML::Node posture = YAML::LoadFile(resolvePath(config, "posture", config_dir));
+
+        auto left_home = posture["left_home_deg"].as<std::vector<double>>();
+        auto right_home = posture["right_home_deg"].as<std::vector<double>>();
+        require(left_home.size() == 7 && right_home.size() == 7, "Invalid home angles");
+
+        for (int i = 0; i < 7; ++i) {
+            home_[i] = left_home[i] * radians;
+            home_[7 + i] = right_home[i] * radians;
+        }
+
+        auto left_seed = posture["left_approach_seed_deg"].as<std::vector<double>>();
+        auto right_seed = posture["right_approach_seed_deg"].as<std::vector<double>>();
+        require(left_seed.size() == 7 && right_seed.size() == 7, "Invalid approach seed angles");
+        for (int i = 0; i < 7; ++i) {
+            approach_seed_[i] = left_seed[i] * radians;
+            approach_seed_[7 + i] = right_seed[i] * radians;
+        }
+
+        auto limits = posture["joint2_limits_deg"].as<std::vector<double>>();
+        require(limits.size() == 2, "joint2_limits_deg must contain two values");
+        joint2_min_ = limits[0] * radians;
+        joint2_max_ = limits[1] * radians;
+        joint2_margin_ = posture["joint2_planning_margin_deg"].as<double>() * radians;
+
+        require(std::isfinite(planning_period_) && planning_period_ > 0 && planning_period_ <= 0.05,
+                "planning_period must be in (0, 0.05]");
+        require(std::isfinite(home_speed_) && home_speed_ > 0 &&
+                std::isfinite(approach_speed_) && approach_speed_ > 0 &&
+                std::isfinite(joint_acceleration_) && joint_acceleration_ > 0 &&
+                std::isfinite(joint_jerk_) && joint_jerk_ > 0 &&
+                std::isfinite(final_approach_duration_) && final_approach_duration_ >= 1 &&
+                std::isfinite(joint_speed_) && joint_speed_ > 0 &&
+                std::isfinite(stop_acceleration_) && stop_acceleration_ > 0 &&
+                std::isfinite(settle_duration_) && settle_duration_ >= 0,
+                "Invalid duration, joint speed, acceleration or jerk");
+        require(std::isfinite(joint2_margin_) && joint2_margin_ >= 0 &&
+                joint2_min_ + joint2_margin_ < joint2_max_ - joint2_margin_, "Invalid J2 limits/margin");
+        require(std::isfinite(wheel_angular_speed_) && wheel_angular_speed_ > 0 &&
+                std::isfinite(wheel_linear_speed_) && wheel_linear_speed_ > 0 &&
+                std::isfinite(servo_period_) && servo_period_ >= 0.01 && servo_period_ <= 0.05 &&
+                std::isfinite(servo_timeout_) && servo_timeout_ >= 2 * servo_period_,
+                "Invalid wheel speed or servo period/timeout");
+        checkElbows(home_);
+        checkElbows(approach_seed_);
+
+        require(datalink_ != nullptr, "Core requires a ZMQ device connection");
+
+        // 运动学与碰撞检测统一在这里创建（与后端选择无关）。
+        // 已注入时跳过，便于测试替换。
+        if (!kinematics_) {
+            const std::string urdf = resolvePath(config, "urdf", config_dir);
+            const double ik_lo = joint2_min_ + joint2_margin_;
+            const double ik_hi = joint2_max_ - joint2_margin_;
+            kinematics_ = makePinIkKinematics(urdf, ik_lo, ik_hi);
+        }
+        if (collision_check_enabled_ && !collision_checker_) {
+            std::string collision_urdf = resolvePath(config, "collision_urdf", config_dir);
+            std::string srdf = collision_urdf;
+            const auto dot = srdf.find_last_of('.');
+            if (dot != std::string::npos)
+                srdf = srdf.substr(0, dot) + ".srdf";
+
+            GraspCylinder cylinder;
+            cylinder.radius = grasp["tool"]["radius"].as<double>(0.028);
+            cylinder.length = grasp["tool"]["length"].as<double>(0.060);
+            collision_checker_ = makePinocchioCollisionChecker(collision_urdf, srdf, cylinder);
+        }
+
+        last_target_ = measured();
+        setState("INITIALIZED");
+        servo_thread_ = std::thread([this] { servoLoop(); });
+    }
+
+    void Enable() {
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Another control operation is running");
+        require(GetState() == "INITIALIZED" || GetState() == "DISABLED", "Invalid state for enable");
+
+        cancel_ = false;
+        backend_stop_requested_ = false;
+        checkElbows(measured());
+
+        try {
+            datalink_->enable(Side::Left);
+            datalink_->enable(Side::Right);
+        } catch (...) {
+            auto error = std::current_exception();
+            try { datalink_->disable(Side::Right); } catch (...) {}
+            try { datalink_->disable(Side::Left); } catch (...) {}
+            std::rethrow_exception(error);
+        }
+
+        require(datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right),
+                "Drive enable failed");
+
+        // 后端首帧已对齐实测值，此后只沿指令轨迹衔接，不重新赋值为反馈位置。
+        last_target_ = datalink_->jointTargets();
+        last_velocity_ = {};
+        last_angle_velocity_ = last_displacement_velocity_ = 0;
+
+        setState(grasp().locked ? "LOCKED" : "ENABLED");
+    }
+
+    void Disable() {
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Another control operation is running");
+        if (grasp().locked) command(GraspCommand::Unlock);
+
+        stopDrives();
+
+        setState("DISABLED");
+    }
+
+    void ApproachHandles() {
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Another control operation is running");
+        auto f = grasp();
+        requireBackend(!f.fault, "Backend grasp fault before ApproachHandles");
+        require(f.locked == 0 && !f.fault && datalink_->isEnabled(Side::Left) &&
+                    datalink_->isEnabled(Side::Right),
+                "Enable both arms and unlock before approach");
+
+        cancel_ = false;
+        setState("APPROACHING");
+
+        const char *phase = "home trajectory";
+        try {
+            // 第一阶段：当前位置 → home，指令轨迹完成、双臂停稳后继续，不要求实际角度到位。
+            moveJoints(home_, home_speed_);
+            phase = "home settling";
+            const double deadline = datalink_->time() + 5.0;
+            double stable_since = -1;
+            bool stopped = false;
+            while (datalink_->time() < deadline) {
+                datalink_->waitTick();
+                require(!cancel_, "Motion stopped");
+                requireBackend(!grasp().fault, "Backend grasp fault while homing");
+                require(datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right),
+                        "A drive is no longer enabled");
+                const auto actual = measured();
+                checkElbows(actual);
+                bool settled = true;
+                for (int i = 0; i < 14; ++i) {
+                    require(std::isfinite(actual[i]), "Nonfinite joint feedback while homing");
+                    const double velocity = datalink_->getJointVelocity(static_cast<Side>(i / 7), i % 7);
+                    require(std::isfinite(velocity), "Nonfinite joint velocity while homing");
+                    settled = settled && std::abs(velocity) < 0.02;
+                }
+                const double now = datalink_->time();
+                if (!settled) stable_since = -1;
+                else if (stable_since < 0) stable_since = now;
+                if (stable_since >= 0 && now - stable_since >= 0.15) {
+                    stopped = true;
+                    break;
+                }
+            }
+            requireBackend(stopped, "Home settling timeout (joint speed must stay below 0.02 rad/s)");
+
+            // 第二阶段：确认 home 指令完成且双臂停稳，从上一段指令末点规划到预接近位置。
+            phase = "pre-approach";
+            auto wheel0 = grasp();
+            Joints seed = approach_seed_;
+            auto goal = solve({target(0, wheel0.angle, wheel0.displacement, approach_distance_),
+                              target(1, wheel0.angle, wheel0.displacement, approach_distance_)},
+                             seed);
+
+            moveJoints(goal, approach_speed_);
+
+            // 第三阶段：笛卡尔空间精确对准
+            phase = "final approach";
+            auto wheel1 = grasp();
+            double duration = final_approach_duration_;
+            size_t steps = static_cast<size_t>(std::ceil(duration / planning_period_));
+            Path path;
+
+            seed = planningStart();
+            pinocchio::SE3 from[2];
+            for (int side = 0; side < 2; ++side) {
+                std::array<double, 7> q{};
+                for (int j = 0; j < 7; ++j)
+                    q[j] = seed[side * 7 + j];
+                require(kinematics_->solveFk(static_cast<Side>(side), q, from[side]), "FK failed");
+            }
+
+            for (size_t k = 0; k <= steps; ++k) {
+                double s = smooth(double(k) / steps);
+                std::array<pinocchio::SE3, 2> targets;
+                for (int side = 0; side < 2; ++side) {
+                    auto end = target(side, wheel1.angle, wheel1.displacement);
+                    targets[side] = interpolatePose(from[side], end, s);
+                }
+                if (k)
+                    seed = solve(targets, seed);
+                path.push_back({seed, wheel1.angle, wheel1.displacement});
+            }
+
+            validate(path, duration);
+            execute(path, duration, false);
+            phase = "approach complete";
+
+            // 同步轮盘位形
+            auto w = grasp();
+            wheel_angle_ = w.angle;
+            wheel_displacement_ = w.displacement;
+
+            setState("APPROACHED");
+        } catch (const std::exception &e) {
+            const std::string error = std::string("ApproachHandles [") + phase + "]: " + e.what();
+            setMotionError(error);
+            stopSafely();
+            setState("FAULT");
+            throw std::runtime_error(error);
+        } catch (...) {
+            stopSafely();
+            setState("FAULT");
+            throw;
+        }
+    }
+
+    void LockHandles() {
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Another control operation is running");
+        require(GetState() == "APPROACHED" || GetState() == "LOCKED", "Approach before locking");
+        command(GraspCommand::Lock); // Software phase; no TCP/grasp readiness gate.
+        setState("LOCKED");
+    }
+
+    // Plan once, stretch time to respect wheel AND joint velocity limits, then execute.
+    void MoveWheel(double angle, double displacement, double v) {
+        validateWheelInput(angle, displacement, v);
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Another control operation is running");
+        require(GetState() == "LOCKED", "Lock handles before MoveWheel; clear faults first");
+        cancel_ = false;
+        setMotionError("");
+        setState("MOVING");
+        try {
+            const double a0 = wheel_angle_, d0 = wheel_displacement_;
+            // Sample by geometry at full speed; reducing v must not multiply memory/IK work.
+            const double nominal = std::max({0.5, 1.875 * std::abs(angle - a0) / wheel_angular_speed_,
+                1.875 * std::abs(displacement - d0) / wheel_linear_speed_});
+            const size_t steps = static_cast<size_t>(std::ceil(nominal / planning_period_));
+            Path path{{planningStart(), a0, d0}};
+            for (size_t k = 1; k <= steps; ++k) {
+                const double u = smooth(double(k) / steps);
+                const double a = a0 + u * (angle - a0), d = d0 + u * (displacement - d0);
+                path.push_back({solve({target(0, a, d), target(1, a, d)}, path.back().q), a, d});
+            }
+            double duration = nominal / v;
+            for (size_t k = 1; k < path.size(); ++k)
+                duration = std::max(duration, jointTravelTime(path[k - 1].q, path[k].q, v) * steps);
+            duration *= 1.001; // leave room for floating-point roundoff at the limit
+            require(std::isfinite(duration), "Speed ratio is too small for a finite trajectory");
+            validate(path, duration, v);
+            execute(path, duration, true);
+            dwell(settle_duration_);
+            setState("LOCKED");
+        } catch (const std::exception &error) {
+            setMotionError(error.what());
+            stopSafely();
+            setState("FAULT");
+            throw;
+        }
+    }
+
+    // Only validate/publish a target here. IK, collision checks and execution run in servoLoop.
+    void ServoWheel(double angle, double displacement, double v) {
+        validateWheelInput(angle, displacement, v);
+        std::lock_guard<std::mutex> mailbox(servo_mutex_);
+        if (!servo_active_) {
+            std::unique_lock<std::mutex> control(mutex_, std::try_to_lock);
+            require(control.owns_lock(), "Another control operation is running");
+            require(GetState() == "LOCKED", "Lock handles before ServoWheel; clear faults first");
+            cancel_ = false;
+            setMotionError("");
+            servo_active_ = true;
+            setState("SERVO");
+        } else {
+            require(!cancel_, "Servo is stopping; wait for LOCKED before restarting");
+        }
+        servo_target_ = {angle, displacement, v, std::chrono::steady_clock::now()};
+        servo_cv_.notify_one();
+    }
+
+    void UnlockHandles() {
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Another control operation is running");
+        require(GetState() == "LOCKED" || GetState() == "FAULT", "No software lock to release");
+
+        command(GraspCommand::Unlock);
+        setState("ENABLED");
+    }
+
+    void ResetFault() {
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Another control operation is running");
+        command(GraspCommand::ResetFault);
+        backend_stop_requested_ = false;
+        cancel_ = false;
+        setMotionError("");
+        const bool enabled = datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right);
+        setState(enabled ? (grasp().locked == 3 ? "LOCKED" : "ENABLED") : "DISABLED");
+    }
+
+    void Stop() noexcept {
+        cancel_ = true;
+    }
+
+    Status GetStatus() {
+        auto gs = grasp();
+        Status status;
+        status.open_loop = gs.open_loop;
+        {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            status.motion_error = motion_error_;
+        }
+        status.angle = gs.angle;
+        status.displacement = gs.displacement;
+        status.position_error[0] = gs.position_error[0];
+        status.position_error[1] = gs.position_error[1];
+        status.rotation_error[0] = gs.rotation_error[0];
+        status.rotation_error[1] = gs.rotation_error[1];
+        status.locked = gs.locked;
+        status.ready = gs.ready;
+        status.fault = gs.fault;
+        status.ack = gs.ack;
+        status.result = gs.result;
+        return status;
+    }
+
+    std::string GetState() const { std::lock_guard<std::mutex> lock(status_mutex_); return state_; }
+    void setState(const std::string &value) { std::lock_guard<std::mutex> lock(status_mutex_); state_ = value; }
+
+  private:
+    struct Sample {
+        Joints q;
+        double angle, translation;
+    };
+    using Path = std::vector<Sample>;
+    struct ServoTarget {
+        double angle = 0, displacement = 0, v = 0.5;
+        std::chrono::steady_clock::time_point received;
+    };
+
+    static void validateWheelInput(double angle, double displacement, double v) {
+        require(std::isfinite(angle) && angle >= -0.87266 && angle <= 0.87266 &&
+                std::isfinite(displacement) && displacement >= -0.170 && displacement <= 0 &&
+                std::isfinite(v) && v > 0 && v <= 1,
+                "Wheel target out of range or speed ratio v not in (0, 1]");
+    }
+
+    void setMotionError(const std::string &error) {
+        std::lock_guard<std::mutex> lock(status_mutex_);
+        motion_error_ = error;
+    }
+
+    double jointTravelTime(const Joints &from, const Joints &to, double v) const {
+        double duration = 0;
+        for (int i = 0; i < 14; ++i) {
+            const double limit = v * std::min(joint_speed_,
+                datalink_->jointVelLimit(static_cast<Side>(i / 7), i % 7));
+            duration = std::max(duration, std::abs(to[i] - from[i]) / limit);
+        }
+        return duration;
+    }
+
+    bool servoExpired() {
+        std::lock_guard<std::mutex> lock(servo_mutex_);
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                            servo_target_.received).count() > servo_timeout_;
+    }
+
+    // Each short segment has zero endpoint velocity/acceleration (quintic easing).
+    // Candidate distance is reduced until both arm joint speed limits also fit the segment.
+    Path planServoSegment(const ServoTarget &command) {
+        const Sample start{last_target_, wheel_angle_, wheel_displacement_};
+        const double da = command.angle - start.angle, dd = command.displacement - start.translation;
+        double fraction = 1;
+        if (da != 0) fraction = std::min(fraction, command.v * wheel_angular_speed_ * servo_period_ / (1.875 * std::abs(da)));
+        if (dd != 0) fraction = std::min(fraction, command.v * wheel_linear_speed_ * servo_period_ / (1.875 * std::abs(dd)));
+        for (int attempt = 0; attempt < 10; ++attempt) {
+            const double angle = start.angle + fraction * da;
+            const double displacement = start.translation + fraction * dd;
+            const auto q = (da == 0 && dd == 0) ? start.q :
+                solve({target(0, angle, displacement), target(1, angle, displacement)}, start.q);
+            const double time = 1.875 * jointTravelTime(start.q, q, command.v);
+            if (time <= servo_period_) {
+                Path segment{start, {q, angle, displacement}};
+                // Check endpoints and interior interpolation (not just the new target).
+                for (int k = 0; k <= 4; ++k) {
+                    const double u = k / 4.0;
+                    Joints intermediate{};
+                    for (int i = 0; i < 14; ++i) intermediate[i] = start.q[i] + u * (q[i] - start.q[i]);
+                    check(intermediate, start.angle + u * (angle - start.angle),
+                          start.translation + u * (displacement - start.translation));
+                }
+                return segment;
+            }
+            fraction *= std::min(0.5, 0.9 * servo_period_ / time);
+        }
+        fail("Servo IK cannot satisfy joint velocity limits");
+    }
+
+    void servoLoop() {
+        for (;;) {
+            {
+                std::unique_lock<std::mutex> mailbox(servo_mutex_);
+                servo_cv_.wait(mailbox, [this] { return shutdown_ || servo_active_; });
+                if (shutdown_) return;
+            }
+            std::unique_lock<std::mutex> control(mutex_);
+            std::string next_state = "LOCKED";
+            try {
+                while (!cancel_ && !shutdown_) {
+                    if (servoExpired()) throw ServoTimeout();
+                    ServoTarget command;
+                    { std::lock_guard<std::mutex> lock(servo_mutex_); command = servo_target_; }
+                    auto segment = planServoSegment(command);
+                    execute(segment, servo_period_, true, true);
+                }
+            } catch (const ServoTimeout &error) {
+                setMotionError(error.what());
+            } catch (const std::exception &error) {
+                setMotionError(error.what());
+                // Stop and stale commands hold in the current impedance mode. Other failures latch FAULT.
+                next_state = cancel_ ? "LOCKED" : "FAULT";
+            }
+            if (!stopSafely()) next_state = "FAULT";
+            std::lock_guard<std::mutex> mailbox(servo_mutex_);
+            std::lock_guard<std::mutex> status(status_mutex_);
+            servo_active_ = false;
+            state_ = next_state;
+            control.unlock();
+        }
+    }
+
+    // 配置里的相对路径按 YAML 所在目录解析（与原项目一致）。
+    static std::string resolvePath(const YAML::Node &config, const char *key,
+                                   const std::string &base_dir) {
+        const std::string value = config[key].as<std::string>();
+        if (!value.empty() && value[0] == '/')
+            return value;
+        return base_dir + "/" + value;
+    }
+
+    void checkElbows(const Joints &q) const {
+        for (int side = 0; side < 2; ++side) {
+            const double value = q[7 * side + 1];
+            if (!(std::isfinite(value) && value >= joint2_min_ && value <= joint2_max_))
+                fail(std::string(side == 0 ? "Left" : "Right") + " joint 2 outside elbow-down range: " +
+                     std::to_string(value * 180 / M_PI) + " deg, expected [" +
+                     std::to_string(joint2_min_ * 180 / M_PI) + ", " +
+                     std::to_string(joint2_max_ * 180 / M_PI) + "] deg");
+        }
+    }
+
+    GraspState grasp() {
+        require(datalink_ != nullptr, "Call Init first");
+        auto state = datalink_->graspState();
+        const bool fresh = std::isfinite(state.heartbeat) && datalink_->time() - state.heartbeat < 0.5;
+        if (!fresh || state.fault) backend_stop_requested_ = true;
+        requireBackend(fresh, "Backend feedback timeout (>500 ms)");
+        return state;
+    }
+
+    void requireBackend(bool ok, const char *message) {
+        if (ok) return;
+        std::string details;
+        try { if (datalink_) details = datalink_->diagnostics(); }
+        catch (const std::exception &e) { details = std::string("Diagnostics unavailable: ") + e.what(); }
+        fail(std::string(message) + (details.empty() ? "" : "\n" + details));
+    }
+
+    Joints measured() {
+        Joints q{};
+        for (int side = 0; side < 2; ++side)
+            for (int axis = 0; axis < 7; ++axis)
+                q[side * 7 + axis] = datalink_->getJointPosition(static_cast<Side>(side), axis);
+        return q;
+    }
+
+    void checkMotionState() {
+        try {
+            require(!backend_stop_requested_, "Backend stop required after an earlier fault");
+            requireBackend(!grasp().fault, "Backend grasp fault");
+            require(datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right),
+                    "A drive is no longer enabled");
+            const auto actual = measured();
+            checkElbows(actual);
+            for (int i = 0; i < 14; ++i)
+                if (!std::isfinite(actual[i])) fail("Nonfinite joint feedback on axis " + std::to_string(i));
+        } catch (...) {
+            backend_stop_requested_ = true;
+            throw;
+        }
+    }
+
+    Joints planningStart() {
+        checkMotionState();
+        return last_target_;
+    }
+
+    void stopDrives() {
+        std::exception_ptr error;
+        for (Side side : {Side::Left, Side::Right}) {
+            try { datalink_->disable(side); }
+            catch (...) { if (!error) error = std::current_exception(); }
+        }
+        if (error) std::rethrow_exception(error);
+    }
+
+    // 按共同的速度比例制动双臂，保持最终指令；绝不跳回实测位置。
+    // 反馈故障或制动路径不安全时，停止两臂 SDK 控制，不继续生成位置指令。
+    void hold() {
+        datalink_->stopTrajectory();
+        last_target_ = datalink_->jointTargets();
+        last_velocity_ = {};
+        last_angle_velocity_ = last_displacement_velocity_ = 0;
+    }
+
+    bool stopSafely() {
+        try { hold(); return true; }
+        catch (const std::exception &e) {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            motion_error_ += std::string("; smooth stop unavailable: ") + e.what();
+            return false;
+        }
+    }
+
+    void command(GraspCommand cmd) {
+        uint64_t seq = datalink_->sendGraspCommand(cmd);
+        double until = datalink_->time() + 2;
+        while (datalink_->time() < until) {
+            auto g = grasp();
+            if (g.ack == seq) {
+                require(g.result == GraspResult::Ok, "Backend rejected grasp command");
+                return;
+            }
+            datalink_->waitTick();
+        }
+        fail("Grasp command acknowledgement timeout");
+    }
+
+    pinocchio::SE3 wheel(double angle, double translation) const {
+        return wheel_origin_ *
+               pinocchio::SE3(Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitZ()).toRotationMatrix(),
+                              Eigen::Vector3d(0, 0, translation));
+    }
+
+    pinocchio::SE3 target(int side, double angle, double translation, double retreat = 0) const {
+        auto flange = wheel(angle, translation) * handles_[side] * tool_.inverse();
+        flange.translation() -= flange.rotation() * Eigen::Vector3d(0, 0, retreat);
+        return flange;
+    }
+
+    Joints solve(const std::array<pinocchio::SE3, 2> &targets, const Joints &seed) {
+        Joints result{};
+        for (int side = 0; side < 2; ++side) {
+            require(!cancel_, "Motion cancelled while solving IK");
+            std::array<double, 7> initial{}, output{};
+            for (int axis = 0; axis < 7; ++axis)
+                initial[axis] = seed[side * 7 + axis];
+            require(kinematics_->solveIk(static_cast<Side>(side), initial, targets[side], output),
+                    std::string(side == 0 ? "Left" : "Right") + " arm IK failed");
+            for (int axis = 0; axis < 7; ++axis)
+                result[side * 7 + axis] = output[axis];
+        }
+        return result;
+    }
+
+    void check(const Joints &q, double angle, double translation) {
+        checkElbows(q);
+        for (int i = 0; i < 14; ++i)
+            require(std::isfinite(q[i]) &&
+                        q[i] >= kinematics_->jointLower(static_cast<Side>(i / 7), i % 7) &&
+                        q[i] <= kinematics_->jointUpper(static_cast<Side>(i / 7), i % 7),
+                    "Joint limit violation on axis " + std::to_string(i));
+        if (collision_check_enabled_)
+            collision_checker_->check(q, angle, translation);
+    }
+
+    void validate(const Path &path, double duration, double v = 1.0) {
+        require(path.size() >= 2, "Empty trajectory");
+        double dt = duration / (path.size() - 1);
+        for (size_t k = 0; k < path.size(); ++k) {
+            require(!cancel_, "Motion cancelled while planning");
+            check(path[k].q, path[k].angle, path[k].translation);
+            if (k == 0)
+                continue;
+            for (int axis = 0; axis < 14; ++axis)
+                require(
+                    std::abs(path[k].q[axis] - path[k - 1].q[axis]) / dt <=
+                        v * std::min(joint_speed_,
+                                 datalink_->jointVelLimit(static_cast<Side>(axis / 7), axis % 7)),
+                    "Planned joint speed exceeds limit on axis " + std::to_string(axis));
+
+            Joints mid{};
+            for (int axis = 0; axis < 14; ++axis)
+                mid[axis] = 0.5 * (path[k].q[axis] + path[k - 1].q[axis]);
+            check(mid, 0.5 * (path[k].angle + path[k - 1].angle),
+                  0.5 * (path[k].translation + path[k - 1].translation));
+        }
+    }
+
+    // 两臂共用一条 Ruckig 轨迹。先完整规划/检查，运行时只按 1 ms 取样。
+    void moveJoints(const Joints &goal, double speed) {
+        ruckig::Ruckig<14> planner{command_period};
+        ruckig::InputParameter<14> input;
+        input.current_position = planningStart();
+        input.current_velocity = last_velocity_;
+        input.current_acceleration.fill(0); // 此接口只在使能保持或上一段停稳后调用。
+        input.target_position = goal;
+        input.target_velocity.fill(0);
+        input.target_acceleration.fill(0);
+        input.max_acceleration.fill(joint_acceleration_);
+        input.max_jerk.fill(joint_jerk_);
+        input.synchronization = ruckig::Synchronization::Time;
+        input.duration_discretization = ruckig::DurationDiscretization::Discrete;
+        for (int i = 0; i < 14; ++i)
+            input.max_velocity[i] = std::min({speed, joint_speed_,
+                datalink_->jointVelLimit(static_cast<Side>(i / 7), i % 7)});
+
+        ruckig::Trajectory<14> trajectory;
+        const auto result = planner.calculate(input, trajectory);
+        require(result >= 0, "Ruckig joint planning failed: " + std::to_string(int(result)));
+        const double duration = trajectory.get_duration();
+        require(std::isfinite(duration) && duration >= 0, "Invalid Ruckig duration");
+        const auto w = grasp();
+        // 沿实际曲线检查，包括原规划间隔的中点，不能用端点间直线替代。
+        const size_t checks = std::max<size_t>(1, std::ceil(duration / (planning_period_ * 0.5)));
+        Joints q{}, velocity{}, acceleration{};
+        for (size_t k = 0; k <= checks; ++k) {
+            require(!cancel_, "Motion cancelled while planning");
+            trajectory.at_time(duration * double(k) / checks, q, velocity, acceleration);
+            check(q, w.angle, w.displacement);
+        }
+        const size_t ticks = static_cast<size_t>(std::llround(duration / command_period));
+        require(ticks <= 3600000, "Trajectory exceeds one hour budget");
+        std::vector<JointFrame> frames;
+        frames.reserve(ticks + 1);
+        for (size_t k = 0; k <= ticks; ++k) {
+            trajectory.at_time(std::min(k * command_period, duration), q, velocity, acceleration);
+            frames.push_back({q, w.angle, w.displacement});
+        }
+        datalink_->runTrajectory(frames, cancel_);
+        last_target_ = frames.back().q;
+        last_velocity_ = {};
+    }
+
+    void execute(const Path &path, double duration, bool, bool servo_segment = false) {
+        for (int i = 0; i < 14; ++i)
+            require(std::abs(path.front().q[i] - last_target_[i]) < 1e-10,
+                    "Trajectory start differs from last command");
+        const size_t ticks = std::max<size_t>(1, std::ceil(duration / command_period));
+        require(ticks <= 3600000, "Trajectory exceeds one hour budget");
+        std::vector<JointFrame> frames;
+        frames.reserve(ticks + 1);
+        for (size_t tick = 0; tick <= ticks; ++tick) {
+            double u = double(tick) / ticks;
+            if (servo_segment) u = smooth(u);
+            const double coordinate = u * (path.size() - 1);
+            const size_t k = std::min(size_t(coordinate), path.size() - 2);
+            const double f = coordinate - k;
+            JointFrame frame;
+            for (int i = 0; i < 14; ++i) frame.q[i] = path[k].q[i] + f * (path[k + 1].q[i] - path[k].q[i]);
+            frame.angle = path[k].angle + f * (path[k + 1].angle - path[k].angle);
+            frame.displacement = path[k].translation + f * (path[k + 1].translation - path[k].translation);
+            frames.push_back(frame);
+        }
+        datalink_->runTrajectory(frames, cancel_);
+        last_target_ = frames.back().q;
+        wheel_angle_ = frames.back().angle;
+        wheel_displacement_ = frames.back().displacement;
+        last_velocity_ = {};
+        last_angle_velocity_ = last_displacement_velocity_ = 0;
+    }
+
+    void dwell(double seconds) {
+        double until = datalink_->time() + seconds;
+        while (datalink_->time() < until) {
+            datalink_->waitTick();
+            require(!cancel_, "Motion stopped");
+            auto g = grasp();
+            requireBackend(!g.fault, "Grasp fault while settling");
+            checkElbows(measured());
+        }
+    }
+
+    std::unique_ptr<DataLink> datalink_;
+    std::unique_ptr<Kinematics> kinematics_;
+    std::unique_ptr<CollisionChecker> collision_checker_;
+    bool collision_check_enabled_ = true;
+
+    std::string config_file_;
+    mutable std::mutex status_mutex_;
+    std::string state_ = "UNINITIALIZED";
+
+    double home_speed_, approach_speed_, joint_acceleration_, joint_jerk_;
+    double final_approach_duration_;
+    double planning_period_;
+    double joint_speed_;
+    double stop_acceleration_;
+    double settle_duration_;
+    double wheel_angular_speed_, wheel_linear_speed_;
+    double servo_period_, servo_timeout_;
+    double approach_distance_;
+
+    double joint2_min_, joint2_max_, joint2_margin_;
+
+    pinocchio::SE3 handles_[2]{pinocchio::SE3::Identity(), pinocchio::SE3::Identity()};
+    pinocchio::SE3 tool_ = pinocchio::SE3::Identity();
+    pinocchio::SE3 wheel_origin_ = pinocchio::SE3::Identity();
+    Joints home_{}, approach_seed_{};
+    Joints last_target_{};
+    Joints last_velocity_{};
+    double last_angle_velocity_ = 0, last_displacement_velocity_ = 0;
+
+    std::atomic<double> wheel_angle_{0.0};
+    std::atomic<double> wheel_displacement_{0.0};
+
+    // One control owner; one small mailbox for nonblocking streaming commands.
+    std::mutex servo_mutex_;
+    std::condition_variable servo_cv_;
+    ServoTarget servo_target_;
+    std::thread servo_thread_;
+    std::atomic<bool> servo_active_{false}, shutdown_{false};
+    std::string motion_error_;
+    std::atomic<bool> cancel_{false};
+    std::atomic<bool> backend_stop_requested_{false};
+    mutable std::mutex mutex_;
+};
+
+// Aviator 外部接口实现
+Aviator::Aviator(std::unique_ptr<DataLink> datalink, std::unique_ptr<Kinematics> kinematics,
+                 std::unique_ptr<CollisionChecker> collision_checker,
+                 const std::string &config_file)
+    : impl_(std::make_unique<Impl>(std::move(datalink), std::move(kinematics),
+                                   std::move(collision_checker), config_file)) {}
+
+Aviator::~Aviator() = default;
+
+void Aviator::Init() { impl_->Init(); }
+void Aviator::Enable() { impl_->Enable(); }
+void Aviator::Disable() { impl_->Disable(); }
+void Aviator::ApproachHandles() { impl_->ApproachHandles(); }
+void Aviator::LockHandles() { impl_->LockHandles(); }
+void Aviator::MoveWheel(double angle_rad, double displacement_m, double v) {
+    impl_->MoveWheel(angle_rad, displacement_m, v);
+}
+void Aviator::ServoWheel(double angle_rad, double displacement_m, double v) {
+    impl_->ServoWheel(angle_rad, displacement_m, v);
+}
+void Aviator::UnlockHandles() { impl_->UnlockHandles(); }
+void Aviator::ResetFault() { impl_->ResetFault(); }
+void Aviator::Stop() noexcept { impl_->Stop(); }
+Status Aviator::GetStatus() { return impl_->GetStatus(); }
+std::string Aviator::GetState() const { return impl_->GetState(); }
+
+} // namespace aviator

@@ -41,6 +41,7 @@ struct InputPolicy {
     std::uint64_t future_tolerance_us = 0;
     std::string source; // Required for flight.command.
     std::string control_epoch; // Required for arm/hand.command.
+    std::string origin_topic = "flight.command";
     std::string origin_publisher_id;
     std::string origin_session_id;
     std::uint64_t origin_timeout_us = 100000;

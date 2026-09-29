@@ -50,4 +50,12 @@ install(TARGETS aviator_protocol aviator_transport aviator_runtime aviator_recor
 install(FILES protocol.hpp transport.hpp runtime.hpp startup.hpp recording.hpp recording_config.hpp camera_recording.hpp
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/aviator)
 
+# Robot-node wire/config/service helpers remain outside the pure communication build.
+if(NOT AVIATOR_COMMUNICATION_ONLY AND AVIATOR_BUILD_ROBOTICS_LIBS)
+  add_library(aviator_motion_protocol motion.cpp)
+  target_include_directories(aviator_motion_protocol PUBLIC ${PROJECT_SOURCE_DIR}/common/include)
+  target_link_libraries(aviator_motion_protocol PUBLIC aviator_runtime aviator_transport yaml-cpp)
+  target_compile_definitions(aviator_motion_protocol PRIVATE AVIATOR_SOURCE_CONFIG="${PROJECT_SOURCE_DIR}/config/system.yaml")
+endif()
+
 install(FILES ${PROJECT_SOURCE_DIR}/schemas/recording/camera_packet.proto DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/schemas)

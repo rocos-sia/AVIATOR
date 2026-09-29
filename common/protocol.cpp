@@ -121,7 +121,7 @@ bool read_origin(const Json& body, Origin& output, std::string& error) {
         origin.sample_mono_us = integer(value, "sample_mono_us");
         origin.clock_id = identifier(value, "clock_id");
         if (value.contains("topic"))
-            require(value.at("topic") == "flight.command", "unsupported origin topic");
+            require((value.at("topic") == "flight.command" || value.at("topic") == "local.task"), "unsupported origin topic");
         output = std::move(origin);
         error.clear();
         return true;

@@ -6,7 +6,7 @@
 
 系统统一采用 C++17 开发，使用 CMake 维护工程、依赖、构建、测试与安装；系统采用多进程与 ZMQ 统一消息总线。独立 aviator_bus 进程通过 XSUB → zmq::proxy() → XPUB 转发全部连续控制和状态消息。各业务进程通过统一 Topic 与 JSON 协议通信，统一使用 TCP，默认绑定本机回环地址。
 
-AVIATOR Core 负责输入源仲裁、整机状态机、运动目标生成与 FlightState 聚合；Manipulator 统一负责双臂双手的设备接入及本地安全执行。实时伺服闭环与 ZMQ 非实时通信域隔离。Monitor、Logger、Plotter 和 Replay 均采用 C++ 实现。独立数据记录节点 aviator_logger 使用 MCAP 统一记录全部机器人数据，覆盖总线消息、原始设备数据、原始图像、伺服周期数据、事件及配置；Replay 从 MCAP 提供复现能力。
+AVIATOR Core 负责输入源仲裁、整机状态机、运动目标生成与 FlightState 聚合；Manipulator 统一负责双臂双手的设备接入及本地安全执行。实时伺服闭环与 ZMQ 非实时通信域隔离。Monitor、Logger、Plotter 和 Replay 均采用 C++ 实现。当前 aviator_logger 将总线消息记录到数据 MCAP；相机采集进程将无损 PNG 直接记录到独立的图像 MCAP。两份文件共享记录会话 ID，Replay 从 MCAP 提供复现能力。其他原始设备及伺服周期数据的归档仍属后续升级项。
 
 ### 适用范围
 
@@ -47,7 +47,8 @@ Camera  ───────────────────────┘
               受限 TCP 监控出口（可选）
 
 Manipulator 内部：非实时通信 → 有界快照 → 实时伺服 → 设备
-设备/相机/伺服采集 → 独立只读记录通道 → aviator_logger → MCAP
+相机采集 → 有界图像副本队列 → PNG → 相机直接写图像 MCAP
+总线消息 → aviator_logger → 数据 MCAP；设备/伺服原始采集通道待实现
 Replay：读取 MCAP，默认连接隔离回放总线，不接入运行中的执行器
 ```
 
@@ -75,7 +76,7 @@ Replay：读取 MCAP，默认连接隔离回放总线，不接入运行中的执
 | manipulator | arm.command ↔ arm.state；hand.command ↔ hand.state| 管理双臂与双手，目标校验、实时插值、设备约束与本地安全。 |
 | camera | camera.command → camera.detection | 图像采集、方向盘检测、置信度与观测时间输出。 |
 | aviator_monitor | 订阅所需 Topic | 整机仪表、频率、数据年龄、告警和连接状态。 |
-| aviator_logger | 全量总线 Topic + 原始设备/媒体/伺服记录通道 → MCAP | 独立 C++ 数据记录节点；全量采集、异步写盘、分卷、索引、完整性统计与会话管理。 |
+| aviator_logger | 全量总线 Topic → 数据 MCAP | 独立 C++ 数据记录节点；当前只记录收到的总线 JSON。 |
 | aviator_plotter | 订阅或读取日志 | 趋势曲线、目标与反馈对齐、导出分析。 |
 | aviator_replay | 日志 → 隔离总线 | 原速、倍速、单步和算法输入回放。 |
 
@@ -342,11 +343,11 @@ aviator_logger 是独立部署的基础节点，统一使用 MCAP 作为机器�
 | 控制与状态 | 八个主 Topic、system.state、system.diagnostic、system.event 及全部已注册扩展 Topic | Logger 订阅本地总线全部 Topic，逐条保存收到的消息。 |
 | 设备原始输入输出 | RS422 收发字节及校验结果、USB 原始报告、驱动实际提供的关节位置/速度/力矩/电流/温度/故障、传感器数据 | 设备适配层在解析或聚合前后提供带方向和样本标识的记录副本。 |
 | 实时控制数据 | 每伺服周期的输入目标、插值目标、实际下发量、反馈、限幅/安全判定、周期耗时和 deadline miss | RT 写预分配有界 SPSC 环形队列，非实时采集线程取出并传输；不只记录 100 Hz 状态。 |
-| 视觉与媒体 | 每次成功采集的原始图像、相机参数、帧号、曝光/采样时间、检测结果及其关联帧号；已配置的深度/点云 | 相机采集侧先提供记录副本，再进入 latest-frame 推理队列；媒体走独立记录通道。 |
+| 视觉与媒体 | 已启用图像记录时的采集帧、相机参数、帧号、采样时间、检测结果及其关联帧号；已配置的深度/点云 | 相机采集侧向有界队列提交记录副本，后台线程无损编码并直接写图像 MCAP；检测结果仍走控制总线。 |
 | 服务与事件 | 可靠服务完整请求、响应、执行结果、授权变化、状态转换、故障与恢复 | 服务两端通过记录适配器采集；system.event 摘要不能替代完整服务记录。 |
 | 运行上下文 | 构建哈希、依赖清单、协议 Schema、设备清单、配置、标定、坐标变换及其版本、时钟同步状态 | 会话开始保存快照，运行中变更保存新版本及生效时间；剔除密码、密钥等凭据。 |
 
-原始媒体和高频伺服数据不经过控制 XSUB/XPUB，不受业务 JSON 的 64 KiB 上限约束，也不以 Base64 图像挤占控制总线。使用独立 ZMQ TCP 记录入口（默认 tcp://127.0.0.1:5557，由 aviator_logger bind，非实时采集适配器 connect），由非实时适配器经有界队列发送版本化二进制记录信封；信封至少包含数据源、类型/版本、源会话、样本序号、采样时钟及负载长度。原始图像字节随信封进入 MCAP；共享内存仅作为传输优化时必须明确缓冲区所有权和释放确认，文件不能仅保存运行期共享内存句柄。该通道只承载记录副本，不接受执行器控制指令。
+原始媒体和高频伺服数据不经过控制 XSUB/XPUB，不受业务 JSON 的 64 KiB 上限约束，也不以 Base64 图像挤占控制总线。当前相机在非实时线程将 BGR8 帧编码成无损 PNG，连同相机 ID、帧号、源会话和采样单调时间写入单独的图像 MCAP；不使用 `5557`。后续设备/伺服原始记录可使用独立入口 `5557`，但当前 Logger 尚未实现这一入口。控制线程和相机检测线程均不得等待图像压缩或写盘。
 
 #### MCAP 数据映射
 
@@ -357,7 +358,7 @@ MCAP 提供 Schema、Channel、带时间戳的 Message、Metadata、Attachment �
 | Schema | JSON 消息使用类型名与协议版本命名，encoding=jsonschema，内容为对应 JSON Schema；二进制记录信封使用冻结的 Protobuf Schema，并嵌入含依赖的描述符。 |
 | Channel | 总线消息保留原 Topic；按 Topic、Schema 版本、publisher_id、session_id 区分 Channel。原始数据使用 record.raw.*、record.servo.*、record.camera.* 命名。 |
 | Message.data | 合法 JSON 消息直接保存原始 Frame1 字节，message_encoding=json；媒体与原始设备数据使用 message_encoding=protobuf 的记录信封，内含原始字节及解码参数。 |
-| Message.log_time | Logger 接收时的 Unix UTC 纳秒；另在 record.ingest 保存接收单调时间、clock_id、全局接收顺序及源标识，用于时钟跳变时复现。 |
+| Message.log_time | 数据 MCAP 使用 Logger 接收时的 Unix UTC 纳秒；图像 MCAP 使用相机写入时的 Unix UTC 纳秒，原始采样单调时间保留在 Protobuf 消息中。后续 record.ingest 用于保存全局接收顺序。 |
 | Message.publish_time | 有明确发布 UTC 时使用该时间；当前 timestamp 是快照生成时间，不能直接冒充发布时间，故缺失发布时刻时取 log_time，采样时间仍保留于原消息。微秒转纳秒使用检查溢出的 uint64 运算。 |
 | Message.sequence | 使用源 sequence 的低 32 位；原始完整序号保留在负载或采集信封中。完整性核对使用完整序号与源会话，不能仅凭该字段判断。 |
 | Metadata / Attachment | 元数据保存会话 ID、构建与配置哈希、分卷序号及完整性状态；附件保存配置、标定和数据清单快照。 |
@@ -366,9 +367,9 @@ json、protobuf 与 jsonschema 的编码名称遵循 MCAP 官方注册表。[[8]
 
 #### 线程、文件与完整性
 
-接收线程负责总线与原始数据接入、时间戳和有界入队，写盘线程独占 MCAP Writer；压缩、索引及磁盘 I/O 均处于非实时域。按数据类别划分字节配额，防止图像突发耗尽控制与事件的记录队列。Logger 不使用控制端的 latest-value mailbox，也不直接照搬控制端 HWM=8；记录队列深度依据第11章实测峰值设计。
+Logger 的接收线程负责总线时间戳和有界入队，写盘线程独占数据 MCAP Writer。相机的后台线程独占图像 MCAP Writer，图像待编码队列最多两帧；压缩、索引和磁盘 I/O 不进入检测线程。Logger 不使用控制端的 latest-value mailbox，也不直接照搬控制端 HWM=8。
 
-文件使用 session_id/segment_000001.mcap 命名；每卷独立包含 Schema、Channel 和会话上下文。采用 Chunk、消息及 Chunk 索引、CRC，压缩初始选 Zstd；JPEG 等已压缩负载是否再压缩由测量决定。台架初始建议按 1 GiB 或 60 s 先到者分卷，Chunk 目标 4 MiB，均需随最大单条图像和目标磁盘性能调整。写入期间使用 .mcap.partial，成功关闭、持久化并校验后再原子更名，更新含哈希与计数的会话清单。flush 不等于断电持久化，持久化间隔及可接受尾部丢失窗口必须独立配置并测试。
+当前分别使用 `data.mcap` 和 `camera.mcap`，以相同记录会话 ID 关联；图像 MCAP 的 Protobuf 消息用源会话、相机 ID 和帧号与检测结果关联。两份文件均先写 `.partial`，正常关闭后才发布最终文件。图像使用 4 MiB Chunk、索引与 CRC，PNG 负载不再叠加 Chunk 压缩。自动分卷、会话清单和周期性持久化尚未实现；两小时记录前必须实测图像体积、编码吞吐和允许的尾部丢失窗口。
 
 正常关闭时先让生产者结束采集并提交结束序号，Logger 限时排空队列、写完索引和文件尾，再退出。崩溃遗留文件保留原件，恢复工具仅将可校验的完整记录导出为新 MCAP，重建索引并报告丢失区间；不保证恢复未落盘缓存或损坏 Chunk。
 
@@ -705,3 +706,11 @@ RS422 波特率与线协议；双臂和双手自由度及反馈能力；坐标�
 <a id="ref-9"></a>
 
 [9] [CMake 官方手册 CMake Presets](https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html)
+
+## 当前双臂迁移实现说明
+
+aviator_core 与 manipulator 已按第 15 章职责拆分；原示例的流程、规划和 Demo 在 Core，设备与本地执行在 Manipulator，连续数据经过 aviator_bus。细化协议见 ZMQ 文档第 19 节。
+
+本次交付范围是原示例的本地开环双臂任务。按当前需求不启用 TCP/关节跟踪偏差及抓握验证准入，软件锁定不能解释为实际抓握已验证；这是当前任务模式相对完整系统 CONTROL 准入的明确差异。缺失手部和视觉能力诚实报告无效。设备故障、命令/反馈时效、指令连续性和规划检查独立保留。
+
+100 Hz 窗口传输与 1 ms 本地执行分离，双臂使用共同执行游标；它不提供硬件同步或未经实测的硬实时承诺。全量记录、飞控标定映射、真实手部驱动、视觉闭环等后续阶段仍需独立实现与验收。

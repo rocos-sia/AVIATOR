@@ -66,6 +66,8 @@ bool InputGuard::accept(const Message& message, std::uint64_t now, std::string& 
             message.body.at("control_epoch") != policy_.control_epoch)
             return reject("unauthorized control epoch");
         if (!read_origin(message.body, origin, error)) return false;
+        if (message.body.at("origin").value("topic", "flight.command") != policy_.origin_topic)
+            return reject("unauthorized origin topic");
         if (origin.publisher_id != policy_.origin_publisher_id ||
             origin.session_id != policy_.origin_session_id || origin.clock_id != policy_.clock_id)
             return reject("unauthorized origin");

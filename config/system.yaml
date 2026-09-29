@@ -1,3 +1,11 @@
-# 运行模式、输入源、TCP 端点、频率与超时
-# 目录占位：字段与参数待接口冻结，不可用于设备运行。
-{}
+# Both nodes and the bus run on this host. Paths are relative to this file.
+robot: robot.yaml
+config_id: aviator-control-v1
+bus:
+  publish: tcp://127.0.0.1:5555
+  subscribe: tcp://127.0.0.1:5556
+manipulator_service: tcp://127.0.0.1:5558
+command_timeout_ms: 50
+origin_timeout_ms: 100
+# Arm command/state: 100 Hz. Local dual-arm execution: 1 ms.
+# local.task is the explicitly enabled Core task supervisor, not a FlightCommand.
