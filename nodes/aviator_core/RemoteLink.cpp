@@ -38,9 +38,10 @@ RemoteLink::~RemoteLink() {
 void RemoteLink::heartbeat() {
     heartbeat_ = monotonic_us();
 }
-void RemoteLink::report(const std::string &state) {
+void RemoteLink::report(const std::string &state, const std::string &source) {
     std::lock_guard<std::mutex> lock(mutex_);
     phase_ = state;
+    source_ = source;
 }
 Json RemoteLink::operation(const std::string &op) {
     std::lock_guard<std::mutex> lock(service_mutex_);
@@ -325,7 +326,7 @@ void RemoteLink::io() {
                                    ? "GRASPING"
                                    : ((phase_ == "MOVING" || phase_ == "SERVO") ? "CONTROL" : "STANDBY"));
                     m.body["system"] = {{"state", phase},
-                                        {"control_source", "NONE"},
+                                        {"control_source", source_},
                                         {"current_error_code", state_.fault ? 28673 : 0},
                                         {"last_error_code", state_.fault ? 28673 : 0},
                                         {"task_phase", phase_}};

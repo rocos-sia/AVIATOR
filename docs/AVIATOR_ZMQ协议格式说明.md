@@ -982,4 +982,6 @@ arm.state.execution 包含 trajectory_id、tick、target[14]、stopping、fault�
 
 保留原示例已废除的判据：不按 TCP 偏差、关节跟踪偏差、grasp.ready 或抓握丢失阻断执行。软件锁定不等于独立抓握验证。缺失手部与视觉测量为 null/invalid，不阻止当前仅双臂的本地开环任务；它们不能伪装成有效测量。
 
-本次没有实现飞控 roll/pitch 到机械行程的标定映射、真实手部控制、视觉闭环、完整 system.event 服务审计、全量 MCAP 或跨主机控制。离散服务与短轨迹能力只对明确支持本节约定的节点开放，既有 simulation 节点不能直接消费此轨迹模式。
+新增 `aviator_core_servo` 本地任务入口：默认自动绑定第一条通过来源、时钟、有效性和时效检查的 flight_gateway 消息的 session，也可用 --gateway-session 手动指定。接收 source=JOYSTICK 的 flight.command，按 `roll * 0.87266` rad、`min(pitch, 0) * 0.170` m 映射并调用 ServoWheel(v=1)。入口检查原始采样时效、有效位和序号；失效后停止更新目标，由 Servo 超时减速，同一会话恢复有效数据后可恢复跟随。自动绑定只进行一次，网关重启后必须重启 Core 重新绑定，不在失效后自动切换会话。flight.state.control_source 在有效跟随时为 JOYSTICK，否则为 NONE。设备轨迹仍使用 Core 的 local.task 来源，尚未把网关原始 origin 贯穿到 Manipulator，不能将此入口解释为完整飞控授权链路。具体启动命令和超时边界见 Core README。
+
+双臂控制节点没有实现真实手部控制、视觉闭环或跨主机控制。离散服务与短轨迹能力只对明确支持本节约定的节点开放，既有 simulation 节点不能直接消费此轨迹模式。

@@ -9,7 +9,7 @@ class RemoteLink final : public DataLink {
     explicit RemoteLink(const MotionConfig &);
     ~RemoteLink() override;
     void heartbeat();
-    void report(const std::string &state);
+    void report(const std::string &state, const std::string &source = "NONE");
     double getJointPosition(Side, int) const override;
     double getJointVelocity(Side, int) const override;
     std::array<double, 14> jointTargets() const override;
@@ -45,7 +45,7 @@ class RemoteLink final : public DataLink {
     std::shared_ptr<const std::vector<JointFrame>> trajectory_;
     uint64_t trajectory_id_ = 0, start_ = 0, received_ = 0, sample_ = 0, ack_ = 0;
     bool enabled_ = false, publishing_ = false, feedback_valid_ = false;
-    std::string error_, phase_ = "INIT";
+    std::string error_, phase_ = "INIT", source_ = "NONE";
     std::thread thread_;
 };
 } // namespace aviator

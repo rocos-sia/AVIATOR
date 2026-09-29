@@ -107,6 +107,7 @@ int main(int argc, char **argv) {
         check(argc == 6, "Expected bus manipulator core source_root mode");
         const fs::path source = argv[4];
         const std::string mode = argv[5];
+        const bool flight = mode == "flight" || mode == "flight_auto";
         char pattern[] = "/tmp/aviator-control-test-XXXXXX";
         directory = mkdtemp(pattern);
         std::cout << "Test logs: " << directory << std::endl;
@@ -198,8 +199,15 @@ int main(int argc, char **argv) {
                 << "PASS service: deduplication, conflicting identities, malformed input, restart fencing\n";
             return 0;
         }
+        const auto gateway_session = new_session_id(), wrong_session = new_session_id();
+        zmq::socket_t flight_pub(ctx, zmq::socket_type::pub);
+        configure(flight_pub);
+        if (flight) flight_pub.connect(input);
         std::vector<std::string> core_args{argv[3], "--config", (directory / "system.yaml").string()};
-        if (mode != "interactive")
+        if (mode == "flight") {
+            core_args.push_back("--gateway-session");
+            core_args.push_back(gateway_session);
+        } else if (!flight && mode != "interactive")
             core_args.push_back(mode == "demo" ? "--demo" : "--servo-demo");
         Child core(core_args, directory / "core.log", mode == "interactive");
         int console_stage = 0;
@@ -211,6 +219,10 @@ int main(int argc, char **argv) {
         bool enabled = false, locked = false, killed = false, fault = false;
         double max_angle = -1, min_angle = 1, min_displacement = 1, max_error = 0;
         uint64_t killed_at = 0;
+        int flight_stage = 0;
+        uint64_t flight_at = 0, flight_publish_at = 0, flight_seq = 0;
+        double reference_angle = 0, reference_displacement = 0, held_angle = 0, held_displacement = 0;
+        bool hold_sampled = false;
         auto until = monotonic_us() + 180000000;
         while (monotonic_us() < until) {
             WireMessage wire;
@@ -224,6 +236,8 @@ int main(int argc, char **argv) {
                 }
                 ++states;
                 const auto &body = m.body;
+                reference_angle = body["wheel_reference"]["angle"];
+                reference_displacement = body["wheel_reference"]["displacement"];
                 enabled = enabled || body["arms"]["left"]["enabled"].get<bool>();
                 locked = locked || body["software_lock"].get<bool>();
                 fault = body["execution"]["fault"].get<bool>();
@@ -257,6 +271,76 @@ int main(int argc, char **argv) {
                 }
                 if (mode != "watchdog")
                     check(!fault, body["execution"]["error"].get<std::string>());
+            }
+            if (flight) {
+                const auto now = monotonic_us();
+                const auto text = core.text();
+                if (flight_stage == 0 && text.find("Waiting for flight.command") != std::string::npos) {
+                    flight_stage = 1;
+                    flight_at = now;
+                }
+                if (flight_stage >= 1 && flight_stage <= 6 && now >= flight_publish_at) {
+                    // Match flight_gateway's envelope and preserve the original sample time.
+                    auto message = motionMessage(Topic::flight_command, "flight_gateway",
+                        flight_stage == 1 ? wrong_session : gateway_session, ++flight_seq);
+                    const double roll = flight_stage == 2 ? .03 : flight_stage == 3 ? -.03 :
+                                        flight_stage == 6 ? -1 : 1;
+                    const double pitch = flight_stage == 3 ? -.02 : flight_stage == 6 ? -1 : 1;
+                    message.body = {{"source", "JOYSTICK"}, {"control", {{"roll", roll}, {"pitch", pitch}}}};
+                    if (mode == "flight_auto" && flight_stage == 1) {
+                        // None of these otherwise well-formed messages may claim the first session.
+                        switch (flight_seq % 5) {
+                        case 0: message.header.valid = false; break;
+                        case 1: message.header.sample_mono_us -= 1000000; break;
+                        case 2: message.header.publisher_id = "unrelated_node"; break;
+                        case 3: message.header.clock_id = "different_clock"; break;
+                        case 4: message.body["source"] = "FLIGHT"; break;
+                        }
+                    }
+                    if (flight_stage == 4) message.header.sample_mono_us = flight_at;
+                    if (flight_stage == 4 && flight_seq % 2 == 0) {
+                        // A restarted gateway must not replace the bound session, even when fresh.
+                        message.header.session_id = wrong_session;
+                        message.header.sample_mono_us = now;
+                    }
+                    publishMessage(flight_pub, message);
+                    flight_publish_at = now + 20000;
+                }
+                const uint64_t duration[] = {0, 400000, 1500000, 2000000, 1000000, 150000, 150000};
+                if (flight_stage == 4 && now - flight_at > 700000 && !hold_sampled) {
+                    held_angle = reference_angle;
+                    held_displacement = reference_displacement;
+                    hold_sampled = true;
+                }
+                if (flight_stage >= 1 && flight_stage <= 6 && now - flight_at >= duration[flight_stage]) {
+                    if (flight_stage == 1)
+                        check(text.find("Servo target") == std::string::npos, "Wrong gateway session moved robot");
+                    if (flight_stage == 2) {
+                        if (mode == "flight_auto")
+                            check(text.find("Bound flight_gateway session=" + gateway_session) != std::string::npos &&
+                                  text.find("Bound flight_gateway session=" + wrong_session) == std::string::npos,
+                                  "Automatic binding did not choose the first valid gateway session");
+                        check(max_angle > .01, "Positive roll did not move physical wheel");
+                        check(std::abs(reference_displacement) < 1e-8, "Positive pitch produced pull target");
+                    }
+                    if (flight_stage == 3)
+                        check(min_displacement < -.001, "Negative pitch did not pull wheel");
+                    if (flight_stage == 4) {
+                        check(text.find("Servo command timeout") != std::string::npos,
+                              "Replayed old samples kept Servo alive");
+                        check(hold_sampled && std::abs(reference_angle - held_angle) < 1e-6 &&
+                              std::abs(reference_displacement - held_displacement) < 1e-6,
+                              "Servo did not hold after stale input");
+                    }
+                    if (flight_stage == 6) {
+                        check(text.find("Servo target angle=0.87266 displacement=0 v=1") != std::string::npos &&
+                              text.find("Servo target angle=-0.87266 displacement=-0.17 v=1") != std::string::npos,
+                              "Full-scale mapping or fresh-input resume failed");
+                        core.terminate(SIGINT);
+                    }
+                    ++flight_stage;
+                    flight_at = now;
+                }
             }
             if (mode == "interactive") {
                 const auto text = core.text();
@@ -292,7 +376,9 @@ int main(int argc, char **argv) {
         }
         check(mode != "watchdog", "Watchdog test timed out");
         check(core.done() && core.status == 0, core.text() + "\n" + manipulator.text());
-        if (mode == "interactive")
+        if (flight)
+            check(flight_stage == 7, "Flight control sequence incomplete");
+        else if (mode == "interactive")
             check(console_stage == 7, "Interactive sequence incomplete");
         else
             check(core.text().find("Demo completed") != std::string::npos, "Demo did not complete");
