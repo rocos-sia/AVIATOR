@@ -2,6 +2,7 @@
 #include "motion.hpp"
 #include <condition_variable>
 #include <thread>
+#include <deque>
 namespace aviator {
 // Owns non-RT bus IO. Planning consumes feedback snapshots; it never accesses an SDK.
 class RemoteLink final : public DataLink {
@@ -22,6 +23,10 @@ class RemoteLink final : public DataLink {
     void setJointPositions(const Joints &) override;
     void runTrajectory(const std::vector<JointFrame> &, const std::atomic<bool> &) override;
     void stopTrajectory() override;
+    void beginStream(const std::vector<JointFrame>&) override;
+    void appendStream(const std::vector<JointFrame>&) override;
+    size_t streamAhead() const override;
+    void finishStream() override;
     void waitTick() override;
     double time() const override {
         return double(monotonic_us()) / 1e6;
@@ -43,6 +48,9 @@ class RemoteLink final : public DataLink {
     Json arm_body_ = Json::object(), hand_body_ = Json::object();
     Joints speed_{};
     std::shared_ptr<const std::vector<JointFrame>> trajectory_;
+    std::deque<JointFrame> stream_;
+    uint64_t stream_first_ = 0;
+    bool streaming_ = false, stream_finished_ = false;
     uint64_t trajectory_id_ = 0, start_ = 0, received_ = 0, sample_ = 0, ack_ = 0;
     bool enabled_ = false, publishing_ = false, feedback_valid_ = false;
     std::string error_, phase_ = "INIT", source_ = "NONE";

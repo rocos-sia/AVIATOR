@@ -196,6 +196,17 @@ UUID 拟统一采用小写带连字符文本。一般标识字符串拟限制为
 
 Core 同时校验部署模式、publisher/session 白名单和 source。到达顺序不能切换控制权。摇杆失联或外部样本过期后发布 invalid 或停止有效输出；禁止用新时间重发旧值延长有效期。切换来源通过可靠服务或受控本地流程完成。
 
+当前 JOYSTICK 位置保持扩展（需消费者显式启用，默认拒绝）：
+
+| 字段 | 类型 | 规则 |
+| --- | --- | --- |
+| `input_state.mode` | string | 固定 POSITION_HOLD，仅 JOYSTICK flight.command 可用。 |
+| `input_state.device_connected` | bool | 内核设备接口检查状态；false 时头部 valid 必须为 false。 |
+| `input_state.checked_mono_us` | uint53 | 最近一次成功设备状态检查时间，同一 clock_id；不能由重发消息刷新。 |
+
+原始 sample_mono_us 始终保留。valid=true 时必须已经采集过完整事件帧，且 checked_mono_us >= sample_mono_us > 0。位置保持允许原始轴事件较旧，独立检查设备检查年龄和接收中断时长（默认均 100 ms），拒绝未来或倒退时间、重复序号和其他会话。有效位失效立即撤销可用性，即使设备检查时间已旧；新序号不能使旧设备检查重新有效。普通消息保留原始采样时效规则。设备查询只能证明内核接口可用，不能证明设备固件持续产出新报告；不是硬件心跳。该扩展明确允许健康设备的静止位置保持，不允许改写原始采样时间伪装新事件。
+
+
 ### 5.2 完整 Frame1 示例
 
 Frame0：`flight.command`。
@@ -272,6 +283,8 @@ Frame0：`arm.command`。
 | `arms.{side}.points[].joint_velocity` | number[] | 每点完整关节速度，rad/s。 |
 
 每侧点数拟限制为 2—32，左右点数与时间网格相同；不得同时带 `joint_position` 单点字段。最大时间跨度、允许前瞻、接纳时起点容差及插值算法须在能力配置中冻结。轨迹替换整个未执行段，不是追加队列；接纳时检查位置和速度连续性。播放中的源数据和本地命令仍须满足 watchdog，轨迹结束时间不能延长授权。未完成这些约定前仅实现 JOINT_POSITION。
+
+**当前 Core/Manipulator 实现约定（覆盖上段拟定方案）：** `JOINT_TRAJECTORY` 使用 `execution=SYNCHRONIZED_TICKS`、`trajectory_id`、`first_tick`、`total_ticks`、`trajectory_start_mono_us` 和 `wheel_reference`。普通离线轨迹为 2 ms 网格、每臂最多 32 点，执行端补出中间 1 ms 点。Servo 带 `streaming=true` 和 `finished`，每臂最多 51 个原始 1 ms 点，每点额外包含七轴 `joint_acceleration`（rad/s²）；速度为规划导数（rad/s），不以差分值替代。左右臂点数和时基必须一致，整个流的初始及最终静止点导数为零，窗口/规划块边界继承导数。连续追加保持同一轨迹 ID，`total_ticks` 只增不减，已提交区间的 q/dq/ddq 不允许改写；替换网络窗口时检查重叠样本。`finished=true` 表示已经提交至静止终点，未结束的流发生缓冲耗尽则报错。Core 本地队列不超过 250 ms，全部窗口仍受相同的 origin/command watchdog 约束。升级此扩展须同时重新编译 Core 和 Manipulator。
 
 ## 7. arm.state — ArmState
 
@@ -984,6 +997,6 @@ arm.state.execution 包含 trajectory_id、tick、target[14]、stopping、fault�
 
 保留原示例已废除的判据：不按 TCP 偏差、关节跟踪偏差、grasp.ready 或抓握丢失阻断执行。软件锁定不等于独立抓握验证。缺失手部与视觉测量为 null/invalid，不阻止当前仅双臂的本地开环任务；它们不能伪装成有效测量。
 
-新增 `aviator_core_servo` 本地任务入口：默认自动绑定第一条通过来源、时钟、有效性和时效检查的 flight_gateway 消息的 session，也可用 --gateway-session 手动指定。接收 source=JOYSTICK 的 flight.command，按 `roll * 0.87266` rad、`min(pitch, 0) * 0.170` m 映射并调用 ServoWheel(v=1)。入口检查原始采样时效、有效位和序号；失效后停止更新目标，由 Servo 超时减速，同一会话恢复有效数据后可恢复跟随。自动绑定只进行一次，网关重启后必须重启 Core 重新绑定，不在失效后自动切换会话。flight.state.control_source 在有效跟随时为 JOYSTICK，否则为 NONE。设备轨迹仍使用 Core 的 local.task 来源，尚未把网关原始 origin 贯穿到 Manipulator，不能将此入口解释为完整飞控授权链路。具体启动命令和超时边界见 Core README。
+新增 `aviator_core_servo` 本地任务入口：默认自动绑定第一条通过来源、时钟、有效性和时效检查的 flight_gateway 消息的 session，也可用 --gateway-session 手动指定。接收 source=JOYSTICK 的 flight.command，按 `roll * 0.87266` rad、`min(pitch, 0) * 0.170` m 映射并调用 ServoWheel(v=1)。入口显式启用 JOYSTICK POSITION_HOLD，按第 5.1 节检查设备检查时间、消息接收时效、有效位和序号；普通输入仍检查原始采样时效。失效后停止更新目标，由 Servo 超时减速，同一会话恢复有效数据后可恢复跟随。自动绑定只进行一次，网关重启后必须重启 Core 重新绑定，不在失效后自动切换会话。flight.state.control_source 在有效跟随时为 JOYSTICK，否则为 NONE。设备轨迹仍使用 Core 的 local.task 来源，尚未把网关原始 origin 贯穿到 Manipulator，不能将此入口解释为完整飞控授权链路。具体启动命令和超时边界见 Core README。
 
 双臂控制节点没有实现真实手部控制、视觉闭环或跨主机控制。离散服务与短轨迹能力只对明确支持本节约定的节点开放，既有 simulation 节点不能直接消费此轨迹模式。

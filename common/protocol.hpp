@@ -54,5 +54,7 @@ bool decode(std::string_view topic, std::string_view payload,
             Message& output, std::string& error);
 bool encode(const Message& message, std::string& payload, std::string& error);
 bool read_origin(const nlohmann::json& body, Origin& output, std::string& error);
+// Explicit JOYSTICK position-hold extension; leaves original event time in the header.
+bool read_position_hold(const Message&, std::uint64_t& checked_us, bool& connected, std::string& error);
 
 } // namespace aviator

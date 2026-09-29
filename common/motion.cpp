@@ -148,22 +148,35 @@ Json encodeWindow(const TrajectoryWindow &w, const std::string &session, const s
                 {"sample_mono_us", w.origin_sample},
                 {"clock_id", local_clock_id()},
                 {"topic", "local.task"}}}};
+    const size_t stride = w.streaming ? 1 : 2;
+    if (w.streaming) {
+        b["streaming"] = true;
+        b["finished"] = w.finished;
+    }
     for (int side = 0; side < 2; ++side) {
         Json points = Json::array();
-        for (size_t k = 0; k < w.count; k += 2) {
+        for (size_t k = 0; k < w.count; k += stride) {
             std::array<double, 7> q{}, v{};
             for (int j = 0; j < 7; ++j) {
                 q[j] = w.frames[k].q[7 * side + j];
-                if (k + 2 < w.count)
+                if (w.streaming) v[j] = w.frames[k].dq[7 * side + j];
+                else if (k + 2 < w.count)
                     v[j] = (w.frames[k + 2].q[7 * side + j] - q[j]) * 500;
             }
             points.push_back(
                 {{"time_from_start_us", k * 1000}, {"joint_position", q}, {"joint_velocity", v}});
         }
+        if (w.streaming) {
+            for (size_t k = 0; k < w.count; ++k) {
+                std::array<double, 7> a{};
+                for (int j = 0; j < 7; ++j) a[j] = w.frames[k].ddq[7 * side + j];
+                points[k]["joint_acceleration"] = a;
+            }
+        }
         b["arms"][side ? "right" : "left"]["points"] = points;
     }
     b["wheel_reference"] = Json::array();
-    for (size_t k = 0; k < w.count; k += 2)
+    for (size_t k = 0; k < w.count; k += stride)
         b["wheel_reference"].push_back({w.frames[k].angle, w.frames[k].displacement});
     return b;
 }
@@ -172,6 +185,9 @@ TrajectoryWindow decodeWindow(const Message &m, const Joints &lo, const Joints &
     require(b.at("mode") == "JOINT_TRAJECTORY" && b.at("execution") == "SYNCHRONIZED_TICKS",
             "Unsupported trajectory mode");
     TrajectoryWindow w;
+    w.streaming = b.value("streaming", false);
+    w.finished = b.value("finished", false);
+    const size_t stride = w.streaming ? 1 : 2;
     w.id = integer(b.at("trajectory_id"));
     w.first = integer(b.at("first_tick"));
     w.total = integer(b.at("total_ticks"));
@@ -179,19 +195,19 @@ TrajectoryWindow decodeWindow(const Message &m, const Joints &lo, const Joints &
     w.sequence = m.header.sequence;
     w.sample = m.header.sample_mono_us;
     w.origin_sample = integer(b.at("origin").at("sample_mono_us"));
-    require(w.id > 0 && w.total >= 2 && w.total <= 3600000 && w.first <= w.total && w.first % 2 == 0 &&
-                w.total % 2 == 0,
+    require(w.id > 0 && w.total >= 2 && w.total <= 3600000 && w.first <= w.total && w.first % stride == 0 &&
+                w.total % stride == 0,
             "Trajectory range exceeds budget or tick grid");
     for (int side = 0; side < 2; ++side) {
         const auto &points = b.at("arms").at(side ? "right" : "left").at("points");
-        require(points.is_array() && points.size() >= 2 && points.size() <= 32,
-                "Trajectory requires 2..32 points");
+        require(points.is_array() && points.size() >= 2 && points.size() <= (w.streaming ? 51 : 32),
+                "Invalid trajectory point count");
         if (!side)
-            w.count = 2 * (points.size() - 1) + 1;
+            w.count = stride * (points.size() - 1) + 1;
         else
-            require(2 * (points.size() - 1) + 1 == w.count, "Dual-arm time grids differ");
+            require(stride * (points.size() - 1) + 1 == w.count, "Dual-arm time grids differ");
         for (size_t k = 0; k < points.size(); ++k) {
-            require(integer(points[k].at("time_from_start_us")) == k * 2000, "Expected 2 ms wire time grid");
+            require(integer(points[k].at("time_from_start_us")) == k * stride * 1000, "Unexpected wire time grid");
             const auto &q = points[k].at("joint_position");
             const auto &v = points[k].at("joint_velocity");
             require(q.is_array() && v.is_array() && q.size() == 7 && v.size() == 7, "Expected seven joints");
@@ -200,28 +216,42 @@ TrajectoryWindow decodeWindow(const Message &m, const Joints &lo, const Joints &
                 const int i = 7 * side + j;
                 double x = q[j].get<double>();
                 require(std::isfinite(x) && x >= lo[i] && x <= hi[i] &&
-                            std::abs(v[j].get<double>()) <= speed[i] + 1e-7,
+                            std::isfinite(v[j].get<double>()) &&
+                            (w.streaming || std::abs(v[j].get<double>()) <= speed[i] + 1e-7),
                         "Joint limit/velocity violation");
-                if (k)
-                    require(std::abs(x - w.frames[2 * (k - 1)].q[i]) <= speed[i] * .002 + 1e-8,
+                if (k && !w.streaming)
+                    require(std::abs(x - w.frames[stride * (k - 1)].q[i]) <= speed[i] * stride * .001 + 1e-8,
                             "Discontinuous segment");
-                w.frames[2 * k].q[i] = x;
+                w.frames[stride * k].q[i] = x;
+                if (w.streaming) {
+                    const auto &a = points[k].at("joint_acceleration");
+                    require(a.is_array() && a.size() == 7 && a[j].is_number(), "Expected joint acceleration");
+                    w.frames[k].dq[i] = v[j].get<double>();
+                    w.frames[k].ddq[i] = a[j].get<double>();
+                    require(std::isfinite(w.frames[k].dq[i]) && std::isfinite(w.frames[k].ddq[i]), "Nonfinite derivatives");
+                }
             }
         }
     }
     require(w.first + w.count <= w.total + 1, "Window extends past trajectory end");
+    if (w.streaming && (w.first == 0 || (w.finished && w.first + w.count == w.total + 1))) {
+        const auto &f = w.first == 0 ? w.frames[0] : w.frames[w.count - 1];
+        for (size_t j = 0; j < 14; ++j)
+            require(std::abs(f.dq[j]) < 1e-8 && std::abs(f.ddq[j]) < 1e-8,
+                    "Servo start/end must be at planned rest");
+    }
     const auto &wheel = b.at("wheel_reference");
-    require(wheel.is_array() && 2 * (wheel.size() - 1) + 1 == w.count, "Missing wheel references");
+    require(wheel.is_array() && stride * (wheel.size() - 1) + 1 == w.count, "Missing wheel references");
     for (size_t k = 0; k < wheel.size(); ++k) {
         require(wheel[k].is_array() && wheel[k].size() == 2, "Invalid wheel reference");
-        w.frames[2 * k].angle = wheel[k][0].get<double>();
-        w.frames[2 * k].displacement = wheel[k][1].get<double>();
-        require(std::isfinite(w.frames[2 * k].angle) && std::abs(w.frames[2 * k].angle) <= .87266 + 1e-8 &&
-                    std::isfinite(w.frames[2 * k].displacement) &&
-                    w.frames[2 * k].displacement >= -.170 - 1e-8 && w.frames[2 * k].displacement <= 1e-8,
+        w.frames[stride * k].angle = wheel[k][0].get<double>();
+        w.frames[stride * k].displacement = wheel[k][1].get<double>();
+        require(std::isfinite(w.frames[stride * k].angle) && std::abs(w.frames[stride * k].angle) <= .87266 + 1e-8 &&
+                    std::isfinite(w.frames[stride * k].displacement) &&
+                    w.frames[stride * k].displacement >= -.170 - 1e-8 && w.frames[stride * k].displacement <= 1e-8,
                 "Wheel reference out of range");
     }
-    for (size_t k = 1; k < w.count; k += 2) {
+    if (!w.streaming) for (size_t k = 1; k < w.count; k += 2) {
         for (size_t j = 0; j < 14; ++j)
             w.frames[k].q[j] = (w.frames[k - 1].q[j] + w.frames[k + 1].q[j]) * .5;
         w.frames[k].angle = (w.frames[k - 1].angle + w.frames[k + 1].angle) * .5;

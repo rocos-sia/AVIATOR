@@ -38,6 +38,7 @@ struct ArmFeedback {
 struct JointFrame {
     std::array<double, 14> q{};
     double angle = 0, displacement = 0;
+    std::array<double, 14> dq{}, ddq{};
 };
 
 // 数据链接抽象接口：臂IO + 抓取IO + 周期同步
@@ -50,6 +51,10 @@ class DataLink {
         throw std::runtime_error("Trajectory streaming requires the Core network adapter");
     }
     virtual void stopTrajectory() {}
+    virtual void beginStream(const std::vector<JointFrame>&) { throw std::runtime_error("Stream unavailable"); }
+    virtual void appendStream(const std::vector<JointFrame>&) { throw std::runtime_error("Stream unavailable"); }
+    virtual size_t streamAhead() const { throw std::runtime_error("Stream unavailable"); }
+    virtual void finishStream() { throw std::runtime_error("Stream unavailable"); }
     virtual ArmFeedback armFeedback() const { throw std::runtime_error("Feedback snapshot unavailable"); }
     virtual void commandDeadline(double) {} // CLOCK_MONOTONIC seconds, checked in SDK callback.
 

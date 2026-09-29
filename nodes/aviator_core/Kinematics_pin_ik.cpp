@@ -3,6 +3,10 @@
 
 #include <pin_ik/pin_ik.hpp>
 #include <pin_ik/urdf.hpp>
+#include <pinocchio/algorithm/frames.hpp>
+#include <pinocchio/algorithm/jacobian.hpp>
+#include <Eigen/QR>
+#include <Eigen/Cholesky>
 #include <cmath>
 #include <fstream>
 #include <iterator>
@@ -76,6 +80,42 @@ class PinIkKinematics final : public Kinematics {
         pinocchio::forwardKinematics(model_[i], *data_[i], angles);
         pinocchio::updateFramePlacements(model_[i], *data_[i]);
         out = data_[i]->oMf[tip_[i]];
+        return true;
+    }
+
+    bool jointDerivatives(Side side, const std::array<double, 7> &q,
+                          const Eigen::Matrix<double, 6, 1> &twist,
+                          const Eigen::Matrix<double, 6, 1> &acceleration,
+                          std::array<double, 7> &dq, std::array<double, 7> &ddq) override {
+        const int i = static_cast<int>(side);
+        const Eigen::Map<const Eigen::Matrix<double, 7, 1>> angles(q.data());
+        auto &data = *data_[i];
+        Eigen::Matrix<double, 6, 7> J = Eigen::Matrix<double, 6, 7>::Zero(), dJ = J;
+        pinocchio::computeJointJacobians(model_[i], data, angles);
+        pinocchio::getFrameJacobian(model_[i], data, tip_[i], pinocchio::LOCAL_WORLD_ALIGNED, J);
+        // J2 has a narrow task envelope. Penalize its redundant motion instead of
+        // letting an unconstrained minimum-norm solution drift toward the limit.
+        constexpr double elbow_weight = .01;
+        J.col(1) *= elbow_weight;
+        auto inverse = J.completeOrthogonalDecomposition();
+        const Eigen::Matrix<double, 7, 1> scaled_velocity = inverse.solve(twist);
+        Eigen::Matrix<double, 7, 1> velocity = scaled_velocity;
+        velocity[1] *= elbow_weight;
+        pinocchio::computeJointJacobiansTimeVariation(model_[i], data, angles, velocity);
+        pinocchio::getFrameJacobianTimeVariation(model_[i], data, tip_[i], pinocchio::LOCAL_WORLD_ALIGNED, dJ);
+        dJ.col(1) *= elbow_weight;
+        // Include the derivative of the minimum-norm inverse (redundant seventh joint).
+        const Eigen::Matrix<double, 6, 1> lambda = (J * J.transpose()).ldlt().solve(twist);
+        const Eigen::Matrix<double, 7, 1> redundant = dJ.transpose() * lambda;
+        const Eigen::Matrix<double, 7, 1> scaled_accel = inverse.solve(acceleration - dJ * scaled_velocity) +
+                                                      redundant - inverse.solve(J * redundant);
+        Eigen::Matrix<double, 7, 1> accel = scaled_accel;
+        accel[1] *= elbow_weight;
+        if (!velocity.allFinite() || !accel.allFinite() ||
+            (J * scaled_velocity - twist).norm() > 1e-7 ||
+            (J * scaled_accel + dJ * scaled_velocity - acceleration).norm() > 1e-7) return false;
+        std::copy_n(velocity.data(), 7, dq.begin());
+        std::copy_n(accel.data(), 7, ddq.begin());
         return true;
     }
 

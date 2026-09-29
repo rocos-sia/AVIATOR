@@ -249,12 +249,25 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
                     highest_trajectory = incoming.id;
                     state.cursor = 0;
                 } else {
+                    require(incoming.streaming == active.streaming, "Trajectory mode changed");
+                    if (active.streaming) require(incoming.total >= active.total, "Servo total regressed");
                     require(incoming.first <= state.cursor && incoming.first + incoming.count > state.cursor,
                             "Replacement window does not cover execution cursor");
                     for (size_t j = 0; j < 14; ++j)
                         require(std::abs(incoming.frames[state.cursor - incoming.first].q[j] -
                                          state.target[j]) < 1e-7,
                                 "Window replacement position discontinuity");
+                    if (active.streaming) {
+                        const auto begin = std::max(active.first, incoming.first);
+                        const auto end = std::min(active.first + active.count, incoming.first + incoming.count);
+                        for (auto tick = begin; tick < end; ++tick)
+                            for (size_t j = 0; j < 14; ++j) {
+                                const auto &a = active.frames[tick - active.first];
+                                const auto &b = incoming.frames[tick - incoming.first];
+                                require(std::abs(a.q[j] - b.q[j]) < 1e-9 && std::abs(a.dq[j] - b.dq[j]) < 1e-8 &&
+                                        std::abs(a.ddq[j] - b.ddq[j]) < 1e-7, "Servo rewrote committed samples");
+                            }
+                    }
                 }
                 active = incoming;
                 have = true;
@@ -269,7 +282,9 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
                 require(now >= active.sample && now - active.sample < config.timeout_us &&
                             now >= active.origin_sample &&
                             now - active.origin_sample < config.origin_timeout_us,
-                        "Local command watchdog expired");
+                        "Local command watchdog expired: sample_age_us=" + std::to_string(now - active.sample) +
+                        " origin_age_us=" + std::to_string(now - active.origin_sample) +
+                        " tick=" + std::to_string(state.cursor) + " total=" + std::to_string(active.total));
                 if (state.cursor < active.total) {
                     require(state.cursor + 1 < active.first + active.count,
                             "Trajectory window exhausted: tick=" + std::to_string(state.cursor) + " first=" +
@@ -277,11 +292,16 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
                                 " age_us=" + std::to_string(now - active.sample));
                     device.waitTick(); // both SDK callbacks consumed previous command
                     const auto &f = active.frames[state.cursor + 1 - active.first];
+                    const auto &previous = active.frames[state.cursor - active.first];
                     for (size_t j = 0; j < 14; ++j) {
                         require(std::isfinite(f.q[j]) && f.q[j] >= lo[j] && f.q[j] <= hi[j] &&
-                                    std::abs(f.q[j] - state.target[j]) <= speed[j] * .001 + 1e-8,
+                                    (active.streaming || std::abs(f.q[j] - state.target[j]) <= speed[j] * .001 + 1e-8),
                                 "Local command continuity/limit violation");
-                        velocity[j] = (f.q[j] - state.target[j]) * 1000;
+                        if (active.streaming)
+                            require(std::isfinite(f.dq[j]) && std::isfinite(f.ddq[j]) &&
+                                    std::abs(f.q[j] - previous.q[j] - .0005 * (f.dq[j] + previous.dq[j])) < 1e-7,
+                                    "Local Servo sample/derivative mismatch");
+                        velocity[j] = active.streaming ? f.dq[j] : (f.q[j] - state.target[j]) * 1000;
                     }
                     device.setJointPositions(f.q);
                     device.setWheelReference(f.angle, f.displacement);
@@ -290,6 +310,7 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
                     state.displacement = f.displacement;
                     ++state.cursor;
                 } else {
+                    require(!active.streaming || active.finished, "Servo buffer underrun");
                     velocity = {};
                     device.waitTick();
                 }

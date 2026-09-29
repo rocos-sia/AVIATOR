@@ -21,9 +21,10 @@ double normalized(const Axis& axis) {
 void JoystickSample::update(const input_event& event, std::uint64_t now) {
     if (failed) return;
     if (event.type == EV_SYN && event.code == SYN_DROPPED) {
-        failed = true; valid = false; return;
+        invalidate(); return;
     }
     if (event.type == EV_ABS) {
+        report_pending = true;
         if (event.code == roll.code) roll.value = event.value;
         if (event.code == pitch.code) pitch.value = event.value;
     }
@@ -31,19 +32,31 @@ void JoystickSample::update(const input_event& event, std::uint64_t now) {
     if (!axis_valid(roll) || !axis_valid(pitch) || event.input_event_sec < 0 ||
         event.input_event_usec < 0 || event.input_event_usec >= 1000000 ||
         static_cast<std::uint64_t>(event.input_event_sec) > aviator::max_json_integer / 1000000) {
-        failed = true; valid = false; return;
+        invalidate(); return;
     }
     const auto time = static_cast<std::uint64_t>(event.input_event_sec) * 1000000 + event.input_event_usec;
     if (time > now || time < sample_us || time > aviator::max_json_integer) {
-        failed = true; valid = false; return;
+        invalidate(); return;
     }
     roll_value = normalized(roll);
     pitch_value = normalized(pitch);
     sample_us = time;
     valid = true;
+    report_pending = false;
+}
+void JoystickSample::deviceChecked(std::uint64_t now) {
+    if (failed || report_pending) return;
+    device_connected = true;
+    checked_us = now;
+}
+void JoystickSample::invalidate() {
+    failed = true;
+    valid = false;
+    device_connected = false;
 }
 bool JoystickSample::fresh(std::uint64_t now, std::uint64_t timeout) const {
-    return valid && !failed && now >= sample_us && now - sample_us < timeout;
+    return valid && !failed && device_connected && sample_us > 0 && checked_us >= sample_us &&
+           now >= checked_us && now - checked_us < timeout;
 }
 aviator::Message command(const JoystickSample& sample, const std::string& session,
                          const std::string& clock, std::uint64_t sequence,
@@ -53,6 +66,8 @@ aviator::Message command(const JoystickSample& sample, const std::string& sessio
     result.header = {"1.0", sequence, utc, sample.sample_us, clock, "flight_gateway",
                      session, sample.fresh(now, timeout)};
     result.body = {{"source", "JOYSTICK"},
+        {"input_state", {{"mode", "POSITION_HOLD"}, {"device_connected", sample.device_connected},
+                         {"checked_mono_us", sample.checked_us}}},
         {"control", {{"roll", sample.roll_value}, {"pitch", sample.pitch_value}}}};
     return result;
 }

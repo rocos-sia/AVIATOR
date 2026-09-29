@@ -38,6 +38,8 @@ std::string local_clock_id() {
 InputGuard::InputGuard(InputPolicy policy) : policy_(std::move(policy)) {
     if (policy_.publisher_id.empty() || policy_.session_id.empty() ||
         policy_.clock_id.empty() || policy_.timeout_us == 0 ||
+        (policy_.allow_joystick_position_hold &&
+         (policy_.topic != Topic::flight_command || policy_.source != "JOYSTICK")) ||
         (policy_.topic == Topic::flight_command &&
          policy_.source != "FLIGHT" && policy_.source != "JOYSTICK") ||
         (motion(policy_.topic) && (policy_.control_epoch.empty() ||
@@ -54,11 +56,26 @@ bool InputGuard::accept(const Message& message, std::uint64_t now, std::string& 
     if (h.clock_id != policy_.clock_id) return reject("clock domain mismatch");
     if (h.sequence == 0 || h.sequence > max_json_integer || h.sequence <= sequence_)
         return reject("duplicate or out-of-order sequence");
-    if (!fresh(h.sample_mono_us, now, policy_.timeout_us, policy_.future_tolerance_us))
-        return reject("stale or future sample");
     if (message.topic == Topic::flight_command &&
         (!message.body.contains("source") || message.body.at("source") != policy_.source))
         return reject("unauthorized source");
+    std::uint64_t effective_sample = h.sample_mono_us;
+    if (message.topic == Topic::flight_command && message.body.contains("input_state")) {
+        if (!policy_.allow_joystick_position_hold) return reject("position hold is not authorized");
+        bool connected;
+        if (!read_position_hold(message, effective_sample, connected, error)) return false;
+        if (!h.valid || !connected) {
+            sequence_ = h.sequence;
+            valid_ = false;
+            return reject(connected ? "invalid joystick state" : "joystick device disconnected");
+        }
+        if (effective_sample < sample_ || h.sample_mono_us < event_sample_)
+            return reject("regressing joystick timestamps");
+        if (!fresh(effective_sample, now, policy_.timeout_us, policy_.future_tolerance_us))
+            return reject("stale or future joystick device check");
+    } else if (!fresh(effective_sample, now, policy_.timeout_us, policy_.future_tolerance_us)) {
+        return reject("stale or future sample");
+    }
     Origin origin;
     const bool has_origin = motion(message.topic);
     if (has_origin) {
@@ -79,7 +96,8 @@ bool InputGuard::accept(const Message& message, std::uint64_t now, std::string& 
         valid_ = false; // Keep last numeric snapshot but immediately revoke usability.
         return reject("invalid business data");
     }
-    sample_ = h.sample_mono_us;
+    sample_ = effective_sample;
+    event_sample_ = h.sample_mono_us;
     origin_sample_ = origin.sample_mono_us;
     received_ = now;
     has_origin_ = has_origin;

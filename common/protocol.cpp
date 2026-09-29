@@ -92,6 +92,12 @@ void check_commands(const Message& message) {
             const double number = axis.get<double>();
             require(number >= -1 && number <= 1, "control axis out of range");
         }
+        if (body.contains("input_state")) {
+            std::uint64_t checked;
+            bool connected;
+            std::string error;
+            require(read_position_hold(message, checked, connected, error), "invalid joystick input_state");
+        }
     }
     if (message.topic == Topic::arm_command || message.topic == Topic::hand_command) {
         uuid(body, "control_epoch");
@@ -104,6 +110,26 @@ void check_commands(const Message& message) {
 } // namespace
 
 std::string_view topic_name(Topic topic) { return names.at(static_cast<std::size_t>(topic)); }
+
+bool read_position_hold(const Message& message, std::uint64_t& checked_us,
+                        bool& connected, std::string& error) {
+    try {
+        require(message.topic == Topic::flight_command && message.body.at("source") == "JOYSTICK",
+                "position hold requires JOYSTICK flight.command");
+        const auto& state = message.body.at("input_state");
+        require(state.at("mode") == "POSITION_HOLD", "unknown input_state mode");
+        require(state.at("device_connected").is_boolean(), "device_connected must be boolean");
+        const auto checked = integer(state, "checked_mono_us");
+        const bool available = state.at("device_connected").get<bool>();
+        if (message.header.valid)
+            require(available && message.header.sample_mono_us > 0 &&
+                    checked >= message.header.sample_mono_us, "invalid position-hold timestamps or device state");
+        checked_us = checked;
+        connected = available;
+        error.clear();
+        return true;
+    } catch (const std::exception& e) { error = e.what(); return false; }
+}
 std::string_view message_type(Topic topic) { return types.at(static_cast<std::size_t>(topic)); }
 std::optional<Topic> find_topic(std::string_view name) {
     for (std::size_t i = 0; i < names.size(); ++i)

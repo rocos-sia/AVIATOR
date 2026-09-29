@@ -29,7 +29,7 @@ urdf: ../models/control/aviator_control.urdf
 collision_urdf: ../models/control/aviator_collision.urdf
 # Core 规划碰撞检查，仿真/真机共用；省略时默认 true。
 # false 跳过所有规划碰撞检查（含自碰撞、双臂互碰和环境碰撞），不加载碰撞模型。
-# 关节限位、速度、通信超时和 SDK 故障检查仍生效；不改变控制器自身保护。
+# 关节位置限位、通信超时和 SDK 故障检查仍生效；不改变控制器自身保护。
 collision_check_enabled: false
 
 # 抓取配置：圆柱工具尺寸、法兰到工具的变换、把手几何及左右抓取位姿。
@@ -43,8 +43,8 @@ posture: posture.json
 # Ruckig 自动计算时长；以下为关节峰值约束，两臂共用同步轨迹。
 home_speed: 0.2          # 当前位置 → home，rad/s
 approach_speed: 0.2      # home → 预接近位置，rad/s
-joint_acceleration: 0.5  # 上述两段的加速度上限，rad/s²
-joint_jerk: 1.0          # 上述两段的加加速度上限，rad/s³
+joint_acceleration: 0.5  # Home、预接近关节加速度上限，rad/s²
+joint_jerk: 1.0          # Home、预接近关节加加速度上限，rad/s³
 
 # 第三阶段：从预接近位置沿笛卡尔路径对准把手的时长，单位 s，必须 >= 1。
 # 此阶段不会自动延长时间；若规划速度超限，需要增大此值。
@@ -56,10 +56,12 @@ final_approach_duration: 3.0
 planning_period: 0.05
 
 # 各机械臂关节的轨迹规划速度上限，单位 rad/s。
-# 每个关节取本值与 URDF 限位中的较小值；轮盘运动再乘以速度比例 v。
+# Home/Approach/MoveWheel 取本值与 URDF 限位中的较小值。
+# Servo 不按 joint_speed/joint_acceleration/joint_jerk 拦截，仍保留底层指令防跳变保护。
 joint_speed: 1.9
 
-# 普通停止 / Servo 超时的关节制动加速度上限，单位 rad/s²。
+# 后端故障/通信失效时的关节制动加速度上限，单位 rad/s²。
+# 正常 Servo 停止/输入超时由 Ruckig 按下列轮盘加速度和 jerk 约束减速。
 # 双臂用同一个减速比例；停止后保持最终指令，不跳到实测角度。
 # 反馈故障或制动路径不安全时直接停止 SDK 控制。
 stop_acceleration: 2.0
@@ -72,10 +74,18 @@ stop_acceleration: 2.0
 settle_duration: 0.3
 
 # v=1 时的轮盘速度上限；MoveWheel 自动协调时间并受各关节速度进一步约束。
-wheel_angular_speed: 0.8   # rad/s
-wheel_linear_speed: 0.08   # m/s
+wheel_angular_speed: 1.8   # rad/s
+wheel_linear_speed: 0.5   # m/s
 
-# 在线逆解/碰撞检查周期；关节目标仍通过底层约 1 ms 节拍平滑插值。
+# Servo 在线规划的轮盘加速度、加加速度上限；换目标时继承当前速度/加速度。
+# 以下为保守起始值，不能仅增大轮盘约束而忽略关节限位和奇异位形。
+wheel_angular_acceleration: 2.0  # rad/s²
+wheel_linear_acceleration: 1.0 # m/s²
+wheel_angular_jerk: 4.0        # rad/s³
+wheel_linear_jerk: 2.0       # m/s³
+
+# 在线规划块周期，必须是整毫秒；Core 提前缓存约 80..100 ms。
+# 连续 q/dq/ddq 曲线按 1 ms 采样原样发送，两臂共用执行游标。
 servo_period: 0.02
-# 按实际接收时间计时（即使无头仿真加速）；超时保持当前位置，保留锁定。
+# 按实际接收时间计时；超时后执行已提交的短缓冲，再按 jerk 约束减速并保持锁定。
 servo_timeout: 0.25

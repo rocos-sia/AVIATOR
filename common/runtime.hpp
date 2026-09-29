@@ -45,6 +45,7 @@ struct InputPolicy {
     std::string origin_publisher_id;
     std::string origin_session_id;
     std::uint64_t origin_timeout_us = 100000;
+    bool allow_joystick_position_hold = false;
 };
 
 // Single-threaded, after decode AND node business validation. One guard per
@@ -58,6 +59,7 @@ private:
     InputPolicy policy_;
     std::uint64_t sequence_ = 0;
     std::uint64_t sample_ = 0;
+    std::uint64_t event_sample_ = 0;
     std::uint64_t origin_sample_ = 0;
     std::uint64_t received_ = 0;
     bool valid_ = false;

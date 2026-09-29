@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
         policy.session_id = gateway_session;
         policy.clock_id = aviator::local_clock_id();
         policy.source = "JOYSTICK";
+        policy.allow_joystick_position_hold = true;
         policy.timeout_us = settings.origin_timeout_us;
         std::optional<aviator::InputGuard> input;
         if (!gateway_session.empty()) input.emplace(policy);
@@ -96,12 +97,12 @@ int main(int argc, char **argv) {
             double roll = 0, pitch = 0;
             uint64_t next_servo = 0, next_print = 0;
             bool was_fresh = false;
-            std::string last_state;
+            std::string last_state, input_error;
             std::cout << "Waiting for flight.command | gateway_session="
                       << (gateway_session.empty() ? "auto (first valid message)" : gateway_session) << std::endl;
             while (!interrupted) {
                 connection->heartbeat();
-                // 有界读取，保留最新有效快照；原始 sample_mono_us 决定时效。
+                // 原始事件时间保持不变；POSITION_HOLD 显式使用设备检查时间判定时效。
                 for (int i = 0; i < 64; ++i) {
                     aviator::WireMessage wire;
                     std::string error;
@@ -117,7 +118,13 @@ int main(int argc, char **argv) {
                         if (!candidate.accept(message, aviator::monotonic_us(), error)) continue;
                         input = std::move(candidate);
                         std::cout << "Bound flight_gateway session=" << policy.session_id << std::endl;
-                    } else if (!input->accept(message, aviator::monotonic_us(), error)) continue;
+                    } else if (!input->accept(message, aviator::monotonic_us(), error)) {
+                        if (message.header.publisher_id == policy.publisher_id &&
+                            message.header.session_id == policy.session_id)
+                            input_error = error;
+                        continue;
+                    }
+                    input_error.clear();
                     // decode 已拒绝非有限值/越界值；这里显式限定映射范围。
                     roll = std::clamp(message.body.at("control").at("roll").get<double>(), -1.0, 1.0);
                     pitch = std::clamp(message.body.at("control").at("pitch").get<double>(), -1.0, 1.0);
@@ -125,8 +132,10 @@ int main(int argc, char **argv) {
                 const auto now = aviator::monotonic_us();
                 const bool fresh = input && !input->expired(now);
                 if (fresh != was_fresh) {
-                    std::cout << (fresh ? "Flight input: valid" :
-                        "Flight input: stale/invalid; stop updating ServoWheel") << std::endl;
+                    if (fresh) std::cout << "Flight input: valid" << std::endl;
+                    else std::cout << "Flight input: stale/invalid; stop updating ServoWheel ("
+                                   << (input_error.empty() ? "gateway/device check timeout" : input_error)
+                                   << ")" << std::endl;
                     was_fresh = fresh;
                 }
                 const auto state = robot.GetState();

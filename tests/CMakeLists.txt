@@ -68,3 +68,31 @@ if(Python3_Interpreter_FOUND)
     ${PROJECT_SOURCE_DIR}/nodes/camera/recording_client.py)
   set_tests_properties(camera_adapter PROPERTIES TIMEOUT 10)
 endif()
+
+if(TARGET aviator_core_servo AND TARGET manipulator AND AVIATOR_BUILD_MUJOCO)
+  aviator_add_test_executable(aviator_control_nodes_test control_nodes_test.cpp
+    ../nodes/flight_gateway/gateway.cpp)
+  target_include_directories(aviator_control_nodes_test PRIVATE ../nodes/flight_gateway)
+  target_link_libraries(aviator_control_nodes_test PRIVATE aviator_motion_protocol)
+  add_dependencies(aviator_control_nodes_test aviator_bus aviator_core aviator_core_servo manipulator)
+  foreach(mode IN ITEMS flight flight_auto flight_hold)
+    add_test(NAME control_nodes_${mode} COMMAND aviator_control_nodes_test
+      $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core_servo>
+      ${PROJECT_SOURCE_DIR} ${mode})
+    set_tests_properties(control_nodes_${mode} PROPERTIES TIMEOUT 190 ENVIRONMENT "LD_BIND_NOW=1")
+  endforeach()
+  add_test(NAME control_nodes_watchdog COMMAND aviator_control_nodes_test
+    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core>
+    ${PROJECT_SOURCE_DIR} watchdog)
+  set_tests_properties(control_nodes_watchdog PROPERTIES TIMEOUT 190 ENVIRONMENT "LD_BIND_NOW=1")
+endif()
+
+if(TARGET aviator_core_control)
+  aviator_add_test_executable(aviator_servo_planner_test servo_planner_test.cpp)
+  target_link_libraries(aviator_servo_planner_test PRIVATE aviator_core_control ruckig::ruckig)
+  add_test(NAME servo_planner COMMAND aviator_servo_planner_test ${PROJECT_SOURCE_DIR})
+  set_tests_properties(servo_planner PROPERTIES TIMEOUT 60)
+  aviator_add_test_executable(aviator_motion_protocol_test motion_protocol_test.cpp)
+  target_link_libraries(aviator_motion_protocol_test PRIVATE aviator_motion_protocol)
+  add_test(NAME motion_protocol COMMAND aviator_motion_protocol_test)
+endif()

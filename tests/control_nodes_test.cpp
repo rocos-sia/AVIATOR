@@ -1,4 +1,5 @@
 #include "motion.hpp"
+#include "gateway.hpp"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <fstream>
@@ -107,7 +108,8 @@ int main(int argc, char **argv) {
         check(argc == 6, "Expected bus manipulator core source_root mode");
         const fs::path source = argv[4];
         const std::string mode = argv[5];
-        const bool flight = mode == "flight" || mode == "flight_auto";
+        const bool position_hold = mode == "flight_hold";
+        const bool flight = mode == "flight" || mode == "flight_auto" || position_hold;
         char pattern[] = "/tmp/aviator-control-test-XXXXXX";
         directory = mkdtemp(pattern);
         std::cout << "Test logs: " << directory << std::endl;
@@ -223,6 +225,9 @@ int main(int argc, char **argv) {
         uint64_t flight_at = 0, flight_publish_at = 0, flight_seq = 0;
         double reference_angle = 0, reference_displacement = 0, held_angle = 0, held_displacement = 0;
         bool hold_sampled = false;
+        uint64_t hold_at = 0;
+        flight_gateway::JoystickSample joystick{{ABS_X, -1000, 1000, 0}, {ABS_Y, -1000, 1000, 0}};
+        int last_input_stage = 0;
         auto until = monotonic_us() + 180000000;
         while (monotonic_us() < until) {
             WireMessage wire;
@@ -279,15 +284,20 @@ int main(int argc, char **argv) {
                     flight_stage = 1;
                     flight_at = now;
                 }
-                if (flight_stage >= 1 && flight_stage <= 6 && now >= flight_publish_at) {
+                const int last_stage = position_hold ? 9 : 6;
+                if (flight_stage >= 1 && flight_stage <= last_stage &&
+                    !(position_hold && flight_stage == 7) && now >= flight_publish_at) {
                     // Match flight_gateway's envelope and preserve the original sample time.
                     auto message = motionMessage(Topic::flight_command, "flight_gateway",
                         flight_stage == 1 ? wrong_session : gateway_session, ++flight_seq);
-                    const double roll = flight_stage == 2 ? .03 : flight_stage == 3 ? -.03 :
+                    const double roll = flight_stage == 2 ? (position_hold ? .5 : .03) :
+                                        flight_stage == 3 ? (position_hold ? -.2 : -.03) :
+                                        flight_stage >= 8 ? .1 :
                                         flight_stage == 6 ? -1 : 1;
-                    const double pitch = flight_stage == 3 ? -.02 : flight_stage == 6 ? -1 : 1;
+                    const double pitch = flight_stage == 3 ? (position_hold ? -.1 : -.02) :
+                                         flight_stage == 6 ? -1 : 1;
                     message.body = {{"source", "JOYSTICK"}, {"control", {{"roll", roll}, {"pitch", pitch}}}};
-                    if (mode == "flight_auto" && flight_stage == 1) {
+                    if ((mode == "flight_auto" || position_hold) && flight_stage == 1) {
                         // None of these otherwise well-formed messages may claim the first session.
                         switch (flight_seq % 5) {
                         case 0: message.header.valid = false; break;
@@ -303,29 +313,81 @@ int main(int argc, char **argv) {
                         message.header.session_id = wrong_session;
                         message.header.sample_mono_us = now;
                     }
+                    if (position_hold && flight_stage >= 2) {
+                        if (last_input_stage != flight_stage && flight_stage != 9) {
+                            // One hardware report per target change, then no new axis events for seconds.
+                            for (const auto axis : {ABS_X, ABS_Y}) {
+                                input_event event{};
+                                event.type = EV_ABS; event.code = axis;
+                                event.value = int(std::lround((axis == ABS_X ? roll : pitch) * 1000));
+                                joystick.update(event, now);
+                            }
+                            input_event report{};
+                            report.type = EV_SYN; report.code = SYN_REPORT;
+                            report.input_event_sec = now / 1000000;
+                            report.input_event_usec = now % 1000000;
+                            joystick.update(report, now);
+                        }
+                        // Stage 4 keeps transmitting but its device checks stop. Stage 9 disconnects.
+                        if (flight_stage == 9) joystick.invalidate();
+                        else if (flight_stage != 4 || last_input_stage != 4) joystick.deviceChecked(now);
+                        message = flight_gateway::command(joystick, gateway_session, local_clock_id(),
+                                                           flight_seq, now, utc_us(), 100000);
+                        if (flight_stage == 4 && flight_seq % 2 == 0) {
+                            message.header.session_id = wrong_session;
+                            message.header.valid = true;
+                            message.body["input_state"]["checked_mono_us"] = now;
+                        }
+                        last_input_stage = flight_stage;
+                    }
                     publishMessage(flight_pub, message);
                     flight_publish_at = now + 20000;
                 }
-                const uint64_t duration[] = {0, 400000, 1500000, 2000000, 1000000, 150000, 150000};
-                if (flight_stage == 4 && now - flight_at > 700000 && !hold_sampled) {
+                // Wait for the completed jerk-limited stop, then observe a stable reference.
+                // 10 s bounds v/a + a/j plus input timeout/buffer at this test configuration.
+                const uint64_t duration[] = {0, 400000, position_hold ? 20000000ULL : 1500000ULL,
+                    position_hold ? 30000000ULL : 2000000ULL, 10000000, 150000, 150000, 10000000, 1000000, 10000000};
+                const bool stopping_stage = flight_stage == 4 || (position_hold && (flight_stage == 7 || flight_stage == 9));
+                const auto locked_at = text.rfind("state=LOCKED"), servo_state_at = text.rfind("state=SERVO");
+                const bool stop_completed = locked_at != std::string::npos && servo_state_at != std::string::npos &&
+                                            locked_at > servo_state_at;
+                if (stopping_stage && stop_completed && !hold_at) hold_at = now;
+                if (stopping_stage && hold_at && now - hold_at > 100000 && !hold_sampled) {
                     held_angle = reference_angle;
                     held_displacement = reference_displacement;
                     hold_sampled = true;
                 }
-                if (flight_stage >= 1 && flight_stage <= 6 && now - flight_at >= duration[flight_stage]) {
+                // Wait for actual execution progress, allowing joint limits and ZMQ segment overhead.
+                const bool step_reached = position_hold && now - flight_at >= 3000000 &&
+                    ((flight_stage == 2 && std::abs(reference_angle - .43633) < .003 && max_angle > .42) ||
+                     (flight_stage == 3 && std::abs(reference_angle + .174532) < .003 &&
+                      std::abs(reference_displacement + .017) < .0005 && min_angle < -.16));
+                if (flight_stage >= 1 && flight_stage <= last_stage &&
+                    (step_reached || (stopping_stage && hold_sampled && now - hold_at > 400000) ||
+                     now - flight_at >= duration[flight_stage])) {
                     if (flight_stage == 1)
                         check(text.find("Servo target") == std::string::npos, "Wrong gateway session moved robot");
                     if (flight_stage == 2) {
-                        if (mode == "flight_auto")
+                        if (mode == "flight_auto" || position_hold)
                             check(text.find("Bound flight_gateway session=" + gateway_session) != std::string::npos &&
                                   text.find("Bound flight_gateway session=" + wrong_session) == std::string::npos,
                                   "Automatic binding did not choose the first valid gateway session");
                         check(max_angle > .01, "Positive roll did not move physical wheel");
                         check(std::abs(reference_displacement) < 1e-8, "Positive pitch produced pull target");
+                        if (position_hold) {
+                            check(std::abs(reference_angle - .43633) < .003 && max_angle > .42,
+                                  "Static positive step did not reach its target: reference=" + std::to_string(reference_angle));
+                            check(text.find("Servo command timeout") == std::string::npos,
+                                  "Static healthy joystick timed out");
+                        }
                     }
                     if (flight_stage == 3)
                         check(min_displacement < -.001, "Negative pitch did not pull wheel");
-                    if (flight_stage == 4) {
+                    if (flight_stage == 3 && position_hold)
+                        check(std::abs(reference_angle + .174532) < .003 &&
+                              std::abs(reference_displacement + .017) < .0005 && min_angle < -.16,
+                              "Static negative step did not reach its target");
+                    if (stopping_stage) {
                         check(text.find("Servo command timeout") != std::string::npos,
                               "Replayed old samples kept Servo alive");
                         check(hold_sampled && std::abs(reference_angle - held_angle) < 1e-6 &&
@@ -336,10 +398,12 @@ int main(int argc, char **argv) {
                         check(text.find("Servo target angle=0.87266 displacement=0 v=1") != std::string::npos &&
                               text.find("Servo target angle=-0.87266 displacement=-0.17 v=1") != std::string::npos,
                               "Full-scale mapping or fresh-input resume failed");
-                        core.terminate(SIGINT);
                     }
+                    if (flight_stage == last_stage) core.terminate(SIGINT);
                     ++flight_stage;
                     flight_at = now;
+                    hold_sampled = false;
+                    hold_at = 0;
                 }
             }
             if (mode == "interactive") {
@@ -377,7 +441,7 @@ int main(int argc, char **argv) {
         check(mode != "watchdog", "Watchdog test timed out");
         check(core.done() && core.status == 0, core.text() + "\n" + manipulator.text());
         if (flight)
-            check(flight_stage == 7, "Flight control sequence incomplete");
+            check(flight_stage == (position_hold ? 10 : 7), "Flight control sequence incomplete");
         else if (mode == "interactive")
             check(console_stage == 7, "Interactive sequence incomplete");
         else

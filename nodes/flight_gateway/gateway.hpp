@@ -16,9 +16,14 @@ struct JoystickSample {
     Axis roll, pitch;
     double roll_value = 0, pitch_value = 0;
     std::uint64_t sample_us = 0;
+    std::uint64_t checked_us = 0;
+    bool device_connected = false;
+    bool report_pending = false;
     bool valid = false;
     bool failed = false; // Dropped/malformed input requires restart, not auto-enable.
     void update(const input_event& event, std::uint64_t now_us);
+    void deviceChecked(std::uint64_t now_us);
+    void invalidate();
     bool fresh(std::uint64_t now_us, std::uint64_t timeout_us) const;
 };
 

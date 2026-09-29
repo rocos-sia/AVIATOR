@@ -25,6 +25,7 @@ Json callService(zmq::context_t &, const MotionConfig &, const Json &request);
 // Fixed capacity transport window. Only typed data crosses into the executor.
 // Tick cursor, not wall-clock catch-up, is authoritative for both arms.
 struct TrajectoryWindow {
+    bool streaming = false, finished = false;
     uint64_t id = 0, first = 0, total = 0, count = 0, sequence = 0;
     uint64_t sample = 0, origin_sample = 0, start = 0;
     std::array<JointFrame, 63> frames{};

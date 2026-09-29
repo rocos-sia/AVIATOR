@@ -1,4 +1,5 @@
 #include "aviator/Aviator.hpp"
+#include "ServoPlanner.hpp"
 #include "aviator/Kinematics.hpp"
 #include "aviator/CollisionChecker.hpp"
 #include "aviator/backend.hpp"
@@ -90,6 +91,15 @@ class Aviator::Impl {
         wheel_linear_speed_ = config["wheel_linear_speed"].as<double>(0.08);
         servo_period_ = config["servo_period"].as<double>(0.02);
         servo_timeout_ = config["servo_timeout"].as<double>(0.25);
+        wheel_acceleration_ = {config["wheel_angular_acceleration"].as<double>(0.05),
+                               config["wheel_linear_acceleration"].as<double>(0.005)};
+        wheel_jerk_ = {config["wheel_angular_jerk"].as<double>(0.05),
+                       config["wheel_linear_jerk"].as<double>(0.005)};
+        for (int i = 0; i < 2; ++i)
+            require(std::isfinite(wheel_acceleration_[i]) && wheel_acceleration_[i] > 0 &&
+                    std::isfinite(wheel_jerk_[i]) && wheel_jerk_[i] > 0, "Invalid wheel acceleration/jerk");
+        require(std::abs(servo_period_ * 1000 - std::round(servo_period_ * 1000)) < 1e-8,
+                "servo_period must be an integer number of milliseconds");
 
         // 加载抓取配置
         std::string config_dir = std::filesystem::absolute(config_file_).parent_path().string();
@@ -475,35 +485,48 @@ class Aviator::Impl {
                                             servo_target_.received).count() > servo_timeout_;
     }
 
-    // Each short segment has zero endpoint velocity/acceleration (quintic easing).
-    // Candidate distance is reduced until both arm joint speed limits also fit the segment.
-    Path planServoSegment(const ServoTarget &command) {
-        const Sample start{last_target_, wheel_angle_, wheel_displacement_};
-        const double da = command.angle - start.angle, dd = command.displacement - start.translation;
-        double fraction = 1;
-        if (da != 0) fraction = std::min(fraction, command.v * wheel_angular_speed_ * servo_period_ / (1.875 * std::abs(da)));
-        if (dd != 0) fraction = std::min(fraction, command.v * wheel_linear_speed_ * servo_period_ / (1.875 * std::abs(dd)));
-        for (int attempt = 0; attempt < 10; ++attempt) {
-            const double angle = start.angle + fraction * da;
-            const double displacement = start.translation + fraction * dd;
-            const auto q = (da == 0 && dd == 0) ? start.q :
-                solve({target(0, angle, displacement), target(1, angle, displacement)}, start.q);
-            const double time = 1.875 * jointTravelTime(start.q, q, command.v);
-            if (time <= servo_period_) {
-                Path segment{start, {q, angle, displacement}};
-                // Check endpoints and interior interpolation (not just the new target).
-                for (int k = 0; k <= 4; ++k) {
-                    const double u = k / 4.0;
-                    Joints intermediate{};
-                    for (int i = 0; i < 14; ++i) intermediate[i] = start.q[i] + u * (q[i] - start.q[i]);
-                    check(intermediate, start.angle + u * (angle - start.angle),
-                          start.translation + u * (displacement - start.translation));
-                }
-                return segment;
+    void runServo() {
+        JointFrame last{last_target_, wheel_angle_, wheel_displacement_};
+        ServoPlanner planner(*kinematics_,
+            [this](int side, double a, double d) { return target(side, a, d); },
+            [this](const JointFrame &f) { check(f.q, f.angle, f.displacement); },
+            wheel_origin_, last, servo_period_,
+            {wheel_angular_speed_, wheel_linear_speed_}, wheel_acceleration_, wheel_jerk_);
+        // Immutable future samples; the executor advances one shared dual-arm tick.
+        // Keep 80..100 ms ahead instead of waiting for every 20 ms block to finish.
+        std::vector<JointFrame> prefill{last};
+        bool started = false, stopping = false, timed_out = false;
+        for (;;) {
+            if (!stopping && (cancel_ || shutdown_ || servoExpired())) {
+                stopping = true;
+                timed_out = !cancel_ && !shutdown_;
             }
-            fraction *= std::min(0.5, 0.9 * servo_period_ / time);
+            if (started && datalink_->streamAhead() >= 80) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                continue;
+            }
+            ServoTarget command;
+            { std::lock_guard<std::mutex> lock(servo_mutex_); command = servo_target_; }
+            auto frames = planner.advance(command.angle, command.displacement, command.v, stopping);
+            last = frames.back();
+            if (started) datalink_->appendStream(frames);
+            else {
+                prefill.insert(prefill.end(), frames.begin() + 1, frames.end());
+                if (prefill.size() >= 81) {
+                    datalink_->beginStream(prefill);
+                    started = true;
+                }
+            }
+            if (stopping && planner.stopped() && started) {
+                datalink_->finishStream();
+                last_target_ = last.q;
+                last_velocity_ = {};
+                wheel_angle_ = last.angle;
+                wheel_displacement_ = last.displacement;
+                if (timed_out) setMotionError(ServoTimeout().what());
+                return;
+            }
         }
-        fail("Servo IK cannot satisfy joint velocity limits");
     }
 
     void servoLoop() {
@@ -516,21 +539,13 @@ class Aviator::Impl {
             std::unique_lock<std::mutex> control(mutex_);
             std::string next_state = "LOCKED";
             try {
-                while (!cancel_ && !shutdown_) {
-                    if (servoExpired()) throw ServoTimeout();
-                    ServoTarget command;
-                    { std::lock_guard<std::mutex> lock(servo_mutex_); command = servo_target_; }
-                    auto segment = planServoSegment(command);
-                    execute(segment, servo_period_, true, true);
-                }
-            } catch (const ServoTimeout &error) {
-                setMotionError(error.what());
+                runServo();
             } catch (const std::exception &error) {
                 setMotionError(error.what());
                 // Stop and stale commands hold in the current impedance mode. Other failures latch FAULT.
-                next_state = cancel_ ? "LOCKED" : "FAULT";
+                next_state = "FAULT";
+                stopSafely();
             }
-            if (!stopSafely()) next_state = "FAULT";
             std::lock_guard<std::mutex> mailbox(servo_mutex_);
             std::lock_guard<std::mutex> status(status_mutex_);
             servo_active_ = false;
@@ -752,7 +767,7 @@ class Aviator::Impl {
         last_velocity_ = {};
     }
 
-    void execute(const Path &path, double duration, bool, bool servo_segment = false) {
+    void execute(const Path &path, double duration, bool) {
         for (int i = 0; i < 14; ++i)
             require(std::abs(path.front().q[i] - last_target_[i]) < 1e-10,
                     "Trajectory start differs from last command");
@@ -762,7 +777,6 @@ class Aviator::Impl {
         frames.reserve(ticks + 1);
         for (size_t tick = 0; tick <= ticks; ++tick) {
             double u = double(tick) / ticks;
-            if (servo_segment) u = smooth(u);
             const double coordinate = u * (path.size() - 1);
             const size_t k = std::min(size_t(coordinate), path.size() - 2);
             const double f = coordinate - k;
@@ -808,6 +822,7 @@ class Aviator::Impl {
     double settle_duration_;
     double wheel_angular_speed_, wheel_linear_speed_;
     double servo_period_, servo_timeout_;
+    std::array<double, 2> wheel_acceleration_, wheel_jerk_;
     double approach_distance_;
 
     double joint2_min_, joint2_max_, joint2_margin_;

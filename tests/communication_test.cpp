@@ -159,6 +159,57 @@ void runtime_tests() {
     check(new_session_id() != new_session_id(), "new UUID per session");
 }
 
+void position_hold_tests() {
+    auto message = flight();
+    message.body["input_state"] = {{"mode", "POSITION_HOLD"}, {"device_connected", true},
+                                    {"checked_mono_us", 5000000}};
+    std::string error, payload;
+    Message decoded;
+    check(encode(message, payload, error) && decode("flight.command", payload, decoded, error),
+          "position-hold extension roundtrip");
+    auto policy = flight_policy();
+    InputGuard strict(policy);
+    check(!strict.accept(decoded, 5000000, error), "position hold requires explicit authorization");
+    policy.allow_joystick_position_hold = true;
+    InputGuard hold(policy);
+    check(hold.accept(decoded, 5000000, error), "old event with fresh device check remains usable");
+    check(!hold.expired(5099999) && hold.expired(5100000), "device-check lease expires exactly");
+    decoded.header.sequence++;
+    check(!hold.accept(decoded, 5100000, error), "resending expired device check cannot renew lease");
+    decoded.body["input_state"]["checked_mono_us"] = 5100001;
+    check(!hold.accept(decoded, 5100000, error), "future device check rejected");
+    decoded.body["input_state"]["checked_mono_us"] = 5100000;
+    decoded.header.sample_mono_us = 999999;
+    check(!hold.accept(decoded, 5100000, error), "regressing original event rejected");
+    decoded.header.sample_mono_us = 1000000;
+    check(hold.accept(decoded, 5100000, error), "renewed device check accepted");
+    decoded.header.sequence++;
+    decoded.header.valid = false;
+    decoded.body["input_state"]["device_connected"] = false;
+    check(!hold.accept(decoded, 5200000, error) && hold.expired(5200000),
+          "disconnect invalidates immediately even with old check timestamp");
+
+    const auto good = message;
+    for (const auto& invalid : {nlohmann::json(-1), nlohmann::json(1.5), nlohmann::json("5000000"),
+                                nlohmann::json(max_json_integer + 1)}) {
+        message = good;
+        message.body["input_state"]["checked_mono_us"] = invalid;
+        check(!encode(message, payload, error), "invalid check time rejected by codec");
+    }
+    message = good;
+    message.body["input_state"]["device_connected"] = false;
+    check(!encode(message, payload, error), "valid command cannot claim disconnected device");
+    message = good;
+    message.body["input_state"]["checked_mono_us"] = 999999;
+    check(!encode(message, payload, error), "device check cannot predate a valid event");
+    message = good;
+    message.body["source"] = "FLIGHT";
+    check(!encode(message, payload, error), "FLIGHT cannot use JOYSTICK hold extension");
+    message = good;
+    message.body["input_state"]["mode"] = "UNKNOWN";
+    check(!encode(message, payload, error), "unknown input mode rejected");
+}
+
 ReceiveResult await_receive(zmq::socket_t& socket, ReceiveState& state, WireMessage& message) {
     const auto deadline = std::chrono::steady_clock::now() + 2s;
     std::string error;
@@ -230,7 +281,7 @@ void bus_tests() {
 } // namespace
 int main() {
     try {
-        codec_tests(); runtime_tests(); framing_tests(); bus_tests();
+        codec_tests(); runtime_tests(); position_hold_tests(); framing_tests(); bus_tests();
         std::cout << "communication tests passed\n";
         return 0;
     } catch (const std::exception& error) {

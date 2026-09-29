@@ -1,7 +1,7 @@
 if(AVIATOR_COMMUNICATION_ONLY OR NOT AVIATOR_BUILD_ROBOTICS_LIBS)
   return()
 endif()
-add_library(aviator_core_control STATIC Aviator.cpp Kinematics_pin_ik.cpp CollisionChecker_pinocchio.cpp RemoteLink.cpp)
+add_library(aviator_core_control STATIC Aviator.cpp ServoPlanner.cpp Kinematics_pin_ik.cpp CollisionChecker_pinocchio.cpp RemoteLink.cpp)
 target_include_directories(aviator_core_control PUBLIC include ${PROJECT_SOURCE_DIR}/common/include ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(aviator_core_control PUBLIC aviator_robotics_deps aviator_motion_protocol PRIVATE ruckig::ruckig)
 add_executable(aviator_core main.cpp)

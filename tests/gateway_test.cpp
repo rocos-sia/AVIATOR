@@ -24,6 +24,8 @@ int main() {
         check(!sample.valid, "axis update is not a complete report");
         sample.update(event(EV_ABS, ABS_Y, 65534, 1000000), 1000000);
         sample.update(event(EV_SYN, SYN_REPORT, 0, 1000000), 1000000);
+        check(!sample.fresh(1000000, 100000), "report alone does not renew device check");
+        sample.deviceChecked(1000000);
         check(sample.roll_value == -1 && sample.pitch_value == 1, "full-range normalization");
         check(sample.fresh(1099999, 100000) && !sample.fresh(1100000, 100000), "timeout boundary");
         const auto session = aviator::new_session_id();
@@ -39,6 +41,25 @@ int main() {
         check(aviator::encode(first, payload, error) &&
               aviator::decode("flight.command", payload, decoded, error), "gateway common codec");
         check(decoded.body.at("source") == "JOYSTICK", "source identity");
+        auto held = sample;
+        for (std::uint64_t now = 1020000; now <= 6000000; now += 20000) {
+            held.deviceChecked(now);
+            const auto holding = flight_gateway::command(held, session, "boot", 10, now, 456, 100000);
+            check(holding.header.valid && holding.header.sample_mono_us == 1000000 &&
+                  holding.body.at("input_state").at("checked_mono_us") == now,
+                  "static position stays valid without inventing new axis events");
+        }
+        check(!held.fresh(6100000, 100000), "publication cannot renew stopped device checks");
+        held.update(event(EV_ABS, ABS_X, 100, 6020000), 6020000);
+        held.deviceChecked(6020000);
+        check(held.checked_us == 6000000, "partial report cannot renew lease");
+        held.update(event(EV_SYN, SYN_REPORT, 0, 6020000), 6020000);
+        held.deviceChecked(6020000);
+        check(held.fresh(6020000, 100000), "completed report renews lease");
+        held.invalidate();
+        held.deviceChecked(6040000);
+        check(!held.fresh(6040000, 100000) && !held.device_connected,
+              "device fault cannot be cleared by another successful query");
         sample.roll.inverted = true;
         sample.update(event(EV_ABS, ABS_X, 32767, 1020000), 1020000);
         sample.update(event(EV_ABS, ABS_Y, 32767, 1020000), 1020000);

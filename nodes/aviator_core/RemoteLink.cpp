@@ -101,6 +101,8 @@ void RemoteLink::disable(Side) {
     enabled_ = false;
     state_.enabled = {false, false};
     trajectory_.reset();
+    streaming_ = false;
+    stream_.clear();
 }
 GraspState RemoteLink::graspState() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -129,6 +131,8 @@ uint64_t RemoteLink::sendGraspCommand(GraspCommand c) {
         enabled_ = false;
         publishing_ = false;
         trajectory_.reset();
+        streaming_ = false;
+        stream_.clear();
         state_.fault = false;
         state_.error.clear();
         error_.clear();
@@ -137,6 +141,61 @@ uint64_t RemoteLink::sendGraspCommand(GraspCommand c) {
 }
 void RemoteLink::setJointPositions(const Joints &) {
     throw std::runtime_error("Core must stream a planned trajectory");
+}
+void RemoteLink::beginStream(const std::vector<JointFrame> &frames) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!enabled_ || state_.fault || !error_.empty() || frames.size() < 61 || frames.size() > 251)
+        throw std::runtime_error("Servo requires a healthy device and 60..250 ms prefill");
+    for (size_t j = 0; j < 14; ++j)
+        if (std::abs(frames.front().q[j] - state_.target[j]) > 1e-7)
+            throw std::runtime_error("Servo prefill does not start at last device command");
+    stream_.assign(frames.begin(), frames.end());
+    stream_first_ = 0;
+    streaming_ = true;
+    stream_finished_ = false;
+    ++trajectory_id_;
+    start_ = monotonic_us();
+    publishing_ = true;
+}
+void RemoteLink::appendStream(const std::vector<JointFrame> &frames) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!streaming_ || stream_finished_ || state_.fault || !error_.empty())
+        throw std::runtime_error("Servo stream unavailable: " + error_ + state_.error);
+    if (frames.size() < 2 || stream_.size() + frames.size() > 251)
+        throw std::runtime_error("Servo queue exceeds 250 ms budget");
+    for (size_t j = 0; j < 14; ++j)
+        if (std::abs(stream_.back().q[j] - frames.front().q[j]) > 1e-9 ||
+            std::abs(stream_.back().dq[j] - frames.front().dq[j]) > 1e-8 ||
+            std::abs(stream_.back().ddq[j] - frames.front().ddq[j]) > 1e-7)
+            throw std::runtime_error("Servo append is not C2 continuous");
+    if (std::abs(stream_.back().angle - frames.front().angle) > 1e-9 ||
+        std::abs(stream_.back().displacement - frames.front().displacement) > 1e-9)
+        throw std::runtime_error("Servo append wheel reference changed");
+    stream_.insert(stream_.end(), frames.begin() + 1, frames.end());
+}
+size_t RemoteLink::streamAhead() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto now = monotonic_us();
+    if (!streaming_ || state_.fault || !error_.empty() || !feedback_valid_ ||
+        now - received_ >= config_.timeout_us || now - sample_ >= config_.timeout_us)
+        throw std::runtime_error("Servo feedback unavailable: receive_age_us=" + std::to_string(now - received_) +
+                                 " sample_age_us=" + std::to_string(now - sample_) + " " + error_ + state_.error);
+    const uint64_t cursor = state_.id == trajectory_id_ ? state_.cursor : 0;
+    if (cursor > stream_first_ + stream_.size() - 1) throw std::runtime_error("Servo cursor beyond queue");
+    return stream_first_ + stream_.size() - 1 - cursor;
+}
+void RemoteLink::finishStream() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    for (size_t j = 0; j < 14; ++j)
+        if (std::abs(stream_.back().dq[j]) > 1e-8 || std::abs(stream_.back().ddq[j]) > 1e-8)
+            throw std::runtime_error("Cannot finish Servo before planned rest");
+    stream_finished_ = true;
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (state_.id != trajectory_id_ || state_.cursor < stream_first_ + stream_.size() - 1) {
+        if (state_.fault || !error_.empty()) throw std::runtime_error("Servo drain failed: " + error_ + state_.error);
+        if (std::chrono::steady_clock::now() > until) throw std::runtime_error("Servo drain timeout");
+        changed_.wait_for(lock, std::chrono::milliseconds(5));
+    }
 }
 void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std::atomic<bool> &cancel) {
     if (frames.empty())
@@ -149,6 +208,8 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
     std::unique_lock<std::mutex> lock(mutex_);
     if (!enabled_ || state_.fault)
         throw std::runtime_error("Manipulator is not enabled/healthy");
+    streaming_ = false;
+    stream_.clear();
     trajectory_ = data;
     const auto id = ++trajectory_id_;
     start_ = monotonic_us();
@@ -183,6 +244,8 @@ void RemoteLink::stopTrajectory() {
     }
     auto result = operation("stop");
     std::lock_guard<std::mutex> lock(mutex_);
+    streaming_ = false;
+    stream_.clear();
     state_.target = result.at("target").get<Joints>();
     trajectory_ = std::make_shared<const std::vector<JointFrame>>(
         3, JointFrame{state_.target, state_.angle, state_.displacement});
@@ -277,7 +340,25 @@ void RemoteLink::io() {
                 bool send_window = false;
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
-                    if (publishing_ && trajectory_) {
+                    if (publishing_ && streaming_) {
+                        const uint64_t cursor = state_.id == trajectory_id_ ? state_.cursor : 0;
+                        while (stream_.size() > 2 && stream_first_ + 4 < cursor) {
+                            stream_.pop_front();
+                            ++stream_first_;
+                        }
+                        w.streaming = true;
+                        w.finished = stream_finished_;
+                        w.id = trajectory_id_;
+                        w.first = stream_first_;
+                        w.total = stream_first_ + stream_.size() - 1;
+                        w.count = std::min<size_t>(51, stream_.size());
+                        for (size_t k = 0; k < w.count; ++k) w.frames[k] = stream_[k];
+                        w.sequence = ++command_seq;
+                        w.origin_sample = heartbeat_;
+                        w.sample = monotonic_us();
+                        w.start = start_ + w.first * 1000;
+                        send_window = true;
+                    } else if (publishing_ && trajectory_) {
                         w.id = trajectory_id_;
                         w.total = trajectory_->size() - 1;
                         const uint64_t cursor = state_.id == w.id ? std::min(state_.cursor, w.total) : 0;

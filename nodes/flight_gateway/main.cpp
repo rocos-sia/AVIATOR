@@ -51,6 +51,7 @@ int main(int argc, char** argv) {
                     "  --publish tcp://127.0.0.1:5555 --subscribe tcp://127.0.0.1:5556\n"
                     "  --roll-axis 0 --pitch-axis 1 --invert-roll --invert-pitch\n"
                     "  --input-timeout-ms 100 --core-session UUID --lock-file PATH\n"
+                    "input-timeout-ms limits device-check age, not time since the last axis change.\n"
                     "Publishes at 50 Hz. Core feedback is unconfigured without --core-session.\n";
                 return 0;
             }
@@ -167,14 +168,16 @@ int main(int argc, char** argv) {
                 {nullptr, device, ZMQ_POLLIN, 0}, {sub.handle(), 0, ZMQ_POLLIN, 0}};
             zmq::poll(items, 3, std::chrono::milliseconds(wait_ms));
             if (items[0].revents) { running = false; break; }
+            bool input_drained = true;
             if (device >= 0 && items[1].revents) {
+                input_drained = false;
                 for (int i = 0; i < 128; ++i) {
                     input_event event{};
                     const auto n = read(device, &event, sizeof(event));
                     if (n == sizeof(event)) sample.update(event, aviator::monotonic_us());
                     else if (n < 0 && errno == EINTR) continue;
-                    else if (n < 0 && errno == EAGAIN) break;
-                    else { sample.failed = true; sample.valid = false; }
+                    else if (n < 0 && errno == EAGAIN) { input_drained = true; break; }
+                    else { sample.invalidate(); }
                     if (sample.failed) {
                         finish_value_line();
                         std::cerr << "flight_gateway: input lost/corrupt; restart required\n";
@@ -204,7 +207,32 @@ int main(int argc, char** argv) {
                 }
             }
             if (current >= next_publish) {
-                publish(current);
+                // Query kernel device availability every 20 ms. This is not a new hardware sample.
+                // Only renew the lease after draining events and completing their SYN_REPORT.
+                if (device >= 0 && !sample.failed) {
+                    input_absinfo current_roll{}, current_pitch{};
+                    if (ioctl(device, EVIOCGABS(roll_axis), &current_roll) != 0 ||
+                        ioctl(device, EVIOCGABS(pitch_axis), &current_pitch) != 0) {
+                        sample.invalidate();
+                        finish_value_line();
+                        std::cerr << "flight_gateway: device check failed: " << std::strerror(errno)
+                                  << "; restart required\n";
+                        close(device); device = -1;
+                    } else if (current_roll.minimum != sample.roll.minimum ||
+                               current_roll.maximum != sample.roll.maximum ||
+                               current_pitch.minimum != sample.pitch.minimum ||
+                               current_pitch.maximum != sample.pitch.maximum ||
+                               current_roll.value < current_roll.minimum || current_roll.value > current_roll.maximum ||
+                               current_pitch.value < current_pitch.minimum || current_pitch.value > current_pitch.maximum) {
+                        sample.invalidate();
+                        finish_value_line();
+                        std::cerr << "flight_gateway: invalid/changed axis range; restart required\n";
+                        close(device); device = -1;
+                    } else if (input_drained) {
+                        sample.deviceChecked(aviator::monotonic_us());
+                    }
+                }
+                publish(aviator::monotonic_us());
                 next_publish += ((current - next_publish) / 20000 + 1) * 20000;
             }
         }

@@ -42,6 +42,43 @@ int main() {
             for (size_t j = 0; j < 14; ++j)
                 check(std::abs(actual.frames[k].q[j] - w.frames[k].q[j]) < 1e-12,
                       "2 ms interpolation changed linear trajectory");
+        auto stream = w;
+        stream.streaming = true;
+        stream.count = 51;
+        stream.first = 1;
+        stream.total = 101;
+        for (size_t k = 0; k < stream.count; ++k)
+            for (size_t j = 0; j < 14; ++j) {
+                stream.frames[k].q[j] = .1234567891234567 + k * .000123456789123456;
+                stream.frames[k].dq[j] = .1234567891234567;
+                stream.frames[k].ddq[j] = -.01234567891234567;
+            }
+        auto sm = m;
+        sm.body = encodeWindow(stream, session, epoch);
+        check(encode(sm, payload, error), error.c_str());
+        Message wire;
+        check(decode("arm.command", payload, wire, error), error.c_str());
+        const auto restored = decodeWindow(wire, lo, hi, speed);
+        check(restored.streaming && restored.count == 51 && restored.first == 1, "Servo tick grid");
+        for (size_t k = 0; k < stream.count; ++k)
+            check(restored.frames[k].q == stream.frames[k].q && restored.frames[k].dq == stream.frames[k].dq &&
+                  restored.frames[k].ddq == stream.frames[k].ddq, "Servo samples changed in transport");
+        // Servo is allowed past the application dynamic caps; positions and finite values remain checked.
+        auto fast = stream;
+        for (size_t k = 0; k < fast.count; ++k) {
+            fast.frames[k].q.fill(.2 + k * .0025);
+            fast.frames[k].dq.fill(2.5);
+            fast.frames[k].ddq.fill(25);
+        }
+        auto fast_message = m;
+        fast_message.body = encodeWindow(fast, session, epoch);
+        check(decodeWindow(fast_message, lo, hi, speed).frames[1].dq[0] == 2.5,
+              "Servo dynamic cap still applied in protocol");
+        auto invalid_position = fast_message;
+        invalid_position.body["arms"]["left"]["points"][1]["joint_position"][0] = 4;
+        rejected([&] { decodeWindow(invalid_position, lo, hi, speed); });
+        wire.body["arms"]["left"]["points"][1].erase("joint_acceleration");
+        rejected([&] { decodeWindow(wire, lo, hi, speed); });
         auto bad = decoded;
         bad.body["arms"].erase("right");
         rejected([&] { decodeWindow(bad, lo, hi, speed); });

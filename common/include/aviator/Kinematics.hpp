@@ -18,6 +18,12 @@ class Kinematics {
     // 正运动学：给定关节角，求解末端位姿
     virtual bool solveFk(Side side, const std::array<double, 7> &q, pinocchio::SE3 &out) = 0;
 
+    // Flange twist/acceleration in aircraft axes (linear first, angular last).
+    virtual bool jointDerivatives(Side, const std::array<double, 7>&,
+                                  const Eigen::Matrix<double, 6, 1>&,
+                                  const Eigen::Matrix<double, 6, 1>&,
+                                  std::array<double, 7>&, std::array<double, 7>&) { return false; }
+
     // 关节限位 (来自 URDF)
     virtual double jointLower(Side side, int axis) const = 0;
     virtual double jointUpper(Side side, int axis) const = 0;
