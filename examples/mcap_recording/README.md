@@ -1,6 +1,6 @@
 # MCAP 全量记录 + 事后同步 示例
 
-一个自包含的最小示例，演示文档 §10「MCAP 全量记录」的端到端流程，供你调整、测试，之后可升级为正式的 `nodes/aviator_logger`。
+一个自包含的最小示例，演示 MCAP 写入与读回。正式总线记录实现见 [aviator_logger](../../nodes/aviator_logger/README.md)，公共存储封装位于 `common/recording.hpp/.cpp`。示例保留独立的依赖副本和构建入口；示例的合成消息不是当前公共协议的完整业务消息，正式节点的映射以节点文档为准。
 
 ## 做什么
 
@@ -41,7 +41,9 @@ AVIATOR_REMOTE_HOST=user@host AVIATOR_REMOTE_DIR=/data/aviator \
 
 - 仅 C++17 标准库 + 头文件版 MCAP（vendor 在 `third_party/mcap/`，压缩 zstd/lz4 已用编译宏关闭）。
 
-## 后续升级路径
+## 正式实现与后续升级路径
+
+总线订阅、公共存储封装、异步队列和读回测试已在正式节点实现。下面保留完整归档系统的演进方向，当前边界见节点说明。
 
 - 数据源从合成消息换成订阅真实总线（连接 XPUB），或走独立记录通道 `tcp://127.0.0.1:5557`。
 - Schema 换成 `schemas/` 里的真实 JSON Schema。

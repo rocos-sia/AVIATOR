@@ -84,3 +84,9 @@ Message 的 body 保留 JSON，完整业务 Schema 与各业务强类型模型�
 暂未实现可靠服务、system.* 业务内容校验、MCAP/Protobuf 记录通道、跨主机时钟映射和 RT SPSC 队列；这些功能不以空壳 API 占位。接口依据详见 [ZMQ 协议格式说明](../docs/AVIATOR_ZMQ协议格式说明.md)。
 
 通信独立构建及测试见 [构建系统说明](../docs/构建系统说明.md)。
+
+## MCAP 存储
+
+`aviator_recording` 提供 `recording.hpp` 中的 `RecordingWriter`，用于非实时线程的单文件总线 JSON 记录。调用 `append(topic, original_payload, receive_utc_ns)` 写入，`finish()` 同步、读回验证并发布最终文件；析构不自动发布文件，未完成文件保留为 `.partial`。实例只能由一个线程使用。
+
+该库将 MCAP 实现封装在单个翻译单元，公共头文件不暴露 MCAP 类型；安装规则包含库与头文件。当前为 Linux 文件系统实现。具体映射、统计和持久化边界见 [Logger 说明](../nodes/aviator_logger/README.md)。

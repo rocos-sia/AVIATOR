@@ -25,8 +25,17 @@ add_library(aviator_runtime runtime.cpp)
 target_compile_features(aviator_runtime PUBLIC cxx_std_17)
 target_link_libraries(aviator_runtime PUBLIC aviator_protocol Threads::Threads)
 
-install(TARGETS aviator_protocol aviator_transport aviator_runtime
+# Single implementation unit for the pinned MCAP copy. No compression dependencies.
+add_library(aviator_recording recording.cpp)
+target_compile_features(aviator_recording PUBLIC cxx_std_17)
+target_include_directories(aviator_recording SYSTEM PRIVATE
+  ${PROJECT_SOURCE_DIR}/third_party/mcap-2.1.3/include)
+target_compile_definitions(aviator_recording PRIVATE
+  MCAP_COMPRESSION_NO_ZSTD MCAP_COMPRESSION_NO_LZ4)
+target_link_libraries(aviator_recording PUBLIC aviator_protocol)
+
+install(TARGETS aviator_protocol aviator_transport aviator_runtime aviator_recording
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES protocol.hpp transport.hpp runtime.hpp startup.hpp
+install(FILES protocol.hpp transport.hpp runtime.hpp startup.hpp recording.hpp
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/aviator)
