@@ -41,6 +41,8 @@ packages=(
   clangd clang-format clang-tidy gdb
   # common/ transport and JSON protocol.
   libzmq3-dev nlohmann-json3-dev
+  # Logger YAML / camera Protobuf envelope / RGB video + depth compression.
+  libprotobuf-dev libavcodec-dev libavutil-dev libswscale-dev libzstd-dev
   # cmake/ThirdPartyDependencies.cmake: robotics and system libraries.
   libassimp-dev
   libboost-date-time-dev libboost-filesystem-dev libboost-serialization-dev

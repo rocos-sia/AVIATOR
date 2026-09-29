@@ -131,3 +131,16 @@ charuco:
 - PUB/SUB 无送达确认，订阅端晚于发布端启动会漏掉最初几条消息；测试请先起订阅端/总线。
 - 本目录为 Python 测试程序，独立于 `nodes/`（C++）构建；如需正式并入节点树，再按
   `nodes/camera` 的 C++ 结构迁移并接入 CMake。
+
+## 将 RGB 与深度记录到 MCAP
+
+Logger 支持 `recording.yaml` 的 disabled/raw/compressed 三模式。在 Logger 中启用 raw 或 compressed 并启动后，运行：
+
+```bash
+python camera_publisher.py --config ../../config/camera.yaml --camera-id cockpit \
+  --recording-config ../../config/recording.yaml
+```
+
+示例启用 Z16 深度流，在热身结束后、推理前把 RGB8/Z16 送入独立有界发送队列；Logger 按配置决定是否压缩。源 camera_id 必须匹配配置。未传 `--recording-config` 或模式 disabled 时不发送图像、不额外启用深度。相机实例必须支持配置的彩色/深度尺寸与共同帧率。
+
+此示例的采集和推理仍共用主循环，不能保证每个传感器帧都被读取；源序号使用硬件帧号，发送失败/队列溢出另外计数。主机接收时刻与传感器时间戳分别保存。D436 实机性能未由无硬件单元测试覆盖。协议及部署边界见 [Logger 实现说明](../../docs/Logger配置与图像记录实现说明.md)。

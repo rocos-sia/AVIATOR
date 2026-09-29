@@ -53,3 +53,18 @@ if(Python3_Interpreter_FOUND)
     ${CMAKE_CURRENT_SOURCE_DIR}/logger_process_test.py $<TARGET_FILE:aviator_logger>)
   set_tests_properties(logger_process PROPERTIES TIMEOUT 20)
 endif()
+
+aviator_add_test_executable(aviator_camera_recording_test camera_recording_test.cpp ../nodes/aviator_logger/logger.cpp)
+target_include_directories(aviator_camera_recording_test PRIVATE ../nodes/aviator_logger)
+target_include_directories(aviator_camera_recording_test SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/mcap-2.1.3/include)
+target_compile_definitions(aviator_camera_recording_test PRIVATE MCAP_COMPRESSION_NO_ZSTD MCAP_COMPRESSION_NO_LZ4)
+target_link_libraries(aviator_camera_recording_test PRIVATE aviator_recording aviator_transport aviator_runtime PkgConfig::AVIATOR_VIDEO)
+add_test(NAME camera_recording COMMAND aviator_camera_recording_test ${PROJECT_SOURCE_DIR}/config/recording.yaml)
+set_tests_properties(camera_recording PROPERTIES TIMEOUT 40)
+
+if(Python3_Interpreter_FOUND)
+  add_test(NAME camera_adapter COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/camera_adapter_test.py $<TARGET_FILE:aviator_camera_recording_test>
+    ${PROJECT_SOURCE_DIR}/examples/aruco_camera/recording_client.py)
+  set_tests_properties(camera_adapter PROPERTIES TIMEOUT 10)
+endif()

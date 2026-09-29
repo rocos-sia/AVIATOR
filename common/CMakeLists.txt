@@ -25,17 +25,29 @@ add_library(aviator_runtime runtime.cpp)
 target_compile_features(aviator_runtime PUBLIC cxx_std_17)
 target_link_libraries(aviator_runtime PUBLIC aviator_protocol Threads::Threads)
 
-# Single implementation unit for the pinned MCAP copy. No compression dependencies.
+find_package(yaml-cpp REQUIRED)
+find_package(Protobuf REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(AVIATOR_VIDEO REQUIRED IMPORTED_TARGET GLOBAL libavcodec libavutil libswscale libzstd)
+add_library(aviator_camera_recording recording_config.cpp camera_recording.cpp)
+target_compile_features(aviator_camera_recording PUBLIC cxx_std_17)
+target_link_libraries(aviator_camera_recording PUBLIC aviator_protocol PRIVATE
+  yaml-cpp protobuf::libprotobuf PkgConfig::AVIATOR_VIDEO)
+
+# Single implementation unit for MCAP. Container compression stays disabled;
+# camera payload compression belongs to aviator_camera_recording.
 add_library(aviator_recording recording.cpp)
 target_compile_features(aviator_recording PUBLIC cxx_std_17)
 target_include_directories(aviator_recording SYSTEM PRIVATE
   ${PROJECT_SOURCE_DIR}/third_party/mcap-2.1.3/include)
 target_compile_definitions(aviator_recording PRIVATE
   MCAP_COMPRESSION_NO_ZSTD MCAP_COMPRESSION_NO_LZ4)
-target_link_libraries(aviator_recording PUBLIC aviator_protocol)
+target_link_libraries(aviator_recording PUBLIC aviator_protocol aviator_camera_recording)
 
-install(TARGETS aviator_protocol aviator_transport aviator_runtime aviator_recording
+install(TARGETS aviator_protocol aviator_transport aviator_runtime aviator_recording aviator_camera_recording
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES protocol.hpp transport.hpp runtime.hpp startup.hpp recording.hpp
+install(FILES protocol.hpp transport.hpp runtime.hpp startup.hpp recording.hpp recording_config.hpp camera_recording.hpp
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/aviator)
+
+install(FILES ${PROJECT_SOURCE_DIR}/schemas/recording/camera_packet.proto DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/schemas)

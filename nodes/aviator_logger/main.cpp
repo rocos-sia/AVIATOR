@@ -28,7 +28,7 @@ std::string default_output_path() {
 }
 
 void usage() {
-    std::cout << "Usage: aviator_logger [--output aviator_DATE_TIME-UUID.mcap]\n"
+    std::cout << "Usage: aviator_logger [--config config/recording.yaml] [--output FILE]\n"
                  "                       [--subscribe tcp://127.0.0.1:5556] [--session UUID]\n"
                  "                       [--queue-bytes 16777216] [--receive-hwm 4096]\n"
                  "Writes bus traffic to a single MCAP file; SIGINT/SIGTERM finalizes.\n";
@@ -51,15 +51,35 @@ std::string format_utc_ns(std::uint64_t ns) {
 int main(int argc, char** argv) {
     int result = 0;
     try {
-        std::string endpoint = aviator::subscribe_endpoint;
-        std::string output = default_output_path();
-        std::string session = aviator::new_session_id();
-        aviator::RecorderOptions options;
+        aviator::RecordingConfig config;
+        // Load YAML before applying explicit CLI overrides, independent of argument order.
         for (int i = 1; i < argc; ++i) {
             const std::string key = argv[i];
             if (key == "--help" || key == "-h") {
                 usage();
                 return 0;
+            }
+            if (key == "--config") {
+                if (++i == argc)
+                    throw std::runtime_error("missing --config path");
+                config = aviator::load_recording_config(argv[i]);
+            } else if (key == "--output" || key == "--subscribe" || key == "--session" ||
+                       key == "--queue-bytes" || key == "--receive-hwm")
+                ++i;
+        }
+        std::string endpoint = config.subscribe_endpoint;
+        std::string output = config.output.empty() ? default_output_path() : config.output;
+        std::string session = aviator::new_session_id();
+        aviator::RecorderOptions options = config.options;
+        for (int i = 1; i < argc; ++i) {
+            const std::string key = argv[i];
+            if (key == "--help" || key == "-h") {
+                usage();
+                return 0;
+            }
+            if (key == "--config") {
+                ++i;
+                continue;
             }
             if (key != "--output" && key != "--subscribe" && key != "--session" &&
                 key != "--queue-bytes" && key != "--receive-hwm")
@@ -92,6 +112,8 @@ int main(int argc, char** argv) {
         if (endpoint.rfind("tcp://", 0) != 0)
             throw std::runtime_error("subscription must use TCP");
 
+        aviator::validate_recording_config({endpoint, output, options});
+
         // Block signals before spawning threads; no handler touches ZMQ or C++ objects.
         sigset_t signals;
         sigemptyset(&signals);
@@ -113,6 +135,13 @@ int main(int argc, char** argv) {
                          {"Output", output + "  (.partial -> atomic rename)"},
                          {"Session", session},
                          {"Queue bytes", std::to_string(options.queue_bytes)},
+                         {"Camera mode", options.camera.mode},
+                         {"Camera ingress", options.camera.mode == "disabled"
+                                                ? "disabled"
+                                                : options.camera.record_endpoint},
+                         {"Camera state", options.camera.mode == "disabled"
+                                              ? "DISABLED"
+                                              : "LISTENING (waiting for RGB/depth sources)"},
                          {"Exit", "Ctrl+C (drain + finalize)"}});
                 });
             } catch (const std::exception& error) {

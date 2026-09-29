@@ -6,6 +6,9 @@ camera:
   width: 1280            # 彩色流分辨率
   height: 720
   fps: 30
+  depth:                 # 仅传入启用图像的 --recording-config 时启用 Z16；fps 沿用彩色流
+    width: 1280
+    height: 720
   warmup_s: 5.0          # 启动后跳过发布的热身秒数（0 禁用）
 
 charuco:

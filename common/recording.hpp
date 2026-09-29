@@ -1,5 +1,6 @@
 #pragma once
 
+#include "camera_recording.hpp"
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -14,6 +15,7 @@ struct TopicStats {
 
 struct RecorderSummary {
     std::uint64_t messages = 0;
+    std::uint64_t camera_messages = 0;
     std::uint64_t invalid = 0;
     std::uint64_t rejected = 0;
     std::uint64_t dropped = 0;
@@ -30,11 +32,16 @@ struct RecorderSummary {
 // Abandoning a writer preserves .partial; only finish() publishes a final file.
 class RecordingWriter {
   public:
-    RecordingWriter(const std::string& path, const std::string& session);
+    RecordingWriter(const std::string& path, const std::string& session,
+                    std::size_t chunk_size = 4 * 1024 * 1024,
+                    const std::string& effective_config = "{}");
     ~RecordingWriter();
     RecordingWriter(const RecordingWriter&) = delete;
     RecordingWriter& operator=(const RecordingWriter&) = delete;
     void append(std::string_view topic, std::string_view payload, std::uint64_t receive_utc_ns);
+    void append_camera(const std::string& topic, const CameraFrame& frame,
+                       std::uint64_t receive_utc_ns);
+    void metadata(const std::string& name, const nlohmann::json& value);
     RecorderSummary finish(std::uint64_t rejected = 0, std::uint64_t dropped = 0);
 
   private:

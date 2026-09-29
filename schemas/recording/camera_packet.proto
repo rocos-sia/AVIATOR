@@ -1,0 +1,8 @@
+syntax = "proto3";
+package aviator.record.v1;
+// Versioned camera-only transport. Metadata contract: docs/Logger配置与图像记录实现说明.md.
+// Distinct from the draft general-purpose RecordEnvelope in the ICD.
+message CameraPacket {
+  string metadata_json = 1;
+  bytes data = 2;
+}

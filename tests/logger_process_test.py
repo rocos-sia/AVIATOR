@@ -70,6 +70,26 @@ with tempfile.TemporaryDirectory(prefix="aviator-logger-process-") as root:
             process.kill()
             process.wait()
 
+    config = root / "recording.yaml"
+    yaml_output = root / "from-yaml.mcap"
+    override_output = root / "from-cli.mcap"
+    config.write_text(f'config_version: 1\noutput: {{path: "{yaml_output}"}}\ncamera: {{mode: disabled}}\n')
+    process = subprocess.Popen([executable, "--output", str(override_output), "--config", str(config)],
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        ready(process)
+        process.send_signal(signal.SIGTERM)
+        data, _ = process.communicate(timeout=5)
+        assert process.returncode == 0, data
+        assert override_output.exists() and not yaml_output.exists(), "CLI must override YAML regardless of argument order"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+    config.write_text('config_version: 1\ncamera: {mode: invalid}\n')
+    result = subprocess.run([executable, "--config", str(config)], capture_output=True, timeout=5)
+    assert result.returncode == 1 and b"Ctrl+C" not in result.stdout
+
     result = subprocess.run([executable, "--output", str(root / "missing" / "file.mcap")],
                             capture_output=True, timeout=5)
     assert result.returncode == 1

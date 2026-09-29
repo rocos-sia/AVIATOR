@@ -1,59 +1,86 @@
 # aviator_logger
 
-独立 C++ 总线数据记录节点，从 XPUB（默认 `tcp://127.0.0.1:5556`）订阅全部 Topic，将通过公共协议校验的原始 JSON 字节写入单个 MCAP。存储封装位于 `common/recording.hpp/.cpp`，节点负责通信、队列和退出；不依赖机器人 SDK 或仿真库。
-
-这是架构 P1 阶段的总线记录实现，**不等同于第 10 章完整原始数据归档系统**。PUB/SUB、总线 HWM、连接建立和关闭期间可能丢消息；记录始终标记 `completeness=unverified_pubsub`，不能凭文件可读或序号连续宣称端到端无损。
+独立 C++ 记录节点：订阅全部业务 JSON Topic，并根据 YAML 选择不保存图像、原始保存、压缩保存。业务 JSON 与图像写入同一个 MCAP，图像使用独立 TCP 入口及有界队列。依赖和协议细节、实现过程见 [实现说明](../../docs/Logger配置与图像记录实现说明.md)。
 
 ## 构建与启动
 
-在仓库根目录执行：
-
 ```bash
+# Ubuntu 22.04；也可使用 scripts/install_dependencies.sh
+sudo apt-get install libzmq3-dev nlohmann-json3-dev libyaml-cpp-dev \
+  libprotobuf-dev libavcodec-dev libavutil-dev libswscale-dev libzstd-dev pkg-config
 cmake -S . -B build/communication -DAVIATOR_COMMUNICATION_ONLY=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/communication --parallel 2
 ctest --test-dir build/communication --output-on-failure
 
 ./build/communication/bin/aviator_bus
-# 另一个终端；父目录须已存在。
-./build/communication/bin/aviator_logger --output recording.mcap
-# Ctrl+C 排空已入队消息并关闭文件。
+# 另一个终端，工作目录为仓库根目录
+./build/communication/bin/aviator_logger --config config/recording.yaml --output recording.mcap
 ```
 
-| 参数 | 默认值 | 含义 |
-| --- | --- | --- |
-| `--output` | `aviator_DATE_TIME-UUID.mcap` | 输出路径；本地启动时间加随机 UUID。已有输出或 `.partial` 均拒绝覆盖。 |
-| `--subscribe` | `tcp://127.0.0.1:5556` | XPUB TCP 订阅端点。 |
-| `--session` | 新 UUID | Logger 记录会话标识，与消息内的源会话分开保存。 |
-| `--queue-bytes` | `16777216` | 应用队列预算；按帧字节数加条目结构计费，不含分配器开销、ZMQ 队列和 MCAP Chunk。 |
-| `--receive-hwm` | `4096` | SUB 接收 HWM，单位为消息。 |
-| `--help` / `-h` | — | 打印用法。 |
+配置默认 `camera.mode: "disabled"`。启用 `raw` 或 `compressed` 后，相机端也需接入记录入口。例如在已配置 RealSense/OpenCV 环境的另一个终端：
 
-接收线程独占 SUB socket，在收到两帧后记录 UTC 接收时刻并入队；写盘线程独占 MCAP Writer。队列满时丢弃新消息、累计 `queue_dropped`，不使用 latest-value 合并。接收和写盘都属于非实时域。
+```bash
+python examples/aruco_camera/camera_publisher.py \
+  --config config/camera.yaml --camera-id cockpit \
+  --recording-config config/recording.yaml
+```
 
-SIGINT/SIGTERM 停止接收，排空已入应用队列的数据，然后写索引与尾部、`fsync` 文件、读回检查索引和消息数、原子更名，最后 `fsync` 父目录。尚在生产者、网络或 SUB 内的数据不属于已入队范围，停止生产者与结束序号握手仍待实现。关闭读回耗时与文件大小相关；磁盘阻塞时没有硬性退出时限。
+Python 仅用于现有相机示例，不是 Logger 的生产运行依赖。该示例在推理前提交图像记录副本，但采集和检测仍在同一循环，**不保证传感器每个 30 Hz 样本都能被应用读取**；生产部署需要独立采集线程和实机吞吐验收。先停止生产者，再停止 Logger；接收端停止时不保证排空网络/ZMQ 内尚未入应用队列的数据。
 
-只在 Writer 成功打开后输出启动信息。创建、写入、同步、校验或更名失败返回非零，不打印成功统计；失败前的 `.partial` 保留，不自动修复或覆盖。若最后的父目录同步失败，最终文件可能已经存在，但程序仍报告失败。运行中没有周期性持久化承诺，断电可能丢失未关闭的 Chunk。
+## 配置文件与优先级
 
-## MCAP 映射
+仅显式传入 `--config PATH` 才读取 YAML；省略时兼容原有仅总线记录。优先级为内置默认值 → YAML → 显式命令行参数，与参数出现顺序无关。相对输出路径相对于进程工作目录；修改配置需要重启会话。
 
-- Schema：以 `类型/协议版本` 命名，`encoding=jsonschema`。目前仅约束公共头部，完整业务 Schema 尚未冻结；元数据明确标记 `schema_scope=common_header_only`。
-- Channel：按 Topic、版本、`publisher_id`、源 `session_id`、`clock_id` 区分，Topic 保持原名；不会把后来来源错标为第一个发布者。
-- Message：原始 Frame1 字节逐字节保留，包括空白、扩展字段与 `valid=false`。`sequence` 取源序号低 32 位，完整序号仍在 JSON 中。
-- `log_time`：接收时的 Unix UTC 纳秒，不人为修正系统时钟回退。当前时钟接口精度为微秒。
-- `publish_time`：按 SAD §10，在没有明确发布 UTC 时取 `log_time`；原始 `timestamp` 是快照时间，只保留于消息中。
-- Chunk：4 MiB 目标大小，无压缩；启用 Chunk、Data、Summary CRC 和默认消息/Chunk 索引。关闭读回检查结构及计数，不是独立的全文件 CRC 审计。
-- Metadata：保存 Logger 会话、消息/Channel 计数、接收时间范围、逐 Topic 统计、无效/拒绝/队列溢出计数和完整性标记。
+| 参数 | 默认值 / 含义 |
+| --- | --- |
+| `--config` | 不自动查找；读取指定 YAML。 |
+| `--output` | 自动生成 `aviator_DATE_TIME-UUID.mcap`；覆盖 `output.path`。父目录须存在。 |
+| `--subscribe` | `tcp://127.0.0.1:5556`；覆盖 `bus.subscribe_endpoint`。 |
+| `--session` | 新 UUID，Logger 会话与源会话分开。 |
+| `--queue-bytes` | 16777216；仅覆盖业务队列。 |
+| `--receive-hwm` | 4096；仅覆盖业务 SUB HWM。 |
+| `--help` / `-h` | 显示用法。 |
 
-按 Topic、publisher、源会话的完整序号高水位统计观察到的 `sequence_gaps` 和 `duplicate_or_reordered`，重复及乱序消息仍原样记录。缺口计数不因晚到消息回补，因此表示接收时观察到的前向跳号，而非最终丢失量；首尾区间未知，尚无生产者首尾清单对账。Schema/Channel 达到 MCAP 的 16 位 ID 上限时明确失败。
+完整示例见 [`recording.yaml`](../../config/recording.yaml)。可省略非版本字段，未填写部分使用内置默认值。未知/重复键、非法类型、未知模式、越界数值在启动阶段失败；数值参数不使用引号。`config_version` 必须为整数 `1`。字节预算与 Chunk 大小当前上限为 `INT_MAX`。
 
-## 当前边界
+| `camera.mode` | RGB | 深度 | 说明 |
+| --- | --- | --- | --- |
+| `disabled` | 不保存 | 不保存 | 不创建图像 PULL、不分配图像队列、不初始化编码器；业务消息仍记录。 |
+| `raw` | 原始 RGB8 字节 | 原始 Z16 字节 | 不缩放、不主动降采样、不压缩；这里的原始不是传感器 Bayer RAW。 |
+| `compressed` | H.265 默认 / H.264 | Zstd 无损 Z16 | RGB 为有损 YUV420P 视频，深度解压后原样恢复。 |
 
-尚未实现的架构升级项：`5557` 原始数据入口与冻结 Protobuf 信封、`record.invalid` 原始坏帧留存、`record.ingest` 单调接收时序、分卷、Zstd 压缩、带哈希的外部会话清单、配置/标定附件、周期性持久化、状态发布和崩溃恢复。
+- `output.chunk_compression` v1 只允许 `none`；`chunk_size_bytes` 默认 4 MiB，仅为目标值。图像编码与 MCAP Chunk 压缩分开，已编码负载不再次压缩。
+- `camera.sources` 的 ID 必须唯一，格式为 1–80 个字母、数字、下划线或连字符；Topic 必须为 `record.camera.<id>.rgb` / `.depth`。每个启用源要求 RGB、深度均出现；缺少的流在结束元数据和 stderr 中标记 DEGRADED。
+- 输入始终为 RGB8/Z16 原始帧，不接受生产者直接传入 H.264/H.265。图像通过 `5557` 的单帧 Protobuf 信封传输，禁止混入控制 JSON 总线。
+- `compressed.rgb.encoder=auto` 先尝试 FFmpeg NVENC，再尝试 libx264/libx265；`hardware` 当前仅支持 NVENC，`software` 严格使用 libx264/libx265。后端不可用时失败，绝不自动切换 codec 或保存模式。编码库存在不代表硬件可用。
+- `target_bitrate_bps` 默认 8 Mbps，是平均码率目标，不是文件大小硬上限。`keyframe_interval_frames` 默认 30；B 帧固定为 0；首帧带解码参数并为关键帧。YUV420P 要求宽高均为偶数。
+- 深度 `codec` 固定 `zstd`，`level` 为 1..19。帧头保留 Z16 原始 stride、字节序和 `depth_scale`，不能把伪彩色深度图冒充原始深度。
+- 不修改源分辨率和帧率；RGB 实际宽高/fps/源身份/配置 ID 改变时重建编码器并开始新的可解码序列。
 
-未知 Topic 或 JSON 校验失败目前计入 `invalid` 后跳过；非法 multipart 计入 `rejected`（超长 multipart 按每次受限排空拒绝计数）。超过 ZMQ 单帧安全上限（64 KiB）的消息可能在传输层被拒绝，不能承诺应用侧逐条计数。以上限制与统计一起用于判断本次记录是否适合分析。
+## 队列、状态与退出
 
-## 验证
+接收线程独占 SUB/PULL，写盘线程独占编码器和 MCAP Writer。业务队列默认 16 MiB，图像队列默认 256 MiB，分别计费，交替取出保证一侧不会无限抢占另一侧；单次编码仍可能延迟业务写盘。队列按负载和条目结构计费，不含分配器、ZMQ 缓冲和编码器工作区。编码线程数设为 2，软件 H.265 限制线程池；总内存仍需按实际分辨率与来源数量实测。
 
-`recording` 测试覆盖已注册的 11 个 Topic、原始字节、来源与版本隔离、序号低 32 位、UTC 回退、无效数据、TCP 订阅、队列溢出、空文件以及已有文件/残留文件保护。`logger_process` 在 Python 可用时使用标准库验证 SIGINT/SIGTERM、创建失败和文件大小限制触发的写盘失败；Python 不参与运行节点。
+图像接收 HWM 默认 16 条，单条 Protobuf 信封上限默认 16 MiB。队列满丢新帧并计数，不等待控制线程。丢弃发生在编码前，因此后续视频帧不依赖未落盘的编码参考帧。编码器错误、编码后超限、磁盘错误均失败退出并保留 `.partial`，不继续输出可能损坏的视频序列。
 
-MCAP 已在 `third_party/mcap-2.1.3/` 固定为 2.1.3，包含许可证；与 `examples/mcap_recording/third_party/mcap/` 副本一致。示例保留自包含构建，正式节点通过 `aviator_recording` 链接唯一实现翻译单元。
+启动横幅 `LISTENING` 仅表示本地入口和 Writer/编码器初始化成功，不代表生产者已连接或所有源 READY。异常输出本地 DEGRADED/ERROR；结束时 MCAP `camera_recording` 元数据保存缺失流、非法信封、multipart 拒绝及队列丢弃计数。目前尚未通过业务总线发布完整状态机。显式禁用图像不算异常。
+
+SIGINT/SIGTERM 停止接收并排空已入队数据，然后写索引与尾部、`fsync` 文件、读回检查结构及计数、原子更名、`fsync` 父目录。拒绝覆盖最终文件和 `.partial`。失败返回非零；父目录同步失败时最终文件可能已存在，但仍报告失败。磁盘阻塞和关闭读回没有硬性时间上限；运行中尚无周期性持久化承诺。
+
+## MCAP 映射与完整性
+
+业务 JSON 保留原始 Frame1 字节、空白、扩展字段和 `valid=false`，Schema 为 `类型/版本` 的公共头部 jsonschema；Channel 按 Topic、版本、发布者、源会话和时钟区分。未知 Topic/非法业务 JSON 仍只计数跳过，尚无 `record.invalid` 存档。
+
+图像使用 `aviator.record.v1.CameraPacket`，`message_encoding=protobuf`；嵌入完整 `FileDescriptorSet`。该信封是独立的相机协议，不等同于 ICD 中尚未冻结的通用 `RecordEnvelope`。帧头、像素格式、编码器、标定信息随帧保存。现有 Foxglove 通用视频面板不能自动识别此自定义 Schema，需适配或转换。
+
+两类消息的 `log_time` 为接收 UTC（微秒接口换算纳秒，保留时钟回退），缺少真实发布时间时 `publish_time=log_time`；源完整序号保留于负载，MCAP sequence 取低 32 位。按 Topic、发布者、源会话统计观察到的前向缺口及重复/乱序。图像额外保存接收单调时间和 Logger clock_id。
+
+MCAP 启用 Chunk/Data/Summary CRC 与默认索引；关闭检查不是独立全文件 CRC 审计。`aviator` Metadata 保存最终有效配置，`summary` 保存总消息数（含图像）、图像数和统计，`camera_recording` 保存图像专项结果。
+
+PUB/SUB 和 PUSH/PULL 都没有持久化交付确认；ZMQ 超限拒绝、生产者/网络丢帧可能无法由 Logger 逐条计数。会话仍标记 `completeness=unverified_pubsub`；缺口统计不是最终丢失量，有损属性也不等于缺帧属性。
+
+## 验证与剩余工作
+
+CTest 覆盖配置校验与 CLI 覆盖、三模式 TCP 接入、原始字节、H.264/H.265 连续解码、Z16 解压一致、坏帧/multipart、队列溢出、Python/C++ 信封互通、信号退出和写盘失败。
+
+尚未实现分卷、带哈希的外部会话清单、生产者开始/结束握手、通用设备/伺服记录、`record.invalid`、周期性持久化与崩溃恢复。D436 实机、硬件编码和长时间峰值吞吐需在目标设备验收。MCAP 固定为 `third_party/mcap-2.1.3`；示例仍保留自己的依赖副本。

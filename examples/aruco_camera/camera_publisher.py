@@ -21,6 +21,7 @@ import pyrealsense2 as rs
 import yaml
 import zmq
 from cv2 import aruco
+from recording_client import RecordingClient
 
 DEFAULT_CONFIG = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "config", "camera.yaml")
@@ -172,6 +173,7 @@ def make_message(camera_id, frame_id, sequence, sample_mono_us,
 def parse_args(argv):
     p = argparse.ArgumentParser(description="RealSense ChArUco 姿态 -> camera.detection 发布")
     p.add_argument("--config", default=DEFAULT_CONFIG, help="YAML 配置文件路径")
+    p.add_argument("--recording-config", help="Logger recording.yaml；省略则不发送图像记录")
     p.add_argument("--endpoint", default="tcp://127.0.0.1:5555",
                    help="PUB 连接端点（AVIATOR publish_endpoint）")
     p.add_argument("--bind", action="store_true",
@@ -194,6 +196,7 @@ def parse_args(argv):
 def main(argv):
     args = parse_args(argv)
     camera, charuco = load_config(args.config)
+    recorder = RecordingClient(args.recording_config, args.camera_id)
 
     # 采集格式（CLI 覆盖 YAML；必填键缺失即报错，不写死回退值）
     width = args.width if args.width is not None else required(camera, "width", "camera")
@@ -225,6 +228,10 @@ def main(argv):
     config = rs.config()
     config.enable_device(device_serial)
     config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
+    if recorder.enabled:
+        depth = camera.get("depth", {})
+        config.enable_stream(rs.stream.depth, depth.get("width", width),
+                             depth.get("height", height), rs.format.z16, fps)
     profile = pipeline.start(config)
 
     device = profile.get_device()
@@ -235,6 +242,19 @@ def main(argv):
         [0, intrinsics.fy, intrinsics.ppy],
         [0, 0, 1]], dtype=np.float32)
     dist_coeffs = np.asarray(intrinsics.coeffs, dtype=np.float32).reshape(-1, 1)
+    depth_scale = device.first_depth_sensor().get_depth_scale() if recorder.enabled else None
+    calibration = {}
+    if recorder.enabled:
+        for name, kind in (("rgb", rs.stream.color), ("depth", rs.stream.depth)):
+            video_profile = profile.get_stream(kind).as_video_stream_profile()
+            k = video_profile.get_intrinsics()
+            extrinsics = video_profile.get_extrinsics_to(profile.get_stream(rs.stream.color))
+            calibration[name] = {
+                "serial": device_serial, "width": k.width, "height": k.height,
+                "fx": k.fx, "fy": k.fy, "ppx": k.ppx, "ppy": k.ppy,
+                "distortion_model": str(k.model), "coeffs": list(k.coeffs),
+                "to_color_rotation": list(extrinsics.rotation),
+                "to_color_translation_m": list(extrinsics.translation)}
 
     # -------------------------
     # ChArUco
@@ -277,6 +297,34 @@ def main(argv):
             sample_mono_us = monotonic_us()
             image = np.asanyarray(color_frame.get_data())
             w, h = color_frame.get_width(), color_frame.get_height()
+
+            # Snapshot before inference. This example is not a full-rate capture service;
+            # hardware frame numbers expose frames skipped while inference is busy.
+            if recorder.enabled and sample_mono_us >= warmup_until:
+                depth_frame = frames.get_depth_frame()
+                if not depth_frame:
+                    raise RuntimeError("recording requires a depth frame")
+                for stream, sensor_frame, pixels in (
+                        ("rgb", color_frame, cv2.cvtColor(image, cv2.COLOR_BGR2RGB)),
+                        ("depth", depth_frame, np.asanyarray(depth_frame.get_data()).astype("<u2", copy=False))):
+                    pixels = np.ascontiguousarray(pixels)
+                    metadata = {
+                        "version": 1, "camera_id": args.camera_id, "stream": stream,
+                        "publisher_id": "camera", "session_id": session, "clock_id": clock,
+                        "config_id": device_serial + ":" + session,
+                        "pixel_format": "RGB8" if stream == "rgb" else "Z16",
+                        "byte_order": "little", "encoding": "raw",
+                        "width": sensor_frame.get_width(), "height": sensor_frame.get_height(),
+                        "stride_bytes": pixels.strides[0], "fps": fps,
+                        "sequence": sensor_frame.get_frame_number(), "frame_id": frame_id,
+                        "timestamp_us": utc_us(), "sample_mono_us": sample_mono_us,
+                        "sample_time_basis": "host_frameset_receive",
+                        "sensor_timestamp_ms": sensor_frame.get_timestamp(),
+                        "sensor_timestamp_domain": str(sensor_frame.get_frame_timestamp_domain()),
+                        "calibration": calibration[stream]}
+                    if stream == "depth":
+                        metadata["depth_scale"] = depth_scale
+                    recorder.submit(metadata, pixels.tobytes())
 
             charuco_corners, charuco_ids, marker_corners, marker_ids = detector.detectBoard(image)
 
@@ -322,6 +370,7 @@ def main(argv):
     except KeyboardInterrupt:
         pass
     finally:
+        recorder.close()
         pipeline.stop()
         cv2.destroyAllWindows()
         pub.close()

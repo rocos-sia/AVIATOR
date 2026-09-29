@@ -1,3 +1,7 @@
 # 配置
 
-`camera.yaml` 已由 `examples/aruco_camera/camera_publisher.py` 填充并读取（相机型号/采集格式与 ChArUco 检测参数）。其余三个 YAML 文件目前仍为空映射，仅保留架构规定的文件位置，后续随强类型配置解析器、校验规则和硬件参数一起实现；架构中的建议数值不作为已验证的运行配置。
+- `recording.yaml`：Logger 配置 v1。通过 `aviator_logger --config config/recording.yaml` 加载；`camera.mode` 选择 `disabled`、`raw` 或 `compressed`。字段、默认值、校验及 CLI 覆盖规则见 [Logger 说明](../nodes/aviator_logger/README.md)。
+- `camera.yaml`：相机示例的设备选择、彩色采集、深度尺寸与 ChArUco 参数。`camera_publisher.py` 只有传入启用图像的 `--recording-config` 时才启动深度流并发送 RGB8/Z16 副本；`--camera-id` 必须匹配录制配置。
+- `robot.yaml`、`system.yaml`：仍为空映射占位。
+
+参数修改后重启会话，不支持热加载。帧率由相机采集端决定；Logger 不隐式降采样。队列大小与压缩参数为试验初值，需实机验证。完整接入过程见 [实现说明](../docs/Logger配置与图像记录实现说明.md)。

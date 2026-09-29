@@ -96,7 +96,8 @@ struct RecordingWriter::Impl {
     std::map<SourceKey, std::uint64_t> last_sequence;
     bool finished = false;
 
-    Impl(const std::string& output, const std::string& id)
+    Impl(const std::string& output, const std::string& id, std::size_t chunk_size,
+         const std::string& config)
         : path(output), partial(output + ".partial"), session(id) {
         if (path.empty() || session.empty())
             throw std::invalid_argument("empty output/session");
@@ -106,13 +107,14 @@ struct RecordingWriter::Impl {
         sink = std::make_unique<FileSink>(partial);
         mcap::McapWriterOptions options("aviator");
         options.compression = mcap::Compression::None;
-        options.chunkSize = 4 * 1024 * 1024;
+        options.chunkSize = chunk_size;
         options.enableDataCRC = true;
         try {
             writer.open(*sink, options);
             mcap::Metadata meta;
             meta.name = "aviator";
             meta.metadata = {{"node", "aviator_logger"},
+                             {"effective_config", config},
                              {"session_id", session},
                              {"schema_scope", "common_header_only"},
                              {"completeness", "unverified_pubsub"}};
@@ -125,8 +127,9 @@ struct RecordingWriter::Impl {
     ~Impl() { writer.terminate(); } // Never implicitly finalize during unwinding.
 };
 
-RecordingWriter::RecordingWriter(const std::string& path, const std::string& session)
-    : impl_(std::make_unique<Impl>(path, session)) {}
+RecordingWriter::RecordingWriter(const std::string& path, const std::string& session,
+                                 std::size_t chunk_size, const std::string& config)
+    : impl_(std::make_unique<Impl>(path, session, chunk_size, config)) {}
 RecordingWriter::~RecordingWriter() = default;
 
 void RecordingWriter::append(std::string_view topic, std::string_view payload,
@@ -197,6 +200,77 @@ void RecordingWriter::append(std::string_view topic, std::string_view payload,
     ++impl.summary.messages;
 }
 
+void RecordingWriter::metadata(const std::string& name, const nlohmann::json& value) {
+    if (impl_->finished)
+        throw std::logic_error("recording already finished");
+    mcap::Metadata meta;
+    meta.name = name;
+    meta.metadata = {{"json", value.dump()}};
+    checked(impl_->writer.write(meta));
+}
+void RecordingWriter::append_camera(const std::string& topic, const CameraFrame& frame,
+                                    std::uint64_t log_ns) {
+    auto& impl = *impl_;
+    if (impl.finished)
+        throw std::logic_error("recording already finished");
+    auto schema = impl.schemas.find(camera_schema_name);
+    if (schema == impl.schemas.end()) {
+        if (impl.schemas.size() >= UINT16_MAX)
+            throw std::runtime_error("MCAP schema limit reached");
+        mcap::Schema value(camera_schema_name, "protobuf", camera_schema_descriptor());
+        impl.writer.addSchema(value);
+        schema = impl.schemas.emplace(camera_schema_name, value.id).first;
+    }
+    const auto& m = frame.metadata;
+    const auto publisher = m.at("publisher_id").get<std::string>();
+    const auto session = m.at("session_id").get<std::string>();
+    const auto clock = m.at("clock_id").get<std::string>();
+    const auto encoding = m.at("encoding").get<std::string>();
+    Impl::ChannelKey key{topic, encoding, publisher, session, clock};
+    auto channel = impl.channels.find(key);
+    if (channel == impl.channels.end()) {
+        if (impl.channels.size() >= UINT16_MAX)
+            throw std::runtime_error("MCAP channel limit reached");
+        mcap::Channel value(topic, "protobuf", schema->second,
+                            {{"publisher_id", publisher},
+                             {"session_id", session},
+                             {"clock_id", clock},
+                             {"encoding", encoding}});
+        impl.writer.addChannel(value);
+        channel = impl.channels.emplace(key, value.id).first;
+        ++impl.summary.channels;
+    }
+    const auto payload = serialize_camera_frame(frame);
+    const auto sequence = m.at("sequence").get<std::uint64_t>();
+    mcap::Message message;
+    message.channelId = channel->second;
+    message.sequence = static_cast<std::uint32_t>(sequence);
+    message.logTime = log_ns;
+    message.publishTime = log_ns;
+    message.data = reinterpret_cast<const std::byte*>(payload.data());
+    message.dataSize = payload.size();
+    checked(impl.writer.write(message));
+    auto& last = impl.last_sequence[{topic, publisher, session}];
+    if (last) {
+        if (sequence <= last)
+            ++impl.summary.duplicate_or_reordered;
+        else
+            impl.summary.sequence_gaps += sequence - last - 1;
+    }
+    last = std::max(last, sequence);
+    auto& stats = impl.summary.topics[topic];
+    stats.type = camera_schema_name;
+    ++stats.messages;
+    if (!impl.summary.messages)
+        impl.summary.start_log_ns = impl.summary.end_log_ns = log_ns;
+    else {
+        impl.summary.start_log_ns = std::min(impl.summary.start_log_ns, log_ns);
+        impl.summary.end_log_ns = std::max(impl.summary.end_log_ns, log_ns);
+    }
+    ++impl.summary.messages;
+    ++impl.summary.camera_messages;
+}
+
 RecorderSummary RecordingWriter::finish(std::uint64_t rejected, std::uint64_t dropped) {
     auto& impl = *impl_;
     if (impl.finished)
@@ -211,6 +285,7 @@ RecorderSummary RecordingWriter::finish(std::uint64_t rejected, std::uint64_t dr
     metadata.metadata = {
         {"session_id", impl.session},
         {"message_count", std::to_string(impl.summary.messages)},
+        {"camera_message_count", std::to_string(impl.summary.camera_messages)},
         {"channel_count", std::to_string(impl.summary.channels)},
         {"invalid", std::to_string(impl.summary.invalid)},
         {"rejected", std::to_string(rejected)},

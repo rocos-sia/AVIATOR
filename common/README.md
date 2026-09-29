@@ -90,3 +90,5 @@ Message 的 body 保留 JSON，完整业务 Schema 与各业务强类型模型�
 `aviator_recording` 提供 `recording.hpp` 中的 `RecordingWriter`，用于非实时线程的单文件总线 JSON 记录。调用 `append(topic, original_payload, receive_utc_ns)` 写入，`finish()` 同步、读回验证并发布最终文件；析构不自动发布文件，未完成文件保留为 `.partial`。实例只能由一个线程使用。
 
 该库将 MCAP 实现封装在单个翻译单元，公共头文件不暴露 MCAP 类型；安装规则包含库与头文件。当前为 Linux 文件系统实现。具体映射、统计和持久化边界见 [Logger 说明](../nodes/aviator_logger/README.md)。
+
+`aviator_camera_recording` 提供录制 YAML 校验、CameraPacket Protobuf 信封和图像编码。`RecordingWriter::append_camera()` 保存已校验帧；网络输入必须先调用 `parse_camera_frame()` / `validate_camera_frame()`。`CameraCompressor` 仅用于非实时单线程，输出 RGB 视频或无损 Zstd 深度；调用方负责字节预算。详见 [实现说明](../docs/Logger配置与图像记录实现说明.md)。
