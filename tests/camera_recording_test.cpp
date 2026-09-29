@@ -1,5 +1,6 @@
 #include "camera_recording.hpp"
 #include "logger.hpp"
+#include "protocol.hpp"
 #include "runtime.hpp"
 #include "transport.hpp"
 #include <mcap/mcap.hpp>
@@ -85,7 +86,9 @@ struct Decoder {
 };
 void config_tests(const std::filesystem::path& dir, const char* config_path) {
     auto cfg = aviator::load_recording_config(config_path);
-    check(cfg.options.camera.mode == "disabled", "default camera disabled");
+    check(cfg.options.camera.mode == "compressed", "sample config enables compressed images");
+    check(cfg.options.camera.codec == "h264" && cfg.options.camera.encoder == "software",
+          "sample config supports CPU-only recording");
     check(!cfg.options.camera.sources[0].record_depth, "sample config disables depth");
     const auto file = dir / "config.yaml";
     for (const auto* bad :
@@ -103,11 +106,13 @@ void config_tests(const std::filesystem::path& dir, const char* config_path) {
     }
     {
         std::ofstream out(file);
-        out << "config_version: 1\ncamera: {mode: raw}\noutput: {chunk_size_bytes: 65536}\n";
+        out << "config_version: 1\ncamera: {mode: raw}\noutput: {chunk_size_bytes: 65536, image_path: custom.mcap}\n";
     }
     cfg = aviator::load_recording_config(file.string());
     check(cfg.options.camera.mode == "raw" && cfg.options.chunk_size_bytes == 65536,
           "partial config merges defaults");
+    check(cfg.options.image_output == "custom.mcap", "parse image output");
+    cfg.options.image_output.clear();
     check(cfg.options.camera.sources[0].record_depth, "omitted record_depth stays enabled");
     {
         std::ofstream out(file);
@@ -147,6 +152,13 @@ void config_tests(const std::filesystem::path& dir, const char* config_path) {
         check(!std::filesystem::exists(output + ".partial"),
               "bind failure must not create recording");
     }
+    for (const auto& image_path : {std::string("data.mcap"), std::string("./data.mcap"),
+                                   std::string("data.mcap.partial")}) {
+        auto conflict = cfg;
+        conflict.output = "data.mcap";
+        conflict.options.image_output = image_path;
+        rejects([&] { aviator::validate_recording_config(conflict); });
+    }
     auto good = frame(true, 1);
     check(aviator::validate_camera_frame(good, cfg.options.camera) == "record.camera.cockpit.rgb",
           "valid ingress");
@@ -165,6 +177,8 @@ void transport(const std::filesystem::path& dir, const std::string& mode, const 
                bool overflow = false, bool rgb_only = false) {
     aviator::RecorderOptions options;
     options.camera.mode = mode;
+    if (rgb_only)
+        options.image_output = (dir / (mode + codec + "-custom-images.mcap")).string();
     options.camera.codec = codec;
     options.camera.encoder = "software";
     options.camera.keyframe_interval = 3;
@@ -179,17 +193,31 @@ void transport(const std::filesystem::path& dir, const std::string& mode, const 
     zmq::socket_t push(context, zmq::socket_type::push);
     push.set(zmq::sockopt::sndtimeo, 3000);
     push.set(zmq::sockopt::linger, 0);
+    zmq::socket_t pub(context, zmq::socket_type::pub);
+    pub.bind("tcp://127.0.0.1:*");
+    const auto bus_endpoint = pub.get(zmq::sockopt::last_endpoint);
     std::atomic<bool> stop{false};
     std::promise<void> ready;
     auto ready_future = ready.get_future();
     const auto path = (dir / (mode + codec + (overflow ? "-overflow" : "") +
                               (rgb_only ? "-rgb-only" : "") + ".mcap")).string();
     auto task = std::async(std::launch::async, [&] {
-        return aviator::record_bus("tcp://127.0.0.1:59999", path, "logger", stop, options,
+        return aviator::record_bus(bus_endpoint, path, "logger", stop, options,
                                    [&] { ready.set_value(); });
     });
     try {
         check(ready_future.wait_for(5s) == std::future_status::ready, "camera logger startup");
+        std::this_thread::sleep_for(200ms);
+        aviator::Message message;
+        message.topic = aviator::Topic::flight_command;
+        message.header = {"1.0", 1, 1790121600000000, 1000000, "boot", "producer",
+                          "11111111-1111-4111-8111-111111111111", true};
+        message.body = {{"source", "JOYSTICK"}, {"control", {{"roll", 0.2}, {"pitch", 0.1}}}};
+        std::string bus_payload, error;
+        check(aviator::encode(message, bus_payload, error), "encode business fixture");
+        pub.send(zmq::buffer(std::string("flight.command")), zmq::send_flags::sndmore);
+        pub.send(zmq::buffer(bus_payload));
+        std::this_thread::sleep_for(100ms);
         if (mode == "disabled") {
             reserve = zmq::socket_t(context, zmq::socket_type::pull);
             reserve.bind(options.camera.record_endpoint); // Disabled mode did not bind it.
@@ -225,7 +253,23 @@ void transport(const std::filesystem::path& dir, const std::string& mode, const 
         check(summary.dropped == (overflow ? 16 : 0), "image queue overflow count");
         check(summary.rejected == (mode == "disabled" ? 0 : 2), "camera reject count");
         mcap::McapReader reader;
-        check(reader.open(path).ok(), "MCAP open");
+        check(reader.open(path).ok(), "data MCAP open");
+        check(reader.readSummary(mcap::ReadSummaryMethod::NoFallbackScan).ok(), "data MCAP index");
+        int bus_count = 0;
+        for (const auto& view : reader.readMessages()) {
+            check(view.schema->encoding == "jsonschema" && view.channel->topic == "flight.command",
+                  "only business messages in data file");
+            check(std::string(reinterpret_cast<const char*>(view.message.data), view.message.dataSize)
+                      == bus_payload, "business payload unchanged");
+            ++bus_count;
+        }
+        check(bus_count == 1, "business message retained with image recording");
+        reader.close();
+        const auto image_path = aviator::image_output_path(path, options);
+        check(std::filesystem::exists(image_path) == (mode != "disabled"), "image file lifecycle");
+        if (mode == "disabled")
+            return;
+        check(reader.open(image_path).ok(), "MCAP open");
         check(reader.readSummary(mcap::ReadSummaryMethod::NoFallbackScan).ok(), "MCAP index");
         Decoder decoder(codec);
         int rgb_count = 0, depth_count = 0;
@@ -246,6 +290,10 @@ void transport(const std::filesystem::path& dir, const std::string& mode, const 
                       "depth decompression");
                 check(result == original.data, "depth lossless");
             } else {
+                check(f.metadata.at("encoder") == (codec == "h265" ? "libx265" : "libx264"),
+                      "software encoder selected");
+                check(f.metadata.at("encoder_preset") == (codec == "h265" ? "ultrafast" : "veryfast"),
+                      "software preset recorded");
                 if (!rgb_count)
                     check(f.metadata.at("keyframe").get<bool>(), "first frame is keyframe");
                 decoder.append(f.data);

@@ -54,6 +54,18 @@ ctest --test-dir build/communication --output-on-failure
 
 ### 节点启动信息
 
+手和相机的操作入口：
+
+| 模块 | 使用说明 |
+| --- | --- |
+| 因时手 | [构建、双 CAN 配置、ZMQ 手动控制、实际位置反馈与只读检查](examples/inspire_hand_can/README.md) |
+| RealSense 相机 | [ChArUco/AprilTag 选择、实时识别预览、位姿打印与订阅](nodes/camera/README.md) |
+| 联合录制 | [相机与 Logger 启动顺序、共用 session、业务/图像分文件保存](nodes/camera/README.md#检测与-mcap-录制) |
+
+以上操作示例从仓库根目录运行。手和相机可复用同一个 `aviator_bus`：发布者连接 `5555`、
+订阅者连接 `5556`；图像单独发送至 Logger 的 `5557`。视频预览和位姿打印默认关闭，
+调试时通过 `--show --print-pose` 开启。手控制通过独立的 `hand_command.py` 测试发布器完成。
+
 `simulation`、`aviator_bus`、`aviator_monitor` 和 `flight_gateway` 启动后会打印统一的信息面板，列出实际 PUB/SUB 或 XSUB/XPUB 地址、发布/订阅话题，以及 Web 地址或运行模式。端口会随命令行参数更新。终端支持彩色标题；重定向日志或设置 `NO_COLOR=1` 时输出纯文本。
 
 `bind` 表示本地监听，`connect` 表示异步连接配置，不代表已收到总线消息。bus 透明转发订阅的话题，monitor 订阅所有话题；实际收包情况请在 monitor 的话题列表中查看。

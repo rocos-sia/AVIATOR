@@ -22,7 +22,13 @@
 
 namespace inspire_hand {
 
-class SocketCan {
+class CanWriter {
+public:
+    virtual ~CanWriter() = default;
+    virtual void write(std::uint32_t can_id, const std::uint8_t* data, std::size_t len) = 0;
+};
+
+class SocketCan : public CanWriter {
 public:
     SocketCan() = default;
     ~SocketCan() { close(); }
@@ -34,7 +40,9 @@ public:
     // failure so the caller can report a helpful bring-up hint.
     void open(const std::string& interface) {
         close();
-        const int fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+        if (interface.empty() || interface.size() >= IFNAMSIZ)
+            throw std::invalid_argument("invalid CAN interface name");
+        const int fd = socket(PF_CAN, SOCK_RAW | SOCK_NONBLOCK | SOCK_CLOEXEC, CAN_RAW);
         if (fd < 0)
             throw std::runtime_error(std::string("socket: ") + std::strerror(errno));
 
@@ -63,25 +71,29 @@ public:
 
     // Sends one extended CAN frame. `can_id` is the 29-bit identifier without the
     // EFF flag; this helper ORs CAN_EFF_FLAG in. len <= 8.
-    void write(std::uint32_t can_id, const std::uint8_t* data, std::size_t len) {
+    void write(std::uint32_t can_id, const std::uint8_t* data, std::size_t len) override {
         if (fd_ < 0) throw std::runtime_error("SocketCan::write before open");
         if (len > 8) throw std::runtime_error("SocketCan::write len > 8");
         struct can_frame frame{};
         frame.can_id = can_id | CAN_EFF_FLAG;
         frame.len = static_cast<std::uint8_t>(len);
         std::memcpy(frame.data, data, len);
-        if (::write(fd_, &frame, sizeof(frame)) != static_cast<ssize_t>(sizeof(frame)))
+        ssize_t written;
+        do {
+            written = ::write(fd_, &frame, sizeof(frame));
+        } while (written < 0 && errno == EINTR);
+        if (written != static_cast<ssize_t>(sizeof(frame)))
             throw std::runtime_error(std::string("SocketCan::write: ") + std::strerror(errno));
     }
 
     // Non-blocking receive of one frame. Returns nullopt if nothing is pending.
-    // Provided for future feedback (angleAct/forceAct) support.
+    // Used by the node to drain position replies without delaying command handling.
     std::optional<can_frame> try_recv() {
         if (fd_ < 0) return std::nullopt;
         struct can_frame frame{};
         const ssize_t n = ::recv(fd_, &frame, sizeof(frame), MSG_DONTWAIT);
         if (n < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) return std::nullopt;
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return std::nullopt;
             throw std::runtime_error(std::string("SocketCan::try_recv: ") + std::strerror(errno));
         }
         if (n != static_cast<ssize_t>(sizeof(can_frame))) return std::nullopt;
@@ -95,6 +107,7 @@ public:
         }
     }
 
+    int native_handle() const { return fd_; }
     bool is_open() const { return fd_ >= 0; }
     const std::string& interface() const { return interface_; }
 

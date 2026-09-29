@@ -1,6 +1,7 @@
 #include "logger.hpp"
 #include "runtime.hpp"
 #include "transport.hpp"
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -50,9 +51,23 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
     std::thread writer([&] {
         try {
             CameraCompressor compressor(options.camera);
+            if (options.camera.mode == "compressed")
+                std::cout << "aviator_logger: Camera encoder (startup probe): "
+                          << compressor.encoder_backend() << " ("
+                          << compressor.encoder_preset() << ")" << std::endl;
             const auto receive_clock = local_clock_id();
             RecordingWriter recording(output, session, options.chunk_size_bytes,
                                       recording_config_json(config).dump());
+            std::unique_ptr<RecordingWriter> images;
+            if (cameras)
+                images = std::make_unique<RecordingWriter>(
+                    image_output_path(output, options), session, options.chunk_size_bytes,
+                    recording_config_json(config).dump());
+            const nlohmann::json files = {{"data_path", output},
+                {"image_path", cameras ? image_output_path(output, options) : ""}};
+            recording.metadata("recording_files", files);
+            if (images)
+                images->metadata("recording_files", files);
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 ready = true;
@@ -100,7 +115,12 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
                 if (serialize_camera_frame(frame).size() > options.camera.max_record_bytes)
                     throw std::runtime_error(
                         "encoded camera packet exceeds max_record_bytes; partial retained");
-                recording.append_camera(topic, frame, entry.log_ns);
+                images->append_camera(topic, frame, entry.log_ns);
+                if (!streams.count(topic))
+                    std::cout << "aviator_logger: first image recorded -> " << topic
+                              << " encoding=" << frame.metadata.at("encoding")
+                              << " encoder=" << frame.metadata.value("encoder", "none")
+                              << std::endl;
                 streams.insert(topic);
             }
             if (receiver_failed)
@@ -115,21 +135,47 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
                 }
             const bool degraded =
                 invalid_camera || camera_rejected || camera_dropped || !missing.empty();
-            recording.metadata(
-                "camera_recording",
+            const nlohmann::json camera_metadata =
                 {{"mode", options.camera.mode},
+                 {"encoder_backend", compressor.encoder_backend()},
+                 {"encoder_preset", compressor.encoder_preset()},
                  {"state", degraded ? "DEGRADED" : (cameras ? "RECORDING" : "DISABLED")},
                  {"invalid", invalid_camera},
                  {"rejected", camera_rejected},
                  {"queue_dropped", camera_dropped},
                  {"missing_streams", missing},
-                 {"rgb_lossless", options.camera.mode != "compressed"}});
+                 {"rgb_lossless", options.camera.mode != "compressed"}};
+            recording.metadata("camera_recording", camera_metadata);
+            if (images)
+                images->metadata("camera_recording", camera_metadata);
             if (degraded)
                 std::cerr << "aviator_logger DEGRADED: camera invalid=" << invalid_camera
                           << " rejected=" << camera_rejected << " dropped=" << camera_dropped
                           << " missing=" << missing.dump() << '\n';
-            summary = recording.finish(rejected + camera_rejected + invalid_camera,
-                                       dropped + camera_dropped);
+            RecorderSummary image_summary;
+            if (images)
+                image_summary = images->finish(camera_rejected + invalid_camera, camera_dropped);
+            summary = recording.finish(rejected, dropped);
+            // Preserve the aggregate API statistics, while each file has its own summary.
+            if (images) {
+                summary.image_path = image_summary.path;
+                if (image_summary.messages) {
+                    if (!summary.messages)
+                        summary.start_log_ns = image_summary.start_log_ns;
+                    else
+                        summary.start_log_ns = std::min(summary.start_log_ns, image_summary.start_log_ns);
+                    summary.end_log_ns = std::max(summary.end_log_ns, image_summary.end_log_ns);
+                }
+                summary.messages += image_summary.messages;
+                summary.camera_messages += image_summary.camera_messages;
+                summary.invalid += image_summary.invalid;
+                summary.rejected += image_summary.rejected;
+                summary.dropped += image_summary.dropped;
+                summary.channels += image_summary.channels;
+                summary.sequence_gaps += image_summary.sequence_gaps;
+                summary.duplicate_or_reordered += image_summary.duplicate_or_reordered;
+                summary.topics.insert(image_summary.topics.begin(), image_summary.topics.end());
+            }
         } catch (...) {
             std::lock_guard<std::mutex> lock(mutex);
             writer_error = std::current_exception();

@@ -1,0 +1,95 @@
+{
+  "data.mcap": {
+    "bytes": 80605,
+    "topics": {
+      "camera.detection": 152
+    },
+    "sequence_first_last": [],
+    "metadata": {
+      "aviator": {
+        "completeness": "unverified_pubsub",
+        "effective_config": "{\"bus\":{\"queue_bytes\":16777216,\"receive_hwm\":4096,\"subscribe_endpoint\":\"tcp://127.0.0.1:39509\"},\"camera\":{\"compressed\":{\"depth\":{\"codec\":\"zstd\",\"level\":3},\"rgb\":{\"b_frames\":0,\"codec\":\"h265\",\"encoder\":\"software\",\"keyframe_interval_frames\":30,\"pixel_format\":\"yuv420p\",\"target_bitrate_bps\":8000000}},\"max_record_bytes\":16777216,\"mode\":\"compressed\",\"overflow_policy\":\"drop_newest\",\"queue_bytes\":268435456,\"receive_hwm\":16,\"record_endpoint\":\"tcp://127.0.0.1:55411\",\"sources\":[{\"camera_id\":\"cockpit\",\"depth_pixel_format\":\"Z16\",\"depth_topic\":\"record.camera.cockpit.depth\",\"record_depth\":false,\"rgb_pixel_format\":\"RGB8\",\"rgb_topic\":\"record.camera.cockpit.rgb\"}]},\"config_version\":1,\"output\":{\"chunk_compression\":\"none\",\"chunk_size_bytes\":4194304,\"image_path\":\"/home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.images.mcap\",\"path\":\"/home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.mcap\"}}",
+        "node": "aviator_logger",
+        "schema_scope": "common_header_only",
+        "session_id": "76995b27-b374-42ec-99dd-960441cd7389"
+      },
+      "recording_files": {
+        "json": "{\"data_path\":\"/home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.mcap\",\"image_path\":\"/home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.images.mcap\"}"
+      },
+      "camera_recording": {
+        "json": "{\"encoder_backend\":\"libx265\",\"encoder_preset\":\"ultrafast\",\"invalid\":0,\"missing_streams\":[],\"mode\":\"compressed\",\"queue_dropped\":0,\"rejected\":0,\"rgb_lossless\":false,\"state\":\"RECORDING\"}"
+      },
+      "summary": {
+        "camera_message_count": "0",
+        "channel_count": "1",
+        "completeness": "unverified_pubsub",
+        "duplicate_or_reordered": "0",
+        "end_log_ns": "1790687259545538000",
+        "invalid": "0",
+        "message_count": "152",
+        "queue_dropped": "0",
+        "rejected": "0",
+        "sequence_gaps": "0",
+        "session_id": "76995b27-b374-42ec-99dd-960441cd7389",
+        "start_log_ns": "1790687254527905000",
+        "topics": "[{\"messages\":152,\"topic\":\"camera.detection\",\"type\":\"CameraDetection\"}]"
+      }
+    }
+  },
+  "data.images.mcap": {
+    "bytes": 5505212,
+    "topics": {
+      "record.camera.cockpit.rgb": 152
+    },
+    "sequence_first_last": [
+      140,
+      291
+    ],
+    "metadata": {
+      "aviator": {
+        "completeness": "unverified_pubsub",
+        "effective_config": "{\"bus\":{\"queue_bytes\":16777216,\"receive_hwm\":4096,\"subscribe_endpoint\":\"tcp://127.0.0.1:39509\"},\"camera\":{\"compressed\":{\"depth\":{\"codec\":\"zstd\",\"level\":3},\"rgb\":{\"b_frames\":0,\"codec\":\"h265\",\"encoder\":\"software\",\"keyframe_interval_frames\":30,\"pixel_format\":\"yuv420p\",\"target_bitrate_bps\":8000000}},\"max_record_bytes\":16777216,\"mode\":\"compressed\",\"overflow_policy\":\"drop_newest\",\"queue_bytes\":268435456,\"receive_hwm\":16,\"record_endpoint\":\"tcp://127.0.0.1:55411\",\"sources\":[{\"camera_id\":\"cockpit\",\"depth_pixel_format\":\"Z16\",\"depth_topic\":\"record.camera.cockpit.depth\",\"record_depth\":false,\"rgb_pixel_format\":\"RGB8\",\"rgb_topic\":\"record.camera.cockpit.rgb\"}]},\"config_version\":1,\"output\":{\"chunk_compression\":\"none\",\"chunk_size_bytes\":4194304,\"image_path\":\"/home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.images.mcap\",\"path\":\"/home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.mcap\"}}",
+        "node": "aviator_logger",
+        "schema_scope": "common_header_only",
+        "session_id": "76995b27-b374-42ec-99dd-960441cd7389"
+      },
+      "recording_files": {
+        "json": "{\"data_path\":\"/home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.mcap\",\"image_path\":\"/home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.images.mcap\"}"
+      },
+      "camera_recording": {
+        "json": "{\"encoder_backend\":\"libx265\",\"encoder_preset\":\"ultrafast\",\"invalid\":0,\"missing_streams\":[],\"mode\":\"compressed\",\"queue_dropped\":0,\"rejected\":0,\"rgb_lossless\":false,\"state\":\"RECORDING\"}"
+      },
+      "summary": {
+        "camera_message_count": "152",
+        "channel_count": "1",
+        "completeness": "unverified_pubsub",
+        "duplicate_or_reordered": "0",
+        "end_log_ns": "1790687259536036000",
+        "invalid": "0",
+        "message_count": "152",
+        "queue_dropped": "0",
+        "rejected": "0",
+        "sequence_gaps": "0",
+        "session_id": "76995b27-b374-42ec-99dd-960441cd7389",
+        "start_log_ns": "1790687254509983000",
+        "topics": "[{\"messages\":152,\"topic\":\"record.camera.cockpit.rgb\",\"type\":\"aviator.record.v1.CameraPacket\"}]"
+      }
+    }
+  },
+  "compression_check": {
+    "decoder": {
+      "codec_name": "hevc",
+      "width": 1280,
+      "height": 720,
+      "nb_read_frames": "152"
+    },
+    "frames": 152,
+    "keyframes": 6,
+    "sample_fps": 29.995341783014492,
+    "sequence_gaps": 0,
+    "raw_pixel_bytes": 420249600,
+    "bitstream_bytes": 5298959,
+    "image_mcap_bytes": 5505212,
+    "drain_seconds": 0.11560314499911328
+  }
+}

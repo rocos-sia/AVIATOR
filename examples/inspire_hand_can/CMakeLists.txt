@@ -44,3 +44,22 @@ target_link_libraries(inspire_hand_node PRIVATE
 # Smoke test: --help must parse and exit 0.
 enable_testing()
 add_test(NAME inspire_hand_node_help COMMAND inspire_hand_node --help)
+
+add_executable(inspire_hand_test hand_node_test.cpp ${ROOT}/common/protocol.cpp)
+target_include_directories(inspire_hand_test PRIVATE ${CPPZMQ_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${ROOT}/common)
+target_link_libraries(inspire_hand_test PRIVATE
+  ${AVIATOR_ZMQ_LIBRARY} yaml-cpp nlohmann_json::nlohmann_json Threads::Threads)
+add_test(NAME inspire_hand_controller COMMAND inspire_hand_test)
+set_tests_properties(inspire_hand_controller PROPERTIES TIMEOUT 15)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME inspire_hand_publisher
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/hand_command_test.py)
+  set_tests_properties(inspire_hand_publisher PROPERTIES TIMEOUT 20
+    ENVIRONMENT "HAND_CONTROLLER_TEST=$<TARGET_FILE:inspire_hand_test>")
+endif()
+
+# Make the documented default --config location work in standalone builds.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/config")
+configure_file(config/inspire_hand.yaml config/inspire_hand.yaml COPYONLY)

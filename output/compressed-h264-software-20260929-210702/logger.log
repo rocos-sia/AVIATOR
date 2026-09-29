@@ -1,0 +1,41 @@
+[libx264 @ 0x7f0028000e80] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x7f0028000e80] profile High, level 3.1, 4:2:0, 8-bit
+[libx264 @ 0x7f0028000e80] final ratefactor: -27.93
+aviator_logger: Camera encoder (startup probe): libx264 (veryfast)
+
+  +--- AVIATOR / aviator_logger ------------------------------------------------
+  | SUB connect    tcp://127.0.0.1:60315
+  | SUB topics     * (all topics; PUB/SUB delivery is unverified)
+  | Output         /home/rocos/Documents/GitHub/AVIATOR/output/compressed-h264-software-20260929-210702/data.mcap  (.partial -> atomic rename)
+  | Image output   /home/rocos/Documents/GitHub/AVIATOR/output/compressed-h264-software-20260929-210702/data.images.mcap
+  | Session        67c8b45b-11e6-4e59-acd2-ae316d902731
+  | Queue bytes    16777216
+  | Camera mode    compressed
+  | Camera ingress tcp://127.0.0.1:54723
+  | Camera state   LISTENING (waiting for RGB/depth sources)
+  | Exit           Ctrl+C (drain + finalize)
+  +--------------------------------------------------------------------------
+
+[libx264 @ 0x7f002817ac80] using cpu capabilities: MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2
+[libx264 @ 0x7f002817ac80] profile High, level 3.1, 4:2:0, 8-bit
+aviator_logger: first image recorded -> record.camera.cockpit.rgb encoding="h264" encoder=libx264
+[libx264 @ 0x7f002817ac80] frame I:11    Avg QP:19.36  size:108710
+[libx264 @ 0x7f002817ac80] frame P:292   Avg QP:21.65  size: 31269
+[libx264 @ 0x7f002817ac80] mb I  I16..4: 12.5% 28.2% 59.3%
+[libx264 @ 0x7f002817ac80] mb P  I16..4: 10.5% 19.2%  1.7%  P16..4: 33.8%  6.8%  3.7%  0.0%  0.0%    skip:24.2%
+[libx264 @ 0x7f002817ac80] final ratefactor: 18.87
+[libx264 @ 0x7f002817ac80] 8x8 transform intra:57.4% inter:21.9%
+[libx264 @ 0x7f002817ac80] coded y,uvDC,uvAC intra: 96.4% 84.6% 21.9% inter: 31.5% 35.7% 0.1%
+[libx264 @ 0x7f002817ac80] i16 v,h,dc,p:  7% 10% 63% 20%
+[libx264 @ 0x7f002817ac80] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu:  9% 13% 36%  6%  8%  6%  8%  6%  9%
+[libx264 @ 0x7f002817ac80] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 14% 21% 20%  7%  8%  8%  8%  6%  8%
+[libx264 @ 0x7f002817ac80] i8c dc,h,v,p: 51% 27% 18%  4%
+[libx264 @ 0x7f002817ac80] Weighted P-Frames: Y:0.0% UV:0.0%
+[libx264 @ 0x7f002817ac80] kb/s:8179.27
+recorded 606 messages across 2 topic(s)
+  data: 303 messages -> /home/rocos/Documents/GitHub/AVIATOR/output/compressed-h264-software-20260929-210702/data.mcap
+  images: 303 messages -> /home/rocos/Documents/GitHub/AVIATOR/output/compressed-h264-software-20260929-210702/data.images.mcap
+  camera.detection  (CameraDetection)  303 msgs
+  record.camera.cockpit.rgb  (aviator.record.v1.CameraPacket)  303 msgs
+  window (UTC): 2026-09-29T13:07:08.394Z -> 2026-09-29T13:07:18.464Z
+  sequence gaps: 0, duplicate/reordered: 0; completeness unverified (PUB/SUB)

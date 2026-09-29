@@ -17,6 +17,7 @@ import yaml
 import zmq
 from detectors import create_detector
 from recording_client import RecordingClient
+from visualization import CameraVisualization, visualization_options
 
 
 DEFAULT_CONFIG = os.path.abspath(os.path.join(
@@ -72,7 +73,7 @@ def load_config(path):
     settings = cfg.get(kind, {})
     if not isinstance(settings, dict):
         raise SystemExit(f"配置文件的 {kind} 必须是映射")
-    return camera, kind, settings
+    return camera, kind, settings, cfg.get("visualization", {})
 
 
 def required(mapping, key, where):
@@ -191,7 +192,12 @@ def parse_args(argv):
                    help="PUB 改为 bind 而非 connect（直连测试，绕过总线）")
     p.add_argument("--camera-id", default="cockpit", help="camera_id 字段")
     p.add_argument("--session", default="", help="与 Logger --session 相同的记录会话 UUID")
-    p.add_argument("--show", action="store_true", help="开启 OpenCV 可视化窗口")
+    p.add_argument("--show", action=argparse.BooleanOptionalAction, default=None,
+                   help="开启实时识别与位姿预览（默认关闭；--no-show 强制关闭）")
+    p.add_argument("--print-pose", action=argparse.BooleanOptionalAction, default=None,
+                   help="在终端打印位姿与检测状态（默认关闭）")
+    p.add_argument("--pose-print-interval", type=float, default=None,
+                   help="位姿打印间隔秒数，默认 0.5；状态变化立即打印")
     p.add_argument("--warmup-s", type=float, default=None,
                    help="启动后跳过发布的热身秒数（0 禁用；默认以 YAML 为准）")
     # 以下几何/采集参数默认 None = 以 YAML 为准，命令行显式给出时才覆盖。
@@ -207,7 +213,9 @@ def parse_args(argv):
 
 def main(argv):
     args = parse_args(argv)
-    camera, detector_kind, detector_settings = load_config(args.config)
+    camera, detector_kind, detector_settings, visual_settings = load_config(args.config)
+    visual = CameraVisualization(**visualization_options(visual_settings, args))
+    visual.check_available()
     recorder = RecordingClient(args.recording_config, args.camera_id)
 
     # 采集格式（CLI 覆盖 YAML；必填键缺失即报错，不写死回退值）
@@ -316,6 +324,8 @@ def main(argv):
     print(f"aviator_camera: {device_name} ({device_serial}) {width}x{height}@{fps}")
     print(f"aviator_camera: detector={detector.kind} settings={detector_settings}")
     print(f"aviator_camera: endpoint={args.endpoint} bind={args.bind}")
+    print(f"aviator_camera: show={visual.show} print_pose={visual.print_pose} "
+          f"pose_print_interval={visual.interval}s")
     print(f"aviator_camera: session={session} clock={clock} warmup_s={warmup_s} "
           f"recording={'enabled' if recorder.enabled else 'disabled'} "
           f"record_depth={recorder.record_depth}")
@@ -366,16 +376,9 @@ def main(argv):
                 payload = json.dumps(message)
                 pub.send_multipart([b"camera.detection", payload.encode("utf-8")])
 
-            if args.show:
-                display = image.copy()
-                detector.draw(display, detection)
-                cv2.putText(display, f"{detector.kind} {detection.status} "
-                            f"seq={sequence} conf={detection.confidence:.2f}",
-                            (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
-                            (0, 255, 0), 2)
-                cv2.imshow("aviator_camera", display)
-                if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
-                    break
+            if not visual.update(image, detector, detection, frame_id,
+                                 warming_up=sample_mono_us < warmup_until):
+                break
     except KeyboardInterrupt:
         pass
     finally:
@@ -384,7 +387,7 @@ def main(argv):
             recorder.close()
         finally:
             pipeline.stop()
-            cv2.destroyAllWindows()
+            visual.close()
             pub.close()
             context.term()
             signal.signal(signal.SIGTERM, old_sigterm)

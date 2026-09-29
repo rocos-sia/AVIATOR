@@ -26,6 +26,13 @@ zmq:
 
 node:
   publisher_id: inspire_hand
+  # NORMALIZED_POSITION: 1=张开；GRASP_SETPOINT.closure: 0=张开、1=闭合。
   supported_modes: [NORMALIZED_POSITION, GRASP_SETPOINT]
-  timeout_ms: 100                  # 超过该时长未收到合法命令 -> 回落 safe_pose
+  timeout_ms: 100                  # 有效接收/源采样/origin 任一年龄 >= 此值 -> safe_pose
   state_rate_hz: 10                # hand.state 心跳频率
+
+# CAN ANGLE_ACT 六路实际位置反馈；采样不依赖 hand.command。
+feedback:
+  poll_rate_hz: 10                 # 每只手完整六路读取的目标频率，1..50
+  response_timeout_ms: 30          # 单个寄存器响应超时；非阻塞，不阻塞控制循环
+  timeout_ms: 300                  # 完整六路快照超时则 valid=false，保留最后数值供显示

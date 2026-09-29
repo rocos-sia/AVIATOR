@@ -72,9 +72,11 @@ std::string makePayload(const TopicSpec& spec, uint32_t seq, uint64_t tsUs) {
 }
 
 // Minimal JSON Schema per message type (encoding=jsonschema, SAD §10).
+// "const" alone is valid draft-07; "type":"string" is redundant but kept for
+// readers that need an explicit type to treat the field as a string.
 std::string makeSchema(const TopicSpec& spec) {
   return std::string("{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\","
-         "\"properties\":{\"msg_type\":{\"const\":\"") +
+         "\"properties\":{\"msg_type\":{\"type\":\"string\",\"const\":\"") +
          spec.msgType +
          "\"},\"sequence\":{\"type\":\"integer\"},\"timestamp\":{\"type\":\"integer\"},"
          "\"valid\":{\"type\":\"boolean\"}}}";

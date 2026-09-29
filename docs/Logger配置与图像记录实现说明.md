@@ -2,7 +2,7 @@
 
 ## 目标与交付范围
 
-将 `config/recording.yaml` 从格式草案接入实际 C++ Logger，支持三种保存模式：不保存图像、保存未压缩 RGB8/Z16、保存 H.264/H.265 RGB 与无损 Zstd 深度。业务消息继续记录到同一 MCAP，图像不经过控制总线。实现保留原来的命令行启动、信号退出、文件覆盖保护及 `.partial` 收尾方式。
+将 `config/recording.yaml` 从格式草案接入实际 C++ Logger，支持三种保存模式：不保存图像、保存未压缩 RGB8/Z16、保存 H.264/H.265 RGB 与无损 Zstd 深度。业务消息与图像分别写入独立 MCAP（`--output` / `--image-output`），图像不经过控制总线。实现保留原来的命令行启动、信号退出、文件覆盖保护及 `.partial` 收尾方式。
 
 RealSense 图像记录适配器位于 `nodes/camera`，以 Python 节点运行。其采集和推理仍共用主循环，不能据此宣称全量 30 Hz 采集保证。
 
@@ -10,7 +10,7 @@ RealSense 图像记录适配器位于 `nodes/camera`，以 Python 节点运行�
 
 1. **编码位置改到 Logger 非实时写盘线程。** 采集端始终发送 RGB8/Z16，Logger 独占模式选择和编码参数。避免采集端编码配置与文件中声明不一致，也避免为了切换 codec 修改相机逻辑。代价是本机/网络入口仍承载未压缩图像带宽，编码与业务写盘共享工作线程。
 2. **实现相机专用 `CameraPacket`，不提前冻结通用设备信封。** ICD 的 `RecordEnvelope` 仍为草案。本次增加独立名称和 `.proto`，通过 JSON 元数据加二进制 bytes 承载图像；它与通用信封不兼容，不能混用。
-3. **硬件编码范围明确为 NVIDIA NVENC。** `auto` 先探测 NVENC，再使用同 codec 的 libx264/libx265；没有隐式切换 codec。VAAPI/QSV 等后端未实现，`hardware` 不代表“任意 GPU”。
+3. **硬件编码范围明确为 NVIDIA NVENC。** `auto` 先探测 NVENC，再使用同 codec 的 libx264/libx265；没有隐式切换 codec。VAAPI/QSV 等后端未实现，`hardware` 不代表“任意 GPU”。软件分支按吞吐选预设（libx265 用 `ultrafast` 并启用 WPP，libx264 用 `veryfast`，线程数 4），`frame-threads` 固定为 1 以满足“每帧立即出包”。
 4. **启动成功不等于相机就绪。** 初始化后显示 LISTENING；记录结束时逐源检查 RGB/深度是否出现，将缺失流存入 `camera_recording` Metadata。尚未实现生产者注册和完整 READY 状态机。
 5. **编码失败采用失败退出。** 队列丢弃发生在编码之前；编码器错误或编码后超限直接保留 `.partial` 并返回非零，避免静默留下不可解码的依赖帧。
 
@@ -80,7 +80,7 @@ message CameraPacket {
 | `calibration` | 非空 JSON 对象，包含生产者提供的内参、畸变、外参快照。Logger 检查对象存在，不校验标定物理正确性。 |
 | `depth_scale` | 深度必填，有限正数，单位为米/数值单位。 |
 
-可添加 `frame_id`、设备时间戳、曝光等扩展字段，Logger 原样保留。Logger 新增 `receive_mono_us`、`receive_clock_id`；压缩模式新增 `original_size_bytes`、`encoder`、`lossless`，并更新 `encoding`。RGB 另外保存 `encoded_pixel_format=yuv420p`、`bitstream_format=annexb`、`keyframe`。原始 stride 表示输入布局，不是压缩负载布局。
+可添加 `frame_id`、设备时间戳、曝光等扩展字段，Logger 原样保留。Logger 新增 `receive_mono_us`、`receive_clock_id`；压缩模式新增 `original_size_bytes`、`encoder`、`lossless`，并更新 `encoding`。RGB 另外保存 `encoded_pixel_format=yuv420p`、`bitstream_format=annexb`、`keyframe`。原始 stride 表示输入布局，不是压缩负载布局。结束元数据 `camera_recording` 另记 `encoder_backend` / `encoder_preset`，说明实际产出该录像的编码器与预设。
 
 RGB 解码结果是 YUV420P，允许有损；深度解压目标大小为 `original_size_bytes`，恢复原始 Z16 帧。读取外部文件时应在分配前校验解码尺寸/长度，不能无条件信任这些值。该自定义 Schema 不能直接获得 Foxglove 的通用视频面板支持，需要转换到相应视频 Schema 或实现专用 Reader。
 
@@ -124,4 +124,4 @@ python nodes/camera/main.py \
 
 本次通信构建的 16 项 CTest 全部通过；Python 源码语法检查、`git diff --check` 和临时安装目录检查也通过。验证环境使用 yaml-cpp 0.7.0、Protobuf 3.12.4、libavcodec 58.134.100、libavutil 56.70.100、libswscale 5.9.100、Zstd 1.4.8。
 
-测试不能替代 D436 实机验收。目标机器需再验证实际流组合、NVENC 后端、长时间编码吞吐、峰值队列/内存、慢盘和源端丢帧。当前仍为单文件，不含分卷、周期持久化、通用原始设备信封、恢复工具和完整状态发布。
+测试不能替代 D436 实机验收。当前开发机无 NVIDIA GPU（仅 Intel 核显），NVENC 后端无法在此验证；软件编码路径已按 1280x720@30 实测选定（libx264 约 4.6–6.5 倍实时，libx265 约 2.5 倍），仍需在目标机器复验实际流组合、长时间编码吞吐、峰值队列/内存、慢盘和源端丢帧。当前仍为单文件，不含分卷、周期持久化、通用原始设备信封、恢复工具和完整状态发布。

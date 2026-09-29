@@ -19,6 +19,9 @@ class CameraCompressor {
     explicit CameraCompressor(const CameraRecordingOptions& options);
     ~CameraCompressor();
     CameraFrame encode(CameraFrame frame);
+    // Startup probe result, updated when a source opens at its actual dimensions.
+    const std::string& encoder_backend() const;
+    const std::string& encoder_preset() const;
 
   private:
     struct Impl;

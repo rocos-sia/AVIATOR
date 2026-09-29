@@ -1,17 +1,21 @@
 """Hardware-free checks for the camera node's Logger wire contract."""
 
 import json
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import cv2
 import yaml
 
-from detectors import create_detector, pose_from_pnp
-from main import DEFAULT_CONFIG, load_config, make_message, make_record_frame
+from detectors import DetectionResult, create_detector, pose_from_pnp
+from main import DEFAULT_CONFIG, load_config, make_message, make_record_frame, parse_args
 from recording_client import RecordingClient, camera_packet
+from visualization import CameraVisualization, pose_lines, render_preview, visualization_options
 
 
 class SensorFrame:
@@ -48,6 +52,77 @@ def decode_packet(packet):
 
 
 class CameraNodeTest(unittest.TestCase):
+    def test_visualization_defaults_overrides_and_headless(self):
+        _, _, _, settings = load_config(DEFAULT_CONFIG)
+        options = visualization_options(settings, parse_args([]))
+        self.assertFalse(options["show"])
+        self.assertFalse(options["print_pose"])
+        self.assertEqual(visualization_options(settings, parse_args([
+            "--show", "--print-pose", "--pose-print-interval", "0.2"])),
+            dict(show=True, print_pose=True, print_interval_s=0.2))
+        overrides = visualization_options(dict(show=True, print_pose=True),
+                                           parse_args(["--no-show", "--no-print-pose"]))
+        self.assertFalse(overrides["show"])
+        self.assertFalse(overrides["print_pose"])
+        for invalid in (0, -1, float("nan"), float("inf"), True):
+            with self.assertRaises(ValueError):
+                visualization_options(dict(print_interval_s=invalid), parse_args([]))
+        with patch.dict("os.environ", {}, clear=True):
+            CameraVisualization(print_pose=True).check_available()
+            with self.assertRaisesRegex(RuntimeError, "桌面"):
+                CameraVisualization(show=True).check_available()
+
+    def test_pose_diagnostics_units_throttle_and_target_loss(self):
+        rvec, tvec = np.array([0., 0., np.pi / 2]), np.array([.1, -.2, .3])
+        result = DetectionResult(status="TRACKING", pose=pose_from_pnp(rvec, tvec),
+                                 rvec=rvec, tvec=tvec)
+        text = " | ".join(pose_lines(result))
+        self.assertIn("X=100.0 Y=-200.0 Z=300.0", text)
+        self.assertIn("yaw=90.0", text)
+        # Same singular-angle convention as Downloads/detect.py.
+        singular = DetectionResult(status="TRACKING", pose=result.pose,
+                                   rvec=np.array([0., np.pi / 2, 0.]))
+        self.assertIn("pitch=90.0 yaw=0.0", " | ".join(pose_lines(singular)))
+        class Detector:
+            kind = "apriltag"
+        output = io.StringIO()
+        visual = CameraVisualization(print_pose=True)
+        with redirect_stdout(output), patch("visualization.cv2.imshow") as show:
+            visual.update(None, Detector(), result, 1, now=1.0)
+            visual.update(None, Detector(), result, 2, now=1.1)
+            visual.update(None, Detector(), result, 3, now=1.5)
+            visual.update(None, Detector(), DetectionResult(), 4, now=1.6)
+            visual.close()
+            show.assert_not_called()
+        lines = output.getvalue().splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertIn("No valid pose", lines[-1])
+        self.assertNotIn("X=", lines[-1])
+        # Disabled diagnostics must not touch GUI or pose processing.
+        with patch("visualization.cv2.destroyWindow") as destroy:
+            disabled = CameraVisualization()
+            self.assertTrue(disabled.update(None, None, None, 1))
+            disabled.close()
+            destroy.assert_not_called()
+
+    def test_preview_quit_and_window_close(self):
+        class Detector:
+            kind = "apriltag"
+            def draw(self, image, result):
+                pass
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+        visual = CameraVisualization(show=True)
+        with patch("visualization.cv2.namedWindow"), patch("visualization.cv2.imshow"), \
+             patch("visualization.cv2.waitKey", return_value=ord("q")):
+            self.assertFalse(visual.update(image, Detector(), DetectionResult(), 1))
+        with patch("visualization.cv2.getWindowProperty", return_value=0), \
+             patch("visualization.cv2.imshow") as show:
+            self.assertFalse(visual.update(image, Detector(), DetectionResult(), 2))
+            show.assert_not_called()
+        with patch("visualization.cv2.destroyWindow") as destroy:
+            visual.close()
+            destroy.assert_called_once()
+
     def test_record_depth_choice_comes_from_logger_config(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "recording.yaml"
@@ -70,7 +145,7 @@ class CameraNodeTest(unittest.TestCase):
         self.assertAlmostEqual(orientation["qw"], 0.0)
 
     def test_yaml_selects_one_detector(self):
-        _, kind, settings = load_config(DEFAULT_CONFIG)
+        _, kind, settings, _ = load_config(DEFAULT_CONFIG)
         self.assertEqual(kind, "apriltag")
         self.assertEqual((settings["tag_id"], settings["tag_size_m"]), (0, 0.05))
         config = yaml.safe_load(Path(DEFAULT_CONFIG).read_text(encoding="utf-8"))
@@ -78,7 +153,7 @@ class CameraNodeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "camera.yaml"
             path.write_text(yaml.safe_dump(config), encoding="utf-8")
-            _, kind, settings = load_config(path)
+            _, kind, settings, _ = load_config(path)
         self.assertEqual(kind, "charuco")
         self.assertEqual(settings["dictionary"], "DICT_4X4_50")
 
@@ -110,6 +185,11 @@ class CameraNodeTest(unittest.TestCase):
         self.assertEqual(board_result.status, "TRACKING")
         self.assertEqual(board.total_corners, 16)
         self.assertEqual(board_result.confidence, 1.0)
+        for source, detector, detection in ((image, tag, result), (board_image, board, board_result)):
+            original = source.copy()
+            preview = render_preview(source, detector, detection, 42, 30., False)
+            np.testing.assert_array_equal(source, original, err_msg="preview modified recording image")
+            self.assertFalse(np.array_equal(preview, source))
 
     def test_rgb_depth_and_detection_share_frame_identity(self):
         sensor = SensorFrame()

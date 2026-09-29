@@ -35,6 +35,14 @@ struct Registers {
     static constexpr int RING = 1488;       // 无名指
     static constexpr int PINKY = 1486;      // 小指
 
+    // ANGLE_ACT: measured drive positions (0..1000, not radians).
+    static constexpr int ACT_THUMB_ROT = 1556;
+    static constexpr int ACT_THUMB = 1554;
+    static constexpr int ACT_INDEX = 1552;
+    static constexpr int ACT_MIDDLE = 1550;
+    static constexpr int ACT_RING = 1548;
+    static constexpr int ACT_PINKY = 1546;
+
     // Finger speed limits.
     static constexpr int SPEED_THUMB_ROT = 1532;
     static constexpr int SPEED_THUMB = 1530;
@@ -64,6 +72,9 @@ struct Registers {
 inline constexpr std::array<int, 6> kPositionRegisters = {
     Registers::THUMB_ROT, Registers::THUMB, Registers::INDEX,
     Registers::MIDDLE, Registers::RING, Registers::PINKY};
+inline constexpr std::array<int, 6> kActualPositionRegisters = {
+    Registers::ACT_THUMB_ROT, Registers::ACT_THUMB, Registers::ACT_INDEX,
+    Registers::ACT_MIDDLE, Registers::ACT_RING, Registers::ACT_PINKY};
 inline constexpr std::array<int, 6> kSpeedRegisters = {
     Registers::SPEED_THUMB_ROT, Registers::SPEED_THUMB, Registers::SPEED_INDEX,
     Registers::SPEED_MIDDLE, Registers::SPEED_RING, Registers::SPEED_PINKY};
@@ -74,7 +85,7 @@ inline constexpr std::array<int, 6> kForceRegisters = {
 // Low-level writer: computes CAN ids and encodes the 2-byte payload.
 class InspireHand {
 public:
-    explicit InspireHand(SocketCan& can) : can_(can) {}
+    explicit InspireHand(CanWriter& can) : can_(can) {}
 
     // Computes the 29-bit extended CAN id for (register, hand_id, write-flag).
     static std::uint32_t can_id(int reg, int hand_id, bool write) {
@@ -108,8 +119,16 @@ public:
         return true;
     }
 
+    // CAN read is a data frame (not RTR): DLC=1, payload=register byte count.
+    // INSPIRE CAN supplemental protocol PRJ-02-TS-U-005, section 2.
+    void read_register(int reg, int hand_id, std::uint8_t bytes = 2) {
+        if (reg < 0 || reg > 0xfff || hand_id <= 0 || hand_id > 0x3fff || bytes == 0 || bytes > 8)
+            throw std::invalid_argument("invalid CAN register read");
+        can_.write(can_id(reg, hand_id, false), &bytes, 1);
+    }
+
 private:
-    SocketCan& can_;
+    CanWriter& can_;
 };
 
 // High-level actions, mirroring Inspire_Robot's InspireAction.
@@ -128,6 +147,8 @@ public:
     // is not length 6 (no frames sent).
     bool set_positions(const std::vector<int>& v) {
         if (v.size() != 6) return false;
+        for (int value : v)
+            if (value < kKeepValue || value > kMaxValue) return false;
         for (int i = 0; i < 6; ++i) write(kPositionRegisters[i], v[i]);
         return true;
     }
@@ -135,20 +156,18 @@ public:
     // Sets all six finger speeds. Range [0, 1000]; returns false on bad input.
     bool set_speed(const std::vector<int>& v) {
         if (v.size() != 6) return false;
-        for (int i = 0; i < 6; ++i) {
-            if (v[i] < 0 || v[i] > kMaxValue) return false;
-            write(kSpeedRegisters[i], v[i]);
-        }
+        for (int value : v)
+            if (value < 0 || value > kMaxValue) return false;
+        for (int i = 0; i < 6; ++i) write(kSpeedRegisters[i], v[i]);
         return true;
     }
 
     // Sets all six finger forces. Range [0, 1000]; returns false on bad input.
     bool set_force(const std::vector<int>& v) {
         if (v.size() != 6) return false;
-        for (int i = 0; i < 6; ++i) {
-            if (v[i] < 0 || v[i] > kMaxValue) return false;
-            write(kForceRegisters[i], v[i]);
-        }
+        for (int value : v)
+            if (value < 0 || value > kMaxValue) return false;
+        for (int i = 0; i < 6; ++i) write(kForceRegisters[i], v[i]);
         return true;
     }
 
@@ -181,7 +200,10 @@ public:
     }
 
 private:
-    void write(int reg, int value) { hand_.write_register(reg, value, hand_id_); }
+    void write(int reg, int value) {
+        if (!hand_.write_register(reg, value, hand_id_))
+            throw std::invalid_argument("Inspire register value out of range");
+    }
 
     InspireHand& hand_;
     int hand_id_;

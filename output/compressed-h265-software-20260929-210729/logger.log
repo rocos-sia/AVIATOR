@@ -1,0 +1,23 @@
+aviator_logger: Camera encoder (startup probe): libx265 (ultrafast)
+
+  +--- AVIATOR / aviator_logger ------------------------------------------------
+  | SUB connect    tcp://127.0.0.1:39509
+  | SUB topics     * (all topics; PUB/SUB delivery is unverified)
+  | Output         /home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.mcap  (.partial -> atomic rename)
+  | Image output   /home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.images.mcap
+  | Session        76995b27-b374-42ec-99dd-960441cd7389
+  | Queue bytes    16777216
+  | Camera mode    compressed
+  | Camera ingress tcp://127.0.0.1:55411
+  | Camera state   LISTENING (waiting for RGB/depth sources)
+  | Exit           Ctrl+C (drain + finalize)
+  +--------------------------------------------------------------------------
+
+aviator_logger: first image recorded -> record.camera.cockpit.rgb encoding="h265" encoder=libx265
+recorded 304 messages across 2 topic(s)
+  data: 152 messages -> /home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.mcap
+  images: 152 messages -> /home/rocos/Documents/GitHub/AVIATOR/output/compressed-h265-software-20260929-210729/data.images.mcap
+  camera.detection  (CameraDetection)  152 msgs
+  record.camera.cockpit.rgb  (aviator.record.v1.CameraPacket)  152 msgs
+  window (UTC): 2026-09-29T13:07:34.509Z -> 2026-09-29T13:07:39.545Z
+  sequence gaps: 0, duplicate/reordered: 0; completeness unverified (PUB/SUB)

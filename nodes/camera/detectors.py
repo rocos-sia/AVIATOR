@@ -118,8 +118,11 @@ class CharucoDetector:
         if result.marker_ids is not None:
             aruco.drawDetectedMarkers(image, result.marker_corners, result.marker_ids)
         if result.charuco_ids is not None:
+            # OpenCV 5 may return Nx2/N arrays; the drawing API requires
+            # two-channel corners (Nx1x2), also accepted by OpenCV 4.
             aruco.drawDetectedCornersCharuco(
-                image, result.charuco_corners, result.charuco_ids)
+                image, np.asarray(result.charuco_corners, dtype=np.float32).reshape(-1, 1, 2),
+                np.asarray(result.charuco_ids, dtype=np.int32).reshape(-1, 1))
         if result.pose is not None:
             cv2.drawFrameAxes(image, self.camera_matrix, self.dist_coeffs,
                               result.rvec, result.tvec, 0.1)

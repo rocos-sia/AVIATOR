@@ -1,6 +1,6 @@
 # aviator_logger
 
-独立 C++ 记录节点：订阅全部业务 JSON Topic，并根据 YAML 选择不保存图像、原始保存、压缩保存。业务 JSON 与图像写入同一个 MCAP，图像使用独立 TCP 入口及有界队列。依赖和协议细节、实现过程见 [实现说明](../../docs/Logger配置与图像记录实现说明.md)。
+独立 C++ 记录节点：订阅全部业务 JSON Topic，并根据 YAML 选择不保存图像、原始保存、压缩保存。业务 JSON 与图像分别写入两个 MCAP，图像使用独立 TCP 入口及有界队列。依赖和协议细节、实现过程见 [实现说明](../../docs/Logger配置与图像记录实现说明.md)。
 
 ## 构建与启动
 
@@ -17,7 +17,7 @@ ctest --test-dir build/communication --output-on-failure
 ./build/communication/bin/aviator_logger --config config/recording.yaml --output recording.mcap
 ```
 
-配置默认 `camera.mode: "disabled"`。启用 `raw` 或 `compressed` 后，相机端也需接入记录入口。例如在已配置 RealSense/OpenCV 环境的另一个终端：
+仓库示例配置使用 `camera.mode: "compressed"`、`codec: h264`、`encoder: software`，适合本机无显卡环境（不传配置时仍默认禁用图像）。启用 `raw` 或 `compressed` 后，相机端也需接入记录入口。例如在已配置 RealSense/OpenCV 环境的另一个终端：
 
 ```bash
 python nodes/camera/main.py \
@@ -35,6 +35,7 @@ Python 相机节点不是 Logger 的运行依赖。相机在推理前提交图�
 | --- | --- |
 | `--config` | 不自动查找；读取指定 YAML。 |
 | `--output` | 自动生成 `aviator_DATE_TIME-UUID.mcap`；覆盖 `output.path`。父目录须存在。 |
+| `--image-output` | 覆盖 `output.image_path`；未设置时由数据路径派生，例如 `data.mcap` → `data.images.mcap`。仅图像启用时创建。 |
 | `--subscribe` | `tcp://127.0.0.1:5556`；覆盖 `bus.subscribe_endpoint`。 |
 | `--session` | 新 UUID，Logger 会话与源会话分开。 |
 | `--queue-bytes` | 16777216；仅覆盖业务队列。 |
@@ -47,25 +48,26 @@ Python 相机节点不是 Logger 的运行依赖。相机在推理前提交图�
 | --- | --- | --- | --- |
 | `disabled` | 不保存 | 不保存 | 不创建图像 PULL、不分配图像队列、不初始化编码器；业务消息仍记录。 |
 | `raw` | 原始 RGB8 字节 | 原始 Z16 字节 | 不缩放、不主动降采样、不压缩；这里的原始不是传感器 Bayer RAW。 |
-| `compressed` | H.265 默认 / H.264 | Zstd 无损 Z16 | RGB 为有损 YUV420P 视频，深度解压后原样恢复。 |
+| `compressed` | H.264 示例配置 / H.265 可选 | Zstd 无损 Z16 | RGB 为有损 YUV420P 视频，深度解压后原样恢复。 |
 
 - `output.chunk_compression` v1 只允许 `none`；`chunk_size_bytes` 默认 4 MiB，仅为目标值。图像编码与 MCAP Chunk 压缩分开，已编码负载不再次压缩。
-- `camera.sources` 的 ID 必须唯一，格式为 1–80 个字母、数字、下划线或连字符；Topic 必须为 `record.camera.<id>.rgb` / `.depth`。每个启用源要求 RGB、深度均出现；缺少的流在结束元数据和 stderr 中标记 DEGRADED。
+- `camera.sources` 的 ID 必须唯一，格式为 1–80 个字母、数字、下划线或连字符；Topic 必须为 `record.camera.<id>.rgb` / `.depth`。每个启用源要求 RGB 出现；`record_depth=true` 时还要求深度出现；缺少的流在结束元数据和 stderr 中标记 DEGRADED。
 - 输入始终为 RGB8/Z16 原始帧，不接受生产者直接传入 H.264/H.265。图像通过 `5557` 的单帧 Protobuf 信封传输，禁止混入控制 JSON 总线。
-- `compressed.rgb.encoder=auto` 先尝试 FFmpeg NVENC，再尝试 libx264/libx265；`hardware` 当前仅支持 NVENC，`software` 严格使用 libx264/libx265。后端不可用时失败，绝不自动切换 codec 或保存模式。编码库存在不代表硬件可用。
+- `compressed.rgb.encoder=auto` 先尝试 FFmpeg NVENC，再尝试 libx264/libx265；`hardware` 当前仅支持 NVENC，`software` 严格使用 libx264/libx265。后端不可用时失败，绝不自动切换 codec 或保存模式。编码库存在不代表硬件可用。软件分支按吞吐选预设：libx265 用 `ultrafast` 并启用 WPP，libx264 用 `veryfast`，线程数 4。
+- 软件编码吞吐决定压缩模式能否成立；应与相机检测并行实测。当前配置显式使用 `h264 + software`，无需显卡。2026-09-29 本机 D436 实测 1280×720@30：约 10 秒保存并完整解码 303 帧，观察到的序号缺口、发送端和 Logger 队列丢弃均为 0；图像 MCAP 约 10.7 MB（同批原始 RGB 像素约 838 MB）。这是短时、单相机结果，文件大小依画面变化。 同机 H.265 软件编码约 5 秒的 152 帧也全部解码通过；H.264 `auto` 在 NVENC 不可用时回退到 libx264，94 帧全部解码通过。两次均未观察到丢弃或序号缺口。
 - `target_bitrate_bps` 默认 8 Mbps，是平均码率目标，不是文件大小硬上限。`keyframe_interval_frames` 默认 30；B 帧固定为 0；首帧带解码参数并为关键帧。YUV420P 要求宽高均为偶数。
 - 深度 `codec` 固定 `zstd`，`level` 为 1..19。帧头保留 Z16 原始 stride、字节序和 `depth_scale`，不能把伪彩色深度图冒充原始深度。
 - 不修改源分辨率和帧率；RGB 实际宽高/fps/源身份/配置 ID 改变时重建编码器并开始新的可解码序列。
 
 ## 队列、状态与退出
 
-接收线程独占 SUB/PULL，写盘线程独占编码器和 MCAP Writer。业务队列默认 16 MiB，图像队列默认 256 MiB，分别计费，交替取出保证一侧不会无限抢占另一侧；单次编码仍可能延迟业务写盘。队列按负载和条目结构计费，不含分配器、ZMQ 缓冲和编码器工作区。编码线程数设为 2，软件 H.265 限制线程池；总内存仍需按实际分辨率与来源数量实测。
+接收线程独占 SUB/PULL，写盘线程独占编码器和两个 MCAP Writer。业务队列默认 16 MiB，图像队列默认 256 MiB，分别计费，交替取出保证一侧不会无限抢占另一侧；单次编码仍可能延迟业务写盘。队列按负载和条目结构计费，不含分配器、ZMQ 缓冲和编码器工作区。软件编码线程数设为 4，但 x265 的 `frame-threads` 固定为 1——编码要求每帧立即出包，帧级线程会引入延迟，因此并行度主要来自 WPP，通过 `pools=4:wpp=1` 启用 4 个线程池工作线程。总内存仍需按实际分辨率与来源数量实测。
 
 图像接收 HWM 默认 16 条，单条 Protobuf 信封上限默认 16 MiB。队列满丢新帧并计数，不等待控制线程。丢弃发生在编码前，因此后续视频帧不依赖未落盘的编码参考帧。编码器错误、编码后超限、磁盘错误均失败退出并保留 `.partial`，不继续输出可能损坏的视频序列。
 
-启动横幅 `LISTENING` 仅表示本地入口和 Writer/编码器初始化成功，不代表生产者已连接或所有源 READY。异常输出本地 DEGRADED/ERROR；结束时 MCAP `camera_recording` 元数据保存缺失流、非法信封、multipart 拒绝及队列丢弃计数。目前尚未通过业务总线发布完整状态机。显式禁用图像不算异常。
+启动横幅 `LISTENING` 仅表示本地入口和 Writer/编码器初始化成功，不代表生产者已连接或所有源 READY。启动日志 `Camera encoder (startup probe)` 显示初始化探测选中的编码器与预设（如 `libx264 (veryfast)`）；首帧日志与帧元数据记录实际编码器，NVENC 静默回退到软件编码时可立即发现；同一结果写入 `camera_recording` 元数据的 `encoder_backend` / `encoder_preset`。异常输出本地 DEGRADED/ERROR；结束时 MCAP `camera_recording` 元数据保存缺失流、非法信封、multipart 拒绝及队列丢弃计数。目前尚未通过业务总线发布完整状态机。显式禁用图像不算异常。
 
-SIGINT/SIGTERM 停止接收并排空已入队数据，然后写索引与尾部、`fsync` 文件、读回检查结构及计数、原子更名、`fsync` 父目录。拒绝覆盖最终文件和 `.partial`。失败返回非零；父目录同步失败时最终文件可能已存在，但仍报告失败。磁盘阻塞和关闭读回没有硬性时间上限；运行中尚无周期性持久化承诺。
+SIGINT/SIGTERM 停止接收并排空已入队数据，然后写索引与尾部、`fsync` 文件、读回检查结构及计数、原子更名、`fsync` 父目录。两个文件分别收尾，不是跨文件原子事务：若第二个文件收尾失败，第一个文件可能已经发布，仍以非零退出状态为准。拒绝覆盖最终文件和 `.partial`。失败返回非零；父目录同步失败时最终文件可能已存在，但仍报告失败。磁盘阻塞和关闭读回没有硬性时间上限；运行中尚无周期性持久化承诺。
 
 ## MCAP 映射与完整性
 
@@ -75,7 +77,7 @@ SIGINT/SIGTERM 停止接收并排空已入队数据，然后写索引与尾部�
 
 两类消息的 `log_time` 为接收 UTC（微秒接口换算纳秒，保留时钟回退），缺少真实发布时间时 `publish_time=log_time`；源完整序号保留于负载，MCAP sequence 取低 32 位。按 Topic、发布者、源会话统计观察到的前向缺口及重复/乱序。图像额外保存接收单调时间和 Logger clock_id。
 
-MCAP 启用 Chunk/Data/Summary CRC 与默认索引；关闭检查不是独立全文件 CRC 审计。`aviator` Metadata 保存最终有效配置，`summary` 保存总消息数（含图像）、图像数和统计，`camera_recording` 保存图像专项结果。
+MCAP 启用 Chunk/Data/Summary CRC 与默认索引；关闭检查不是独立全文件 CRC 审计。`aviator` Metadata 保存最终有效配置，`recording_files` 保存两个输出路径；两个文件使用相同 Logger session。各文件的 `summary` 分别保存本文件的消息数、图像数和统计，`camera_recording` 保存图像专项结果。
 
 PUB/SUB 和 PUSH/PULL 都没有持久化交付确认；ZMQ 超限拒绝、生产者/网络丢帧可能无法由 Logger 逐条计数。会话仍标记 `completeness=unverified_pubsub`；缺口统计不是最终丢失量，有损属性也不等于缺帧属性。
 
@@ -84,3 +86,20 @@ PUB/SUB 和 PUSH/PULL 都没有持久化交付确认；ZMQ 超限拒绝、生产
 CTest 覆盖配置校验与 CLI 覆盖、三模式 TCP 接入、原始字节、H.264/H.265 连续解码、Z16 解压一致、坏帧/multipart、队列溢出、Python/C++ 信封互通、信号退出和写盘失败。
 
 尚未实现分卷、带哈希的外部会话清单、生产者开始/结束握手、通用设备/伺服记录、`record.invalid`、周期性持久化与崩溃恢复。D436 实机、硬件编码和长时间峰值吞吐需在目标设备验收。MCAP 固定为 `third_party/mcap-2.1.3`；示例仍保留自己的依赖副本。
+
+## 分文件启动示例
+
+以下从仓库根目录启动，logger 和相机读取同一份配置。输出父目录须存在，已有 MCAP 不会被覆盖。
+
+```bash
+./build/bin/aviator_logger --config config/recording.yaml \
+  --output output/data.mcap --image-output output/images.mcap \
+  --session "$(cat /tmp/aviator_session.uuid)"
+
+# 另一个终端（使用安装了相机依赖的 Python 环境）
+python nodes/camera/main.py --config config/camera.yaml \
+  --recording-config config/recording.yaml --camera-id cockpit \
+  --session "$(cat /tmp/aviator_session.uuid)"
+```
+
+`data.mcap` 包含业务 JSON（包括 `camera.detection`），`images.mcap` 包含 RGB 和按配置启用的深度帧。首帧被 Writer 接收后输出 `first image recorded`，正常停止时分别打印数据和图像条数。先停止相机，再停止 logger，使已入队图像完成写入。注意 `build/bin/config/recording.yaml` 是另一份配置；修改仓库配置后应同步，或两个进程都使用仓库配置的绝对路径。

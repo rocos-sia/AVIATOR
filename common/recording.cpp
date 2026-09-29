@@ -70,11 +70,13 @@ class FileSink : public mcap::IWritable {
 };
 
 std::string make_schema(std::string_view message_type) {
+    // draft-07 里 "const" 单独出现是合法的，"type":"string" 属于冗余；但部分下游
+    // 读取器只在显式给出 type 时才把它当字符串处理，所以每个 const 都配上 type。
     return std::string(
                "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"type\":\"object\","
                "\"required\":[\"msg_type\",\"version\",\"sequence\",\"timestamp\","
                "\"sample_mono_us\",\"clock_id\",\"publisher_id\",\"session_id\",\"valid\"],"
-               "\"properties\":{\"msg_type\":{\"const\":\"") +
+               "\"properties\":{\"msg_type\":{\"type\":\"string\",\"const\":\"") +
            std::string(message_type) +
            "\"},\"version\":{\"type\":\"string\"},\"sequence\":{\"type\":\"integer\"},"
            "\"timestamp\":{\"type\":\"integer\"},\"sample_mono_us\":{\"type\":\"integer\"},"

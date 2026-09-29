@@ -9,6 +9,7 @@ bus:
   queue_bytes: 16777216             # 16 MiB；业务 JSON 队列独立于图像队列
 
 output:
+  image_path: ""                    # 空：数据文件同目录 <数据文件名>.images.mcap
   path: ""                          # 空字符串：沿用启动时间 + UUID 的自动文件名
   # 下列是 MCAP 容器层设置，不是图像编码设置。
   # 三种模式均使用 none，保证 raw 确实不压缩，也避免重复压缩编码图像。
@@ -20,7 +21,7 @@ camera:
   # disabled   不保存 RGB/深度图像；camera.detection 等业务消息照常记录。
   # raw        保存原始 RGB8 + Z16 帧，不压缩、不缩放、不主动降采样；队列溢出仍会丢帧并计数。
   # compressed RGB 使用有损视频编码，深度使用无损压缩；保持源分辨率/帧率。
-  mode: "disabled"                  # 枚举：disabled | raw | compressed
+  mode: "compressed"                # 枚举：disabled | raw | compressed
 
   # 原始图像不走控制总线。以下入口/队列仅在 raw/compressed 模式启用。
   # Logger PULL bind、非实时相机适配器 PUSH connect；始终发送原始帧，Logger 编码。
@@ -44,8 +45,9 @@ camera:
   # 本段仅在 mode=compressed 时生效，raw 模式完全绕过编码器。
   compressed:
     rgb:
-      codec: "h265"                  # 枚举：h264 | h265
-      encoder: "auto"                # auto: NVENC 不可用则软件；hardware: 仅 NVENC；software: libx264/libx265
+      # 本机无显卡：显式使用 libx264 软件编码；不探测 NVENC。
+      codec: "h264"                  # 枚举：h264 | h265
+      encoder: "software"            # auto: NVENC 不可用则软件；hardware: 仅 NVENC；software: libx264/libx265
       pixel_format: "yuv420p"        # 编码输入格式；RGB 转换和视频编码均可能损失信息
       target_bitrate_bps: 8000000     # 8 Mbps 目标平均码率，不是瞬时/文件大小硬上限
       keyframe_interval_frames: 30   # 按源 30 fps 时约 1 秒一个关键帧

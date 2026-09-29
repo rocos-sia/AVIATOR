@@ -1,5 +1,6 @@
 #include "recording_config.hpp"
 #include <climits>
+#include <filesystem>
 #include <fstream>
 #include <regex>
 #include <set>
@@ -56,6 +57,13 @@ void fixed(const YAML::Node& n, const char* value) {
     require(string(n) == value, std::string("expected ") + value);
 }
 } // namespace
+std::string image_output_path(const std::string& output, const RecorderOptions& options) {
+    if (!options.image_output.empty())
+        return options.image_output;
+    auto path = std::filesystem::path(output);
+    path.replace_extension(".images.mcap");
+    return path.string();
+}
 RecordingConfig load_recording_config(const std::string& path) {
     const auto root = YAML::LoadFile(path);
     keys(root, {"config_version", "bus", "output", "camera"});
@@ -72,9 +80,11 @@ RecordingConfig load_recording_config(const std::string& path) {
             o.queue_bytes = number(n["queue_bytes"]);
     }
     if (const auto n = root["output"]) {
-        keys(n, {"path", "chunk_compression", "chunk_size_bytes"});
+        keys(n, {"path", "image_path", "chunk_compression", "chunk_size_bytes"});
         if (n["path"])
             c.output = string(n["path"]);
+        if (n["image_path"])
+            o.image_output = string(n["image_path"]);
         if (n["chunk_compression"])
             fixed(n["chunk_compression"], "none");
         if (n["chunk_size_bytes"])
@@ -143,6 +153,13 @@ RecordingConfig load_recording_config(const std::string& path) {
 void validate_recording_config(const RecordingConfig& c) {
     const auto& o = c.options;
     const auto& k = o.camera;
+    if (k.mode != "disabled" && !c.output.empty()) {
+        const auto data = std::filesystem::weakly_canonical(std::filesystem::absolute(c.output));
+        const auto image = std::filesystem::weakly_canonical(
+            std::filesystem::absolute(image_output_path(c.output, o)));
+        require(data != image && data.string() + ".partial" != image.string() &&
+                    image.string() + ".partial" != data.string(), "data/image output paths conflict");
+    }
     require(c.subscribe_endpoint.rfind("tcp://", 0) == 0, "bus requires TCP");
     require(o.queue_bytes > 0 && o.queue_bytes <= INT_MAX && o.receive_hwm > 0 &&
                 o.chunk_size_bytes > 0 && o.chunk_size_bytes <= INT_MAX,
@@ -189,6 +206,7 @@ nlohmann::json recording_config_json(const RecordingConfig& c) {
               {"queue_bytes", o.queue_bytes}}},
             {"output",
              {{"path", c.output},
+              {"image_path", k.mode == "disabled" ? "" : image_output_path(c.output, o)},
               {"chunk_compression", "none"},
               {"chunk_size_bytes", o.chunk_size_bytes}}},
             {"camera",

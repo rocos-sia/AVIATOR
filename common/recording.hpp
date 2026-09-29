@@ -23,6 +23,7 @@ struct RecorderSummary {
     std::uint64_t sequence_gaps = 0;
     std::uint64_t duplicate_or_reordered = 0;
     std::string path;
+    std::string image_path; // record_bus aggregate: separate camera MCAP, if enabled.
     std::map<std::string, TopicStats> topics;
     std::uint64_t start_log_ns = 0;
     std::uint64_t end_log_ns = 0;

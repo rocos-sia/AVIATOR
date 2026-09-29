@@ -1,0 +1,22 @@
+
+  +--- AVIATOR / aviator_logger ------------------------------------------------
+  | SUB connect    tcp://127.0.0.1:33735
+  | SUB topics     * (all topics; PUB/SUB delivery is unverified)
+  | Output         /home/rocos/Documents/GitHub/AVIATOR/output/logger-check-20260929-210007/data.mcap  (.partial -> atomic rename)
+  | Image output   /home/rocos/Documents/GitHub/AVIATOR/output/logger-check-20260929-210007/data.images.mcap
+  | Session        51ef4087-c185-44ca-9c1e-b5d5489132f4
+  | Queue bytes    16777216
+  | Camera mode    raw
+  | Camera ingress tcp://127.0.0.1:47399
+  | Camera state   LISTENING (waiting for RGB/depth sources)
+  | Exit           Ctrl+C (drain + finalize)
+  +--------------------------------------------------------------------------
+
+aviator_logger: first image recorded -> record.camera.cockpit.rgb
+recorded 128 messages across 2 topic(s)
+  data: 64 messages -> /home/rocos/Documents/GitHub/AVIATOR/output/logger-check-20260929-210007/data.mcap
+  images: 64 messages -> /home/rocos/Documents/GitHub/AVIATOR/output/logger-check-20260929-210007/data.images.mcap
+  camera.detection  (CameraDetection)  64 msgs
+  record.camera.cockpit.rgb  (aviator.record.v1.CameraPacket)  64 msgs
+  window (UTC): 2026-09-29T13:00:13.028Z -> 2026-09-29T13:00:15.121Z
+  sequence gaps: 0, duplicate/reordered: 0; completeness unverified (PUB/SUB)

@@ -1,0 +1,41 @@
+can:
+  left_interface: can1
+  right_interface: can0
+feedback:
+  poll_rate_hz: 10
+  response_timeout_ms: 30
+  timeout_ms: 300
+hand:
+  force:
+  - 500
+  - 500
+  - 500
+  - 500
+  - 500
+  - 500
+  left_id: 2
+  right_id: 1
+  safe_pose:
+  - 1000
+  - 1000
+  - 1000
+  - 1000
+  - 1000
+  - 1000
+  speed:
+  - 1000
+  - 1000
+  - 1000
+  - 1000
+  - 1000
+  - 1000
+node:
+  publisher_id: inspire_hand_feedback_check
+  state_rate_hz: 10
+  supported_modes:
+  - NORMALIZED_POSITION
+  - GRASP_SETPOINT
+  timeout_ms: 100
+zmq:
+  publish_endpoint: tcp://127.0.0.1:36353
+  subscribe_endpoint: tcp://127.0.0.1:5556

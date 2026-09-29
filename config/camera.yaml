@@ -12,7 +12,12 @@ camera:
   warmup_s: 5.0          # 启动后跳过发布的热身秒数（0 禁用）
 
 detector:
-  type: "apriltag"      # apriltag | charuco；切换此项即可选择识别哪一种码
+  type: "charuco"      # apriltag | charuco；切换此项即可选择识别哪一种码
+
+visualization:
+  show: false           # 实时视频：识别框/角点、坐标轴、位置(mm)、姿态角(deg)；--show 临时开启
+  print_pose: false     # 终端输出位姿/检测状态；--print-pose 临时开启，无需桌面
+  print_interval_s: 0.5 # 打印限频；检测状态变化立即输出
 
 apriltag:
   family: "tag36h11"

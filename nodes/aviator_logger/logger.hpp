@@ -8,7 +8,8 @@
 
 namespace aviator {
 // Caller owns stop and joins this function. SUB lives here; a separate worker
-// exclusively owns MCAP. Shutdown drains all accepted queue entries.
+// exclusively owns the data and image MCAP writers. Shutdown drains accepted entries.
+// Returned counts aggregate both files; path/image_path identify their outputs.
 RecorderSummary record_bus(const std::string& subscribe_endpoint, const std::string& output_path,
                            const std::string& session_id, const std::atomic<bool>& stop,
                            const RecorderOptions& options = {},

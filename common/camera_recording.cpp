@@ -67,7 +67,7 @@ struct Video {
     AVFrame* image = nullptr;
     AVPacket* packet = nullptr;
     SwsContext* scale = nullptr;
-    std::string backend, identity;
+    std::string backend, preset, identity;
     std::int64_t index = 0;
     ~Video() {
         sws_freeContext(scale);
@@ -102,18 +102,22 @@ std::unique_ptr<Video> open_video(const CameraRecordingOptions& o, int width, in
         c->bit_rate = o.bitrate;
         c->gop_size = o.keyframe_interval;
         c->max_b_frames = 0;
-        c->thread_count = 2;
+        c->thread_count = 4;
+        // Zero latency keeps the one-input-frame/one-output-packet contract.
+        // x265 parallelizes rows via WPP; frame threads must stay at one.
         AVDictionary* dict = nullptr;
         if (name == "libx264" || name == "libx265") {
-            av_dict_set(&dict, "preset", "veryfast", 0);
+            v->preset = name == "libx265" ? "ultrafast" : "veryfast";
+            av_dict_set(&dict, "preset", v->preset.c_str(), 0);
             av_dict_set(&dict, "tune", "zerolatency", 0);
             av_dict_set(
                 &dict, name == "libx264" ? "x264-params" : "x265-params",
                 name == "libx264"
                     ? "repeat-headers=1:scenecut=0"
-                    : "repeat-headers=1:scenecut=0:pools=none:frame-threads=1:log-level=error",
+                    : "repeat-headers=1:scenecut=0:pools=4:wpp=1:frame-threads=1:log-level=error",
                 0);
         } else {
+            v->preset = "default";
             av_dict_set(&dict, "zerolatency", "1", 0);
             av_dict_set(&dict, "delay", "0", 0);
             av_dict_set(&dict, "rc-lookahead", "0", 0);
@@ -244,16 +248,21 @@ std::string validate_camera_frame(const CameraFrame& f, const CameraRecordingOpt
 struct CameraCompressor::Impl {
     CameraRecordingOptions options;
     std::map<std::string, std::unique_ptr<Video>> videos;
+    std::string backend = "none", preset = "none";
     explicit Impl(const CameraRecordingOptions& o) : options(o) {
         // Check actual encoder initialization before reporting the logger as listening.
         if (o.mode == "compressed") {
             auto probe = open_video(o, 64, 64, 30);
+            backend = probe->backend;
+            preset = probe->preset;
         }
     }
 };
 CameraCompressor::CameraCompressor(const CameraRecordingOptions& options)
     : impl_(std::make_unique<Impl>(options)) {}
 CameraCompressor::~CameraCompressor() = default;
+const std::string& CameraCompressor::encoder_backend() const { return impl_->backend; }
+const std::string& CameraCompressor::encoder_preset() const { return impl_->preset; }
 CameraFrame CameraCompressor::encode(CameraFrame frame) {
     const auto& o = impl_->options;
     if (o.mode != "compressed")
@@ -280,6 +289,8 @@ CameraFrame CameraCompressor::encode(CameraFrame frame) {
         if (!video || video->identity != identity) {
             video = open_video(o, m.at("width"), m.at("height"), m.at("fps"));
             video->identity = identity;
+            impl_->backend = video->backend;
+            impl_->preset = video->preset;
         }
         avcheck(av_frame_make_writable(video->image), "writable video frame");
         const uint8_t* source[] = {reinterpret_cast<const uint8_t*>(frame.data.data())};
@@ -305,6 +316,7 @@ CameraFrame CameraCompressor::encode(CameraFrame frame) {
         m["encoding"] = o.codec;
         m["lossless"] = false;
         m["encoder"] = video->backend;
+        m["encoder_preset"] = video->preset;
         m["encoded_pixel_format"] = "yuv420p";
         m["bitstream_format"] = "annexb";
     }

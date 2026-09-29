@@ -28,10 +28,10 @@ std::string default_output_path() {
 }
 
 void usage() {
-    std::cout << "Usage: aviator_logger [--config config/recording.yaml] [--output FILE]\n"
+    std::cout << "Usage: aviator_logger [--config config/recording.yaml] [--output FILE] [--image-output FILE]\n"
                  "                       [--subscribe tcp://127.0.0.1:5556] [--session UUID]\n"
                  "                       [--queue-bytes 16777216] [--receive-hwm 4096]\n"
-                 "Writes bus traffic to a single MCAP file; SIGINT/SIGTERM finalizes.\n";
+                 "Writes data and images to separate MCAP files; SIGINT/SIGTERM finalizes.\n";
 }
 
 // Log times are stored as UTC ns; render an ISO-8601 timestamp (ms) for stdout.
@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
                 if (++i == argc)
                     throw std::runtime_error("missing --config path");
                 config = aviator::load_recording_config(argv[i]);
-            } else if (key == "--output" || key == "--subscribe" || key == "--session" ||
+            } else if (key == "--output" || key == "--image-output" || key == "--subscribe" || key == "--session" ||
                        key == "--queue-bytes" || key == "--receive-hwm")
                 ++i;
         }
@@ -81,13 +81,15 @@ int main(int argc, char** argv) {
                 ++i;
                 continue;
             }
-            if (key != "--output" && key != "--subscribe" && key != "--session" &&
+            if (key != "--output" && key != "--image-output" && key != "--subscribe" && key != "--session" &&
                 key != "--queue-bytes" && key != "--receive-hwm")
                 throw std::runtime_error("unknown argument: " + key);
             if (++i == argc || std::string(argv[i]).empty())
                 throw std::runtime_error("missing value for " + key);
             if (key == "--output")
                 output = argv[i];
+            else if (key == "--image-output")
+                options.image_output = argv[i];
             else if (key == "--subscribe")
                 endpoint = argv[i];
             else if (key == "--session")
@@ -133,6 +135,8 @@ int main(int argc, char** argv) {
                         {{"SUB connect", endpoint},
                          {"SUB topics", "* (all topics; PUB/SUB delivery is unverified)"},
                          {"Output", output + "  (.partial -> atomic rename)"},
+                         {"Image output", options.camera.mode == "disabled" ? "disabled"
+                             : aviator::image_output_path(output, options)},
                          {"Session", session},
                          {"Queue bytes", std::to_string(options.queue_bytes)},
                          {"Camera mode", options.camera.mode},
@@ -165,7 +169,12 @@ int main(int argc, char** argv) {
         if (failed.load())
             return 1;
         std::cout << "recorded " << summary.messages << " messages across " << summary.topics.size()
-                  << " topic(s) -> " << summary.path << '\n';
+                  << " topic(s)" << '\n';
+        std::cout << "  data: " << summary.messages - summary.camera_messages << " messages -> "
+                  << summary.path << '\n';
+        if (!summary.image_path.empty())
+            std::cout << "  images: " << summary.camera_messages << " messages -> "
+                      << summary.image_path << '\n';
         for (const auto& [topic, stats] : summary.topics)
             std::cout << "  " << topic << "  (" << stats.type << ")  " << stats.messages
                       << " msgs\n";

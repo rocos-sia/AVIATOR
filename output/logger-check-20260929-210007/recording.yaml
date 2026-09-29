@@ -1,0 +1,35 @@
+bus:
+  queue_bytes: 16777216
+  receive_hwm: 4096
+  subscribe_endpoint: tcp://127.0.0.1:5556
+camera:
+  compressed:
+    depth:
+      codec: zstd
+      level: 3
+    rgb:
+      b_frames: 0
+      codec: h265
+      encoder: auto
+      keyframe_interval_frames: 30
+      pixel_format: yuv420p
+      target_bitrate_bps: 8000000
+  max_record_bytes: 16777216
+  mode: raw
+  overflow_policy: drop_newest
+  queue_bytes: 268435456
+  receive_hwm: 16
+  record_endpoint: tcp://127.0.0.1:47399
+  sources:
+  - camera_id: cockpit
+    depth_pixel_format: Z16
+    depth_topic: record.camera.cockpit.depth
+    record_depth: false
+    rgb_pixel_format: RGB8
+    rgb_topic: record.camera.cockpit.rgb
+config_version: 1
+output:
+  chunk_compression: none
+  chunk_size_bytes: 4194304
+  image_path: ''
+  path: ''

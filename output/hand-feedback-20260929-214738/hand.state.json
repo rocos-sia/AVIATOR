@@ -1,0 +1,91 @@
+{
+  "accepted_command": {
+    "publisher_id": "",
+    "sample_mono_us": 0,
+    "sequence": 0,
+    "session_id": ""
+  },
+  "clock_id": "rocos-controller-1b6cc362-52ea-47c1-b931-0d345b222682",
+  "command_valid": false,
+  "feedback_only": true,
+  "hands": {
+    "left": {
+      "commanded_drive_position_normalized": [],
+      "drive_position_normalized": [
+        0.976,
+        1.0,
+        1.0,
+        0.998,
+        0.996,
+        0.996
+      ],
+      "drive_position_raw": [
+        976,
+        1000,
+        1000,
+        998,
+        996,
+        996
+      ],
+      "enabled": false,
+      "error_code": 0,
+      "feedback_age_ms": 96.614,
+      "feedback_available": true,
+      "feedback_io_errors": 0,
+      "feedback_last_error": "",
+      "feedback_samples": 38,
+      "feedback_timeouts": 0,
+      "grasp_verified": false,
+      "joint_position": null,
+      "joint_velocity": null,
+      "position_source": "angle_act_register",
+      "sample_mono_us": 15320511484,
+      "sample_time_basis": "host_read_request",
+      "status": "READY",
+      "valid": true
+    },
+    "right": {
+      "commanded_drive_position_normalized": [],
+      "drive_position_normalized": [
+        0.974,
+        1.0,
+        1.0,
+        0.991,
+        1.0,
+        0.994
+      ],
+      "drive_position_raw": [
+        974,
+        1000,
+        1000,
+        991,
+        1000,
+        994
+      ],
+      "enabled": false,
+      "error_code": 0,
+      "feedback_age_ms": 96.646,
+      "feedback_available": true,
+      "feedback_io_errors": 0,
+      "feedback_last_error": "",
+      "feedback_samples": 38,
+      "feedback_timeouts": 0,
+      "grasp_verified": false,
+      "joint_position": null,
+      "joint_velocity": null,
+      "position_source": "angle_act_register",
+      "sample_mono_us": 15320511452,
+      "sample_time_basis": "host_read_request",
+      "status": "READY",
+      "valid": true
+    }
+  },
+  "msg_type": "HandState",
+  "publisher_id": "inspire_hand_feedback_check",
+  "sample_mono_us": 15320608098,
+  "sequence": 38,
+  "session_id": "7319e9bb-726a-4a1a-8144-f60a7d69f481",
+  "timestamp": 1790689661960019,
+  "valid": true,
+  "version": "1.0"
+}
