@@ -3,6 +3,7 @@
 
 复用 examples/get_Aruco.py 的检测逻辑，把结果按项目公共 Header + CameraDetection
 消息格式发布到 AVIATOR 总线（默认 PUB connect tcp://127.0.0.1:5555）。
+可选地将采集帧在后台线程编码为 PNG，直接写入独立图像 MCAP。
 
 相机型号/分辨率与 ChArUco 尺寸从 YAML 读取（默认 config/camera.yaml），
 命令行参数只作为覆盖。运行环境：miniconda env `apriltag_realsense`。
@@ -11,8 +12,11 @@
 import argparse
 import json
 import os
+import queue
+import signal
 import socket
 import sys
+import threading
 import time
 
 import cv2
@@ -22,8 +26,129 @@ import yaml
 import zmq
 from cv2 import aruco
 
+
 DEFAULT_CONFIG = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "config", "camera.yaml")
+
+
+class ImageRecorder:
+    """Write lossless images to a separate MCAP without blocking detection."""
+    def __init__(self, output_path, session, camera_id, compression):
+        import record_image_pb2
+        from google.protobuf.descriptor_pb2 import FileDescriptorProto, FileDescriptorSet
+        from mcap.writer import CompressionType, Writer
+
+        self.frame_type = record_image_pb2.ImageFrame
+        self.writer_type = Writer
+        self.mcap_compression = CompressionType.NONE
+        descriptor_set = FileDescriptorSet()
+        file_descriptor = FileDescriptorProto()
+        file_descriptor.ParseFromString(record_image_pb2.DESCRIPTOR.serialized_pb)
+        descriptor_set.file.add().CopyFrom(file_descriptor)
+        self.schema_bytes = descriptor_set.SerializeToString()
+        self.pending = queue.Queue(maxsize=2)
+        self.dropped = 0
+        self.messages = 0
+        self.stopping = threading.Event()
+        self.error = None
+        self.compression = compression
+        self.session = session
+        self.camera_id = camera_id
+        self.path = os.path.abspath(output_path)
+        self.partial = self.path + ".partial"
+        if os.path.exists(self.path):
+            raise FileExistsError(self.path)
+        fd = os.open(self.partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
+        self.stream = os.fdopen(fd, "wb")
+        self.worker = threading.Thread(target=self._run, name="camera-mcap-writer")
+        self.worker.start()
+
+    def submit(self, image, frame_id, sample_mono_us, clock):
+        if self.stopping.is_set() or not self.worker.is_alive() or self.pending.full():
+            self.dropped += 1
+            return
+        try:
+            self.pending.put_nowait((image.copy(), frame_id, sample_mono_us, clock))
+        except queue.Full:
+            self.dropped += 1
+
+    def _run(self):
+        try:
+            writer = self.writer_type(self.stream, chunk_size=4 * 1024 * 1024,
+                                      compression=self.mcap_compression, enable_crcs=True)
+            writer.start(profile="aviator")
+            schema_id = writer.register_schema(
+                name="aviator.record.ImageFrame", encoding="protobuf", data=self.schema_bytes)
+            channel_id = writer.register_channel(
+                topic=f"record.camera.{self.camera_id}.image",
+                message_encoding="protobuf", schema_id=schema_id,
+                metadata={"session_id": self.session, "publisher_id": "camera"})
+            writer.add_metadata("aviator", {"node": "camera", "session_id": self.session,
+                                            "camera_id": self.camera_id,
+                                            "encoding": "png", "pixel_format": "BGR8"})
+            while not self.stopping.is_set() or not self.pending.empty():
+                try:
+                    item = self.pending.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+                try:
+                    image, frame_id, sample_mono_us, clock = item
+                    try:
+                        ok, encoded = cv2.imencode(
+                            ".png", image, [cv2.IMWRITE_PNG_COMPRESSION, self.compression])
+                    except cv2.error:
+                        ok = False
+                    if not ok:
+                        self.dropped += 1
+                        continue
+                    message = self.frame_type(
+                        publisher_id="camera", session_id=self.session,
+                        camera_id=self.camera_id,
+                        frame_id=frame_id, sample_mono_us=sample_mono_us,
+                        clock_id=clock, width=image.shape[1], height=image.shape[0],
+                        pixel_format="BGR8", encoding="png", data=encoded.tobytes())
+                    log_ns = time.time_ns()
+                    writer.add_message(
+                        channel_id=channel_id, data=message.SerializeToString(),
+                        log_time=log_ns, publish_time=log_ns,
+                        sequence=frame_id & 0xffffffff)
+                    self.messages += 1
+                finally:
+                    self.pending.task_done()
+            writer.add_metadata("image_summary", {"messages": str(self.messages),
+                                                  "queue_or_encoding_dropped": str(self.dropped)})
+            writer.finish()
+            self.stream.flush()
+            os.fsync(self.stream.fileno())
+            self.stream.close()
+
+            from mcap.reader import make_reader
+            with open(self.partial, "rb") as stream:
+                summary = make_reader(stream).get_summary()
+                if summary is None or summary.statistics is None or \
+                        summary.statistics.message_count != self.messages:
+                    raise RuntimeError("image MCAP summary verification failed")
+
+            os.link(self.partial, self.path)  # fails if a final file already exists
+            os.unlink(self.partial)
+            parent = os.path.dirname(self.path)
+            directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        except Exception as error:
+            self.error = error
+        finally:
+            if not self.stream.closed:
+                self.stream.close()
+
+    def close(self):
+        self.stopping.set()
+        self.worker.join()
+        self.dropped += self.pending.qsize()
+        if self.error is not None:
+            raise RuntimeError(f"image recording failed; partial retained: {self.error}") from self.error
 
 # =========================
 # 公共 Header 辅助（与 common/runtime.cpp 对齐）
@@ -50,6 +175,10 @@ def utc_us():
 
 def monotonic_us():
     return time.monotonic_ns() // 1000     # CLOCK_MONOTONIC
+
+
+def stop_on_sigterm(_signum, _frame):
+    raise KeyboardInterrupt
 
 
 # =========================
@@ -177,6 +306,7 @@ def parse_args(argv):
     p.add_argument("--bind", action="store_true",
                    help="PUB 改为 bind 而非 connect（直连测试，绕过总线）")
     p.add_argument("--camera-id", default="cockpit_camera", help="camera_id 字段")
+    p.add_argument("--session", default="", help="与 Logger --session 相同的记录会话 UUID")
     p.add_argument("--show", action="store_true", help="开启 OpenCV 可视化窗口")
     p.add_argument("--warmup-s", type=float, default=None,
                    help="启动后跳过发布的热身秒数（0 禁用；默认以 YAML 为准）")
@@ -188,6 +318,9 @@ def parse_args(argv):
     p.add_argument("--marker-length", type=float, default=None)
     p.add_argument("--board-size", default=None, help="如 5x5（覆盖 YAML board_size）")
     p.add_argument("--min-corners", type=int, default=None)
+    p.add_argument("--image-output", default="", help="图像 MCAP 路径；留空则不保存图像")
+    p.add_argument("--png-compression", type=int, choices=range(10), default=6,
+                   help="PNG lossless compression 0-9; higher saves space but costs CPU")
     return p.parse_args(argv)
 
 
@@ -245,7 +378,7 @@ def main(argv):
     # -------------------------
     # ZMQ PUB
     # -------------------------
-    session = session_id()
+    session = args.session or session_id()
     clock = clock_id()
     context = zmq.Context()
     pub = context.socket(zmq.PUB)
@@ -257,6 +390,14 @@ def main(argv):
         pub.bind(args.endpoint)
     else:
         pub.connect(args.endpoint)
+    try:
+        recorder = (ImageRecorder(args.image_output, session, args.camera_id,
+                                  args.png_compression) if args.image_output else None)
+    except Exception:
+        pipeline.stop()
+        pub.close()
+        context.term()
+        raise
 
     print(f"camera_publisher: {device_name} ({device_serial}) {width}x{height}@{fps}")
     print(f"camera_publisher: board={bx}x{by} square={square_length} marker={marker_length} "
@@ -267,8 +408,17 @@ def main(argv):
     warmup_until = monotonic_us() + int(warmup_s * 1e6)
     sequence = 0
     frame_id = 0
+    old_sigterm = signal.signal(signal.SIGTERM, stop_on_sigterm)
     try:
         while True:
+            if recorder is not None and recorder.error is not None:
+                print(f"camera_publisher: image recording disabled: {recorder.error}",
+                      file=sys.stderr)
+                try:
+                    recorder.close()
+                except RuntimeError:
+                    pass  # The partial file is kept for inspection.
+                recorder = None
             frames = pipeline.wait_for_frames()
             color_frame = frames.get_color_frame()
             if not color_frame:
@@ -277,6 +427,9 @@ def main(argv):
             sample_mono_us = monotonic_us()
             image = np.asanyarray(color_frame.get_data())
             w, h = color_frame.get_width(), color_frame.get_height()
+
+            if recorder is not None and monotonic_us() >= warmup_until:
+                recorder.submit(image, frame_id, sample_mono_us, clock)
 
             charuco_corners, charuco_ids, marker_corners, marker_ids = detector.detectBoard(image)
 
@@ -322,11 +475,19 @@ def main(argv):
     except KeyboardInterrupt:
         pass
     finally:
-        pipeline.stop()
-        cv2.destroyAllWindows()
-        pub.close()
-        context.term()
-        print("camera_publisher: stopped")
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        try:
+            if recorder is not None:
+                recorder.close()
+                print(f"camera_publisher: saved={recorder.messages} "
+                      f"queue/encoding dropped={recorder.dropped} -> {recorder.path}")
+        finally:
+            pipeline.stop()
+            cv2.destroyAllWindows()
+            pub.close()
+            context.term()
+            signal.signal(signal.SIGTERM, old_sigterm)
+            print("camera_publisher: stopped")
 
 
 if __name__ == "__main__":

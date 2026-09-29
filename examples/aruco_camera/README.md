@@ -16,7 +16,33 @@ ZMQ 节点体系，发布到 `camera.detection` topic，并提供一个订阅端
 ~/miniconda3/envs/apriltag_realsense/bin/python  # 已装 zmq + cv2 + pyrealsense2
 ```
 
-无需额外 pip 安装。
+记录图像时需要 `mcap==1.5.0` 和 `protobuf>=6.31.1,<7`。在相机环境执行：
+
+```bash
+python -m pip install 'mcap==1.5.0' 'protobuf>=6.31.1,<7'
+```
+
+图像直接由相机进程写入独立 MCAP，Logger 仍只记录总线 JSON。两者传入同一个 `--session`；检测消息和图像还可通过 `camera_id + frame_id` 对齐。相机把采集帧复制到最多两帧的队列，后台线程进行 PNG 编码与 MCAP 写盘。
+
+终端一：
+
+```bash
+SESSION_ID=$(cat /proc/sys/kernel/random/uuid)
+printf 'session: %s\n' "$SESSION_ID"
+./build/communication/bin/aviator_logger --session "$SESSION_ID" \
+  --output /mnt/aviator/session/data.mcap
+```
+
+终端二：把上一终端打印的 UUID 填入 `SESSION_ID`。
+
+```bash
+SESSION_ID="粘贴终端一打印的UUID"
+~/miniconda3/envs/apriltag_realsense/bin/python examples/aruco_camera/camera_publisher.py \
+  --session "$SESSION_ID" --image-output /mnt/aviator/session/camera.mcap \
+  --png-compression 6
+```
+
+输出目录须预先存在。相机先写 `camera.mcap.partial`，Ctrl+C 或 SIGTERM 正常退出并核对 MCAP 索引后发布 `camera.mcap`；已存在文件不会被覆盖。写盘失败时保留 `.partial`、报告错误并停用图像记录，检测仍继续。PNG 是无损格式；`--png-compression` 可设 0–9，较高等级通常更省磁盘但编码更慢。默认 6，实际 30 Hz 是否无丢帧需在目标设备上测试。相机退出时打印已保存帧数和队列/编码丢帧数。
 
 ## 配置（YAML）
 
