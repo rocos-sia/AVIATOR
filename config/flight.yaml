@@ -1,0 +1,32 @@
+# flight_gateway 启动时读取本文件；修改后重启生效。
+source: joystick # rs422 尚未实现
+# Linux evdev 路径，不是 /dev/input/js*。
+device: /dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick
+publish: tcp://127.0.0.1:5555
+subscribe: tcp://127.0.0.1:5556
+service: tcp://127.0.0.1:5559
+# 授权的 Core 启动会话 UUID；空字符串表示反馈未配置。
+core_session: ""
+# 空字符串使用 /tmp/flight_gateway-<uid>.lock。
+lock_file: ""
+# Linux ABS 事件代码：ABS_X=0，ABS_Y=1。
+roll_axis: 0
+pitch_axis: 1
+invert_roll: false
+invert_pitch: false
+input_timeout_ms: 100 # 1..100，设备检查有效期
+service_timeout_ms: 100 # 1..10000，超时结果未知，不自动重试
+# 按设备声明的 evdev 按键码升序对应按钮 1..11；none 表示禁用。
+# 仅支持下面六种外部状态事件，可重复映射到其他按钮。
+buttons:
+  - enter_standby # 1
+  - grasp_wheel   # 2
+  - start_control # 3
+  - exit_control  # 4
+  - leave_wheel   # 5
+  - reset_error   # 6
+  - none          # 7
+  - none          # 8
+  - none          # 9
+  - none          # 10
+  - none          # 11

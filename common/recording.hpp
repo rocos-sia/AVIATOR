@@ -40,12 +40,16 @@ class RecordingWriter {
     RecordingWriter(const RecordingWriter&) = delete;
     RecordingWriter& operator=(const RecordingWriter&) = delete;
     void append(std::string_view topic, std::string_view payload, std::uint64_t receive_utc_ns);
+    void append_service(std::string_view topic, std::string_view payload,
+                        std::uint64_t receive_utc_ns);
     void append_camera(const std::string& topic, const CameraFrame& frame,
                        std::uint64_t receive_utc_ns);
     void metadata(const std::string& name, const nlohmann::json& value);
     RecorderSummary finish(std::uint64_t rejected = 0, std::uint64_t dropped = 0);
 
   private:
+    void append_json(std::string_view topic, std::string_view payload, std::uint64_t receive_utc_ns,
+                     bool service);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

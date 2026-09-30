@@ -2,9 +2,22 @@
 
 #include "protocol.hpp"
 #include "runtime.hpp"
+#include <array>
 #include <linux/input.h>
+#include <vector>
 
 namespace flight_gateway {
+// Button numbers are the first 11 advertised evdev key codes, in ascending order.
+struct JoystickButtons {
+    std::array<unsigned, 11> codes{};
+    std::array<bool, 11> held{};
+    std::array<std::uint64_t, 11> pending{};
+    std::array<std::string, 11> operations{{"enter_standby", "grasp_wheel", "start_control",
+                                            "exit_control", "leave_wheel", "reset_error", "", "",
+                                            "", "", ""}};
+    std::vector<unsigned> update(const input_event&, std::uint64_t now_us, bool input_valid);
+};
+
 struct Axis {
     unsigned code;
     int minimum, maximum, value;

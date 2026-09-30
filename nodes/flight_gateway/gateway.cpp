@@ -18,6 +18,44 @@ double normalized(const Axis& axis) {
     return axis.inverted ? -value : value;
 }
 }
+std::vector<unsigned> JoystickButtons::update(const input_event& event, std::uint64_t now,
+                                              bool valid) {
+    std::vector<unsigned> pressed;
+    if (!valid || (event.type == EV_SYN && event.code == SYN_DROPPED)) {
+        pending.fill(0);
+        return pressed;
+    }
+    if (event.type == EV_KEY) {
+        for (unsigned i = 0; i < codes.size(); ++i) {
+            if (!codes[i] || codes[i] != event.code)
+                continue;
+            if (event.value == 0)
+                held[i] = false;
+            if (event.value == 1 && !held[i]) {
+                held[i] = true;
+                if (event.input_event_sec >= 0 && event.input_event_usec >= 0 &&
+                    event.input_event_usec < 1000000 &&
+                    static_cast<std::uint64_t>(event.input_event_sec) <=
+                        aviator::max_json_integer / 1000000) {
+                    const auto time = static_cast<std::uint64_t>(event.input_event_sec) * 1000000 +
+                                      event.input_event_usec;
+                    if (time <= now && now - time < 100000)
+                        pending[i] = time;
+                }
+            }
+        }
+    }
+    if (event.type == EV_SYN && event.code == SYN_REPORT) {
+        const auto time =
+            static_cast<std::uint64_t>(event.input_event_sec) * 1000000 + event.input_event_usec;
+        for (unsigned i = 0; i < pending.size(); ++i)
+            if (pending[i] && pending[i] <= now && now - pending[i] < 100000 &&
+                time <= now && now - time < 100000)
+                pressed.push_back(i);
+        pending.fill(0);
+    }
+    return pressed;
+}
 void JoystickSample::update(const input_event& event, std::uint64_t now) {
     if (failed) return;
     if (event.type == EV_SYN && event.code == SYN_DROPPED) {
@@ -76,8 +114,9 @@ bool valid_state_summary(const aviator::Message& message) {
     try {
         const auto& system = message.body.at("system");
         const auto state = system.at("state").get<std::string>();
-        constexpr std::array<const char*, 8> states{
-            "INIT", "STANDBY", "GRASPING", "FOLLOWING", "CONTROL", "SAFE", "ERROR", "EMERGENCY_STOP"};
+        constexpr std::array<const char*, 10> states{
+            "INIT",      "INITIALIZING", "STANDBY", "GRASPING", "RELEASING",
+            "FOLLOWING", "CONTROL",      "SAFE",    "ERROR",    "EMERGENCY_STOP"};
         if (std::find(states.begin(), states.end(), state) == states.end()) return false;
         for (const char* key : {"current_error_code", "last_error_code"}) {
             const auto& value = system.at(key);

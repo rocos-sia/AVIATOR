@@ -212,6 +212,26 @@ ACK 只表示接收或受理，COMPLETED 才表示确认完成；超时表示结
 
 REQ/REP 超时后须恢复请求状态机或重建 socket；ROUTER/DEALER 要实现关联、期限、重试上限、权限和取消语义。可靠服务尚未实现时，相关操作仅通过受控的本地维护流程完成，不以重复广播临时代替。
 
+### 飞控离散操作的请求应答链路（待实现的必需接口）
+
+RS422 接入采用两条业务路径：CONTROL 转为 `flight.command`，STATUS 来自 Core 聚合反馈，均沿用连续数据总线；REQUEST 则调用 Gateway → Core 独立服务，不发布为连续 Topic，不使用 latest-value 覆盖。Logger 订阅总线只能获得连续命令与状态，不能旁听独立服务。
+
+```text
+飞控 REQUEST → Gateway 校验/去重 → Core 高层操作服务 → 状态机/设备协调
+飞控 REPLY   ← Gateway 编码/缓存 ← Core 受理、同步完成或拒绝
+                    │                     │
+                    └── 记录适配器 ───────┘ → Logger → MCAP
+飞控 CONTROL → flight.command → Core；Core 聚合状态 → Gateway → STATUS
+```
+
+新增配置项 `core_operation_service`，建议本机端点 `tcp://127.0.0.1:5559`，Gateway 使用 DEALER、Core 使用 ROUTER，帧格式沿用内部 ZMQ 协议第 14 节。选择异步 socket 是为了在普通操作未决时仍能提交安全退出；不意味着允许并发执行多个普通状态修改操作。现有 `manipulator_service`（5558，Core → Manipulator）保留，不能代替此高层服务。六个操作 ENTER_STANDBY、GRASP_WHEEL、START_CONTROL、EXIT_CONTROL、LEAVE_WHEEL、RESET_ERROR 的前置条件和动作决策均由 Core 管理。
+
+Gateway 在首次派发前登记本次串口运行连接、原始 timestamp_ms、operation 与内部 request_id 的映射；A/B 副本、串口重试及内部重试使用同一事务身份。Core 按身份去重，不重复执行。Core 的实际受理、同步完成或拒绝决定串口 REPLY；ZMQ send 成功及 Logger 的记录确认均不能充当受理结果。长动作只产生一次串口 ACCEPTED，后续进展走 STATUS，内部最终结果仅用于查询与记录。Gateway 缓存首条逻辑 REPLY，之后重试重发原字节。
+
+内部受理期限、队列驻留与串口调度必须纳入外部建议 100 ms 应答预算；不得等待机械动作完成才回复受理。超时视为结果未知，保留原身份查询/重试，不伪造成功或确定拒绝。Core/Gateway 重启后禁止自动重放未决动作，按 RS422 受控恢复流程核对。内部服务字段与映射见 ZMQ 协议第 14.5 节。
+
+当前已有 Core → Manipulator 设备服务，但上述 Gateway → Core 服务、RS422 运行入口及其完整记录适配尚未实现。它们是 P3 真飞控联调的前置交付，不再推迟到 P5 通用可靠服务优化。
+
 ## 07 FlightState 结构与聚合规则
 
 FlightState 由 Core 以 50 Hz 发布，保留 system、arms、hands、vision 四个业务分组及公共头部。其值表示机器人反馈，不能与飞控自身姿态或飞机状态混淆。
@@ -348,6 +368,16 @@ aviator_logger 是独立部署的基础节点，统一使用 MCAP 作为机器�
 | 运行上下文 | 构建哈希、依赖清单、协议 Schema、设备清单、配置、标定、坐标变换及其版本、时钟同步状态 | 会话开始保存快照，运行中变更保存新版本及生效时间；剔除密码、密钥等凭据。 |
 
 原始媒体和高频伺服数据不经过控制 XSUB/XPUB，不受业务 JSON 的 64 KiB 上限约束，也不以 Base64 图像挤占控制总线。当前相机把 BGR8 转成 RGB8，连同 Z16 深度、相机 ID、帧号、源会话和采样单调时间，通过 `5557` 送入 Logger；Logger 按配置原样保存，或将 RGB 有损编码为 H.264/H.265、深度无损编码为 Zstd。设备/伺服原始记录仍待实现。控制线程和相机检测线程均不得等待图像压缩或写盘。
+
+#### 离散指令的完整记录链路（待实现）
+
+Gateway 与 Core 的非实时记录适配器在实际收发点保存服务原始 JSON，并记录受理决策、状态迁移、最终结果和超时；Gateway 另记录串口 RX/TX、A/B 端口、去重判定及外部/内部事务映射。发送尝试、实际交给串口驱动的字节和发送失败须分别标明；本机 TX 不证明飞控已收到。A/B 物理副本和每次重试分别留痕，逻辑执行只关联一项事务。
+
+记录身份包括 recording_session_id、producer_id、producer_session_id、逐源 record_sequence；事务关联包括串口运行连接 ID、timestamp_ms、operation、client_id/client_session_id/request_id，以及 Core server_session_id。Core 发起设备服务时，另记录父事务与设备子请求的关联，不复用父 request_id 代替全部子动作。记录本地单调时间、clock_id 和可用 UTC，不用两端串口时间戳相减计算延迟。
+
+普通采集模式通过独立记录通道发送有界副本；溢出或发送失败必须记录缺口并将会话标记 incomplete，不能承诺每条指令必达。要求故障后可补齐的试验启用 ZMQ 协议第 15.5 节的确认补传模式：非实时持久化缓存、Logger 持久化确认、按记录身份补传去重。记录确认只证明记录持久化，不证明业务受理或物理动作完成。现有相机 5557 PUSH/PULL 入口不具备此能力，不得混入不同线格式。
+
+Logger、磁盘或缓存故障不得阻塞实时线程、串口收发及安全退出；严格记录模式下缺少记录就绪条件禁止新的普通试验使能/动作，已运行任务按冻结的安全策略处理，安全停止始终优先。仍可能发生的入队前崩溃或双盘故障须标记未知/不完整，不宣称任意故障下零丢失。采集字段、记录主题和验收规则以 ZMQ 协议第 15.5 节为准。
 
 #### MCAP 数据映射
 
@@ -627,9 +657,9 @@ Clock 提供 UTC 与 monotonic 时间，Replay 可注入虚拟时间；LatestMai
 | P0 接口冻结 | ICD、状态机、配置、硬件映射和安全策略 | 确认 RS422 容量、关节数、坐标系、控制方向与超时预算。 |
 | P1 总线与仿真 | Bus、协议库、模拟生产者、Monitor、Logger | C++/CMake 干净构建通过；八 Topic 写入 MCAP 并可读回；启动丢帧、重连、队列限制符合预期。 |
 | P2 摇杆台架 | Joystick、Core、双臂双手接入与本地 watchdog | 拔出、源冲突、旧数据和 Core 停止均进入规定安全状态。 |
-| P3 真飞控与视觉 | RS422 双向映射、Camera、FlightState 聚合 | 50/100/30 Hz 目标完成测量；原始设备、全频伺服与原图记录覆盖清单完成核对。 |
+| P3 真飞控与视觉 | RS422 双向映射、Gateway ↔ Core 高层服务、指令记录适配、Camera、FlightState 聚合 | 50/100/30 Hz 目标完成测量；原始设备、全频伺服与原图记录覆盖清单完成核对。 |
 | P4 回放与部署 | Replay、systemd、发布包和运维手册 | MCAP 隔离回放、分卷、索引、崩溃恢复、慢盘、磁盘满与远程干扰测试通过。 |
-| P5 可靠服务与优化 | ACK/REQ-REP 或 ROUTER/DEALER、按实测优化 | 重试去重、结果未知对账及重新授权验证完成。 |
+| P5 可靠服务与优化 | 通用服务扩展与按实测优化（P3 飞控必需服务不延后） | 重试去重、结果未知对账及重新授权验证完成。 |
 
 ### 建议台架验收基线
 

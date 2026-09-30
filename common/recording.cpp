@@ -3,6 +3,7 @@
 
 #include "protocol.hpp"
 #include "recording.hpp"
+#include "service.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -118,7 +119,7 @@ struct RecordingWriter::Impl {
             meta.metadata = {{"node", "aviator_logger"},
                              {"effective_config", config},
                              {"session_id", session},
-                             {"schema_scope", "common_header_only"},
+                             {"schema_scope", "common_header_and_service_envelope"},
                              {"completeness", "unverified_pubsub"}};
             checked(writer.write(meta));
         } catch (...) {
@@ -136,23 +137,55 @@ RecordingWriter::~RecordingWriter() = default;
 
 void RecordingWriter::append(std::string_view topic, std::string_view payload,
                              std::uint64_t receive_utc_ns) {
+    append_json(topic, payload, receive_utc_ns, false);
+}
+void RecordingWriter::append_service(std::string_view topic, std::string_view payload,
+                                     std::uint64_t receive_utc_ns) {
+    append_json(topic, payload, receive_utc_ns, true);
+}
+void RecordingWriter::append_json(std::string_view topic, std::string_view payload,
+                                  std::uint64_t receive_utc_ns, bool service) {
     auto& impl = *impl_;
     if (impl.finished)
         throw std::logic_error("recording already finished");
     Message decoded;
     std::string error;
-    if (!decode(topic, payload, decoded, error)) {
-        ++impl.summary.invalid;
-        return;
+    std::string type;
+    if (service) {
+        try {
+            const auto value = decode_service(payload);
+            const bool reply = topic == service_reply_topic;
+            if ((!reply && topic != service_request_topic) ||
+                value.at("msg_type") != (reply ? "ServiceReply" : "ServiceRequest"))
+                throw std::invalid_argument("Service topic/type mismatch");
+            type = value.at("msg_type").get<std::string>();
+            decoded.header.version = value.at("version").get<std::string>();
+            decoded.header.publisher_id =
+                value.at(reply ? "server_id" : "client_id").get<std::string>();
+            decoded.header.session_id =
+                value.at(reply ? "server_session_id" : "client_session_id").get<std::string>();
+            decoded.header.clock_id = reply ? "" : value.at("clock_id").get<std::string>();
+            decoded.header.sequence = 0; // Service envelope has no producer sequence.
+        } catch (const std::exception&) {
+            ++impl.summary.invalid;
+            return;
+        }
+    } else {
+        if (!decode(topic, payload, decoded, error)) {
+            ++impl.summary.invalid;
+            return;
+        }
+        type = message_type(decoded.topic);
     }
     const auto& h = decoded.header;
-    const std::string type(message_type(decoded.topic));
     const auto schema_name = type + "/" + h.version;
     auto schema_it = impl.schemas.find(schema_name);
     if (schema_it == impl.schemas.end()) {
         if (impl.schemas.size() >= std::numeric_limits<mcap::SchemaId>::max())
             throw std::runtime_error("MCAP schema limit reached");
-        mcap::Schema schema(schema_name, "jsonschema", make_schema(type));
+        mcap::Schema schema(schema_name, "jsonschema",
+                            service ? service_schema(topic == service_reply_topic).dump()
+                                    : make_schema(type));
         impl.writer.addSchema(schema);
         schema_it = impl.schemas.emplace(schema_name, schema.id).first;
     }
@@ -182,14 +215,16 @@ void RecordingWriter::append(std::string_view topic, std::string_view payload,
     message.dataSize = payload.size();
     checked(impl.writer.write(message));
 
-    auto& last = impl.last_sequence[{std::string(topic), h.publisher_id, h.session_id}];
-    if (last != 0) {
-        if (h.sequence <= last)
-            ++impl.summary.duplicate_or_reordered;
-        else
-            impl.summary.sequence_gaps += h.sequence - last - 1;
+    if (!service) {
+        auto& last = impl.last_sequence[{std::string(topic), h.publisher_id, h.session_id}];
+        if (last != 0) {
+            if (h.sequence <= last)
+                ++impl.summary.duplicate_or_reordered;
+            else
+                impl.summary.sequence_gaps += h.sequence - last - 1;
+        }
+        last = std::max(last, h.sequence);
     }
-    last = std::max(last, h.sequence);
     auto& stats = impl.summary.topics[std::string(topic)];
     stats.type = type;
     ++stats.messages;

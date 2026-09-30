@@ -3,15 +3,17 @@
 <title>AVIATOR 状态监控</title>
 <style>
 :root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101820;color:#e0e9ef}body{margin:0;padding:28px;max-width:1500px;margin:auto}header{display:flex;justify-content:space-between;align-items:center}h1{font-size:24px;margin:0}small,.muted{color:#9bacb9}#connection{padding:8px 14px;border-radius:20px;background:#293c49}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0}.card{background:#1b2935;padding:18px;border:1px solid #304350;border-radius:10px}.card strong{display:block;margin-top:8px;font-size:22px}.panel{background:#182530;border:1px solid #304350;border-radius:10px;padding:18px;margin-top:18px}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;white-space:nowrap;font-size:13px}th{text-align:left;color:#9bacb9;font-weight:500}td,th{padding:10px;border-bottom:1px solid #2b3c49}tbody tr{cursor:pointer}tbody tr:hover,tbody tr.selected{background:#263e50}.FRESH{color:#7ae2b5}.STALE,.INVALID,.FUTURE,.STALE_ORIGIN{color:#ffab99}.CLOCK_UNKNOWN{color:#f7d67a}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:450px;overflow:auto;font-size:12px}h2{font-size:16px;margin-top:0}#notice{color:#ffbe92;min-height:22px}#freshness{margin-top:12px;color:#b8c9d5}a{color:#93c9ff}@media(max-width:750px){body{padding:14px}.cards{grid-template-columns:1fr 1fr}header{display:block}}
+.COMPLETED{color:#7ae2b5}.ACCEPTED,.RUNNING,.WAITING{color:#93c9ff}.TIMEOUT_UNKNOWN,.UNKNOWN,.NOT_SENT{color:#f7d67a}.REJECTED,.FAILED,.CANCELLED,.EXPIRED{color:#ffab99}
 </style>
 <header><div><h1>AVIATOR <span class="muted">/ 系统监控</span></h1><small>只读观测 · 2 秒接收频率窗口 · 每 100 ms 刷新</small></div><span id="connection">等待监控服务</span></header>
 <div class="cards"><div class="card">整机状态<strong id="system">等待数据</strong></div><div class="card">控制来源<strong id="source">—</strong></div><div class="card">当前 / 历史错误<strong id="errors">—</strong></div><div class="card">有效 / 已观测数据流<strong id="streams">0 / 0</strong></div></div>
 <div id="notice"></div><div id="freshness">尚无 FlightState 聚合反馈</div>
 <section class="panel"><h2>总线数据流 <small id="counts"></small></h2><div class="scroll"><table><thead><tr><th>Topic / 生产者</th><th>会话</th><th>数据状态</th><th>Hz</th><th>样本年龄 ms</th><th>接收间隔 ms</th><th>序号</th><th>缺口 / 重复乱序</th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted">点击任意行查看完整消息。FRESH 仅表示头部有效且新鲜，不代表执行器已就绪或具备控制授权。</p></section>
-<section class="panel"><h2 id="detail-title">消息详情</h2><pre id="detail">选择数据流以查看双臂、双手、视觉及其他原始字段。</pre></section>
+<section class="panel"><h2>REQ / REP 状态指令 <small id="service-counts">尚无请求/响应记录</small></h2><div class="scroll"><table><thead><tr><th>操作 / 目标</th><th>客户端 / 会话</th><th>request_id</th><th>网关记录</th><th>应答 / 等待状态</th><th>错误码</th><th>接收间隔 ms</th><th>REQ / REP 记录数</th><th>观测应答间隔 ms</th></tr></thead><tbody id="service-rows"></tbody></table></div><p class="muted">只读订阅 record.service.request / reply，保留最近 64 项事务。QUEUED 仅表示入队，ACCEPTED 仅表示受理；TIMEOUT_UNKNOWN 表示结果未知，不能据此判断未执行。REPLY_ONLY 表示请求记录未观测到。记录副本可能丢失；观测间隔不是执行耗时。点击查看完整请求和响应。</p></section>
+<section class="panel"><h2 id="detail-title">消息详情</h2><pre id="detail">选择数据流或 REQ / REP 事务，查看完整消息。</pre></section>
 <script>
 let selected=null, busy=false, detailRequest=0;
-const streamRows=new Map();
+const streamRows=new Map(), serviceRows=new Map();
 const el=id=>document.getElementById(id), text=(id,value)=>el(id).textContent=value??'—';
 const num=v=>typeof v==='number'?v.toFixed(1):'—';
 async function get(path){const r=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(2500)});if(!r.ok)throw Error('HTTP '+r.status);return r.json()}
@@ -30,7 +32,7 @@ function renderRows(rows){
  if(!tr){tr=document.createElement('tr');tr.tabIndex=0;
  for(let i=0;i<8;i++)tr.append(document.createElement('td'));
  const select=()=>{selected=tr.stream.id;
- for(const [id,node] of streamRows)node.classList.toggle('selected',id===selected);
+ for(const [id,node] of [...streamRows,...serviceRows])node.classList.toggle('selected',id===selected);
  text('detail','正在加载消息…');showDetail(tr.stream);};
  tr.onclick=select;tr.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select()}};
  streamRows.set(row.id,tr);}
@@ -39,6 +41,25 @@ function renderRows(rows){
  cells.forEach((value,i)=>{const td=tr.children[i];if(td.textContent!==String(value))td.textContent=value;if(i===2)td.className=row.status;if(i===1)td.title=row.session});
  // Keep live rows attached across polls: replacing them between pointer-down
  // and pointer-up loses the browser click and keyboard focus.
+ if(body.children[index]!==tr)body.insertBefore(tr,body.children[index]??null);
+ });
+}
+function renderServices(rows){
+ const body=el('service-rows'), ids=new Set(rows.map(row=>row.id));
+ for(const [id,tr] of serviceRows)if(!ids.has(id)){tr.remove();serviceRows.delete(id)}
+ rows.forEach((row,index)=>{
+ let tr=serviceRows.get(row.id);
+ if(!tr){tr=document.createElement('tr');tr.tabIndex=0;
+ for(let i=0;i<9;i++)tr.append(document.createElement('td'));
+ const select=()=>{selected=tr.stream.id;
+ for(const [id,node] of [...streamRows,...serviceRows])node.classList.toggle('selected',id===selected);
+ text('detail','正在加载请求与响应…');showDetail(tr.stream);};
+ tr.onclick=select;tr.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select()}};
+ serviceRows.set(row.id,tr);}
+ tr.stream={...row,topic:'REQ / REP '+(row.operation??'操作未知'),publisher:row.client};
+ tr.classList.toggle('selected',row.id===selected);
+ const cells=[(row.operation??'请求缺失')+' / '+row.target,row.client+' / '+row.session.slice(0,8),row.request_id.slice(0,8),row.observation,row.status,row.error_code??'—',num(row.receive_age_ms),row.request_count+' / '+row.reply_count,num(row.observed_reply_ms)];
+ cells.forEach((value,i)=>{const td=tr.children[i];td.textContent=value;if(i===4)td.className=row.status;if(i===2)td.title=row.request_id;if(i===1)td.title=row.session});
  if(body.children[index]!==tr)body.insertBefore(tr,body.children[index]??null);
  });
 }
@@ -52,8 +73,9 @@ async function refresh(){if(busy)return;busy=true;try{
  text('source',flight?.summary.source);text('errors',flight?`${flight.summary.error??'—'} / ${flight.summary.last_error??'—'}`:'—');
  text('freshness',flight?['arm','hand','camera'].map(k=>`${k}: ${flight.summary[k]?.valid===true&&typeof flight.summary[k]?.age_ms==='number'&&flight.summary[k].age_ms<(k==='camera'?200:50)?'新鲜':'过期/无效/未知'}，当前年龄 ${num(flight.summary[k]?.age_ms)} ms`).join(' · '):'FlightState 尚未收到、已失效、时钟域未知或存在多个新鲜来源');
  text('notice',live.length>1?'检测到多个新鲜 FlightState 来源，请核对部署。':data.error?`最近接收异常：${data.error}`:'');
- renderRows(rows);
- if(selected!==null){const row=rows.find(x=>x.id===selected);if(!row){selected=null;++detailRequest;text('detail-title','消息详情');text('detail','该数据流已被缓存淘汰')}else await showDetail(row);}
- }catch(error){text('connection','监控服务不可用');text('system','状态未知');text('source','—');text('errors','—');text('streams','—');text('freshness','连接已中断，页面保留值不可用于判断当前状态');text('notice',error.message);el('rows').replaceChildren();streamRows.clear();++detailRequest;text('detail-title','消息详情（旧快照）');}finally{busy=false}}
+ renderRows(rows);renderServices(data.services);
+ text('service-counts',`已观测 ${data.services.length} 项 · 缓存淘汰 ${data.service_evicted}`);
+ if(selected!==null){const row=rows.find(x=>x.id===selected)??serviceRows.get(selected)?.stream;if(!row){selected=null;++detailRequest;text('detail-title','消息详情');text('detail','该数据流或事务已被缓存淘汰')}else await showDetail(row);}
+ }catch(error){text('connection','监控服务不可用');text('system','状态未知');text('source','—');text('errors','—');text('streams','—');text('freshness','连接已中断，页面保留值不可用于判断当前状态');text('notice',error.message);el('rows').replaceChildren();streamRows.clear();el('service-rows').replaceChildren();serviceRows.clear();text('service-counts','连接中断');++detailRequest;text('detail-title','消息详情（旧快照）');}finally{busy=false}}
 refresh();setInterval(refresh,100);
 </script></html>

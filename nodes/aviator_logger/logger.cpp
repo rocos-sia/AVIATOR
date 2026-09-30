@@ -1,5 +1,6 @@
 #include "logger.hpp"
 #include "runtime.hpp"
+#include "service.hpp"
 #include "transport.hpp"
 #include <algorithm>
 #include <chrono>
@@ -93,7 +94,12 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
                     queue.pop_front();
                 }
                 if (!image) {
-                    recording.append(entry.wire.topic, entry.wire.payload, entry.log_ns);
+                    if (entry.wire.topic == service_request_topic ||
+                        entry.wire.topic == service_reply_topic)
+                        recording.append_service(entry.wire.topic, entry.wire.payload,
+                                                 entry.log_ns);
+                    else
+                        recording.append(entry.wire.topic, entry.wire.payload, entry.log_ns);
                     continue;
                 }
                 CameraFrame frame;
