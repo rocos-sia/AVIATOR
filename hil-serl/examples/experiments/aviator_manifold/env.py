@@ -60,6 +60,7 @@ class AviatorManifoldEnv(gym.Env):
         qdot_max: float = _QDOT_MAX,
         d_safe: float = _D_SAFE,
         trajectories: list = None,
+        initial_phi_fraction_range: tuple[float, float] | None = None,
     ):
         super().__init__()
         self.lookup = ManifoldLookup(manifold_dir)
@@ -69,6 +70,11 @@ class AviatorManifoldEnv(gym.Env):
         self.dt = dt
         self.qdot_max = qdot_max
         self.d_safe = d_safe
+        if initial_phi_fraction_range is not None:
+            low, high = initial_phi_fraction_range
+            if not (np.isfinite(low) and np.isfinite(high) and 0 <= low <= high <= 1):
+                raise ValueError("initial_phi_fraction_range must lie within [0, 1]")
+        self.initial_phi_fraction_range = initial_phi_fraction_range
 
         # explicit trajectories override disk loading (tests, rollouts)
         self._trajectories = trajectories
@@ -117,8 +123,28 @@ class AviatorManifoldEnv(gym.Env):
         initial_phi = None if options is None else options.get("initial_phi")
         if initial_phi is None:
             box = self.lookup.safe_interval(self._x[None, :])
-            self._phi = np.clip(np.zeros(2), box["phi_safe_lo"][0],
-                                box["phi_safe_hi"][0])
+            if self.initial_phi_fraction_range is None:
+                self._phi = np.clip(np.zeros(2), box["phi_safe_lo"][0],
+                                    box["phi_safe_hi"][0])
+            else:
+                low, high = self.initial_phi_fraction_range
+                safe_lo, safe_hi = box["phi_safe_lo"][0], box["phi_safe_hi"][0]
+                for _ in range(32):
+                    fraction = self.np_random.uniform(low, high, size=2)
+                    candidate = safe_lo + fraction * (safe_hi - safe_lo)
+                    if not np.all(np.isfinite(candidate)):
+                        continue
+                    if np.any(candidate < self.lookup.phi_axis[0]) or np.any(candidate > self.lookup.phi_axis[-1]):
+                        continue
+                    result = self.lookup.query(self._x[None, :], candidate[None, :],
+                                               check_safe=False)
+                    if (int(result["branch"][0]) < 2 and
+                            float(result["d_min"][0]) >= self.d_safe and
+                            float(result["m_q"][0]) >= 0):
+                        self._phi = candidate
+                        break
+                else:
+                    raise ValueError("no valid randomized initial phase after 32 attempts")
         else:
             initial_phi = np.asarray(initial_phi, dtype=np.float64).reshape(2)
             if (not np.all(np.isfinite(initial_phi)) or

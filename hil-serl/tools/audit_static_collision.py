@@ -106,6 +106,8 @@ def main() -> None:
     ap.add_argument("--trajectory-dir", default="data/aviator/trajectory_source")
     ap.add_argument("--split", default="val")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--qddot-max", type=float,
+                    help="enforce the per-joint acceleration limit (rad/s^2)")
     ap.add_argument("--output", type=Path)
     args = ap.parse_args()
     lookup = ManifoldLookup(args.manifold_dir)
@@ -133,6 +135,7 @@ def main() -> None:
         if args.field:
             q = interpolate_q(lookup, q_grid, x)
         qdot = float(np.max(np.abs(np.diff(q, axis=0) / 0.01))) if len(q) > 1 else 0.0
+        qddot = float(np.max(np.abs(np.diff(q, n=2, axis=0) / 0.01**2))) if len(q) > 2 else 0.0
         lower, upper = lookup.joint_lower.reshape(14), lookup.joint_upper.reshape(14)
         joint_failures = int(np.sum(np.any((q < lower) | (q > upper), axis=1)))
         min_clearance = np.inf
@@ -150,11 +153,14 @@ def main() -> None:
             mid_wall_failures += int(clearance < 0.005)
         terminal = "end" if args.field else terminations[Path(path).stem]
         episodes[Path(path).stem] = {
-            "complete": bool(terminal == "end" and qdot <= 1.5 and not joint_failures and
+            "complete": bool(terminal == "end" and qdot <= 1.5 and
+                             (args.qddot_max is None or qddot <= args.qddot_max) and
+                             not joint_failures and
                              not (contacts or wall_failures or mid_contacts or mid_wall_failures)),
             "termination": terminal,
             "joint_limit_samples": joint_failures,
             "max_qdot": float(qdot),
+            "max_qddot": float(qddot),
             "min_wall_clearance_m": float(min_clearance),
             "contact_samples": contacts,
             "wall_failure_samples": wall_failures,
@@ -169,6 +175,10 @@ def main() -> None:
         "wall_failure_episodes": sum(e["wall_failure_samples"] + e["mid_wall_failure_samples"] > 0
                                      for e in episodes.values()),
         "speed_failure_episodes": sum(e["max_qdot"] > 1.5 for e in episodes.values()),
+        "acceleration_failure_episodes": sum(args.qddot_max is not None and
+                                             e["max_qddot"] > args.qddot_max
+                                             for e in episodes.values()),
+        "qddot_max": args.qddot_max,
         "joint_limit_episodes": sum(e["joint_limit_samples"] > 0 for e in episodes.values()),
         "min_clearance_m": min(e["min_wall_clearance_m"] for e in episodes.values()),
         "episodes": episodes,

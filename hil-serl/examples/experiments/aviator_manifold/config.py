@@ -116,6 +116,7 @@ class TrainConfig(DefaultTrainingConfig):
     def __init__(self):
         self.phi_dot_scale = _read_phi_dot_scale()
         self.max_steps = int(os.getenv("AVIATOR_MAX_STEPS", self.max_steps))
+        self.max_traj_length = int(os.getenv("AVIATOR_MAX_TRAJ_LENGTH", self.max_traj_length))
         self.num_actor_envs = int(os.getenv("AVIATOR_NUM_ENVS", self.num_actor_envs))
         self.max_online_episodes = int(os.getenv("AVIATOR_MAX_ONLINE_EPISODES", self.max_online_episodes))
         self.checkpoint_period = int(os.getenv("AVIATOR_CHECKPOINT_PERIOD", self.checkpoint_period))
@@ -125,6 +126,13 @@ class TrainConfig(DefaultTrainingConfig):
             "AVIATOR_UPDATES_PER_ONLINE_TRANSITION", self.updates_per_online_transition))
         if self.updates_per_online_transition < 1:
             raise ValueError("AVIATOR_UPDATES_PER_ONLINE_TRANSITION must be positive")
+        phase_low = os.getenv("AVIATOR_INITIAL_PHI_FRACTION_MIN")
+        phase_high = os.getenv("AVIATOR_INITIAL_PHI_FRACTION_MAX")
+        if (phase_low is None) != (phase_high is None):
+            raise ValueError("set both initial phase fraction bounds or neither")
+        self.initial_phi_fraction_range = (
+            (float(phase_low), float(phase_high)) if phase_low is not None else None
+        )
 
     def get_environment(self, fake_env=False, save_video=False, classifier=False):
         del fake_env, save_video, classifier   # kinematic env: no robot, no camera
@@ -133,6 +141,7 @@ class TrainConfig(DefaultTrainingConfig):
             trajectory_dir=str(_TRAJECTORY_DIR),
             split=self.trajectory_split,
             phi_dot_scale=self.phi_dot_scale,
+            initial_phi_fraction_range=self.initial_phi_fraction_range,
         )
         env = ChunkingWrapper(env, obs_horizon=1, act_exec_horizon=None)
         return env
