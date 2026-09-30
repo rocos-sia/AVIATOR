@@ -25,6 +25,9 @@ add_library(aviator_runtime runtime.cpp)
 target_compile_features(aviator_runtime PUBLIC cxx_std_17)
 target_link_libraries(aviator_runtime PUBLIC aviator_protocol Threads::Threads)
 
+add_library(aviator_service service.cpp)
+target_link_libraries(aviator_service PUBLIC aviator_transport aviator_runtime)
+
 find_package(yaml-cpp REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(PkgConfig REQUIRED)
@@ -42,12 +45,12 @@ target_include_directories(aviator_recording SYSTEM PRIVATE
   ${PROJECT_SOURCE_DIR}/third_party/mcap-2.1.3/include)
 target_compile_definitions(aviator_recording PRIVATE
   MCAP_COMPRESSION_NO_ZSTD MCAP_COMPRESSION_NO_LZ4)
-target_link_libraries(aviator_recording PUBLIC aviator_protocol aviator_camera_recording)
+target_link_libraries(aviator_recording PUBLIC aviator_protocol aviator_camera_recording aviator_service)
 
-install(TARGETS aviator_protocol aviator_transport aviator_runtime aviator_recording aviator_camera_recording
+install(TARGETS aviator_service aviator_protocol aviator_transport aviator_runtime aviator_recording aviator_camera_recording
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES protocol.hpp transport.hpp runtime.hpp startup.hpp recording.hpp recording_config.hpp camera_recording.hpp
+install(FILES service.hpp protocol.hpp transport.hpp runtime.hpp startup.hpp recording.hpp recording_config.hpp camera_recording.hpp
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/aviator)
 
 # Robot-node wire/config/service helpers remain outside the pure communication build.

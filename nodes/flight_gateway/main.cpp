@@ -1,6 +1,9 @@
-#include "startup.hpp"
 #include "gateway.hpp"
+#include "config.hpp"
+#include "service.hpp"
+#include "startup.hpp"
 #include "transport.hpp"
+#include <map>
 
 #include <cerrno>
 #include <cstring>
@@ -18,13 +21,6 @@
 #include <unistd.h>
 
 namespace {
-unsigned number(const std::string& text, unsigned maximum) {
-    if (text.empty() || text.find_first_not_of("0123456789") != std::string::npos)
-        throw std::runtime_error("expected nonnegative integer: " + text);
-    const auto value = std::stoul(text);
-    if (value > maximum) throw std::runtime_error("numeric option out of range");
-    return static_cast<unsigned>(value);
-}
 void require(bool condition, const std::string& reason) {
     if (!condition) throw std::runtime_error(reason);
 }
@@ -37,67 +33,55 @@ int main(int argc, char** argv) {
         if (value_line) { std::cout << std::endl; value_line = false; }
     };
     try {
-        std::string source = "joystick", path = "/dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick", core_session;
-        std::string pub_endpoint = aviator::publish_endpoint, sub_endpoint = aviator::subscribe_endpoint;
-        std::string lock = "/tmp/flight_gateway-" + std::to_string(getuid()) + ".lock";
-        unsigned roll_axis = ABS_X, pitch_axis = ABS_Y, timeout_ms = 100;
-        bool invert_roll = false, invert_pitch = false;
-        for (int i = 1; i < argc; ++i) {
-            const std::string key = argv[i];
-            if (key == "--help" || key == "-h") {
-                std::cout << "Usage: flight_gateway [--device /dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick] [options]\n"
-                    "Invalid/unavailable device: enter another evdev path at the prompt.\n"
-                    "  --source joystick|rs422 (rs422 requires an external ICD; unavailable)\n"
-                    "  --publish tcp://127.0.0.1:5555 --subscribe tcp://127.0.0.1:5556\n"
-                    "  --roll-axis 0 --pitch-axis 1 --invert-roll --invert-pitch\n"
-                    "  --input-timeout-ms 100 --core-session UUID --lock-file PATH\n"
-                    "input-timeout-ms limits device-check age, not time since the last axis change.\n"
-                    "Publishes at 50 Hz. Core feedback is unconfigured without --core-session.\n";
-                return 0;
-            }
-            if (key == "--invert-roll") { invert_roll = true; continue; }
-            if (key == "--invert-pitch") { invert_pitch = true; continue; }
-            require(i + 1 < argc, "missing option value: " + key);
-            const std::string value = argv[++i];
-            if (key == "--source") source = value;
-            else if (key == "--device") path = value;
-            else if (key == "--publish") pub_endpoint = value;
-            else if (key == "--subscribe") sub_endpoint = value;
-            else if (key == "--core-session") core_session = value;
-            else if (key == "--lock-file") lock = value;
-            else if (key == "--roll-axis") roll_axis = number(value, ABS_MAX);
-            else if (key == "--pitch-axis") pitch_axis = number(value, ABS_MAX);
-            else if (key == "--input-timeout-ms") timeout_ms = number(value, 100);
-            else throw std::runtime_error("unknown option: " + key);
+        if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
+            std::cout << "Usage: flight_gateway\n"
+                         "Configuration: config/flight.yaml (installed: share/aviator/config/flight.yaml).\n"
+                         "Edit the YAML file for device, endpoints, axes, session and 11 button mappings.\n"
+                         "Publishes at 50 Hz; restart after configuration changes.\n";
+            return 0;
         }
-        require(source == "joystick", source == "rs422" ?
-                "RS422 wire format/baud/checksum/state encoding are not frozen; mode unavailable" : "unknown source");
-        require(roll_axis != pitch_axis && timeout_ms > 0, "distinct axes and positive timeout required");
-        require(pub_endpoint.rfind("tcp://", 0) == 0 && sub_endpoint.rfind("tcp://", 0) == 0 &&
-                pub_endpoint != sub_endpoint, "distinct TCP endpoints required");
-        // Resolve the device before blocking signals so Ctrl+C also works at
-        // the terminal prompt. No ZMQ threads or instance lock exist yet.
+        require(argc == 1, "startup options are not supported; edit config/flight.yaml");
+        const auto config_path = flight_gateway::default_config_path();
+        const auto config = flight_gateway::load_config(config_path);
+        const auto& path = config.device;
+        const auto& core_session = config.core_session;
+        const auto& pub_endpoint = config.publish;
+        const auto& sub_endpoint = config.subscribe;
+        const auto& service_endpoint = config.service;
+        const auto& lock = config.lock_file;
+        const auto roll_axis = config.roll_axis, pitch_axis = config.pitch_axis;
+        const auto timeout_ms = config.input_timeout_ms, service_timeout_ms = config.service_timeout_ms;
+        const auto invert_roll = config.invert_roll, invert_pitch = config.invert_pitch;
+        flight_gateway::JoystickButtons buttons;
+        buttons.operations = config.buttons;
+        std::cout << "Configuration: " << config_path << std::endl;
         input_absinfo roll{}, pitch{};
-        for (;;) {
-            device = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-            int clock_type = CLOCK_MONOTONIC;
-            std::string reason;
-            if (device < 0) reason = std::strerror(errno);
-            else if (ioctl(device, EVIOCSCLOCKID, &clock_type) != 0)
-                reason = "device must support monotonic evdev timestamps";
-            else if (ioctl(device, EVIOCGABS(roll_axis), &roll) != 0 ||
-                     ioctl(device, EVIOCGABS(pitch_axis), &pitch) != 0)
-                reason = "selected absolute axes unavailable";
-            else if (roll.minimum >= roll.maximum || pitch.minimum >= pitch.maximum)
-                reason = "invalid device axis ranges";
-            else break;
-            if (device >= 0) { close(device); device = -1; }
-            std::cerr << "flight_gateway: " << path << ": " << reason << '\n'
-                      << "请输入 USB 摇杆设备路径（/dev/input/by-id/...-event-joystick 或 /dev/input/eventN，空行退出）：" << std::flush;
-            if (!std::getline(std::cin, path)) throw std::runtime_error("no device path provided (EOF)");
-            const auto first = path.find_first_not_of(" \t\r");
-            if (first == std::string::npos) throw std::runtime_error("device selection cancelled");
-            path = path.substr(first, path.find_last_not_of(" \t\r") - first + 1);
+        device = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        require(device >= 0, "cannot open " + path + ": " + std::strerror(errno));
+        int clock_type = CLOCK_MONOTONIC;
+        require(ioctl(device, EVIOCSCLOCKID, &clock_type) == 0,
+                "device must support monotonic evdev timestamps: " + path);
+        require(ioctl(device, EVIOCGABS(roll_axis), &roll) == 0 &&
+                    ioctl(device, EVIOCGABS(pitch_axis), &pitch) == 0,
+                "selected absolute axes unavailable: " + path);
+        require(roll.minimum < roll.maximum && pitch.minimum < pitch.maximum,
+                "invalid device axis ranges: " + path);
+        std::array<unsigned char, (KEY_MAX + 8) / 8> keys{}, held_keys{};
+        require(ioctl(device, EVIOCGBIT(EV_KEY, keys.size()), keys.data()) >= 0 &&
+                    ioctl(device, EVIOCGKEY(held_keys.size()), held_keys.data()) >= 0,
+                "cannot query joystick buttons");
+        unsigned button_count = 0;
+        for (unsigned code = BTN_MISC; code <= KEY_MAX && button_count < 11; ++code) {
+            if (!(keys[code / 8] & (1u << (code % 8))))
+                continue;
+            buttons.codes[button_count] = code;
+            buttons.held[button_count] = held_keys[code / 8] & (1u << (code % 8));
+            std::cout << "button=" << button_count + 1 << " evdev_code=" << code << " event="
+                      << (buttons.operations[button_count].empty()
+                              ? "none"
+                              : buttons.operations[button_count])
+                      << '\n';
+            ++button_count;
         }
         sigset_t signals;
         sigemptyset(&signals); sigaddset(&signals, SIGINT); sigaddset(&signals, SIGTERM);
@@ -130,17 +114,60 @@ int main(int argc, char** argv) {
         pub.connect(pub_endpoint); sub.connect(sub_endpoint);
         std::cout << "STARTED source=JOYSTICK session=" << session << " clock=" << clock
                   << " feedback=" << (feedback ? "STALE" : "UNCONFIGURED") << std::endl;
-        aviator::print_startup("flight_gateway", {
+        aviator::print_startup(
+            "flight_gateway",
+            {{"Config", config_path},
             {"Device", path},
-            {"PUB connect", pub_endpoint},
-            {"PUB topics", "flight.command (50 Hz target)"},
-            {"SUB connect", sub_endpoint},
-            {"SUB topics", "flight.state"},
-            {"Feedback", feedback ? "Configured; waiting for fresh Core feedback" : "UNCONFIGURED (--core-session not set)"},
-            {"Session", session},
-            {"Transport", "Async connect; bus connectivity is not yet confirmed."},
-            {"Exit", "Ctrl+C"}
-        });
+             {"PUB connect", pub_endpoint},
+             {"PUB topics",
+              "flight.command (50 Hz); record.service.request / record.service.reply"},
+             {"SUB connect", sub_endpoint},
+             {"SUB topics", "flight.state"},
+             {"Feedback", feedback ? "Configured; waiting for fresh Core feedback"
+                                   : "UNCONFIGURED (flight.yaml core_session is empty)"},
+             {"Session", session},
+             {"Transport", "Async connect; bus connectivity is not yet confirmed."},
+             {"Exit", "Ctrl+C"}});
+        zmq::socket_t service(context, zmq::socket_type::dealer);
+        aviator::configure(service, {16, 16, 0});
+        service.set(zmq::sockopt::immediate, 1); // Never queue commands for an absent server.
+        service.set(zmq::sockopt::maxmsgsize,
+                    static_cast<std::int64_t>(aviator::max_payload_bytes));
+        service.connect(service_endpoint);
+        std::cout << "Service DEALER connect=" << service_endpoint
+                  << " timeout_ms=" << service_timeout_ms << '\n';
+        std::map<std::string, nlohmann::json> pending_requests;
+        aviator::ReceiveState service_receiving;
+        const auto request_button = [&](unsigned index) {
+            finish_value_line();
+            if (buttons.operations[index].empty()) {
+                std::cout << "button=" << index + 1 << " unassigned\n";
+                return;
+            }
+            if (pending_requests.size() >= 11) {
+                std::cerr << "service pending limit; button request not sent\n";
+                return;
+            }
+            nlohmann::json parameters = {{"source", "JOYSTICK"}, {"button", index + 1}};
+            if (!core_session.empty())
+                parameters["server_session_id"] = core_session;
+            auto request = aviator::make_service_request("flight_gateway", session, "aviator_core",
+                                                         buttons.operations[index], parameters,
+                                                         service_timeout_ms);
+            // Record the attempted request even when no Core is connected. Optional observation
+            // metadata is not part of the service envelope sent to Core.
+            const bool sent = aviator::send_service(service, request);
+            auto record = request;
+            record["gateway_observation"] = sent ? "QUEUED" : "NOT_SENT";
+            if (!aviator::send(pub, aviator::service_request_topic, record.dump()))
+                std::cerr << "service request record not queued\n";
+            std::cout << "button=" << index + 1 << " operation=" << buttons.operations[index]
+                      << " request_id=" << request.at("request_id")
+                      << (sent ? " QUEUED" : " NOT_SENT") << '\n';
+            if (sent)
+                pending_requests.emplace(request.at("request_id").get<std::string>(),
+                                         std::move(request));
+        };
         aviator::ReceiveState receive_state;
         std::uint64_t sequence = 0, next_publish = aviator::monotonic_us();
         std::string error, payload, last_status = "STALE", system_state;
@@ -165,8 +192,10 @@ int main(int argc, char** argv) {
             const auto now = aviator::monotonic_us();
             const auto wait_ms = now >= next_publish ? 0 : (next_publish - now + 999) / 1000;
             zmq::pollitem_t items[]{{nullptr, signals_fd, ZMQ_POLLIN, 0},
-                {nullptr, device, ZMQ_POLLIN, 0}, {sub.handle(), 0, ZMQ_POLLIN, 0}};
-            zmq::poll(items, 3, std::chrono::milliseconds(wait_ms));
+                                    {nullptr, device, ZMQ_POLLIN, 0},
+                                    {sub.handle(), 0, ZMQ_POLLIN, 0},
+                                    {service.handle(), 0, ZMQ_POLLIN, 0}};
+            zmq::poll(items, 4, std::chrono::milliseconds(wait_ms));
             if (items[0].revents) { running = false; break; }
             bool input_drained = true;
             if (device >= 0 && items[1].revents) {
@@ -174,8 +203,13 @@ int main(int argc, char** argv) {
                 for (int i = 0; i < 128; ++i) {
                     input_event event{};
                     const auto n = read(device, &event, sizeof(event));
-                    if (n == sizeof(event)) sample.update(event, aviator::monotonic_us());
-                    else if (n < 0 && errno == EINTR) continue;
+                    if (n == sizeof(event)) {
+                        const auto event_now = aviator::monotonic_us();
+                        sample.update(event, event_now);
+                        for (auto index : buttons.update(event, event_now, !sample.failed))
+                            request_button(index);
+                    } else if (n < 0 && errno == EINTR)
+                        continue;
                     else if (n < 0 && errno == EAGAIN) { input_drained = true; break; }
                     else { sample.invalidate(); }
                     if (sample.failed) {
@@ -197,7 +231,50 @@ int main(int argc, char** argv) {
                     feedback->accept(state, aviator::monotonic_us(), error))
                     system_state = state.body.at("system").at("state").get<std::string>();
             }
+            for (unsigned i = 0; i < 32; ++i) {
+                std::string raw;
+                nlohmann::json reply;
+                const auto received =
+                    aviator::receive_service(service, service_receiving, raw, reply, error);
+                if (received == aviator::ReceiveResult::empty)
+                    break;
+                if (received == aviator::ReceiveResult::rejected) {
+                    finish_value_line();
+                    std::cerr << "invalid service reply: " << error << '\n';
+                    continue;
+                }
+                if (reply.at("msg_type") != "ServiceReply")
+                    continue;
+                // Preserve even late/unmatched replies for diagnosis; never change state locally.
+                aviator::send(pub, aviator::service_reply_topic, raw);
+                const auto it = pending_requests.find(reply.at("request_id").get<std::string>());
+                finish_value_line();
+                if (it == pending_requests.end() ||
+                    !aviator::matches_service_reply(it->second, reply) ||
+                    aviator::monotonic_us() -
+                            it->second.at("issued_mono_us").get<std::uint64_t>() >=
+                        service_timeout_ms * 1000ULL) {
+                    std::cerr << "late/unmatched service reply: " << reply.at("request_id") << '\n';
+                    continue;
+                }
+                std::cout << "service reply=" << reply.dump() << '\n';
+                pending_requests.erase(it);
+            }
             const auto current = aviator::monotonic_us();
+            for (auto it = pending_requests.begin(); it != pending_requests.end();) {
+                const auto& request = it->second;
+                if (current - request.at("issued_mono_us").get<std::uint64_t>() >=
+                    service_timeout_ms * 1000ULL) {
+                    finish_value_line();
+                    std::cerr << "service timeout UNKNOWN request_id=" << it->first
+                              << "; no automatic retry\n";
+                    auto record = request;
+                    record["gateway_observation"] = "TIMEOUT_UNKNOWN";
+                    aviator::send(pub, aviator::service_request_topic, record.dump());
+                    it = pending_requests.erase(it);
+                } else
+                    ++it;
+            }
             if (feedback) {
                 const auto status = feedback->expired(current) ? "STALE" : system_state;
                 if (status != last_status) {

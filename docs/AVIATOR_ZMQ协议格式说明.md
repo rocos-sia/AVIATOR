@@ -47,6 +47,8 @@
 | 回放发布入口 | `tcp://127.0.0.1:6555` | 隔离 aviator_bus / XSUB | aviator_replay、测试节点 / PUB | Topic + JSON |
 | 回放订阅出口 | `tcp://127.0.0.1:6556` | 隔离 aviator_bus / XPUB | 仿真节点、工具 / SUB | Topic + JSON |
 | 离散可靠服务 | 配置指定，无架构默认端口 | 服务端 / REP 或 ROUTER | 客户端 / REQ 或 DEALER | 见第 14 节 |
+| 飞控高层操作（待实现） | `tcp://127.0.0.1:5559`（建议） | aviator_core / ROUTER | flight_gateway / DEALER | ServiceRequest / ServiceReply，见第 14.5 节 |
+| 服务记录确认补传（待实现） | `tcp://127.0.0.1:5560`（建议） | aviator_logger / ROUTER | 非实时记录适配器 / DEALER | ServiceAuditRecord / RecordAck，见第 15.5 节 |
 
 前三个生产端口和回放端口来自架构基线；记录通道的 PUSH/PULL 选择为补充拟定。地址均由配置统一维护。远程观测通过只读出口，不向远程客户端开放控制发布入口。
 
@@ -690,7 +692,7 @@ system.state 的 valid 表示状态快照本身可信；lifecycle=ERROR 时仍�
 
 ### 14.1 边界与帧结构
 
-架构列举 enable、reset_fault、set_source、calibrate，明确后续使用独立服务端点。本文补充服务信封，不表示该服务已实现。简单同步部署选择 REQ/REP；需要异步进度与并发时选择 DEALER/ROUTER，不在同一端点混用两套帧规则。
+架构列举 enable、reset_fault、set_source、calibrate，明确后续使用独立服务端点。本节为通用服务信封设计；第 19 节设备服务已有实现，第 14.5 节飞控高层服务待实现。简单同步部署选择 REQ/REP；需要异步进度与并发时选择 DEALER/ROUTER，不在同一端点混用两套帧规则。
 
 | 模式 | 客户端应用发送/接收 | 服务端应用接收/发送 |
 | --- | --- | --- |
@@ -773,6 +775,37 @@ REQ/REP 一次请求只能有一次响应：短操作可直接返回终态；长
 服务端按 `(client_id, client_session_id, request_id)` 去重，校验重试的 operation、target、参数、原始发起时间与期限完全一致；同 ID 内容不同则拒绝。重试返回已知状态，不重复执行。不同 clock_id 的期限计算须经过可靠映射，否则拒绝执行跨域请求。
 
 客户端超时表示结果未知；重试使用原 ID，不创建新动作请求。REQ 超时后恢复其请求状态机或重建 socket。非幂等动作的执行身份和结果需持久化或通过设备状态对账；ACK 不保证恰好一次。服务端重启也不能把旧请求当新请求重新执行。缓存保留期限、最大重试次数、身份认证和可取消阶段必须在部署前冻结。
+
+### 14.5 RS422 Gateway → Core 高层操作服务（新增设计，待实现）
+
+配置 `core_operation_service=tcp://127.0.0.1:5559`，Core ROUTER bind，Gateway DEALER connect，使用第 14.1 节单帧 JSON/路由信封，不经 5555/5556。每个 socket 由固定非实时线程管理。此接口独立于第 19 节 Core → Manipulator 的 5558 REQ/REP 服务。以下操作注册到 target=`aviator_core`：
+
+| RS422 operation | ServiceRequest.operation |
+| --- | --- |
+| 0x01 ENTER_STANDBY | `enter_standby` |
+| 0x02 GRASP_WHEEL | `grasp_wheel` |
+| 0x03 START_CONTROL | `start_control` |
+| 0x04 EXIT_CONTROL | `exit_control` |
+| 0x05 LEAVE_WHEEL | `leave_wheel` |
+| 0x06 RESET_ERROR | `reset_error` |
+
+ServiceRequest 使用第 14.2 节信封，client_id=`flight_gateway`；parameters 必含 `server_session_id`（预期 Core 启动会话）、`rs422_connection_id`（受控建立的本次串口运行连接 UUID）、`timestamp_ms`（uint32）和 `operation_code`（上述 u8）。操作名和操作码必须一致。Core 会话由启动就绪握手或受控配置确认，不能从不受信任请求中接受任意会话。连接 ID 仅为内部关联，不增加串口字段，也不使网关具备自动识别飞控重启的能力。
+
+Gateway 按 `(rs422_connection_id, timestamp_ms)` 查找原请求，比较完整原始内容后分配或复用 UUID request_id；与 operation 不同的同时间戳请求按串口冲突规则拒绝，不创建第二项事务。Core 按 `(client_id, client_session_id, request_id)` 去重，并校验参数、原始期限及预期 server_session_id。Gateway 未取得结果时保留 pending 记录，重复副本不创建新的动作；允许以原请求身份进行有界内部重试。受理记录必须先于动作派发建立。
+
+此接口每个逻辑动作固定首个决策为 ACCEPTED、COMPLETED 或 REJECTED，重发原请求返回相同首个决策；长动作的后续结果通过新的 `get_result` 查询及记录适配器获取，不以重试原动作更新首个决策。此约定不同于第 19 节设备服务返回当前进度的行为。查询响应不得转换为第二条串口 REPLY。Gateway 将首个决策映射为串口 result=1/3/4，原样回显 timestamp_ms 和 operation，并将 Core 错误映射到 RS422 第 8 节已定义错误码；未映射错误不得截断为 u16，须在联调冻结错误映射表。
+
+同一时刻仅允许一个普通状态修改操作，安全退出可按状态机规则中止操控开始流程；ROUTER 接收循环不得被长动作占用。服务受理和串口发送共同满足建议 100 ms 应答预算，具体内部 deadline_ms 按实测分配且重试不刷新。Core 不可用或内部超时不伪造业务 REJECTED/ACCEPTED，外部按原协议重试并最终视为结果未知。连接/进程重启后停止自动重试，清理积压并核对实际状态。
+
+### 14.6 当前摇杆测试入口（已实现客户端，Core 服务端待接入）
+
+common/service.hpp 提供第 14.2/14.3 节信封的构造、校验、关联检查和单帧非阻塞收发；不依赖机器人库。flight_gateway 使用 5559 DEALER 发送六个外部状态操作，parameters 为 source=JOYSTICK、button=1..11，配置 Core 会话时增加 server_session_id；不携带第 14.5 节 RS422 专有连接/时间参数。默认前六个按钮对应六个操作，其余可通过 config/flight.yaml 的 buttons 列表配置，内部状态机事件不开放。
+
+服务端仍须检查来源、同机时钟/期限、去重和状态守卫。当前客户端无自动重试，最多 11 项未决请求；发送失败标记 NOT_SENT，等待过期为 UNKNOWN。没有修改 aviator_core，也没有模拟本地状态切换成功。通用信封 helpers 不代表服务端执行语义已实现。
+
+为满足当前最小测试记录需求，Gateway 将记录副本发到总线 record.service.request/reply，Logger 校验后按独立 ServiceRequest/ServiceReply Schema 写入数据 MCAP。请求副本附加可选 gateway_observation=QUEUED/NOT_SENT/TIMEOUT_UNKNOWN，其他字段与请求相同；响应保留收到的完整 JSON，含晚到/未匹配响应。该附加字段不发给 Core。超时不是伪造的 ServiceReply，也不能将 QUEUED 解释为 ACCEPTED。MCAP 按 request_id/client_session_id 关联，服务没有 sequence，不对其报告连续序号缺口。
+
+这是有损可观测的测试路径，不能替代第 15.5 节待实现的独立记录、持久化确认补传及 Core 最终结果采集。Logger 未就绪时 PUB/SUB 可能丢失，当前没有严格记录模式的动作准入门控。使用方式见 flight_gateway 和 aviator_logger 的 README。
 
 ## 15. 独立记录通道与二进制信封
 
@@ -884,6 +917,29 @@ payload_length 只核对 payload，不包含 protobuf 元数据。使用压缩�
 | Metadata / Attachment | 保存记录会话、各卷编号、Schema、构建/配置/标定、清单和完整性状态。 |
 
 源会话与 Logger 记录会话是不同概念，不能用 Logger 会话覆盖信封 session_id。开始/结束清单需记录各源首尾序号与发送计数，和接收、写入数量对账；缺口、未知起始区间、溢出、重复和中断显式可见。上述清单与补传握手的精确格式尚待冻结。
+
+### 15.5 离散服务与 RS422 指令记录契约（新增设计，待实现）
+
+本节独立于相机 CameraPacket；Logger 的总线订阅无法获取 DEALER/ROUTER 或 REQ/REP 服务内容。Gateway、Core 及参与设备服务的节点必须在非实时路径设置记录适配器。
+
+| 记录主题 | 采集内容 |
+| --- | --- |
+| `record.service.request` / `record.service.reply` | 每次实际发送、接收的完整原始服务 JSON；标明 SEND/RECEIVE、对端和重试序号。 |
+| `record.service.result` | Core 受理决策、最终结果、错误、完成依据与结果未知；长动作完成也记录，但不新增串口 REPLY。 |
+| `record.rs422.mapping` | 串口运行连接、原 timestamp_ms/operation、内部请求身份的对应关系，以及 Core 派生设备请求的父子关系。 |
+| `record.raw.rs422.rx` / `record.raw.rs422.tx` | A/B 端口、原始字节、校验/解析结果、本地时间；TX 区分尝试、驱动接纳字节数与失败，不宣称远端收到。 |
+| `record.rs422.decision` | 新请求、pending 副本、缓存应答重发、冲突/旧请求拒绝、超时、切路和受控恢复。 |
+
+服务记录使用 `ServiceAuditRecord/1.0` JSON Schema（待实现）：必含 `recording_session_id`、`producer_id`、`producer_session_id`、`record_sequence`、`topic`、`event`、`mono_us`、`clock_id`、`timestamp`（UTC 微秒或 null），以及 `correlation` 和 `payload`。record_sequence 从 1 连续递增，JSON 中以十进制字符串保存 uint64；每次采集事件分配新序号，补传沿用原序号。correlation 包含可用的 `rs422_connection_id/timestamp_ms/operation_code/client_id/client_session_id/request_id/server_session_id` 和 `parent_request_id`，尚不可解析的字段为 null，不猜测事务关联。服务原始 JSON 放入 payload 的 `raw_json` 字符串，解码字符串所得 UTF-8 字节须与原报文一致；其他事件 payload 按主题 Schema 冻结。原始串口二进制继续使用 RecordEnvelope，不转换成服务 JSON；其记录身份与关联信息须在冻结 Protobuf 时补齐。记录 ID 与业务请求 ID 是两套独立身份。
+
+普通采集模式沿用第 15.1 节有界记录副本及缺口报告，不保证持久交付。需要故障后补齐的离散服务记录使用新增配置 `service_record_endpoint`，建议 `tcp://127.0.0.1:5560`：生产者 DEALER connect、Logger ROUTER bind，单帧 ServiceAuditRecord JSON；Logger 回复单帧 `RecordAck/1.0` JSON，包含原 `producer_id/producer_session_id/record_sequence` 及 `status=DURABLE`。ROUTER 侧仅增加 routing_id，无空分隔帧；此端点不承载控制指令，不复用相机 5557 或控制服务 5559。原始串口通用二进制记录暂沿用普通采集模式；若要求原始字节也可补传，须扩展并冻结对应二进制确认接口，不能据服务记录确认宣称原始帧无损。
+
+确认补传模式的非实时适配器先将记录写入有界本地持久化 spool，再发送；Logger 仅在 MCAP 记录及用于重启恢复的记录身份索引完成规定持久化屏障后确认，入内存队列或仅调用 Writer.write 不得回 DURABLE。生产者收到匹配确认才删除 spool 项；断连或确认丢失时以原记录身份有界重传。Logger 按 `(producer_id, producer_session_id, record_sequence)` 幂等接纳；相同身份不同内容报冲突，重启先恢复已持久化索引再确认重复记录。传输提供至少一次交付，归档按记录身份去重，不承诺业务动作恰好一次。批次持久化周期、spool 字节上限和补传限速在部署配置冻结并实测，不允许无界缓存。
+
+实时线程和安全停止不得等待 spool/Logger；因此采集事件入队到 spool 持久化之间仍有崩溃丢失窗口。队列/磁盘满、入队失败及缺失尾部必须标记 incomplete/unknown，并保存逐源起止清单和生产/持久化计数。严格记录模式下 Logger/spool 未就绪拒绝新的普通试验动作，安全退出仍执行并尽力记录。不能把记录 ACK 映射为业务 REPLY，也不能因记录失败改写已经成立的 Core 受理结果。
+
+验收至少覆盖：一次长动作的一条串口逻辑应答与独立最终结果；A/B 副本和双层重试只执行一次且完整留痕；Logger 断连后补传；确认丢失后的记录去重；Logger/生产者重启恢复；慢盘、磁盘满及队列溢出不阻塞安全退出且显式报告缺口；按映射从原始 REQUEST 追到 Core 决策、设备子请求及 REPLY。只有启用源的起止序号和计数核对通过，才标记该源记录完整。
+
 
 ## 16. 回放消息
 

@@ -38,7 +38,7 @@ cmake --build --preset debug
 
 ## 摇杆设备权限
 
-`setup_joystick_udev.sh` 为 USB 摇杆配置普通用户读取权限，供 flight_gateway 使用。脚本和网关的 `--device` 均默认 `/dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick`；其他摇杆可通过 `--device` 指定实际 event 路径。
+`setup_joystick_udev.sh` 为 USB 摇杆配置普通用户读取权限，供 flight_gateway 使用。脚本的 `--device` 与网关 `config/flight.yaml` 中的 `device` 均默认 `/dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick`；其他摇杆需向脚本传入 `--device`，并同步修改网关 YAML 的 `device` 路径。
 
 ```bash
 # 找到实际摇杆的稳定 event 路径（不是 js 路径）。

@@ -103,3 +103,9 @@ python nodes/camera/main.py --config config/camera.yaml \
 ```
 
 `data.mcap` 包含业务 JSON（包括 `camera.detection`），`images.mcap` 包含 RGB 和按配置启用的深度帧。首帧被 Writer 接收后输出 `first image recorded`，正常停止时分别打印数据和图像条数。先停止相机，再停止 logger，使已入队图像完成写入。注意 `build/bin/config/recording.yaml` 是另一份配置；修改仓库配置后应同步，或两个进程都使用仓库配置的绝对路径。
+
+## 状态切换请求与响应记录
+
+Logger 自动识别总线上的 `record.service.request` 和 `record.service.reply`，分别按 common/service.hpp 的 ServiceRequest/ServiceReply 校验，写入数据 MCAP，原始收到的 JSON 字节保持不变。MCAP 嵌入独立的服务信封 Schema，按请求客户端或响应服务端身份/会话分 Channel；不要求连续消息的 sequence/valid，也不据服务记录推算连续序号缺口。错误类型或不匹配 Topic 计入 invalid。
+
+这些消息是 Gateway 主动发布的记录副本，Logger 不直接订阅 5559 服务 socket。request_id/client_session_id 将请求、超时观察与响应关联起来；请求记录中的 gateway_observation 区分 QUEUED、NOT_SENT 和 TIMEOUT_UNKNOWN。QUEUED 不是 Core 受理；无服务端时没有虚构的 ServiceReply。数据文件的完整性仍标记 unverified_pubsub，未实现设计中的独立持久化补传通道；重启、慢订阅或队列溢出可能丢失记录。

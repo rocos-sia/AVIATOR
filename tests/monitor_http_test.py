@@ -50,6 +50,7 @@ try:
     until(lambda: fetch('/'))
     assert json.loads(fetch('/api/state'))['streams'] == []
     assert b'AVIATOR' in fetch('/') and b'textContent' in fetch('/')
+    assert b'REQ / REP' in fetch('/') and b'service-rows' in fetch('/')
     for path, method, expected in [('/bad', 'GET', 404), ('/api/state', 'POST', 405),
                                    ('/api/message?id=no', 'GET', 400)]:
         try:
@@ -68,6 +69,15 @@ try:
     detail = json.loads(fetch('/api/message?id=' + str(row['id'])))
     assert detail['system']['state'] == 'CONTROL'
     assert row['summary']['source'] == 'JOYSTICK'
+    def service():
+        rows = json.loads(fetch('/api/state'))['services']
+        return rows and rows[0]['status'] == 'ACCEPTED' and rows[0]
+    transaction = until(service)
+    assert transaction['operation'] == 'grasp_wheel'
+    assert transaction['observation'] == 'QUEUED'
+    details = json.loads(fetch('/api/message?id=' + str(transaction['id'])))
+    assert details['request']['request_id'] == details['reply']['request_id']
+    assert details['reply']['status'] == 'ACCEPTED'
     producer.terminate()
     producer.wait(timeout=2)
     until(lambda: json.loads(fetch('/api/state'))['streams'][0]['status'] == 'STALE')
