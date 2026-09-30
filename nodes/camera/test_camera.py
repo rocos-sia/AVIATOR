@@ -12,6 +12,7 @@ import numpy as np
 import cv2
 import yaml
 
+from detection_subscriber import fmt_pose
 from detectors import DetectionResult, create_detector, pose_from_pnp
 from main import DEFAULT_CONFIG, load_config, make_message, make_record_frame, parse_args
 from recording_client import RecordingClient, camera_packet
@@ -77,7 +78,7 @@ class CameraNodeTest(unittest.TestCase):
         result = DetectionResult(status="TRACKING", pose=pose_from_pnp(rvec, tvec),
                                  rvec=rvec, tvec=tvec)
         text = " | ".join(pose_lines(result))
-        self.assertIn("X=100.0 Y=-200.0 Z=300.0", text)
+        self.assertIn("Position (m): X=0.1000 Y=-0.2000 Z=0.3000", text)
         self.assertIn("yaw=90.0", text)
         # Same singular-angle convention as Downloads/detect.py.
         singular = DetectionResult(status="TRACKING", pose=result.pose,
@@ -145,17 +146,31 @@ class CameraNodeTest(unittest.TestCase):
         self.assertAlmostEqual(orientation["qw"], 0.0)
 
     def test_yaml_selects_one_detector(self):
-        _, kind, settings, _ = load_config(DEFAULT_CONFIG)
-        self.assertEqual(kind, "apriltag")
-        self.assertEqual((settings["tag_id"], settings["tag_size_m"]), (0, 0.05))
+        # Use an explicit fixture; the deployment detector/tag size may be calibrated by the user.
         config = yaml.safe_load(Path(DEFAULT_CONFIG).read_text(encoding="utf-8"))
-        config["detector"]["type"] = "charuco"
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "camera.yaml"
-            path.write_text(yaml.safe_dump(config), encoding="utf-8")
-            _, kind, settings, _ = load_config(path)
-        self.assertEqual(kind, "charuco")
-        self.assertEqual(settings["dictionary"], "DICT_4X4_50")
+            for selected in ("apriltag", "charuco"):
+                config["detector"]["type"] = selected
+                path.write_text(yaml.safe_dump(config), encoding="utf-8")
+                _, kind, settings, _ = load_config(path)
+                self.assertEqual(kind, selected)
+                self.assertEqual(settings, config[selected])
+
+    def test_wire_pose_metres_and_xyzw_quaternion(self):
+        pose = pose_from_pnp(np.array([0., 0., np.pi / 2]), np.array([[.1], [-.2], [.3]]))
+        message = make_message("cockpit", 1, 1, 123456,
+                               "11111111-1111-4111-8111-111111111111", "host-boot",
+                               640, 480, "TRACKING", 1.0, pose)
+        received = json.loads(json.dumps(message))["pose"]
+        self.assertEqual(received["position"], {"x": .1, "y": -.2, "z": .3})
+        q = received["orientation"]
+        self.assertEqual(list(q), ["qx", "qy", "qz", "qw"])
+        np.testing.assert_allclose([q[k] for k in ("qx", "qy", "qz", "qw")],
+                                   [0, 0, np.sqrt(.5), np.sqrt(.5)], atol=1e-12)
+        text = fmt_pose(received)
+        self.assertIn("0.1000", text)
+        self.assertIn(") m quat(qx,qy,qz,qw)=", text)
 
     def test_apriltag_and_charuco_on_synthetic_images(self):
         matrix = np.array([[600., 0., 320.], [0., 600., 240.], [0., 0., 1.]])
@@ -169,7 +184,7 @@ class CameraNodeTest(unittest.TestCase):
         image[130:350, 210:430] = cv2.cvtColor(marker, cv2.COLOR_GRAY2BGR)
         result = tag.detect(image)
         self.assertEqual((result.status, result.tag_id), ("TRACKING", 0))
-        self.assertAlmostEqual(result.pose["position"]["z"], 136.36, delta=2)
+        self.assertAlmostEqual(result.pose["position"]["z"], 0.13636, delta=0.002)
 
         other_tag = create_detector("apriltag", {
             "family": "tag36h11", "tag_id": 1, "tag_size_m": 0.05}, matrix, distortion)
@@ -183,6 +198,7 @@ class CameraNodeTest(unittest.TestCase):
         board_image = cv2.cvtColor(generated, cv2.COLOR_GRAY2BGR)
         board_result = board.detect(board_image)
         self.assertEqual(board_result.status, "TRACKING")
+        np.testing.assert_allclose(list(board_result.pose["position"].values()), board_result.tvec.flatten())
         self.assertEqual(board.total_corners, 16)
         self.assertEqual(board_result.confidence, 1.0)
         for source, detector, detection in ((image, tag, result), (board_image, board, board_result)):

@@ -12,7 +12,9 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <future>
 #include "RemoteLink.hpp"
+#include "StateMachineRuntime.hpp"
 #include <csignal>
 namespace fs = std::filesystem;
 static volatile std::sig_atomic_t interrupted = 0;
@@ -25,21 +27,32 @@ static void interactive(aviator::Aviator &robot, std::atomic<bool> &exit);
 int main(int argc, char **argv) {
     try {
         bool demo = false, servo_demo = false;
+        bool state_machine = false, fsm_simulation = false;
+        std::string safety_file;
         fs::path config = aviator::defaultSystemConfig();
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--demo") demo = true;
+            else if (arg == "--state-machine") state_machine = true;
+            else if (arg == "--fsm-simulation") { state_machine = true; fsm_simulation = true; }
+            else if (arg == "--safety-file" && i + 1 < argc) { state_machine = true; safety_file = argv[++i]; }
             else if (arg == "--servo-demo") servo_demo = true;
             else if (arg == "--headless") {} // Window belongs to manipulator.
             else if (arg == "--config" && i + 1 < argc) config = argv[++i];
             else if (arg == "--help") {
                 std::cout << "aviator_core [--config <system.yaml>] [--demo | --servo-demo]\n"
+                             "             [--state-machine [--safety-file PATH] | --fsm-simulation]\n"
                              "Start aviator_bus and manipulator first. Backend is configured in robot.yaml.\n";
                 return 0;
             } else throw std::runtime_error("Unknown or incomplete option: " + arg);
         }
         if (demo && servo_demo) throw std::runtime_error("Choose --demo or --servo-demo");
+        if (state_machine && (demo || servo_demo)) throw std::runtime_error("FSM and legacy demos are separate modes");
         const auto settings = aviator::loadMotionConfig(config);
+        if (state_machine) {
+            std::signal(SIGINT, interrupt); std::signal(SIGTERM, interrupt);
+            return aviator::runStateMachine(settings, safety_file, fsm_simulation, interrupted);
+        }
         auto link = std::make_unique<aviator::RemoteLink>(settings);
         auto* connection = link.get();
         aviator::Aviator robot(std::move(link), nullptr, nullptr, settings.robot.string());
@@ -47,7 +60,7 @@ int main(int argc, char **argv) {
         std::signal(SIGINT, interrupt);
         std::signal(SIGTERM, interrupt);
         std::cout << "Core connected through ZMQ | config: " << settings.system << std::endl;
-        std::atomic<bool> exit{false};
+        std::atomic<bool> exit{false}, task_done{false};
         int result = 0;
         // 阻塞动作在工作线程执行，主线程维护任务心跳并处理退出。
         std::thread task([&] {
@@ -105,6 +118,7 @@ int main(int argc, char **argv) {
                 robot.Stop(); result = 1;
             }
             exit = true;
+            task_done = true;
         });
         while (!exit) {
             connection->heartbeat();
@@ -113,12 +127,17 @@ int main(int argc, char **argv) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         // Keep the local-task lease alive while the motion worker finishes cancellation.
-        while (robot.GetState() == "SERVO" || robot.GetState() == "MOVING" || robot.GetState() == "APPROACHING") {
+        while (!task_done) {
             connection->heartbeat();
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         task.join();
-        try { robot.Disable(); } catch (const std::exception& e) {
+        try {
+            auto cleanup = std::async(std::launch::async, [&] { robot.Disable(); });
+            while (cleanup.wait_for(std::chrono::milliseconds(5)) != std::future_status::ready)
+                connection->heartbeat();
+            cleanup.get();
+        } catch (const std::exception& e) {
             std::cerr << "Shutdown: " << e.what() << std::endl;
         }
         return result;

@@ -32,8 +32,8 @@ def fmt_pose(pose):
         return "pose=null"
     pos = pose["position"]
     ori = pose["orientation"]
-    return (f"pos=({pos['x']:7.2f},{pos['y']:7.2f},{pos['z']:7.2f}) mm "
-            f"quat=({ori['qx']:.4f},{ori['qy']:.4f},{ori['qz']:.4f},{ori['qw']:.4f})")
+    return (f"pos=({pos['x']:8.4f},{pos['y']:8.4f},{pos['z']:8.4f}) m "
+            f"quat(qx,qy,qz,qw)=({ori['qx']:.4f},{ori['qy']:.4f},{ori['qz']:.4f},{ori['qw']:.4f})")
 
 
 def main(argv):

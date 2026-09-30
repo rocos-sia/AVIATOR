@@ -85,9 +85,22 @@ if(TARGET aviator_core_servo AND TARGET manipulator AND AVIATOR_BUILD_MUJOCO)
     $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core>
     ${PROJECT_SOURCE_DIR} watchdog)
   set_tests_properties(control_nodes_watchdog PROPERTIES TIMEOUT 190 ENVIRONMENT "LD_BIND_NOW=1")
+  if(Python3_Interpreter_FOUND)
+    execute_process(COMMAND ${Python3_EXECUTABLE} -c "import zmq, yaml"
+      RESULT_VARIABLE FSM_PYTHON_DEPS OUTPUT_QUIET ERROR_QUIET)
+    if(FSM_PYTHON_DEPS EQUAL 0)
+      add_test(NAME robot_state_machine_process COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/robot_state_machine_process_test.py
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core> ${PROJECT_SOURCE_DIR})
+      set_tests_properties(robot_state_machine_process PROPERTIES TIMEOUT 220)
+    endif()
+  endif()
 endif()
 
 if(TARGET aviator_core_control)
+  aviator_add_test_executable(aviator_robot_state_machine_test robot_state_machine_test.cpp)
+  target_link_libraries(aviator_robot_state_machine_test PRIVATE aviator_robot_state_machine)
+  add_test(NAME robot_state_machine COMMAND aviator_robot_state_machine_test)
   aviator_add_test_executable(aviator_servo_planner_test servo_planner_test.cpp)
   target_link_libraries(aviator_servo_planner_test PRIVATE aviator_core_control ruckig::ruckig)
   add_test(NAME servo_planner COMMAND aviator_servo_planner_test ${PROJECT_SOURCE_DIR})
@@ -95,4 +108,18 @@ if(TARGET aviator_core_control)
   aviator_add_test_executable(aviator_motion_protocol_test motion_protocol_test.cpp)
   target_link_libraries(aviator_motion_protocol_test PRIVATE aviator_motion_protocol)
   add_test(NAME motion_protocol COMMAND aviator_motion_protocol_test)
+endif()
+
+if(TARGET aviator_core_control)
+  aviator_add_test_executable(aviator_core_hand_test core_hand_test.cpp)
+  target_link_libraries(aviator_core_hand_test PRIVATE aviator_core_control)
+  add_test(NAME core_hand COMMAND aviator_core_hand_test)
+  aviator_add_test_executable(aviator_core_hand_link_driver core_hand_link_driver.cpp)
+  target_link_libraries(aviator_core_hand_link_driver PRIVATE aviator_core_control)
+  if(Python3_Interpreter_FOUND AND FSM_PYTHON_DEPS EQUAL 0)
+    add_test(NAME core_hand_process COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/core_hand_process_test.py
+      $<TARGET_FILE:aviator_core_hand_link_driver> $<TARGET_FILE:aviator_bus>)
+    set_tests_properties(core_hand_process PROPERTIES TIMEOUT 30)
+  endif()
 endif()

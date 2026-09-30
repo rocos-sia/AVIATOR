@@ -67,9 +67,13 @@ class Aviator {
 
     // 解锁抓取
     void UnlockHandles();
+    // Explicit release program: unlock, retreat along the approach offset; never home.
+    void ReleaseHandles();
 
     // 重置故障
     void ResetFault();
+    // Acknowledge a fault already cleared by maintenance; no device reset/unlock/enable.
+    void AcknowledgeFault();
 
     // 请求减速停止（可从另一线程调用）；反馈/控制故障时转为停止后端控制。
     void Stop() noexcept;

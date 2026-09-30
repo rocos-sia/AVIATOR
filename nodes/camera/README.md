@@ -1,5 +1,11 @@
 # camera
 
+**位姿规范：** ZMQ `camera.detection.pose.position` 的 `x/y/z` 统一使用 **米（m）**；
+`pose.orientation` 为无量纲单位四元数，字段/数组约定顺序为 **`(qx, qy, qz, qw)`**（`qw` 为标量，放在最后）。
+位姿表示目标坐标系到相机坐标系的变换：`p_camera = R(q) * p_target + position`；相机 +X 向右、+Y 向下、+Z 向前。
+预览、终端及订阅示例的位置也使用米，诊断用 RPY 欧拉角使用度（deg）。旧版发布的位置为毫米，
+接收端升级后应移除原有的 `/1000` 转换；历史 MCAP 数据不会自动换算。
+
 Python RealSense + ChArUco/AprilTag 节点。`config/camera.yaml` 的 `detector.type` 每次只选择一种检测器。节点采集彩色帧并发布 `camera.detection` 到业务总线；启用图像记录时将原始 RGB8 帧通过独立 ZMQ PUSH 入口交给 `aviator_logger`，仅在 `record_depth: true` 时额外采集并发送 Z16 深度。相机进程不写 MCAP，也不选择图像编码器。
 
 以下命令均在仓库根目录执行。本机 Python 环境为 `~/miniconda3/envs/apriltag_realsense/bin/python`。
@@ -77,7 +83,7 @@ mkdir -p "$record_dir"
 二者默认均为 `false`，互相独立；命令行优先，`--no-show` / `--no-print-pose` 可覆盖配置关闭。
 
 - 视频显示 AprilTag 边框/ID 或 ChArUco 标记/角点、目标坐标轴、检测状态、置信度、帧号、处理帧率、位置和姿态角。热身期间标记 `WARMUP`，此时尚未发布/记录。
-- 位置为目标在相机坐标系中的 X/Y/Z，单位 **mm**，与 `camera.detection.pose.position` 一致；相机坐标 +X 向右、+Y 向下、+Z 向前。
+- 位置为目标在相机坐标系中的 X/Y/Z，单位 **m**，与 `camera.detection.pose.position` 一致；相机坐标 +X 向右、+Y 向下、+Z 向前。
 - RPY 为目标相对相机的 roll/pitch/yaw，单位 **度**，采用 `R = Rz(yaw) Ry(pitch) Rx(roll)`，与参考 `Downloads/detect.py` 的角度算法一致。欧拉角有 ±180° 跳变及奇异点；ZMQ 消息仍使用四元数。
 - 终端默认每 0.5 秒输出一次，`--pose-print-interval 0.2` 或 `visualization.print_interval_s` 可调整；检测状态变化立即输出。丢失目标/PnP 未通过时显示 `SEARCHING` 和 `No valid pose`，不沿用上一次位姿。
 - 窗口按 `q`、Esc 或关闭窗口会结束相机节点；Ctrl+C 同样可以退出。
@@ -96,7 +102,7 @@ mkdir -p "$record_dir"
 
 AprilTag 的 `use_distortion: false` 沿用参考示例的零畸变假设；若彩色图像未经去畸变，应依据标定结果改为 `true`。`charuco.min_corners` 及其命令行覆盖仅在 ChArUco 模式使用。配置不需要的检测器不会初始化。板尺寸填写错误会导致位姿尺度错误，即使画面上能识别到码。
 
-两种模式都发布 `status`、`confidence`、相机坐标系下的 `pose`，位置单位为 mm；额外的 `detector` 标明当前模式。AprilTag 在识别到目标码时还附带 `tag_id` 和原始 `decision_margin`。AprilTag 的 `confidence` 是 `decision_margin / confidence_margin` 截断到 `[0,1]` 的启发式值，不是概率；低于 `min_decision_margin` 或 PnP 失败时 `status=SEARCHING`、`valid=false`、`pose=null`。AprilTag 位姿坐标轴沿用所提供示例的四角点顺序。
+两种模式都发布 `status`、`confidence`、相机坐标系下的 `pose`，位置单位为 m；额外的 `detector` 标明当前模式。AprilTag 在识别到目标码时还附带 `tag_id` 和原始 `decision_margin`。AprilTag 的 `confidence` 是 `decision_margin / confidence_margin` 截断到 `[0,1]` 的启发式值，不是概率；低于 `min_decision_margin` 或 PnP 失败时 `status=SEARCHING`、`valid=false`、`pose=null`。AprilTag 位姿坐标轴沿用所提供示例的四角点顺序。
 
 ## 确认总线收到位姿
 

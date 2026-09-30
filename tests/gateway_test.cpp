@@ -91,6 +91,13 @@ int main() {
         state.header = {"1.0", 1, 1, 1000000, "boot", "aviator_core", session, true};
         state.body = {{"system", {{"state", "CONTROL"}, {"current_error_code", 0}, {"last_error_code", 8194}}}};
         check(flight_gateway::valid_state_summary(state), "valid state summary");
+        for (const char* name : {"INITIALIZING", "RELEASING"}) {
+            state.body["system"]["state"] = name;
+            check(flight_gateway::valid_state_summary(state), "new Core transition state rejected");
+        }
+        state.body["system"]["state"] = "STOPPING";
+        check(!flight_gateway::valid_state_summary(state), "retired STOPPING accepted");
+        state.body["system"]["state"] = "CONTROL";
         aviator::InputPolicy policy;
         policy.topic = aviator::Topic::flight_state; policy.publisher_id = "aviator_core";
         policy.session_id = session; policy.clock_id = "boot";

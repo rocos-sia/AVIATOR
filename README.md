@@ -10,11 +10,12 @@ AVIATOR/
 ├── cmake/          # 依赖与构建规则
 ├── third_party/    # 共享第三方依赖
 ├── common/         # protocol、transport、runtime、recording
-├── nodes/          # 九个运行节点
+├── nodes/          # 运行节点
 │   ├── aviator_bus/
 │   ├── flight_gateway/
 │   ├── aviator_core/
 │   ├── manipulator/
+│   ├── aviator_hand/
 │   ├── camera/
 │   ├── aviator_logger/
 │   ├── aviator_monitor/
@@ -58,7 +59,7 @@ ctest --test-dir build/communication --output-on-failure
 
 | 模块 | 使用说明 |
 | --- | --- |
-| 因时手 | [构建、双 CAN 配置、ZMQ 手动控制、实际位置反馈与只读检查](examples/inspire_hand_can/README.md) |
+| 因时手 | [构建、双 CAN 配置、ZMQ 手动控制、实际位置反馈与只读检查](nodes/aviator_hand/README.md) |
 | RealSense 相机 | [ChArUco/AprilTag 选择、实时识别预览、位姿打印与订阅](nodes/camera/README.md) |
 | 联合录制 | [相机与 Logger 启动顺序、共用 session、业务/图像分文件保存](nodes/camera/README.md#检测与-mcap-录制) |
 

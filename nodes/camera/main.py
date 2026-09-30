@@ -117,6 +117,8 @@ def make_message(camera_id, frame_id, sequence, sample_mono_us,
                  detector=None, tag_id=None, decision_margin=None):
     """构造 CameraDetection JSON（公共头部 + 业务字段 + 补充 pose 块）。
 
+    pose.position 单位为米；pose.orientation 为单位四元数 (qx, qy, qz, qw)。
+
     时间戳规则（见 docs/AVIATOR_ZMQ协议格式说明.md §12）：
     - sample_mono_us = 主机收到 frameset 的单调时刻
     - timestamp      = 检测快照生成时刻（UTC）

@@ -1,0 +1,117 @@
+#include "HandControl.hpp"
+#include "HandLink.hpp"
+#include <fstream>
+#include <iostream>
+using namespace aviator;
+void check(bool v, const char* reason) { if (!v) throw std::runtime_error(reason); }
+int main(int argc, char** argv) {
+    try {
+        const auto path = std::filesystem::temp_directory_path() / ("core-hand-" + new_session_id() + ".yaml");
+        struct Cleanup { std::filesystem::path p; ~Cleanup() { std::filesystem::remove(p); } } cleanup{path};
+        std::ofstream(path) << "core_hand:\n  enabled: true\n  completion_timeout_ms: 500\n  close:\n    left: [0.9, 0.8, 0.7, 0.6, 0.5, 0.4]\n    right: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]\n";
+        const auto session = new_session_id(), node = new_session_id();
+        auto create = [&] { HandControl h; h.configure(path, "rokae"); return h; };
+        auto now = monotonic_us();
+        auto h = create(); h.request(true, now);
+        const auto command = *h.command(now, now, session);
+        check(command.body["hands"]["left"]["drive_position_normalized"][0] == .9, "left mapping");
+        check(command.body["hands"]["right"]["drive_position_normalized"][0] == .3, "right mapping");
+        std::string payload, error;
+        check(encode(command, payload, error), error.c_str());
+        if (argc > 1) {
+            auto stop = command;
+            ++stop.header.sequence;
+            ++stop.header.sample_mono_us;
+            stop.header.valid = false;
+            stop.body["origin"]["sequence"] = stop.header.sequence;
+            stop.body["origin"]["sample_mono_us"] = stop.header.sample_mono_us;
+            std::string stopped;
+            check(encode(stop, stopped, error), error.c_str());
+            std::ofstream(argv[1]) << '[' << payload << ',' << stopped << ']';
+        }
+        auto feedback = [&](const Message& cmd, uint64_t t, uint64_t seq) {
+            auto m = motionMessage(Topic::hand_state, "inspire_hand", node, seq);
+            m.header.sample_mono_us = t;
+            m.body = {{"feedback_only", false}, {"command_valid", true},
+                      {"accepted_command", {{"publisher_id", "aviator_core"}, {"session_id", session},
+                          {"sequence", cmd.header.sequence}, {"sample_mono_us", cmd.header.sample_mono_us}}}};
+            for (const char* side : {"left", "right"})
+                m.body["hands"][side] = {{"valid", true}, {"sample_mono_us", t},
+                    {"drive_position_normalized", cmd.body["hands"][side]["drive_position_normalized"]}};
+            return m;
+        };
+        auto state = feedback(command, now + 1, 1);
+        auto wrong = state; wrong.header.publisher_id = "manipulator";
+        h.receive(wrong, now + 1, session); check(!h.complete(now + 1), "synthetic feedback accepted");
+        h.receive(state, now + 1, session); check(h.complete(now + 1), "close ack rejected");
+        check(h.command(now + 20000, now + 20000, session).has_value(), "hold publication missing");
+        h.request(false, now + 30000);
+        auto opening = *h.command(now + 30000, now + 30000, session);
+        auto old_ack = feedback(command, now + 30000, 2);
+        h.receive(old_ack, now + 30000, session);
+        check(!h.complete(now + 30000), "old target acknowledgement completed new target");
+        auto pending = feedback(opening, now + 30001, 3);
+        pending.body["hands"]["left"]["drive_position_normalized"][0] = .5;
+        h.receive(pending, now + 30001, session); check(!h.complete(now + 30001), "open completed before actual position");
+        auto opened = feedback(opening, now + 40000, 4);
+        h.receive(opened, now + 40000, session); check(h.complete(now + 40000), "open did not complete");
+        h.revoke(); check(!h.command(now + 50000, now + 50000, session), "revoked hand still publishing");
+        auto expired = create(); expired.request(true, now);
+        check(!expired.command(now + 100000, now, session), "stale heartbeat published");
+        check(expired.fault(now + 100000).find("age_us=100000") != std::string::npos, "actual heartbeat age missing");
+        auto future = create(); future.request(true, now);
+        check(!future.command(now, now + 1, session), "invalid clock order accepted");
+        check(future.fault(now).find("clock order invalid: ahead_us=1") != std::string::npos,
+              "future heartbeat mislabeled as expired");
+        for (int failure = 0; failure < 5; ++failure) {
+            auto test = create(); test.request(true, now);
+            auto cmd = *test.command(now, now, session);
+            auto m = feedback(cmd, now + 1, 1);
+            if (failure == 0) m.body["feedback_only"] = true;
+            if (failure == 1) m.body["accepted_command"]["session_id"] = new_session_id();
+            if (failure == 2) m.body["accepted_command"]["sequence"] = 999;
+            test.receive(m, now + 1, session);
+            if (failure == 3) { m.header.sequence = 2; m.header.session_id = new_session_id(); test.receive(m, now + 2, session); }
+            const auto t = failure >= 2 ? now + 600000 : now + 2;
+            check(!test.fault(t).empty(), "missing failure detection");
+            check(!test.command(t, t, session), "faulted command published");
+        }
+        // Whole-target versions must cancel obsolete waits, including revoke/shutdown.
+        {
+            zmq::context_t context(1);
+            std::atomic<uint64_t> heartbeat{monotonic_us()};
+            HandLink link;
+            link.configure(path, "rokae");
+            MotionConfig config;
+            config.publish = "inproc://hand-test-pub";
+            config.subscribe = "inproc://hand-test-sub";
+            link.start(context, config, session, heartbeat, true);
+            auto first = link.request(false);
+            auto second = link.request(true);
+            auto expect = [&](uint64_t version, const std::string& why) {
+                bool rejected = false;
+                try { link.wait(version); }
+                catch (const std::exception& e) { rejected = std::string(e.what()).find(why) != std::string::npos; }
+                check(rejected, "obsolete/revoked/stopped wait not cancelled");
+            };
+            expect(first, "superseded");
+            link.allow(false);
+            expect(second, "revoked");
+            link.allow(true);
+            auto third = link.request(false);
+            link.stop();
+            expect(third, "stopped");
+        }
+        auto sim = HandControl(); sim.configure(path, "mujoco"); check(!sim.enabled(), "simulation can drive physical hands");
+        std::ofstream(path) << "core_hand: {enabled: true, close: null}\n";
+        auto missing = create(); bool rejected = false;
+        try { missing.request(true, now); } catch (...) { rejected = true; }
+        check(rejected, "missing calibrated close accepted");
+        missing.request(false, now); check(missing.command(now, now, session).has_value(), "missing close prevents open");
+        std::ofstream(path) << "core_hand: {enabled: true, close: {left: [1000,1,1,1,1,1], right: [1,1,1,1,1,1]}}\n";
+        rejected = false; try { create(); } catch (...) { rejected = true; }
+        check(rejected, "raw values accepted as normalized");
+        std::cout << "Core hand control passed\n";
+        return 0;
+    } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
+}

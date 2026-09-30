@@ -11,6 +11,7 @@
 #include <iostream>
 #include <optional>
 #include <thread>
+#include <future>
 
 static volatile std::sig_atomic_t interrupted = 0;
 static void interrupt(int) { interrupted = 1; }
@@ -168,8 +169,13 @@ int main(int argc, char **argv) {
             connection->heartbeat();
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
-        if (robot.GetState() == "LOCKED") robot.UnlockHandles();
-        robot.Disable();
+        auto cleanup = std::async(std::launch::async, [&] {
+            if (robot.GetState() == "LOCKED") robot.UnlockHandles();
+            robot.Disable();
+        });
+        while (cleanup.wait_for(std::chrono::milliseconds(5)) != std::future_status::ready)
+            connection->heartbeat();
+        cleanup.get();
         return result;
     } catch (const std::exception &e) {
         std::cerr << "Error: " << e.what() << std::endl;

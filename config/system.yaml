@@ -9,3 +9,19 @@ command_timeout_ms: 50
 origin_timeout_ms: 100
 # Arm command/state: 100 Hz. Local dual-arm execution: 1 ms.
 # local.task is the explicitly enabled Core task supervisor, not a FlightCommand.
+
+# Core -> aviator_hand. Ignored for the MuJoCo backend; applies to both Core executables.
+core_hand:
+  enabled: true
+  publisher_id: inspire_hand
+  completion_timeout_ms: 5000
+  feedback_timeout_ms: 500
+  open_tolerance: 0.03
+  # Order: thumb rotation, thumb flexion, index, middle, ring, pinky. Range [0,1].
+  open:
+    left: [1, 1, 1, 1, 1, 1]
+    right: [1, 1, 1, 1, 1, 1]
+  # User-selected close targets; keep thumb rotation first.
+  close:
+    left: [0, 0, 0, 0, 0, 0]
+    right: [0, 0, 0, 0, 0, 0]

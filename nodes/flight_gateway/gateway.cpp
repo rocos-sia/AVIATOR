@@ -76,8 +76,9 @@ bool valid_state_summary(const aviator::Message& message) {
     try {
         const auto& system = message.body.at("system");
         const auto state = system.at("state").get<std::string>();
-        constexpr std::array<const char*, 8> states{
-            "INIT", "STANDBY", "GRASPING", "FOLLOWING", "CONTROL", "SAFE", "ERROR", "EMERGENCY_STOP"};
+        constexpr std::array<const char*, 10> states{
+            "INIT", "STANDBY", "GRASPING", "FOLLOWING", "CONTROL", "SAFE", "ERROR", "EMERGENCY_STOP",
+            "INITIALIZING", "RELEASING"};
         if (std::find(states.begin(), states.end(), state) == states.end()) return false;
         for (const char* key : {"current_error_code", "last_error_code"}) {
             const auto& value = system.at(key);

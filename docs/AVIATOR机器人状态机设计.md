@@ -2,6 +2,11 @@
 
 版本：V1.0 设计稿。范围：aviator_core 整机业务状态机及其与 Gateway、Manipulator 的接口。本文件细化状态、事件、异步动作和最小 boost::sml 实现方式，不代表运行代码或手刹控制已经实现。
 
+实施进度：现已新增 `RobotStateMachine.hpp/.cpp` 及 Core 的 `--state-machine` 可选入口，
+原有 Demo/Servo 入口保留。十状态转换、异步任务代号/超时、执行门控、软件急停持久化请求和状态导出
+见 [Core 使用说明](../nodes/aviator_core/README.md#整机状态机入口)。独立安全监督器、手刹硬件执行/反馈、
+六操作的 RS422/ZMQ 服务适配尚未实现；后文涉及这些硬件和接口的内容仍为设计要求，不是已验收能力。
+
 ## 1. 依据与设计边界
 
 参考文件：
@@ -375,4 +380,3 @@ CONTROL 只在 CONTROL 状态及门控有效时转换为执行目标；首条有
 本文转换骨架已在临时独立工程中通过本地 `third_party/sml-1.2.0` 的 `add_subdirectory` / `sml::sml` 目标，以 C++20 Debug 构建并运行断言测试。覆盖启动、正常循环、守卫拒绝、释放、SafetyLost、故障复位、初始化失败、迟到完成、全部九个非急停状态进入急停，以及急停后六种外部事件均不可退出；不代表异步执行器、手刹硬件或全部故障注入已经通过实机验收。
 
 实施前需冻结：FOLLOWING 连续接管接口、三类任务最大时长、ready/settled 的实际来源、取消确认机制、SAFE 释放授权、急停独立执行及跨重启锁存、INITIALIZING 状态码和旧 STOPPING 的协议迁移。
-

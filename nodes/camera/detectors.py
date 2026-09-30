@@ -25,6 +25,7 @@ class DetectionResult:
 
 
 def pose_from_pnp(rvec, tvec):
+    """Target-to-camera pose: translation in metres, unit quaternion (qx, qy, qz, qw)."""
     rotation, _ = cv2.Rodrigues(rvec)
     trace = float(np.trace(rotation))
     if trace > 0:
@@ -53,7 +54,7 @@ def pose_from_pnp(rvec, tvec):
         qz = scale / 4
     quaternion = np.array([qx, qy, qz, qw])
     quaternion /= np.linalg.norm(quaternion)
-    x, y, z = (tvec.flatten() * 1000.0).astype(float)
+    x, y, z = tvec.flatten().astype(float)
     return {
         "position": {"x": float(x), "y": float(y), "z": float(z)},
         "orientation": dict(zip(("qx", "qy", "qz", "qw"),

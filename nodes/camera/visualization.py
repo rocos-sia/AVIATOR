@@ -31,7 +31,7 @@ def visualization_options(settings, args):
 def pose_lines(result):
     if result.status != "TRACKING" or result.pose is None or result.rvec is None:
         return ["No valid pose (target missing or PnP rejected)"]
-    position = result.pose["position"]  # Same mm values as camera.detection.
+    position = result.pose["position"]  # Same metre values as camera.detection.
     rotation, _ = cv2.Rodrigues(result.rvec)
     sy = math.hypot(rotation[0, 0], rotation[1, 0])
     if sy >= 1e-6:
@@ -42,7 +42,7 @@ def pose_lines(result):
         yaw = 0.0
     pitch = math.atan2(-rotation[2, 0], sy)
     roll, pitch, yaw = np.degrees([roll, pitch, yaw])
-    return [f"Position (mm): X={position['x']:.1f} Y={position['y']:.1f} Z={position['z']:.1f}",
+    return [f"Position (m): X={position['x']:.4f} Y={position['y']:.4f} Z={position['z']:.4f}",
             f"RPY (deg): roll={roll:.1f} pitch={pitch:.1f} yaw={yaw:.1f}"]
 
 

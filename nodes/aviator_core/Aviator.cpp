@@ -336,7 +336,7 @@ class Aviator::Impl {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         require(GetState() == "APPROACHED" || GetState() == "LOCKED", "Approach before locking");
-        command(GraspCommand::Lock); // Software phase; no TCP/grasp readiness gate.
+        command(GraspCommand::Lock); // RemoteLink also waits for physical hand command acceptance when configured.
         setState("LOCKED");
     }
 
@@ -406,6 +406,41 @@ class Aviator::Impl {
         setState("ENABLED");
     }
 
+    void ReleaseHandles() {
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Another control operation is running");
+        require(GetState() == "LOCKED" || GetState() == "ENABLED", "Release requires a stable enabled executor");
+        requireBackend(!grasp().fault, "Backend fault before release");
+        cancel_ = false;
+        setState("RELEASING");
+        try {
+            auto seed = planningStart();
+            auto wheel = grasp();
+            std::array<pinocchio::SE3, 2> from;
+            for (int side = 0; side < 2; ++side) {
+                std::array<double, 7> q{};
+                std::copy_n(seed.begin() + side * 7, 7, q.begin());
+                require(kinematics_->solveFk(static_cast<Side>(side), q, from[side]), "Release FK failed");
+            }
+            Path path;
+            const auto steps = static_cast<size_t>(std::ceil(final_approach_duration_ / planning_period_));
+            for (size_t k = 0; k <= steps; ++k) {
+                require(!cancel_, "Release cancelled");
+                std::array<pinocchio::SE3, 2> targets;
+                for (int side = 0; side < 2; ++side)
+                    targets[side] = interpolatePose(from[side], target(side, wheel.angle, wheel.displacement,
+                                                                            approach_distance_), smooth(double(k) / steps));
+                if (k) seed = solve(targets, seed);
+                path.push_back({seed, wheel.angle, wheel.displacement});
+            }
+            validate(path, final_approach_duration_);
+            require(!cancel_, "Release cancelled");
+            command(GraspCommand::Unlock);
+            execute(path, final_approach_duration_, false);
+            setState("ENABLED");
+        } catch (...) { stopSafely(); setState("FAULT"); throw; }
+    }
+
     void ResetFault() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
@@ -415,6 +450,19 @@ class Aviator::Impl {
         setMotionError("");
         const bool enabled = datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right);
         setState(enabled ? (grasp().locked == 3 ? "LOCKED" : "ENABLED") : "DISABLED");
+    }
+
+    void AcknowledgeFault() {
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Executor has not stopped");
+        const auto feedback = grasp();
+        require(!feedback.fault, "Device fault is still present");
+        setMotionError("");
+        if (GetState() == "FAULT") {
+            const bool enabled = datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right);
+            setState(enabled ? (feedback.locked == 3 ? "LOCKED" : "ENABLED") : "DISABLED");
+        }
+        // The Core owns subsequent motion authorization; do not restart a trajectory here.
     }
 
     void Stop() noexcept {
@@ -871,7 +919,9 @@ void Aviator::ServoWheel(double angle_rad, double displacement_m, double v) {
     impl_->ServoWheel(angle_rad, displacement_m, v);
 }
 void Aviator::UnlockHandles() { impl_->UnlockHandles(); }
+void Aviator::ReleaseHandles() { impl_->ReleaseHandles(); }
 void Aviator::ResetFault() { impl_->ResetFault(); }
+void Aviator::AcknowledgeFault() { impl_->AcknowledgeFault(); }
 void Aviator::Stop() noexcept { impl_->Stop(); }
 Status Aviator::GetStatus() { return impl_->GetStatus(); }
 std::string Aviator::GetState() const { return impl_->GetState(); }

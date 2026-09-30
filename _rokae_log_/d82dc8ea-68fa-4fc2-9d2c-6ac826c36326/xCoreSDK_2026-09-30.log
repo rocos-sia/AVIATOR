@@ -1,0 +1,20 @@
+[I|2026-09-30 09:53:19.354 137956] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 09:53:19.354 137956] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 09:53:19.402 137956] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 09:53:19.746 137956] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 09:53:19.748 137956] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 09:53:19.751 137956] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 09:53:19.752 137956] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 09:53:19.752 137956] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 09:53:19.753 137956] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 09:55:26.488 137982] uid: ac51bacd-19a5 | setPowerState end, switch motor true (0)
+[I|2026-09-30 09:55:26.490 137982] uid: ac51bacd-19a5 | set state data port to 1338
+[I|2026-09-30 09:55:26.738 137982] uid: ac51bacd-19a5 | startReceiveRobotState end, 1 ["dq_m", "pos_m", "q_m"] (0)
+[I|2026-09-30 09:55:26.739 137982] uid: ac51bacd-19a5 | setJointImpedance [500, 500, 500, 500, 50, 50, 50] (0)
+[I|2026-09-30 09:55:27.266 137982] uid: ac51bacd-19a5 | RtControlT startMove jointImpedance
+[I|2026-09-30 09:55:27.266 137982] uid: ac51bacd-19a5 | exec startLoop false
+[I|2026-09-30 09:55:33.435 137982] uid: ac51bacd-19a5 | exec stopLoop
+[I|2026-09-30 09:55:33.440 137982] uid: ac51bacd-19a5 | RtControlT stopMove
+[I|2026-09-30 09:55:33.575 137982] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
+[I|2026-09-30 10:50:52.459 137956] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 10:50:52.467 137956] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
