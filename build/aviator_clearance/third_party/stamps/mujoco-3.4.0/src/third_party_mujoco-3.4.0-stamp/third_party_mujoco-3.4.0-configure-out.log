@@ -1,0 +1,29 @@
+-- The C compiler identification is GNU 11.4.0
+-- The CXX compiler identification is GNU 11.4.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CAN_BUILD_AVX
+-- Performing Test CAN_BUILD_AVX - Success
+-- Performing Test SUPPORTS_LLD
+-- Performing Test SUPPORTS_LLD - Failed
+-- Performing Test SUPPORTS_GOLD
+-- Performing Test SUPPORTS_GOLD - Success
+-- Performing Test SUPPORTS_GC_SECTIONS
+-- Performing Test SUPPORTS_GC_SECTIONS - Success
+-- Found PkgConfig: /usr/bin/pkg-config (found version "0.29.2") 
+-- Checking for module 'tinyxml2'
+--   Found tinyxml2, version 9.0.0
+-- Found tinyobjloader: /usr/lib/x86_64-linux-gnu/cmake/tinyobjloader/tinyobjloader-config.cmake (found version "2.0.0") 
+-- Performing Test AVIATOR_CCD_DOUBLE
+-- Performing Test AVIATOR_CCD_DOUBLE - Success
+-- Configuring done (0.6s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/build/mujoco-3.4.0

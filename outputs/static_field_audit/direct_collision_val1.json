@@ -1,0 +1,19 @@
+{
+  "n_episodes": 1,
+  "completed": 1,
+  "contact_episodes": 0,
+  "wall_failure_episodes": 0,
+  "speed_failure_episodes": 0,
+  "min_clearance_m": 0.007477520408735314,
+  "episodes": {
+    "traj_0000": {
+      "complete": true,
+      "max_qdot": 0.987505787491666,
+      "min_wall_clearance_m": 0.007477520408735314,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "mid_contact_samples": 0,
+      "mid_wall_failure_samples": 0
+    }
+  }
+}

@@ -1,0 +1,1204 @@
+{
+  "method": "frozen 2-D q table with bilinear interpolation",
+  "fraction": [
+    0.9,
+    0.1
+  ],
+  "split": "val",
+  "stride": 1,
+  "valid_grid_nodes": 6547,
+  "total_grid_nodes": 6565,
+  "n_episodes": 50,
+  "completion_rate": 0.82,
+  "failure_episode_counts": {
+    "branch": 0,
+    "clearance": 0,
+    "joint_limit": 0,
+    "joint_speed": 9,
+    "invalid": 0
+  },
+  "phase_speed_diagnostic_episodes": 0,
+  "worst_clearance_m": 0.006676873320115541,
+  "worst_joint_speed_rad_s": 2.921274880110669,
+  "worst_joint_acceleration_rad_s2": 106.03545391534297,
+  "max_q_proxy_error_rad": 0.007044854561469638,
+  "episodes": {
+    "traj_0000": {
+      "n_samples": 696,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007438403011424769,
+      "min_joint_margin_rad": 0.07443746611244317,
+      "max_joint_speed_rad_s": 1.1415529948191228,
+      "max_joint_acceleration_rad_s2": 55.60641675184996,
+      "max_phase_speed_s1": 0.7411124500725785,
+      "max_q_proxy_error_rad": 5.748687359836968e-05,
+      "initial_phase": [
+        0.1981227431857905,
+        0.022500000335276125
+      ]
+    },
+    "traj_0001": {
+      "n_samples": 440,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007674916773772515,
+      "min_joint_margin_rad": 0.005333241160055513,
+      "max_joint_speed_rad_s": 1.4608617132268464,
+      "max_joint_acceleration_rad_s2": 81.66202484119367,
+      "max_phase_speed_s1": 0.8525255153052371,
+      "max_q_proxy_error_rad": 0.000390309885685336,
+      "initial_phase": [
+        0.14420957242168272,
+        0.027499999757856126
+      ]
+    },
+    "traj_0002": {
+      "n_samples": 549,
+      "complete": false,
+      "first_failure": [
+        24,
+        "joint_speed"
+      ],
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 2,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007748900481232682,
+      "min_joint_margin_rad": 0.007458876025855377,
+      "max_joint_speed_rad_s": 1.675397187406824,
+      "max_joint_acceleration_rad_s2": 61.449744465758016,
+      "max_phase_speed_s1": 0.8104053693650514,
+      "max_q_proxy_error_rad": 0.005140180108373915,
+      "initial_phase": [
+        -0.04500000067055226,
+        -0.10476729503251538
+      ]
+    },
+    "traj_0003": {
+      "n_samples": 553,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.00759292032631498,
+      "min_joint_margin_rad": 0.03590826543473957,
+      "max_joint_speed_rad_s": 0.9810125235488909,
+      "max_joint_acceleration_rad_s2": 21.344764506238956,
+      "max_phase_speed_s1": 0.5447091842011182,
+      "max_q_proxy_error_rad": 3.579700652490969e-05,
+      "initial_phase": [
+        0.10350000187754631,
+        0.018038910934380366
+      ]
+    },
+    "traj_0004": {
+      "n_samples": 687,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007598191109330382,
+      "min_joint_margin_rad": 0.015626787702009537,
+      "max_joint_speed_rad_s": 1.2377733063539564,
+      "max_joint_acceleration_rad_s2": 57.9949417224368,
+      "max_phase_speed_s1": 0.796935541306316,
+      "max_q_proxy_error_rad": 5.872271171054877e-05,
+      "initial_phase": [
+        0.11064364696277507,
+        0.05049999877810478
+      ]
+    },
+    "traj_0005": {
+      "n_samples": 282,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007693122168772919,
+      "min_joint_margin_rad": 0.0770873518142654,
+      "max_joint_speed_rad_s": 1.1327400000538654,
+      "max_joint_acceleration_rad_s2": 32.876965233807894,
+      "max_phase_speed_s1": 0.7419656788420589,
+      "max_q_proxy_error_rad": 4.4043185855543315e-05,
+      "initial_phase": [
+        -0.05090065712357267,
+        -0.13656239015418759
+      ]
+    },
+    "traj_0006": {
+      "n_samples": 725,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007390301939465211,
+      "min_joint_margin_rad": 0.010955841857787751,
+      "max_joint_speed_rad_s": 1.2468608168886701,
+      "max_joint_acceleration_rad_s2": 62.158422275042646,
+      "max_phase_speed_s1": 0.7982022006600441,
+      "max_q_proxy_error_rad": 8.53320345065578e-05,
+      "initial_phase": [
+        -0.041715511884247186,
+        -0.18840884797139673
+      ]
+    },
+    "traj_0007": {
+      "n_samples": 376,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007809842767953037,
+      "min_joint_margin_rad": 0.07927690698802592,
+      "max_joint_speed_rad_s": 1.2276274981130555,
+      "max_joint_acceleration_rad_s2": 59.40397474058695,
+      "max_phase_speed_s1": 0.8300468927926806,
+      "max_q_proxy_error_rad": 4.7251819153843605e-05,
+      "initial_phase": [
+        0.10005867541076854,
+        0.04700000025331974
+      ]
+    },
+    "traj_0008": {
+      "n_samples": 822,
+      "complete": false,
+      "first_failure": [
+        1,
+        "joint_speed"
+      ],
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 6,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007209525554501307,
+      "min_joint_margin_rad": 0.008022016530580656,
+      "max_joint_speed_rad_s": 1.9884307698002646,
+      "max_joint_acceleration_rad_s2": 52.56629365062659,
+      "max_phase_speed_s1": 0.7276399269770208,
+      "max_q_proxy_error_rad": 0.00012834254685817337,
+      "initial_phase": [
+        0.23926453625905686,
+        -0.00350000001490116
+      ]
+    },
+    "traj_0009": {
+      "n_samples": 278,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007632078058220757,
+      "min_joint_margin_rad": 0.07675641327863292,
+      "max_joint_speed_rad_s": 1.2625721608853668,
+      "max_joint_acceleration_rad_s2": 35.81067952880712,
+      "max_phase_speed_s1": 0.49268666935299993,
+      "max_q_proxy_error_rad": 3.556935064476241e-05,
+      "initial_phase": [
+        0.1489303194878232,
+        0.02299999985843897
+      ]
+    },
+    "traj_0010": {
+      "n_samples": 641,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007469392132920016,
+      "min_joint_margin_rad": 0.057970301448772465,
+      "max_joint_speed_rad_s": 1.2430748058140706,
+      "max_joint_acceleration_rad_s2": 26.782898647055298,
+      "max_phase_speed_s1": 0.8050528722168354,
+      "max_q_proxy_error_rad": 6.778365756543447e-05,
+      "initial_phase": [
+        0.1125,
+        0.030483807700923148
+      ]
+    },
+    "traj_0011": {
+      "n_samples": 913,
+      "complete": false,
+      "first_failure": [
+        10,
+        "joint_speed"
+      ],
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 2,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007381912287223501,
+      "min_joint_margin_rad": 0.014932228839170003,
+      "max_joint_speed_rad_s": 1.7153450187926627,
+      "max_joint_acceleration_rad_s2": 101.71133420558309,
+      "max_phase_speed_s1": 1.0615710889566679,
+      "max_q_proxy_error_rad": 0.00033108522733726886,
+      "initial_phase": [
+        0.11614843200518297,
+        0.07661827834225374
+      ]
+    },
+    "traj_0012": {
+      "n_samples": 305,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007702251882233193,
+      "min_joint_margin_rad": 0.0772521293712185,
+      "max_joint_speed_rad_s": 1.0916247871334133,
+      "max_joint_acceleration_rad_s2": 35.11496282364114,
+      "max_phase_speed_s1": 0.7931946193817214,
+      "max_q_proxy_error_rad": 4.660724388760168e-05,
+      "initial_phase": [
+        0.07105010766162492,
+        -0.06904525883805591
+      ]
+    },
+    "traj_0013": {
+      "n_samples": 565,
+      "complete": false,
+      "first_failure": [
+        370,
+        "joint_speed"
+      ],
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 2,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007596494877817106,
+      "min_joint_margin_rad": 0.0010902225475972749,
+      "max_joint_speed_rad_s": 1.935947347883582,
+      "max_joint_acceleration_rad_s2": 97.87626046985132,
+      "max_phase_speed_s1": 1.0624547984766475,
+      "max_q_proxy_error_rad": 0.000945929831191572,
+      "initial_phase": [
+        0.028096137991828106,
+        -0.14629055099767824
+      ]
+    },
+    "traj_0014": {
+      "n_samples": 492,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007664222164241849,
+      "min_joint_margin_rad": 0.009821356853939589,
+      "max_joint_speed_rad_s": 1.1998465804265168,
+      "max_joint_acceleration_rad_s2": 69.91303867385223,
+      "max_phase_speed_s1": 0.7229010992676372,
+      "max_q_proxy_error_rad": 0.00017939816722084556,
+      "initial_phase": [
+        0.1345791379743953,
+        0.000999999884516
+      ]
+    },
+    "traj_0015": {
+      "n_samples": 434,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007625912920967721,
+      "min_joint_margin_rad": 0.07461025581403602,
+      "max_joint_speed_rad_s": 1.2720558347645294,
+      "max_joint_acceleration_rad_s2": 58.490330929816814,
+      "max_phase_speed_s1": 0.74387553662694,
+      "max_q_proxy_error_rad": 5.7703875279799255e-05,
+      "initial_phase": [
+        0.10350000187754631,
+        0.07043484540275458
+      ]
+    },
+    "traj_0016": {
+      "n_samples": 796,
+      "complete": false,
+      "first_failure": [
+        1,
+        "joint_speed"
+      ],
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 7,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007394345110037993,
+      "min_joint_margin_rad": 0.05471468477971064,
+      "max_joint_speed_rad_s": 1.6164853595744155,
+      "max_joint_acceleration_rad_s2": 49.22343692485897,
+      "max_phase_speed_s1": 0.8253120448657003,
+      "max_q_proxy_error_rad": 5.6689962484202105e-05,
+      "initial_phase": [
+        -0.03199999965727329,
+        -0.3235000128857791
+      ]
+    },
+    "traj_0017": {
+      "n_samples": 609,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007680602570595468,
+      "min_joint_margin_rad": 0.07770059998872836,
+      "max_joint_speed_rad_s": 1.216722705218061,
+      "max_joint_acceleration_rad_s2": 57.51504378283645,
+      "max_phase_speed_s1": 0.8299819199385297,
+      "max_q_proxy_error_rad": 5.7151945789750414e-05,
+      "initial_phase": [
+        0.12751672178343926,
+        0.036500000394880765
+      ]
+    },
+    "traj_0018": {
+      "n_samples": 486,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007603049569187755,
+      "min_joint_margin_rad": 0.06461287553370432,
+      "max_joint_speed_rad_s": 1.1811471178568247,
+      "max_joint_acceleration_rad_s2": 53.521067517300345,
+      "max_phase_speed_s1": 0.8412951433368343,
+      "max_q_proxy_error_rad": 5.786051993172947e-05,
+      "initial_phase": [
+        -0.024997047528693143,
+        -0.15393994100177394
+      ]
+    },
+    "traj_0019": {
+      "n_samples": 429,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.0077279687457283515,
+      "min_joint_margin_rad": 0.058435674272905525,
+      "max_joint_speed_rad_s": 1.030751234519517,
+      "max_joint_acceleration_rad_s2": 28.088678463547566,
+      "max_phase_speed_s1": 0.5725925044125436,
+      "max_q_proxy_error_rad": 0.00011911145636603337,
+      "initial_phase": [
+        -0.0509621239201896,
+        -0.13484088720043313
+      ]
+    },
+    "traj_0020": {
+      "n_samples": 481,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007571018320509352,
+      "min_joint_margin_rad": 0.07650563528389531,
+      "max_joint_speed_rad_s": 1.034446204103758,
+      "max_joint_acceleration_rad_s2": 33.55594278441565,
+      "max_phase_speed_s1": 0.6440459912725165,
+      "max_q_proxy_error_rad": 4.8291768240664446e-05,
+      "initial_phase": [
+        0.14601278244091473,
+        0.03199999965727329
+      ]
+    },
+    "traj_0021": {
+      "n_samples": 762,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.0074759557991405014,
+      "min_joint_margin_rad": 0.004791778245516021,
+      "max_joint_speed_rad_s": 1.314539223569966,
+      "max_joint_acceleration_rad_s2": 78.1334381588139,
+      "max_phase_speed_s1": 0.7906368228448715,
+      "max_q_proxy_error_rad": 0.00043781160577616163,
+      "initial_phase": [
+        -0.046074806479688056,
+        -0.14406888897774212
+      ]
+    },
+    "traj_0022": {
+      "n_samples": 474,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.0077311205966986134,
+      "min_joint_margin_rad": 0.07639547596239016,
+      "max_joint_speed_rad_s": 1.1815903336164737,
+      "max_joint_acceleration_rad_s2": 49.21162234910792,
+      "max_phase_speed_s1": 0.8282935148223219,
+      "max_q_proxy_error_rad": 4.5558779215266326e-05,
+      "initial_phase": [
+        0.14968868709705863,
+        0.014499999582767487
+      ]
+    },
+    "traj_0023": {
+      "n_samples": 414,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.0075666381969324075,
+      "min_joint_margin_rad": 0.010806239103584137,
+      "max_joint_speed_rad_s": 1.1629297739968347,
+      "max_joint_acceleration_rad_s2": 30.21936375716905,
+      "max_phase_speed_s1": 0.5646042426896012,
+      "max_q_proxy_error_rad": 7.094951289371432e-05,
+      "initial_phase": [
+        -0.050999999791383734,
+        -0.13367698524316102
+      ]
+    },
+    "traj_0024": {
+      "n_samples": 606,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007543768090710104,
+      "min_joint_margin_rad": 0.011437596392368299,
+      "max_joint_speed_rad_s": 1.0581209267174374,
+      "max_joint_acceleration_rad_s2": 47.66758951264105,
+      "max_phase_speed_s1": 0.6735618360222749,
+      "max_q_proxy_error_rad": 0.00014107214778991128,
+      "initial_phase": [
+        -0.023363773207880884,
+        -0.1615148821840924
+      ]
+    },
+    "traj_0025": {
+      "n_samples": 648,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007304710754298451,
+      "min_joint_margin_rad": 0.07519131214327635,
+      "max_joint_speed_rad_s": 1.1185749706163262,
+      "max_joint_acceleration_rad_s2": 27.684917208592452,
+      "max_phase_speed_s1": 0.4763058318232545,
+      "max_q_proxy_error_rad": 4.467620674142303e-05,
+      "initial_phase": [
+        0.07680334100422778,
+        -0.06498159425007108
+      ]
+    },
+    "traj_0026": {
+      "n_samples": 792,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007672971036804261,
+      "min_joint_margin_rad": 0.0625503166156518,
+      "max_joint_speed_rad_s": 1.1380898239346486,
+      "max_joint_acceleration_rad_s2": 39.80065565981939,
+      "max_phase_speed_s1": 0.7801788399872011,
+      "max_q_proxy_error_rad": 5.4127998886197015e-05,
+      "initial_phase": [
+        0.1566077006107642,
+        0.011730048682470521
+      ]
+    },
+    "traj_0027": {
+      "n_samples": 449,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007436433507039602,
+      "min_joint_margin_rad": 0.05542833277892911,
+      "max_joint_speed_rad_s": 1.2642325802874277,
+      "max_joint_acceleration_rad_s2": 56.73330736395192,
+      "max_phase_speed_s1": 0.8316017429971692,
+      "max_q_proxy_error_rad": 0.0002026008089616449,
+      "initial_phase": [
+        0.13041366527655301,
+        0.04072227761957562
+      ]
+    },
+    "traj_0028": {
+      "n_samples": 563,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007701081112869741,
+      "min_joint_margin_rad": 0.07787604994704544,
+      "max_joint_speed_rad_s": 1.0972491661895705,
+      "max_joint_acceleration_rad_s2": 44.32801699011946,
+      "max_phase_speed_s1": 0.7969752314466154,
+      "max_q_proxy_error_rad": 6.071288725290058e-05,
+      "initial_phase": [
+        0.13390290826489748,
+        0.023499999381601813
+      ]
+    },
+    "traj_0029": {
+      "n_samples": 794,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007544831844737373,
+      "min_joint_margin_rad": 0.023491492896253074,
+      "max_joint_speed_rad_s": 1.024923533908062,
+      "max_joint_acceleration_rad_s2": 34.209868849567336,
+      "max_phase_speed_s1": 0.7811949038802377,
+      "max_q_proxy_error_rad": 4.734375588950554e-05,
+      "initial_phase": [
+        -0.0602889264672333,
+        -0.12586429444824615
+      ]
+    },
+    "traj_0030": {
+      "n_samples": 459,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.00759217110992986,
+      "min_joint_margin_rad": 0.07642634405562965,
+      "max_joint_speed_rad_s": 1.1845627927387101,
+      "max_joint_acceleration_rad_s2": 45.02384458731523,
+      "max_phase_speed_s1": 0.8237481347337712,
+      "max_q_proxy_error_rad": 5.0578338277112826e-05,
+      "initial_phase": [
+        0.11250000000000002,
+        0.042320999439046075
+      ]
+    },
+    "traj_0031": {
+      "n_samples": 611,
+      "complete": false,
+      "first_failure": [
+        1,
+        "joint_speed"
+      ],
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 17,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.006676873320115541,
+      "min_joint_margin_rad": 0.0726492892688444,
+      "max_joint_speed_rad_s": 2.921274880110669,
+      "max_joint_acceleration_rad_s2": 25.610639106276032,
+      "max_phase_speed_s1": 1.4557197641057007,
+      "max_q_proxy_error_rad": 0.00025772663997392087,
+      "initial_phase": [
+        0.3301239217461559,
+        -0.002012705696221696
+      ]
+    },
+    "traj_0032": {
+      "n_samples": 283,
+      "complete": false,
+      "first_failure": [
+        240,
+        "joint_speed"
+      ],
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 2,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007910395066699867,
+      "min_joint_margin_rad": 0.009884635658094165,
+      "max_joint_speed_rad_s": 1.8413702147642041,
+      "max_joint_acceleration_rad_s2": 74.19413128075148,
+      "max_phase_speed_s1": 1.063252951166386,
+      "max_q_proxy_error_rad": 0.0001649890033886825,
+      "initial_phase": [
+        0.10350000187754632,
+        0.08090326987042244
+      ]
+    },
+    "traj_0033": {
+      "n_samples": 784,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.00752222222789542,
+      "min_joint_margin_rad": 0.009355780828813831,
+      "max_joint_speed_rad_s": 1.2322626410761983,
+      "max_joint_acceleration_rad_s2": 106.03545391534297,
+      "max_phase_speed_s1": 0.6847920202756985,
+      "max_q_proxy_error_rad": 0.000159501526871747,
+      "initial_phase": [
+        -0.027999999281018966,
+        -0.3235000128857791
+      ]
+    },
+    "traj_0034": {
+      "n_samples": 385,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007558397201216217,
+      "min_joint_margin_rad": 0.008396856731084368,
+      "max_joint_speed_rad_s": 1.2006541217993938,
+      "max_joint_acceleration_rad_s2": 35.6364523256647,
+      "max_phase_speed_s1": 0.7345659465460965,
+      "max_q_proxy_error_rad": 7.173236739077549e-05,
+      "initial_phase": [
+        0.19495613954407082,
+        0.01427531929352912
+      ]
+    },
+    "traj_0035": {
+      "n_samples": 749,
+      "complete": false,
+      "first_failure": [
+        1,
+        "joint_speed"
+      ],
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 22,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007579984460265863,
+      "min_joint_margin_rad": 0.05693849134806217,
+      "max_joint_speed_rad_s": 1.9484672085787524,
+      "max_joint_acceleration_rad_s2": 55.500597501434434,
+      "max_phase_speed_s1": 0.9998449963779688,
+      "max_q_proxy_error_rad": 0.00023052496252112809,
+      "initial_phase": [
+        -0.03291294540096335,
+        -0.3235000128857792
+      ]
+    },
+    "traj_0036": {
+      "n_samples": 729,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007593605201097651,
+      "min_joint_margin_rad": 0.007931247097565874,
+      "max_joint_speed_rad_s": 1.1536444397837187,
+      "max_joint_acceleration_rad_s2": 70.60365269974777,
+      "max_phase_speed_s1": 0.8205956596601279,
+      "max_q_proxy_error_rad": 0.007044854561469638,
+      "initial_phase": [
+        -0.06068901358252687,
+        -0.09930377167924184
+      ]
+    },
+    "traj_0037": {
+      "n_samples": 435,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007676301579928982,
+      "min_joint_margin_rad": 0.0742344678042024,
+      "max_joint_speed_rad_s": 1.254376281500643,
+      "max_joint_acceleration_rad_s2": 61.27855231471635,
+      "max_phase_speed_s1": 0.8736899888735896,
+      "max_q_proxy_error_rad": 5.8852597237077364e-05,
+      "initial_phase": [
+        0.1514159537731944,
+        -0.02497589269857264
+      ]
+    },
+    "traj_0038": {
+      "n_samples": 687,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007449569275484909,
+      "min_joint_margin_rad": 0.055019444902545844,
+      "max_joint_speed_rad_s": 1.3911025476210925,
+      "max_joint_acceleration_rad_s2": 36.57339680153137,
+      "max_phase_speed_s1": 0.8547083230632635,
+      "max_q_proxy_error_rad": 6.213080177963626e-05,
+      "initial_phase": [
+        -0.036502878030562826,
+        -0.3235000128857791
+      ]
+    },
+    "traj_0039": {
+      "n_samples": 388,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.0076910144776094315,
+      "min_joint_margin_rad": 0.015475173395300246,
+      "max_joint_speed_rad_s": 1.2542820044539271,
+      "max_joint_acceleration_rad_s2": 79.46283268772225,
+      "max_phase_speed_s1": 1.0398273523264099,
+      "max_q_proxy_error_rad": 0.00014419142162519494,
+      "initial_phase": [
+        -0.06600000038743019,
+        -0.11687730040288286
+      ]
+    },
+    "traj_0040": {
+      "n_samples": 363,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007485705314674965,
+      "min_joint_margin_rad": 0.01309585912424649,
+      "max_joint_speed_rad_s": 1.1379831702151177,
+      "max_joint_acceleration_rad_s2": 86.3835633335941,
+      "max_phase_speed_s1": 0.577500171814449,
+      "max_q_proxy_error_rad": 5.008005866447007e-05,
+      "initial_phase": [
+        -0.05149999931454659,
+        -0.12986764795415237
+      ]
+    },
+    "traj_0041": {
+      "n_samples": 488,
+      "complete": false,
+      "first_failure": [
+        475,
+        "joint_speed"
+      ],
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 13,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007388056824557171,
+      "min_joint_margin_rad": 0.07414935472240436,
+      "max_joint_speed_rad_s": 2.0039134458685215,
+      "max_joint_acceleration_rad_s2": 40.94008605563193,
+      "max_phase_speed_s1": 0.6406286991038914,
+      "max_q_proxy_error_rad": 5.796468303560787e-05,
+      "initial_phase": [
+        -0.01064553333139602,
+        -0.17463931623530926
+      ]
+    },
+    "traj_0042": {
+      "n_samples": 481,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007745458644564143,
+      "min_joint_margin_rad": 0.06364763952458075,
+      "max_joint_speed_rad_s": 1.110626201270054,
+      "max_joint_acceleration_rad_s2": 43.74129709517227,
+      "max_phase_speed_s1": 0.692212106359203,
+      "max_q_proxy_error_rad": 4.82020555758883e-05,
+      "initial_phase": [
+        0.10350000187754631,
+        0.07199999950826168
+      ]
+    },
+    "traj_0043": {
+      "n_samples": 481,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007680748251447076,
+      "min_joint_margin_rad": 0.08085867621282516,
+      "max_joint_speed_rad_s": 1.1336735543488887,
+      "max_joint_acceleration_rad_s2": 48.26548824600207,
+      "max_phase_speed_s1": 0.7571248787523198,
+      "max_q_proxy_error_rad": 5.4632690095035574e-05,
+      "initial_phase": [
+        -0.0469027622336803,
+        -0.14330903693823105
+      ]
+    },
+    "traj_0044": {
+      "n_samples": 952,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007631926489672443,
+      "min_joint_margin_rad": 0.0070338254676036716,
+      "max_joint_speed_rad_s": 1.0758572714302916,
+      "max_joint_acceleration_rad_s2": 61.01322363293304,
+      "max_phase_speed_s1": 0.71460295809319,
+      "max_q_proxy_error_rad": 0.00019741252003088738,
+      "initial_phase": [
+        -0.05261138657297276,
+        -0.11200000001117587
+      ]
+    },
+    "traj_0045": {
+      "n_samples": 352,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007833696839026714,
+      "min_joint_margin_rad": 0.08112359739388175,
+      "max_joint_speed_rad_s": 1.105818283811133,
+      "max_joint_acceleration_rad_s2": 38.0300795331251,
+      "max_phase_speed_s1": 0.6239290809890982,
+      "max_q_proxy_error_rad": 4.581952848999038e-05,
+      "initial_phase": [
+        -0.027845527296957894,
+        -0.12868169129348994
+      ]
+    },
+    "traj_0046": {
+      "n_samples": 480,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007584398499410798,
+      "min_joint_margin_rad": 0.0765220939833029,
+      "max_joint_speed_rad_s": 0.9938011842288985,
+      "max_joint_acceleration_rad_s2": 25.315502879867946,
+      "max_phase_speed_s1": 0.5548173643325237,
+      "max_q_proxy_error_rad": 5.4870456196939865e-05,
+      "initial_phase": [
+        0.1412471283112934,
+        0.03199999965727329
+      ]
+    },
+    "traj_0047": {
+      "n_samples": 350,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007657054178520629,
+      "min_joint_margin_rad": 0.01874544036401682,
+      "max_joint_speed_rad_s": 1.1077909166683746,
+      "max_joint_acceleration_rad_s2": 65.2178848368079,
+      "max_phase_speed_s1": 0.7282899701009247,
+      "max_q_proxy_error_rad": 6.105022176514097e-05,
+      "initial_phase": [
+        0.0989999994635582,
+        0.03974734412380082
+      ]
+    },
+    "traj_0048": {
+      "n_samples": 699,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.0076625696282601,
+      "min_joint_margin_rad": 0.07881198073160989,
+      "max_joint_speed_rad_s": 1.0731310550023867,
+      "max_joint_acceleration_rad_s2": 37.00891313614951,
+      "max_phase_speed_s1": 0.7409130676900574,
+      "max_q_proxy_error_rad": 5.864883165721674e-05,
+      "initial_phase": [
+        0.12716548524993462,
+        -0.05985449575893168
+      ]
+    },
+    "traj_0049": {
+      "n_samples": 477,
+      "complete": true,
+      "first_failure": null,
+      "failure_counts": {
+        "branch": 0,
+        "clearance": 0,
+        "joint_limit": 0,
+        "joint_speed": 0,
+        "invalid": 0
+      },
+      "phase_speed_exceedances": 0,
+      "min_clearance_m": 0.007689671935453777,
+      "min_joint_margin_rad": 0.07721252447399674,
+      "max_joint_speed_rad_s": 1.0730504485175776,
+      "max_joint_acceleration_rad_s2": 32.93901715992531,
+      "max_phase_speed_s1": 0.7411518070529644,
+      "max_q_proxy_error_rad": 5.387429908097589e-05,
+      "initial_phase": [
+        0.04544496016909792,
+        -0.11062769825737852
+      ]
+    }
+  }
+}

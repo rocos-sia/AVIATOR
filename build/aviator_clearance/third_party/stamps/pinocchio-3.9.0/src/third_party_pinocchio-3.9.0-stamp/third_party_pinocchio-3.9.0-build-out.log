@@ -1,0 +1,530 @@
+[  5%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/cholesky.cpp.o
+[  5%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/model.cpp.o
+[ 15%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/constrained-dynamics.cpp.o
+[ 15%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/aba.cpp.o
+[ 15%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/regressor.cpp.o
+[ 15%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/rnea-derivatives.cpp.o
+[ 15%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/contact-dynamics.cpp.o
+[ 15%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/frames-derivatives.cpp.o
+[ 20%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/impulse-dynamics.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/centroidal-derivatives.cpp.o
+[ 30%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/constrained-dynamics-derivatives.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/jacobian.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/compute-all-terms.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/energy.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/frames.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/center-of-mass.cpp.o
+[ 40%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/kinematics.cpp.o
+[ 40%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/geometry.cpp.o
+[ 40%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/rnea.cpp.o
+[ 40%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/aba-derivatives.cpp.o
+[ 45%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/centroidal.cpp.o
+[ 50%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/crba.cpp.o
+[ 50%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/contact-cholesky.cpp.o
+[ 55%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/center-of-mass-derivatives.cpp.o
+[ 55%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/joint-configuration.cpp.o
+[ 60%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/kinematics-derivatives.cpp.o
+[ 60%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/contact-jacobian.cpp.o
+[ 60%] Building CXX object src/CMakeFiles/pinocchio_default.dir/algorithm/proximal.cpp.o
+[ 60%] Building CXX object src/CMakeFiles/pinocchio_default.dir/multibody/model.cpp.o
+[ 65%] Building CXX object src/CMakeFiles/pinocchio_default.dir/multibody/data.cpp.o
+[ 65%] Building CXX object src/CMakeFiles/pinocchio_default.dir/multibody/sample-models.cpp.o
+[ 70%] Linking CXX shared library libpinocchio_default.so
+/usr/bin/c++ -fPIC -pedantic -Wno-long-long -Wall -Wextra -Wcast-align -Wcast-qual -Wformat -Wwrite-strings -Wconversion  -O3 -DNDEBUG -shared -Wl,-soname,libpinocchio_default.so.3.9.0 -o libpinocchio_default.so.3.9.0 CMakeFiles/pinocchio_default.dir/algorithm/cholesky.cpp.o CMakeFiles/pinocchio_default.dir/algorithm/aba.cpp.o CMakeFiles/pinocchio_default.dir/algorithm/regressor.cpp.o "CMakeFiles/pinocchio_default.dir/algorithm/contact-dynamics.cpp.o" "CMakeFiles/pinocchio_default.dir/algorithm/frames-derivatives.cpp.o" "CMakeFiles/pinocchio_default.dir/algorithm/impulse-dynamics.cpp.o" CMakeFiles/pinocchio_default.dir/algorithm/model.cpp.o "CMakeFiles/pinocchio_default.dir/algorithm/constrained-dynamics.cpp.o" "CMakeFiles/pinocchio_default.dir/algorithm/rnea-derivatives.cpp.o" "CMakeFiles/pinocchio_default.dir/algorithm/compute-all-terms.cpp.o" CMakeFiles/pinocchio_default.dir/algorithm/jacobian.cpp.o CMakeFiles/pinocchio_default.dir/algorithm/energy.cpp.o "CMakeFiles/pinocchio_default.dir/algorithm/centroidal-derivatives.cpp.o" CMakeFiles/pinocchio_default.dir/algorithm/frames.cpp.o "CMakeFiles/pinocchio_default.dir/algorithm/constrained-dynamics-derivatives.cpp.o" "CMakeFiles/pinocchio_default.dir/algorithm/center-of-mass.cpp.o" CMakeFiles/pinocchio_default.dir/algorithm/geometry.cpp.o CMakeFiles/pinocchio_default.dir/algorithm/kinematics.cpp.o CMakeFiles/pinocchio_default.dir/algorithm/rnea.cpp.o CMakeFiles/pinocchio_default.dir/algorithm/centroidal.cpp.o "CMakeFiles/pinocchio_default.dir/algorithm/aba-derivatives.cpp.o" CMakeFiles/pinocchio_default.dir/algorithm/crba.cpp.o "CMakeFiles/pinocchio_default.dir/algorithm/contact-cholesky.cpp.o" "CMakeFiles/pinocchio_default.dir/algorithm/joint-configuration.cpp.o" "CMakeFiles/pinocchio_default.dir/algorithm/center-of-mass-derivatives.cpp.o" CMakeFiles/pinocchio_default.dir/algorithm/proximal.cpp.o "CMakeFiles/pinocchio_default.dir/algorithm/kinematics-derivatives.cpp.o" "CMakeFiles/pinocchio_default.dir/algorithm/contact-jacobian.cpp.o" CMakeFiles/pinocchio_default.dir/multibody/model.cpp.o CMakeFiles/pinocchio_default.dir/multibody/data.cpp.o "CMakeFiles/pinocchio_default.dir/multibody/sample-models.cpp.o"  -Wl,-rpath,::::::: /usr/lib/x86_64-linux-gnu/libboost_serialization.so 
+[ 70%] Built target pinocchio_default
+[ 70%] Building CXX object src/CMakeFiles/pinocchio_visualizers.dir/visualizers/base-visualizer.cpp.o
+[ 75%] Building CXX object src/CMakeFiles/pinocchio_collision.dir/collision/collision.cpp.o
+[ 75%] Building CXX object src/CMakeFiles/pinocchio_collision.dir/collision/distance.cpp.o
+[ 75%] Linking CXX shared library libpinocchio_collision.so
+/usr/bin/c++ -fPIC -pedantic -Wno-long-long -Wall -Wextra -Wcast-align -Wcast-qual -Wformat -Wwrite-strings -Wconversion  -O3 -DNDEBUG -shared -Wl,-soname,libpinocchio_collision.so.3.9.0 -o libpinocchio_collision.so.3.9.0 CMakeFiles/pinocchio_collision.dir/collision/collision.cpp.o CMakeFiles/pinocchio_collision.dir/collision/distance.cpp.o  -Wl,-rpath,/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/build/pinocchio-3.9.0/src:/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib: libpinocchio_default.so.3.9.0 /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libcoal.so.3.0.4 /usr/lib/x86_64-linux-gnu/libboost_serialization.so /usr/lib/x86_64-linux-gnu/libboost_filesystem.so /usr/lib/x86_64-linux-gnu/liboctomap.so.1.9.7 /usr/lib/x86_64-linux-gnu/liboctomath.so.1.9.7 
+[ 75%] Built target pinocchio_collision
+[ 75%] Building CXX object src/CMakeFiles/pinocchio_parsers.dir/utils/file-explorer.cpp.o
+[ 80%] Building CXX object src/CMakeFiles/pinocchio_parsers.dir/parsers/mjcf/mjcf-graph.cpp.o
+[ 80%] Building CXX object src/CMakeFiles/pinocchio_parsers.dir/parsers/urdf/model.cpp.o
+[ 80%] Building CXX object src/CMakeFiles/pinocchio_parsers.dir/parsers/mjcf/mjcf-graph-geom.cpp.o
+[ 80%] Building CXX object src/CMakeFiles/pinocchio_parsers.dir/parsers/graph/model-graph.cpp.o
+[ 85%] Building CXX object src/CMakeFiles/pinocchio_parsers.dir/parsers/urdf/geometry.cpp.o
+[ 90%] Building CXX object src/CMakeFiles/pinocchio_parsers.dir/parsers/graph/model-graph-algo.cpp.o
+[ 90%] Building CXX object src/CMakeFiles/pinocchio_parsers.dir/parsers/urdf/utils.cpp.o
+[ 90%] Building CXX object src/CMakeFiles/pinocchio_parsers.dir/parsers/graph/model-graph-algo-geometry.cpp.o
+[ 95%] Linking CXX shared library libpinocchio_visualizers.so
+/usr/bin/c++ -fPIC -pedantic -Wno-long-long -Wall -Wextra -Wcast-align -Wcast-qual -Wformat -Wwrite-strings -Wconversion  -O3 -DNDEBUG -shared -Wl,-soname,libpinocchio_visualizers.so.3.9.0 -o libpinocchio_visualizers.so.3.9.0 "CMakeFiles/pinocchio_visualizers.dir/visualizers/base-visualizer.cpp.o"  -Wl,-rpath,/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/build/pinocchio-3.9.0/src:/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib: libpinocchio_default.so.3.9.0 /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libcoal.so.3.0.4 /usr/lib/x86_64-linux-gnu/libboost_serialization.so /usr/lib/x86_64-linux-gnu/libboost_filesystem.so /usr/lib/x86_64-linux-gnu/liboctomap.so.1.9.7 /usr/lib/x86_64-linux-gnu/liboctomath.so.1.9.7 
+[ 95%] Built target pinocchio_visualizers
+[100%] Linking CXX shared library libpinocchio_parsers.so
+/usr/bin/c++ -fPIC -pedantic -Wno-long-long -Wall -Wextra -Wcast-align -Wcast-qual -Wformat -Wwrite-strings -Wconversion  -O3 -DNDEBUG -shared -Wl,-soname,libpinocchio_parsers.so.3.9.0 -o libpinocchio_parsers.so.3.9.0 "CMakeFiles/pinocchio_parsers.dir/utils/file-explorer.cpp.o" "CMakeFiles/pinocchio_parsers.dir/parsers/mjcf/mjcf-graph.cpp.o" "CMakeFiles/pinocchio_parsers.dir/parsers/mjcf/mjcf-graph-geom.cpp.o" "CMakeFiles/pinocchio_parsers.dir/parsers/graph/model-graph.cpp.o" "CMakeFiles/pinocchio_parsers.dir/parsers/graph/model-graph-algo.cpp.o" CMakeFiles/pinocchio_parsers.dir/parsers/urdf/model.cpp.o CMakeFiles/pinocchio_parsers.dir/parsers/urdf/geometry.cpp.o CMakeFiles/pinocchio_parsers.dir/parsers/urdf/utils.cpp.o "CMakeFiles/pinocchio_parsers.dir/parsers/graph/model-graph-algo-geometry.cpp.o"  -Wl,-rpath,/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/build/pinocchio-3.9.0/src:/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib:/opt/ros/humble/lib/x86_64-linux-gnu: libpinocchio_collision.so.3.9.0 /usr/lib/x86_64-linux-gnu/libboost_filesystem.so libpinocchio_default.so.3.9.0 /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libcoal.so.3.0.4 /usr/lib/x86_64-linux-gnu/libboost_filesystem.so /usr/lib/x86_64-linux-gnu/libboost_serialization.so /usr/lib/x86_64-linux-gnu/liboctomap.so.1.9.7 /usr/lib/x86_64-linux-gnu/liboctomath.so.1.9.7 /opt/ros/humble/lib/x86_64-linux-gnu/liburdfdom_sensor.so.3.0 /opt/ros/humble/lib/x86_64-linux-gnu/liburdfdom_model.so.3.0 /opt/ros/humble/lib/x86_64-linux-gnu/liburdfdom_world.so.3.0 /usr/lib/x86_64-linux-gnu/libconsole_bridge.so.1.0 /usr/lib/x86_64-linux-gnu/libtinyxml.so 
+[100%] Built target pinocchio_parsers
+-- Install configuration: "Release"
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/config.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/deprecated.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/warning.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_default.so.3.9.0
+-- Set runtime path of "/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_default.so.3.9.0" to "$ORIGIN"
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_default.so
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_collision.so.3.9.0
+-- Set runtime path of "/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_collision.so.3.9.0" to "$ORIGIN"
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_collision.so
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/config.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_visualizers.so.3.9.0
+-- Set runtime path of "/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_visualizers.so.3.9.0" to "$ORIGIN"
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_visualizers.so
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/visualizers/config.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_parsers.so.3.9.0
+-- Set runtime path of "/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_parsers.so.3.9.0" to "$ORIGIN"
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_parsers.so
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/config.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/pkgconfig/pinocchio.pc
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/aba-derivatives.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/aba-derivatives.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/aba.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/aba.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/admm-solver.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/admm-solver.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/center-of-mass-derivatives.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/center-of-mass-derivatives.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/center-of-mass.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/center-of-mass.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/centroidal-derivatives.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/centroidal-derivatives.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/centroidal.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/centroidal.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/check.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/check-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/check-data.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/check-data.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/check-model.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/check-model.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/cholesky.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/cholesky.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/compute-all-terms.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/compute-all-terms.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constrained-dynamics-derivatives.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constrained-dynamics-derivatives.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constrained-dynamics.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constrained-dynamics.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constrained-problem-data.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constraints/coulomb-friction-cone.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constraints/visitors/constraint-model-visitor.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constraints/constraint-data-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constraints/constraint-data-generic.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constraints/constraint-model-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constraints/constraint-model-generic.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constraints/constraints.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constraints/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-cholesky.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-cholesky.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-dynamics.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-dynamics.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-info.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-jacobian.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-jacobian.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-solver-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-solver-utils.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-inverse-dynamics.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/copy.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/crba.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/crba.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/default-check.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/delassus.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/delassus.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/delassus-operartor-ref.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/delassus-operator-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/delassus-operator-dense.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/delassus-operator-rigid-body.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/delassus-operator-sparse.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/energy.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/energy.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/frames-derivatives.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/frames-derivatives.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/frames.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/frames.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/geometry.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/geometry.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/impulse-dynamics-derivatives.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/impulse-dynamics-derivatives.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/impulse-dynamics.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/impulse-dynamics.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/jacobian.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/jacobian.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/joint-configuration.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/joint-configuration.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/kinematics-derivatives.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/kinematics-derivatives.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/kinematics.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/kinematics.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/model.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/model.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/pgs-solver.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/pgs-solver.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/proximal.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/pv.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/pv.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/regressor.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/regressor.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/rnea-derivatives.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/rnea-derivatives.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/rnea.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/rnea.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/rnea-second-order-derivatives.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/rnea-second-order-derivatives.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/utils/force.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/utils/motion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/casadi-algo.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/casadi.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/casadi/math/matrix.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/casadi/math/quaternion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/casadi/math/triangular-matrix.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/casadi/spatial/se3-tpl.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/casadi/utils/static-if.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/cppad/algorithm/aba.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/cppad.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/cppad/math/eigen_plugin.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/cppad/math/quaternion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/cppad/spatial/log.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/cppad/spatial/se3-tpl.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/autodiff/cppad/utils/static-if.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/codegen/code-generator-algo.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/codegen/code-generator-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/codegen/cppadcg.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/container/aligned-vector.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/container/boost-container-limits.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/context/casadi.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/context/cppad.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/context/cppadcg.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/context/default.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/context/generic.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/context.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/core/binary-op.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/core/unary-op.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/deprecated-macros.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/deprecated-namespaces.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/deprecation.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/eigen-macros.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/macros.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/unsupported.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/casadi.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/comparison-operators.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/cppadcg.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/cppad.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/eigenvalues.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/gram-schmidt-orthonormalisation.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/lanczos-decomposition.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/matrix-block.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/matrix.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/multiprecision.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/multiprecision-mpfr.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/quaternion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/rotation.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/rpy.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/rpy.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/sign.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/sincos.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/taylor-expansion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/tensor.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/triangular-matrix.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/math/tridiagonal-matrix.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/data.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/data.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/fcl.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/force-set.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/frame.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/geometry.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/geometry.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/geometry-object-filter.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/geometry-object.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/geometry-object.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/instance-filter.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-basic-visitors.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-basic-visitors.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-collection.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-common-operations.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-composite.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-composite.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-data-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-free-flyer.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-generic.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-helical.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-helical-unaligned.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-mimic.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-model-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-planar.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-prismatic.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-prismatic-unaligned.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-revolute.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-revolute-unaligned.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-revolute-unbounded.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-revolute-unbounded-unaligned.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joints.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-spherical.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-spherical-ZYX.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-ellipsoid.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-translation.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-universal.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint-motion-subspace-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint-motion-subspace-generic.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint-motion-subspace.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/cartesian-product.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/cartesian-product-variant.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/cartesian-product-variant.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/liegroup-algo.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/liegroup-algo.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/liegroup-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/liegroup-base.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/liegroup-collection.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/liegroup-generic.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/liegroup.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/liegroup-variant-visitors.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/liegroup-variant-visitors.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/special-euclidean.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/special-orthogonal.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/liegroup/vector-space.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/model.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/model.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/model-item.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/pool/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/pool/geometry.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/pool/model.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/visitor/fusion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/visitor.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/visitor/joint-binary-visitor.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/visitor/joint-unary-visitor.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/sample-models.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/sample-models.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/aligned-vector.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/archive.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/data.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/eigen.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/csv.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/fcl.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/force.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/frame.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/geometry.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/inertia.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/joints-data.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/joints.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/joints-model.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/joints-motion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/joints-motion-subspace.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/joints-transform.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/model.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/motion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/se3.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/serializable.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/spatial.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/static-buffer.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/symmetric3.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/vector.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/act-on-set.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/act-on-set.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/cartesian-axis.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/classic-acceleration.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/explog.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/explog-quaternion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/force-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/force-dense.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/force.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/force-ref.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/force-tpl.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/inertia.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/log.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/log.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/motion-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/motion-dense.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/motion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/motion-ref.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/motion-tpl.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/motion-zero.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/se3-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/se3.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/se3-tpl.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/skew.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/spatial-axis.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/symmetric3.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/axis-label.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/cast.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/check.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/eigen-fix.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/file-io.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/helpers.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/openmp.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/shared-ptr.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/static-if.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/string-generator.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/string.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/timer2.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/timer.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/version.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/aba-derivatives.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-cholesky.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-dynamics.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/frames-derivatives.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/regressor.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/joint-configuration.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/model.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/proximal.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/cholesky.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/rnea.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/jacobian.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/geometry.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/center-of-mass.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/energy.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/aba.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/frames.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/centroidal.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constrained-dynamics-derivatives.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/contact-jacobian.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/crba.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/constrained-dynamics.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/centroidal-derivatives.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/rnea-derivatives.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/impulse-dynamics.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/compute-all-terms.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/kinematics.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/center-of-mass-derivatives.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/algorithm/kinematics-derivatives.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/model.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/data.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/sample-models.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/visualizers/base-visualizer.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/meshloader-fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/srdf.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/srdf.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/utils.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/utils/file-explorer.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/mjcf.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/mjcf/model.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/mjcf/geometry.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/mjcf/mjcf-graph.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/sample-models.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/graph/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/graph/model-graph.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/graph/model-graph-algo.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/graph/graph-visitor.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/graph/joints.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/graph/frames.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/graph/geometries.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/graph/model-configuration-converter.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/graph/model-configuration-converter.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/urdf.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/urdf/model.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/urdf/geometry.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/urdf/utils.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/urdf/types.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/parsers/graph/model-graph-algo-geometry.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/collision.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/collision.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/broadphase-callbacks.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/broadphase-callbacks.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/broadphase.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/broadphase.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/distance.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/distance.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/broadphase-manager-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/broadphase-manager.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/broadphase-manager.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/tree-broadphase-manager.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/tree-broadphase-manager.hxx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/fcl-pinocchio-conversions.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/pool/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/pool/broadphase-manager.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/spatial/fcl-pinocchio-conversions.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/collision.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/collision/distance.txx
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/spatial/explog.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/spatial/classic-acceleration.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/spatial/symmetric3.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/spatial/motion.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/spatial/force.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/spatial/inertia.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/spatial/se3.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/algorithm/contact-info.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/algorithm/contact-cholesky.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/algorithm/contact-solver-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/algorithm/delassus-operator.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/algorithm/proximal.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/algorithm/algorithms.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/algorithm/constraints/coulomb-friction-cone.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/context.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/pybind11-all.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/pybind11.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/constant.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/version.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/pickle-vector.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/macros.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/path.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/std-vector.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/printable.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/dependencies.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/conversions.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/address.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/copyable.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/registration.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/pickle.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/pickle-map.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/list.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/std-aligned-vector.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/eigen.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/comparable.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/std-map.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/cast.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/deprecation.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/model-checker.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/utils/namespace.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/context/cppadcg.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/context/cppad.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/context/casadi.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/context/default.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/context/mpfr.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/context/generic.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/fwd.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/serialization/serialization.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/serialization/serializable.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/math/tridiagonal-matrix.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/math/lanczos-decomposition.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/math/multiprecision/boost/number.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/collision/broadphase-manager-base.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/collision/geometry-functors.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/collision/tree-broadphase-manager.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/data.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/frame.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/geometry-model.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/joint/joint.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/model.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/joint/joint-model.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/joint/joint-derived.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/joint/joints-models.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/joint/joints-variant.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/joint/joints-datas.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/joint/joint-data.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/liegroups.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/geometry-data.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/multibody/geometry-object.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/parsers/urdf.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/parsers/sdf.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/parsers/mjcf.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/parsers/srdf.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/parsers/model-graph.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/parsers/graph/model-configuration-converter.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/extra/extras.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/visualizers/visualizer-visitor.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/collision/fcl/transform.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/collision/broadphase-manager.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/bindings/python/collision/collision.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/ament_index/resource_index/packages/pinocchio
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/pinocchio/hook/ament_prefix_path.dsv
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/pinocchio/package.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/pinocchio/cxx-standard.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/pinocchio/pinocchioConfig.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/pinocchio/pinocchioConfigVersion.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/pinocchio/pinocchioTargets.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/pinocchio/pinocchioTargets-release.cmake

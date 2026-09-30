@@ -1,0 +1,22 @@
+[ 20%] Building CXX object CMakeFiles/pin_ik.dir/src/urdf.cpp.o
+[ 60%] Building CXX object CMakeFiles/pin_ik.dir/src/pinocchio_tl.cpp.o
+[ 60%] Building CXX object CMakeFiles/pin_ik.dir/src/nlopt_ik.cpp.o
+[ 80%] Building CXX object CMakeFiles/pin_ik.dir/src/pin_ik.cpp.o
+[100%] Linking CXX shared library libpin_ik.so
+[100%] Built target pin_ik
+-- Install configuration: "Release"
+-- Up-to-date: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pin_ik
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pin_ik/nlopt_ik.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pin_ik/urdf.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pin_ik/pinocchio_types.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pin_ik/pin_ik.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pin_ik/pinocchio_tl.hpp
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pin_ik/math3d.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pin_ik/dual_quaternion.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpin_ik.so
+-- Set runtime path of "/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpin_ik.so" to "$ORIGIN"
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/pin_ik/pin_ikTargets.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/pin_ik/pin_ikTargets-release.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/pin_ik/pin_ikConfig.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/pin_ik/pin_ikConfigVersion.cmake

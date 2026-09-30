@@ -1,0 +1,310 @@
+[  1%] Building CXX object CMakeFiles/lodepng.dir/home/rocos/sia/AVIATOR/third_party/lodepng/lodepng.cpp.o
+[  2%] Linking CXX static library lib/liblodepng.a
+[  2%] Built target lodepng
+[  3%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_callback.c.o
+[  4%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_collision_box.c.o
+[  6%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_collision_convex.c.o
+[  6%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_collision_driver.c.o
+[  8%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_collision_gjk.c.o
+[  9%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_collision_primitive.c.o
+[ 10%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_core_util.c.o
+[ 11%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_collision_sdf.c.o
+[ 13%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_core_smooth.c.o
+[ 13%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_core_constraint.c.o
+[ 16%] Building CXX object CMakeFiles/mujoco.dir/src/engine/engine_crossplatform.cc.o
+[ 14%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_derivative.c.o
+[ 18%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_inverse.c.o
+[ 18%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_derivative_fd.c.o
+[ 19%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_init.c.o
+[ 20%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_forward.c.o
+[ 21%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_memory.c.o
+[ 22%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_name.c.o
+[ 24%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_island.c.o
+[ 25%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_io.c.o
+[ 26%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_passive.c.o
+[ 27%] Building CXX object CMakeFiles/mujoco.dir/src/engine/engine_plugin.cc.o
+[ 28%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_print.c.o
+[ 29%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_ray.c.o
+[ 31%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_setconst.c.o
+[ 32%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_sensor.c.o
+[ 33%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_sleep.c.o
+[ 34%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_support.c.o
+[ 35%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_util_blas.c.o
+[ 36%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_solver.c.o
+[ 37%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_util_errmem.c.o
+[ 39%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_util_misc.c.o
+[ 40%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_util_solve.c.o
+[ 41%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_util_sparse.c.o
+[ 42%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_util_spatial.c.o
+[ 43%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_vis_init.c.o
+[ 44%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_vis_interact.c.o
+[ 45%] Building C object CMakeFiles/mujoco.dir/src/engine/engine_vis_visualize.c.o
+[ 47%] Building CXX object CMakeFiles/mujoco.dir/src/user/user_api.cc.o
+[ 48%] Building CXX object CMakeFiles/mujoco.dir/src/user/user_cache.cc.o
+[ 49%] Building CXX object CMakeFiles/mujoco.dir/src/user/user_composite.cc.o
+[ 50%] Building CXX object CMakeFiles/mujoco.dir/src/user/user_flexcomp.cc.o
+[ 51%] Building C object CMakeFiles/mujoco.dir/src/user/user_init.c.o
+[ 52%] Building CXX object CMakeFiles/mujoco.dir/src/user/user_mesh.cc.o
+[ 54%] Building CXX object CMakeFiles/mujoco.dir/src/user/user_model.cc.o
+[ 55%] Building CXX object CMakeFiles/mujoco.dir/src/user/user_objects.cc.o
+[ 56%] Building CXX object CMakeFiles/mujoco.dir/src/user/user_resource.cc.o
+[ 57%] Building CXX object CMakeFiles/mujoco.dir/src/user/user_util.cc.o
+[ 58%] Building CXX object CMakeFiles/mujoco.dir/src/user/user_vfs.cc.o
+[ 59%] Building CXX object CMakeFiles/mujoco.dir/src/xml/xml_api.cc.o
+[ 60%] Building CXX object CMakeFiles/mujoco.dir/src/xml/xml_base.cc.o
+[ 62%] Building CXX object CMakeFiles/mujoco.dir/src/xml/xml.cc.o
+[ 63%] Building CXX object CMakeFiles/mujoco.dir/src/xml/xml_native_reader.cc.o
+[ 64%] Building CXX object CMakeFiles/mujoco.dir/src/xml/xml_numeric_format.cc.o
+[ 65%] Building CXX object CMakeFiles/mujoco.dir/src/xml/xml_native_writer.cc.o
+[ 66%] Building CXX object CMakeFiles/mujoco.dir/src/xml/xml_urdf.cc.o
+[ 67%] Building CXX object CMakeFiles/mujoco.dir/src/xml/xml_util.cc.o
+[ 68%] Building CXX object CMakeFiles/mujoco.dir/src/thread/thread_pool.cc.o
+[ 70%] Building CXX object CMakeFiles/mujoco.dir/src/thread/thread_task.cc.o
+[ 71%] Building C object CMakeFiles/mujoco.dir/src/render/glad/glad.c.o
+[ 73%] Building C object CMakeFiles/mujoco.dir/src/render/render_context.c.o
+[ 73%] Building CXX object CMakeFiles/mujoco.dir/src/render/glad/loader.cc.o
+[ 74%] Building C object CMakeFiles/mujoco.dir/src/render/render_gl2.c.o
+[ 75%] Building C object CMakeFiles/mujoco.dir/src/render/render_gl3.c.o
+[ 77%] Building C object CMakeFiles/mujoco.dir/src/render/render_util.c.o
+[ 78%] Building C object CMakeFiles/mujoco.dir/src/ui/ui_main.c.o
+[ 79%] Linking CXX shared library lib/libmujoco.so
+[ 79%] Built target mujoco
+[ 82%] Building CXX object plugin/elasticity/CMakeFiles/elasticity.dir/cable.cc.o
+[ 82%] Building CXX object plugin/actuator/CMakeFiles/actuator.dir/register.cc.o
+[ 82%] Building CXX object plugin/elasticity/CMakeFiles/elasticity.dir/elasticity.cc.o
+[ 83%] Building CXX object plugin/sensor/CMakeFiles/sensor.dir/touch_grid.cc.o
+[ 85%] Building CXX object plugin/actuator/CMakeFiles/actuator.dir/pid.cc.o
+[ 86%] Building CXX object plugin/sensor/CMakeFiles/sensor.dir/register.cc.o
+[ 87%] Building CXX object plugin/sdf/CMakeFiles/sdf_plugin.dir/sdf.cc.o
+[ 88%] Building CXX object plugin/sdf/CMakeFiles/sdf_plugin.dir/bolt.cc.o
+[ 90%] Building CXX object plugin/elasticity/CMakeFiles/elasticity.dir/register.cc.o
+[ 91%] Building CXX object plugin/sdf/CMakeFiles/sdf_plugin.dir/register.cc.o
+[ 93%] Building CXX object plugin/sdf/CMakeFiles/sdf_plugin.dir/gear.cc.o
+[ 90%] Building CXX object plugin/sdf/CMakeFiles/sdf_plugin.dir/bowl.cc.o
+[ 94%] Building CXX object plugin/sdf/CMakeFiles/sdf_plugin.dir/nut.cc.o
+[ 95%] Building CXX object plugin/sdf/CMakeFiles/sdf_plugin.dir/torus.cc.o
+[ 96%] Linking CXX shared library ../../lib/libactuator.so
+[ 97%] Linking CXX shared library ../../lib/libelasticity.so
+[ 98%] Linking CXX shared library ../../lib/libsensor.so
+[ 98%] Built target actuator
+[ 98%] Built target elasticity
+[100%] Linking CXX shared library ../../lib/libsdf_plugin.so
+[100%] Built target sensor
+[100%] Built target sdf_plugin
+-- Install configuration: "Release"
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libmujoco.so.3.4.0
+-- Set runtime path of "/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libmujoco.so.3.4.0" to "$ORIGIN"
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libmujoco.so
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjdata.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjexport.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjmacro.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjmodel.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjplugin.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjrender.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjsan.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjspec.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjthread.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjtnum.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjui.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjvisualize.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mjxmacro.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/mujoco/mujoco.h
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/mujoco/mujocoTargets.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/mujoco/mujocoTargets-release.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/mujoco/mujocoConfig.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/mujoco/mujocoConfigVersion.cmake
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/hammock
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/hammock/hammock.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/cube_3x3x3.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/blue_white.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/orange.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/orange_red.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/red_yellow.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/green_yellow.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/green_red_white.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/orange_yellow.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/blue.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/green_white.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/green_orange_white.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/yellow.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/blue_orange_white.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/blue_yellow.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/blue_orange_yellow.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/red.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/red_white.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/green_red.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/blue_red.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/blue_red_yellow.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/green.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/blue_red_white.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/green_orange.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/white.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/green_orange_yellow.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/orange_white.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/blue_orange.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/assets/green_red_yellow.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cube/README.md
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/press.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/plate.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/basket.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/sphere_radial.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/floppy.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/jelly.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/softbox.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/sphere_trilinear.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/pancake.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/trampoline.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/mannequin.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/flag.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/sphere_full.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/bunny.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/pulley.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/gripper.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/asset
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/asset/cap.obj
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/asset/sponge.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/asset/bunny_with_uv.obj
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/asset/bunny.obj
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/quadratic.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/poncho_vertcollide.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/bunny_with_uv.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/gripper_trilinear.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/poncho.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/bunny_quadratic.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/scene.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/trilinear.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/flex/sphere_passive.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/sleep
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/sleep/100_humanoids.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/sleep/humanoid.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/sleep/dominos.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/ace_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/4_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/5_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/5_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/queen_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/2_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/3_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/4_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/7_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/9_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/3_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/7_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/7_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/queen_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/10_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/10_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/8_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/card.obj
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/jack_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/6_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/black_joker.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/2_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/king_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/ace_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/9_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/king_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/ace_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/9_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/5_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/queen_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/jack_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/8_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/jack_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/6_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/6_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/3_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/8_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/10_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/jack_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/king_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/5_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/7_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/9_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/8_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/red_joker.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/3_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/6_of_spades.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/2_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/4_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/queen_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/4_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/king_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/2_of_diamonds.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/10_of_clubs.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/assets/ace_of_hearts.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/cards/cards.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/adhesion
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/adhesion/README.md
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/adhesion/active_adhesion.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/tactile
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/tactile/tactile.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/car
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/car/car.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/tendon_arm
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/tendon_arm/arm26.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/container.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/tendon.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/bowl.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/particle_free2d.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/bunnies.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/cylinder.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/newton_cradle.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/leaves.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/bunny.obj
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/particle_free.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/asset
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/asset/marble.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/particle.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/stonehenge.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/helix.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/README.md
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/replicate/scene.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/slider_crank
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/slider_crank/slider_crank.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/bowl.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/torus.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/cow.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/mesh.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/nutbolt.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/asset
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/asset/spot.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/asset/die.obj
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/asset/README.md
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/asset/spot.obj
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/primitives.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/mug.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/scene.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sdf/gear.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/elasticity
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/elasticity/belt.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/elasticity/coil.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/elasticity/cable.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/elasticity/scene.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/actuator
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/actuator/pid.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sensor
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sensor/a.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/plugin/sensor/touch_grid.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/mug
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/mug/mug.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/mug/mug.obj
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/mug/mug.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/humanoid
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/humanoid/humanoid100.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/humanoid/humanoid.png
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/humanoid/100_humanoids.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/humanoid/humanoid.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/humanoid/22_humanoids.xml
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/humanoid/README.md
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/balloons
+-- Installing: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/share/mujoco/model/balloons/balloons.xml

@@ -1,0 +1,16 @@
+CMake Warning at /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/hpp-fcl/hpp-fclConfig.cmake:4 (message):
+  Please update your CMake from 'hpp-fcl' to 'coal', or define
+  COAL_DISABLE_HPP_FCL_WARNINGS
+Call Stack (most recent call first):
+  /usr/local/share/cmake-3.27/Modules/CMakeFindDependencyMacro.cmake:76 (find_package)
+  /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/cmake/pinocchio/pinocchioConfig.cmake:184 (find_dependency)
+  CMakeLists.txt:8 (find_package)
+
+
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    CMAKE_C_COMPILER
+    FETCHCONTENT_FULLY_DISCONNECTED
+
+

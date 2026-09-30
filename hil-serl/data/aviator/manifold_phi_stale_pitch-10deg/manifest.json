@@ -1,0 +1,12 @@
+{
+  "n_theta": 101, "n_s": 65, "n_phi": 128,
+  "L_phi_L": 0.19, "L_phi_R": 0.195,
+  "anchor_theta": 0.0, "anchor_s": 0.0,
+  "th_min": -0.872665, "th_max": 0.872665,
+  "s_min": -0.16, "s_max": 0,
+  "phi_grid": [-0.36, 0.395],
+  "phi_encoding": "raw transported phase; single global grid = anchor safe interval",
+  "layout": "s-major; index = i_s * n_theta + i_theta; per-point per-arm n_phi φ samples, joint-major",
+  "d_safe": 0.005, "gap_inner": 0.51,
+  "build": {"threads": 16, "n_branch_excluded": 354, "cycle_consistency_max_violation_rad": 0.276846, "wall_seconds": 48.4149}
+}

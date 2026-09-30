@@ -1,0 +1,9 @@
+# This is a generated file and its contents are an internal implementation detail.
+# The download step will be re-executed if anything in this file changes.
+# No other meaning or use of this file is supported.
+
+method=custom
+command=
+source_dir=/home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0
+work_dir=/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/stamps/pin_ik-2.2.0/src
+

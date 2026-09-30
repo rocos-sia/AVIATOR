@@ -1,0 +1,50 @@
+gmake[3]: warning: -j32 forced in submake: resetting jobserver mode.
+In file included from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/hpp/fcl/config.hh:1,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/eigen.hpp:20,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/fwd.hpp:11,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-composite.hpp:14,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-generic.hpp:9,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/model.hpp:17,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/include/pin_ik/pinocchio_types.hpp:35,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/include/pin_ik/nlopt_ik.hpp:38,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/include/pin_ik/pin_ik.hpp:34,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/src/pin_ik.cpp:31:
+/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/hpp/fcl/coal.hpp:12:99: note: ‘#pragma message: Please update your includes from 'hpp/fcl' to 'coal' or define COAL_DISABLE_HPP_FCL_WARNINGS’
+   12 |     "Please update your includes from 'hpp/fcl' to 'coal' or define COAL_DISABLE_HPP_FCL_WARNINGS")
+      |                                                                                                   ^
+In file included from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/hpp/fcl/config.hh:1,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/eigen.hpp:20,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/fwd.hpp:11,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-composite.hpp:14,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-generic.hpp:9,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/model.hpp:17,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/include/pin_ik/pinocchio_types.hpp:35,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/include/pin_ik/pinocchio_tl.hpp:34,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/src/pinocchio_tl.cpp:31:
+/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/hpp/fcl/coal.hpp:12:99: note: ‘#pragma message: Please update your includes from 'hpp/fcl' to 'coal' or define COAL_DISABLE_HPP_FCL_WARNINGS’
+   12 |     "Please update your includes from 'hpp/fcl' to 'coal' or define COAL_DISABLE_HPP_FCL_WARNINGS")
+      |                                                                                                   ^
+In file included from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/hpp/fcl/config.hh:1,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/eigen.hpp:20,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/fwd.hpp:11,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-composite.hpp:14,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-generic.hpp:9,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/model.hpp:17,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/include/pin_ik/pinocchio_types.hpp:35,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/include/pin_ik/urdf.hpp:34,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/src/urdf.cpp:1:
+/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/hpp/fcl/coal.hpp:12:99: note: ‘#pragma message: Please update your includes from 'hpp/fcl' to 'coal' or define COAL_DISABLE_HPP_FCL_WARNINGS’
+   12 |     "Please update your includes from 'hpp/fcl' to 'coal' or define COAL_DISABLE_HPP_FCL_WARNINGS")
+      |                                                                                                   ^
+In file included from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/hpp/fcl/config.hh:1,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/eigen.hpp:20,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/serialization/fwd.hpp:11,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-composite.hpp:14,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/joint/joint-generic.hpp:9,
+                 from /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/pinocchio/multibody/model.hpp:17,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/include/pin_ik/pinocchio_types.hpp:35,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/include/pin_ik/nlopt_ik.hpp:38,
+                 from /home/rocos/sia/AVIATOR/third_party/pin_ik-2.2.0/src/nlopt_ik.cpp:31:
+/home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/include/hpp/fcl/coal.hpp:12:99: note: ‘#pragma message: Please update your includes from 'hpp/fcl' to 'coal' or define COAL_DISABLE_HPP_FCL_WARNINGS’
+   12 |     "Please update your includes from 'hpp/fcl' to 'coal' or define COAL_DISABLE_HPP_FCL_WARNINGS")
+      |                                                                                                   ^

@@ -1,0 +1,770 @@
+{
+  "gaps_mm": [
+    3.0,
+    6.0,
+    10.0
+  ],
+  "seeds": {
+    "0": {
+      "left": {
+        "seed_k": 0,
+        "side": "left",
+        "results": {
+          "3": {
+            "alpha_deg": 37.5,
+            "arm_q": [
+              -0.11409669657529828,
+              1.406450017082553,
+              -1.3506507790091675,
+              1.3007555746752295,
+              0.2941029275120159,
+              0.9535766172493011,
+              0.4616469959051199
+            ],
+            "ik_pos_err_mm": 8.804404780351733e-10,
+            "ik_rot_err_deg": 7.977771775894018e-09,
+            "hand_q": [
+              0.4566666666666667,
+              0.6697777777777778,
+              0.6393333333333334,
+              1.156888888888889,
+              0.7875,
+              0.25488235294117645
+            ],
+            "metrics": {
+              "palm_mm": 3.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 24,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 31,
+              "middle_2_mm": 0.0,
+              "middle_2_nearest_seg": 15,
+              "ring_2_mm": 0.0,
+              "ring_2_nearest_seg": 30,
+              "little_2_mm": 0.0,
+              "little_2_nearest_seg": 30,
+              "worst_non_tip_penetration_mm": -7.76,
+              "penetrating_pairs": [
+                [
+                  "left_little_1_collision_0",
+                  "26",
+                  -7.5
+                ],
+                [
+                  "left_thumb_2_collision_0",
+                  "31",
+                  -7.36
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "17",
+                  -6.78
+                ],
+                [
+                  "left_thumb_force_sensor_1_collision_0",
+                  "31",
+                  -6.76
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "23",
+                  -5.96
+                ],
+                [
+                  "left_ring_force_sensor_3_collision_0",
+                  "30",
+                  -5.17
+                ],
+                [
+                  "left_ring_force_sensor_2_collision_0",
+                  "30",
+                  -3.84
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "24",
+                  -2.7
+                ]
+              ],
+              "phys_tcp_to_handle_mm": 79.226
+            },
+            "pass": false
+          },
+          "6": {
+            "alpha_deg": 22.5,
+            "arm_q": [
+              0.052270857427977775,
+              1.5564255860343696,
+              -1.5688061913285718,
+              1.5900149438342703,
+              0.1249003951382165,
+              0.6106547873807788,
+              0.04724546526358723
+            ],
+            "ik_pos_err_mm": 1.5964984237869439e-10,
+            "ik_rot_err_deg": 1.5235457832972333e-09,
+            "hand_q": [
+              0.6393333333333334,
+              0.4566666666666667,
+              1.0046666666666668,
+              1.1873333333333334,
+              0.8624999999999999,
+              0.10923529411764706
+            ],
+            "metrics": {
+              "palm_mm": 6.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 31,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 31,
+              "middle_2_mm": 0.0,
+              "middle_2_nearest_seg": 31,
+              "ring_2_mm": -1.524,
+              "ring_2_nearest_seg": 30,
+              "little_2_mm": -0.082,
+              "little_2_nearest_seg": 30,
+              "worst_non_tip_penetration_mm": -2.38,
+              "penetrating_pairs": [],
+              "phys_tcp_to_handle_mm": 74.591
+            },
+            "pass": false
+          },
+          "10": {
+            "alpha_deg": 45.0,
+            "arm_q": [
+              -0.2567953684778049,
+              1.2588108735373305,
+              -1.0658727355540596,
+              1.143545505227024,
+              0.5173817823245253,
+              1.0423023560402793,
+              0.977994414757599
+            ],
+            "ik_pos_err_mm": 2.407630116903955e-09,
+            "ik_rot_err_deg": 2.0521281203316117e-08,
+            "hand_q": [
+              0.8220000000000001,
+              0.48711111111111116,
+              0.7306666666666668,
+              1.3395555555555556,
+              0.8999999999999999,
+              0.10923529411764706
+            ],
+            "metrics": {
+              "palm_mm": 0.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 31,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 31,
+              "middle_2_mm": 0.0,
+              "middle_2_nearest_seg": 31,
+              "ring_2_mm": 0.0,
+              "ring_2_nearest_seg": 30,
+              "little_2_mm": 0.0,
+              "little_2_nearest_seg": 17,
+              "worst_non_tip_penetration_mm": -11.684,
+              "penetrating_pairs": [
+                [
+                  "left_thumb_2_collision_0",
+                  "31",
+                  -11.68
+                ],
+                [
+                  "left_thumb_force_sensor_1_collision_0",
+                  "31",
+                  -9.97
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "17",
+                  -8.52
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "23",
+                  -8.39
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "26",
+                  -8.22
+                ],
+                [
+                  "l_base_link_collision_0",
+                  "23",
+                  -7.91
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "24",
+                  -2.8
+                ]
+              ],
+              "phys_tcp_to_handle_mm": 76.205
+            },
+            "pass": false
+          }
+        }
+      },
+      "right": {
+        "seed_k": 0,
+        "side": "right",
+        "results": {
+          "3": {
+            "alpha_deg": 30.0,
+            "arm_q": [
+              -0.053845956283429204,
+              1.718265525853294,
+              1.1569975971973627,
+              1.4252465060128088,
+              -0.21282007068033357,
+              0.8401829742006124,
+              -0.701774875884398
+            ],
+            "ik_pos_err_mm": 1.6687340164449033e-11,
+            "ik_rot_err_deg": 1.3150727592175362e-10,
+            "hand_q": [
+              0.3653333333333334,
+              0.6393333333333334,
+              0.1826666666666667,
+              0.060888888888888895,
+              1.0875,
+              0.0728235294117647
+            ],
+            "metrics": {
+              "palm_mm": 3.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 33,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 33,
+              "middle_2_mm": 0.0,
+              "middle_2_nearest_seg": 33,
+              "ring_2_mm": 0.0,
+              "ring_2_nearest_seg": 33,
+              "little_2_mm": 0.0,
+              "little_2_nearest_seg": 32,
+              "worst_non_tip_penetration_mm": -4.363,
+              "penetrating_pairs": [
+                [
+                  "right_little_1_collision_0",
+                  "33",
+                  -4.36
+                ],
+                [
+                  "right_ring_1_collision_0",
+                  "33",
+                  -3.23
+                ]
+              ],
+              "phys_tcp_to_handle_mm": 130.095
+            },
+            "pass": false
+          },
+          "6": {
+            "alpha_deg": 22.5,
+            "arm_q": [
+              -0.08277100906135139,
+              1.694921473328184,
+              1.1159032771945594,
+              1.5299096621191406,
+              -0.21947651383914418,
+              0.6342977977868599,
+              -0.731957594363609
+            ],
+            "ik_pos_err_mm": 2.992586547019258e-13,
+            "ik_rot_err_deg": 1.5226886678961655e-13,
+            "hand_q": [
+              0.548,
+              0.0,
+              0.882888888888889,
+              0.4262222222222223,
+              0.6375,
+              0.03641176470588235
+            ],
+            "metrics": {
+              "palm_mm": 0.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 33,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 33,
+              "middle_2_mm": 1.11,
+              "middle_2_nearest_seg": 33,
+              "ring_2_mm": 0.0,
+              "ring_2_nearest_seg": 29,
+              "little_2_mm": 0.0,
+              "little_2_nearest_seg": 33,
+              "worst_non_tip_penetration_mm": -0.324,
+              "penetrating_pairs": [
+                [
+                  "right_middle_1_collision_0",
+                  "33",
+                  -0.32
+                ]
+              ],
+              "phys_tcp_to_handle_mm": 133.4
+            },
+            "pass": false
+          },
+          "10": {
+            "alpha_deg": 30.0,
+            "arm_q": [
+              -0.06368706128188655,
+              1.7410212178466358,
+              1.1635017801221812,
+              1.418689365022258,
+              -0.2353641837601355,
+              0.8473640052338054,
+              -0.6975980981668826
+            ],
+            "ik_pos_err_mm": 1.8541272810789522e-10,
+            "ik_rot_err_deg": 1.8402581643141697e-09,
+            "hand_q": [
+              0.39577777777777784,
+              0.060888888888888895,
+              0.0,
+              0.21311111111111114,
+              1.0125,
+              0.1456470588235294
+            ],
+            "metrics": {
+              "palm_mm": 10.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 33,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 33,
+              "middle_2_mm": 0.318,
+              "middle_2_nearest_seg": 33,
+              "ring_2_mm": -0.27,
+              "ring_2_nearest_seg": 33,
+              "little_2_mm": 0.0,
+              "little_2_nearest_seg": 3,
+              "worst_non_tip_penetration_mm": -1.175,
+              "penetrating_pairs": [
+                [
+                  "right_ring_1_collision_0",
+                  "33",
+                  -1.17
+                ]
+              ],
+              "phys_tcp_to_handle_mm": 135.053
+            },
+            "pass": false
+          }
+        }
+      }
+    },
+    "125": {
+      "left": {
+        "seed_k": 125,
+        "side": "left",
+        "results": {
+          "3": {
+            "alpha_deg": 37.5,
+            "arm_q": [
+              -0.11139948000092943,
+              1.4189116681857408,
+              -1.3698087970787036,
+              1.3007559547475183,
+              0.2915219600121368,
+              0.9578068442061898,
+              0.43733095271785477
+            ],
+            "ik_pos_err_mm": 6.27663569420372e-12,
+            "ik_rot_err_deg": 7.025864125899147e-11,
+            "hand_q": [
+              0.4262222222222223,
+              0.6393333333333334,
+              0.48711111111111116,
+              1.3395555555555556,
+              0.7875,
+              0.1456470588235294
+            ],
+            "metrics": {
+              "palm_mm": 0.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 31,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 31,
+              "middle_2_mm": 0.0,
+              "middle_2_nearest_seg": 31,
+              "ring_2_mm": 0.0,
+              "ring_2_nearest_seg": 30,
+              "little_2_mm": 11.557,
+              "little_2_nearest_seg": 17,
+              "worst_non_tip_penetration_mm": -6.897,
+              "penetrating_pairs": [
+                [
+                  "left_little_1_collision_0",
+                  "23",
+                  -6.9
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "26",
+                  -6.49
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "17",
+                  -5.9
+                ],
+                [
+                  "left_thumb_2_collision_0",
+                  "31",
+                  -4.27
+                ],
+                [
+                  "left_thumb_force_sensor_1_collision_0",
+                  "31",
+                  -3.5
+                ],
+                [
+                  "left_ring_force_sensor_2_collision_0",
+                  "30",
+                  -1.37
+                ],
+                [
+                  "l_base_link_collision_0",
+                  "23",
+                  -1.23
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "24",
+                  -0.71
+                ]
+              ],
+              "phys_tcp_to_handle_mm": 79.226
+            },
+            "pass": false
+          },
+          "6": {
+            "alpha_deg": 45.0,
+            "arm_q": [
+              -0.25048754806451634,
+              1.282394653184073,
+              -1.0964028835638486,
+              1.1420648426583988,
+              0.5228280673576232,
+              1.0466594388937402,
+              0.9456530805431133
+            ],
+            "ik_pos_err_mm": 1.4641692700458828e-10,
+            "ik_rot_err_deg": 1.0473994108487663e-09,
+            "hand_q": [
+              0.7306666666666668,
+              0.6393333333333334,
+              0.3348888888888889,
+              0.09133333333333335,
+              0.6749999999999999,
+              0.1456470588235294
+            ],
+            "metrics": {
+              "palm_mm": 0.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 31,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 31,
+              "middle_2_mm": 0.0,
+              "middle_2_nearest_seg": 31,
+              "ring_2_mm": 0.0,
+              "ring_2_nearest_seg": 31,
+              "little_2_mm": 0.0,
+              "little_2_nearest_seg": 31,
+              "worst_non_tip_penetration_mm": -6.82,
+              "penetrating_pairs": [
+                [
+                  "left_thumb_2_collision_0",
+                  "31",
+                  -6.82
+                ],
+                [
+                  "l_base_link_collision_0",
+                  "23",
+                  -5.71
+                ],
+                [
+                  "left_thumb_force_sensor_1_collision_0",
+                  "31",
+                  -5.5
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "17",
+                  -5.24
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "23",
+                  -5.17
+                ],
+                [
+                  "left_little_1_collision_0",
+                  "26",
+                  -3.91
+                ],
+                [
+                  "left_plam_casing_collision_0",
+                  "23",
+                  -1.75
+                ]
+              ],
+              "phys_tcp_to_handle_mm": 78.498
+            },
+            "pass": false
+          },
+          "10": {
+            "alpha_deg": 0.0,
+            "arm_q": [
+              0.15835966109682273,
+              1.3462194491555763,
+              -1.3918884265516152,
+              1.9586754780507858,
+              -0.09385373511362138,
+              -0.010778783850158624,
+              0.2270124590475778
+            ],
+            "ik_pos_err_mm": 0.0007932036208296539,
+            "ik_rot_err_deg": 0.005704670023408777,
+            "hand_q": [
+              0.48711111111111116,
+              0.6088888888888889,
+              0.7915555555555557,
+              0.274,
+              0.7875,
+              0.03641176470588235
+            ],
+            "metrics": {
+              "palm_mm": 10.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 31,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 31,
+              "middle_2_mm": 0.0,
+              "middle_2_nearest_seg": 30,
+              "ring_2_mm": 0.07,
+              "ring_2_nearest_seg": 30,
+              "little_2_mm": 0.0,
+              "little_2_nearest_seg": 31,
+              "worst_non_tip_penetration_mm": -9.128,
+              "penetrating_pairs": [
+                [
+                  "left_ring_force_sensor_3_collision_0",
+                  "30",
+                  -2.33
+                ],
+                [
+                  "left_ring_force_sensor_2_collision_0",
+                  "30",
+                  -1.64
+                ]
+              ],
+              "phys_tcp_to_handle_mm": 66.514
+            },
+            "pass": false
+          }
+        }
+      },
+      "right": {
+        "seed_k": 125,
+        "side": "right",
+        "results": {
+          "3": {
+            "alpha_deg": 15.0,
+            "arm_q": [
+              -0.11216953441760408,
+              1.7017743495082152,
+              1.1272794516607152,
+              1.6287606712775637,
+              -0.22038401373641733,
+              0.4329843751801876,
+              -0.6978053078134973
+            ],
+            "ik_pos_err_mm": 3.0880635021784214e-11,
+            "ik_rot_err_deg": 2.461756026691541e-10,
+            "hand_q": [
+              0.5175555555555557,
+              0.8220000000000001,
+              0.548,
+              0.48711111111111116,
+              0.6375,
+              0.25488235294117645
+            ],
+            "metrics": {
+              "palm_mm": 3.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 33,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 33,
+              "middle_2_mm": 0.0,
+              "middle_2_nearest_seg": 33,
+              "ring_2_mm": 0.0,
+              "ring_2_nearest_seg": 9,
+              "little_2_mm": 0.0,
+              "little_2_nearest_seg": 33,
+              "worst_non_tip_penetration_mm": -3.534,
+              "penetrating_pairs": [
+                [
+                  "right_little_1_collision_0",
+                  "33",
+                  -1.25
+                ]
+              ],
+              "phys_tcp_to_handle_mm": 133.041
+            },
+            "pass": false
+          },
+          "6": {
+            "alpha_deg": 22.5,
+            "arm_q": [
+              -0.08275680780725223,
+              1.6948912852630038,
+              1.1158656291397375,
+              1.5299096546209134,
+              -0.2194694010567329,
+              0.6342900304954556,
+              -0.7320037619254319
+            ],
+            "ik_pos_err_mm": 5.0056726620461395e-11,
+            "ik_rot_err_deg": 4.532819964369397e-10,
+            "hand_q": [
+              0.24355555555555558,
+              0.12177777777777779,
+              0.060888888888888895,
+              0.4566666666666667,
+              0.6749999999999999,
+              0.5461764705882353
+            ],
+            "metrics": {
+              "palm_mm": 6.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 33,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 33,
+              "middle_2_mm": 0.0,
+              "middle_2_nearest_seg": 9,
+              "ring_2_mm": 0.0,
+              "ring_2_nearest_seg": 33,
+              "little_2_mm": 0.0,
+              "little_2_nearest_seg": 10,
+              "worst_non_tip_penetration_mm": -0.285,
+              "penetrating_pairs": [],
+              "phys_tcp_to_handle_mm": 133.4
+            },
+            "pass": false
+          },
+          "10": {
+            "alpha_deg": 22.5,
+            "arm_q": [
+              -0.08013674488228205,
+              1.690765542303265,
+              1.0965538386115117,
+              1.526158886661439,
+              -0.22821954727170718,
+              0.6331749495654962,
+              -0.7563863967444805
+            ],
+            "ik_pos_err_mm": 7.336678611654368e-11,
+            "ik_rot_err_deg": 7.319687150437544e-10,
+            "hand_q": [
+              1.2482222222222223,
+              0.09133333333333335,
+              0.7915555555555557,
+              0.030444444444444448,
+              0.975,
+              0.10923529411764706
+            ],
+            "metrics": {
+              "palm_mm": 10.0,
+              "thumb_4_mm": 0.0,
+              "thumb_4_nearest_seg": 33,
+              "index_2_mm": 0.0,
+              "index_2_nearest_seg": 33,
+              "middle_2_mm": 0.0,
+              "middle_2_nearest_seg": 33,
+              "ring_2_mm": 0.0,
+              "ring_2_nearest_seg": 33,
+              "little_2_mm": 0.0,
+              "little_2_nearest_seg": 33,
+              "worst_non_tip_penetration_mm": 0.0,
+              "penetrating_pairs": [],
+              "phys_tcp_to_handle_mm": 136.231
+            },
+            "pass": true
+          }
+        }
+      }
+    }
+  },
+  "baseline_pinch": {
+    "left": {
+      "palm_mm": 52.412,
+      "thumb_4_mm": -0.5,
+      "thumb_4_nearest_seg": 31,
+      "index_2_mm": -1.957,
+      "index_2_nearest_seg": 31,
+      "middle_2_mm": -5.686,
+      "middle_2_nearest_seg": 30,
+      "ring_2_mm": 17.972,
+      "ring_2_nearest_seg": 30,
+      "little_2_mm": 73.192,
+      "little_2_nearest_seg": 30,
+      "worst_non_tip_penetration_mm": -5.882,
+      "penetrating_pairs": [
+        [
+          "left_middle_force_sensor_3_collision_0",
+          "30",
+          -5.88
+        ],
+        [
+          "left_middle_force_sensor_3_collision_0",
+          "31",
+          -3.24
+        ],
+        [
+          "left_middle_force_sensor_2_collision_0",
+          "31",
+          -2.0
+        ],
+        [
+          "left_index_force_sensor_3_collision_0",
+          "30",
+          -1.71
+        ],
+        [
+          "left_index_force_sensor_3_collision_0",
+          "31",
+          -1.13
+        ],
+        [
+          "left_index_force_sensor_2_collision_0",
+          "31",
+          -0.44
+        ]
+      ],
+      "phys_tcp_to_handle_mm": 0.0
+    },
+    "right": {
+      "palm_mm": 53.683,
+      "thumb_4_mm": -0.5,
+      "thumb_4_nearest_seg": 33,
+      "index_2_mm": -0.5,
+      "index_2_nearest_seg": 33,
+      "middle_2_mm": -0.5,
+      "middle_2_nearest_seg": 33,
+      "ring_2_mm": 21.325,
+      "ring_2_nearest_seg": 32,
+      "little_2_mm": 77.699,
+      "little_2_nearest_seg": 32,
+      "worst_non_tip_penetration_mm": -0.503,
+      "penetrating_pairs": [
+        [
+          "right_middle_force_sensor_3_collision_0",
+          "32",
+          -0.5
+        ]
+      ],
+      "phys_tcp_to_handle_mm": 0.0
+    }
+  }
+}

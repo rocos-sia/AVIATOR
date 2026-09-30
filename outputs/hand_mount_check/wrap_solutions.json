@@ -1,0 +1,113 @@
+{
+  "source": "keyframes_t0_sine.csv k=125 (wheel theta=0, s=0, left-branch variant)",
+  "mount": "physical hand mount UNCHANGED: left +90 deg, right -90 deg about flange Z (quat 0.707 0 0 +/-0.707, real machine)",
+  "model": "models/mjcf/aviator_physical_grasp.xml (Trash recovery + mount corrected to +/-90 deg)",
+  "right": {
+    "params": {
+      "gap_mm": 12.0,
+      "alpha_deg": -44.0,
+      "beta_deg": -15.0,
+      "gamma_deg": 10.0,
+      "slide_mm": 0.0
+    },
+    "arm_q": [
+      0.06456417894960269,
+      1.6705613121666616,
+      1.6135137872705798,
+      1.2647103039444614,
+      -0.9577321450361723,
+      0.8457113349797417,
+      -0.8491215597673312
+    ],
+    "hand_q": [
+      0.5784444444444445,
+      0.7002222222222223,
+      0.6393333333333334,
+      1.3395555555555556,
+      0.75,
+      0.1456470588235294
+    ],
+    "metrics": {
+      "palm_mm": 10.204,
+      "thumb_4_mm": 0.0,
+      "thumb_4_nearest_seg": 33,
+      "index_2_mm": 0.0,
+      "index_2_nearest_seg": 33,
+      "middle_2_mm": 0.0,
+      "middle_2_nearest_seg": 33,
+      "ring_2_mm": 0.0,
+      "ring_2_nearest_seg": 33,
+      "little_2_mm": 0.0,
+      "little_2_nearest_seg": 33,
+      "worst_penetration_mm": 0.0,
+      "worst_non_tip_penetration_mm": 0.0,
+      "penetrating_pairs": [],
+      "phys_tcp_to_handle_mm": 77.184
+    },
+    "joint_margins_rad": {
+      "AR5-5_07R-W4C4A2_joint_1": 3.0421,
+      "AR5-5_07R-W4C4A2_joint_2": 0.4238,
+      "AR5-5_07R-W4C4A2_joint_3": 1.4932,
+      "AR5-5_07R-W4C4A2_joint_4": 1.266,
+      "AR5-5_07R-W4C4A2_joint_5": 2.149,
+      "AR5-5_07R-W4C4A2_joint_6": 0.2015,
+      "AR5-5_07R-W4C4A2_joint_7": 0.1981
+    },
+    "hand_vs_world_contacts": [],
+    "pass": true
+  },
+  "left": {
+    "params": {
+      "gap_mm": 12.0,
+      "alpha_deg": 39.0,
+      "beta_deg": 20.0,
+      "gamma_deg": 30.0,
+      "slide_mm": 0.0
+    },
+    "arm_q": [
+      -0.20043594293521647,
+      1.7316414393729007,
+      -1.9015748818030151,
+      1.167001461713817,
+      -0.412401823955899,
+      1.0432348638600528,
+      -0.8593866590564208
+    ],
+    "hand_q": [
+      0.3653333333333334,
+      0.09133333333333335,
+      0.4262222222222223,
+      0.4566666666666667,
+      0.825,
+      0.25488235294117645
+    ],
+    "metrics": {
+      "palm_mm": 0.52,
+      "thumb_4_mm": 0.0,
+      "thumb_4_nearest_seg": 31,
+      "index_2_mm": 0.0,
+      "index_2_nearest_seg": 31,
+      "middle_2_mm": 0.0,
+      "middle_2_nearest_seg": 31,
+      "ring_2_mm": 0.0,
+      "ring_2_nearest_seg": 31,
+      "little_2_mm": 0.0,
+      "little_2_nearest_seg": 31,
+      "worst_penetration_mm": 0.0,
+      "worst_non_tip_penetration_mm": 0.0,
+      "penetrating_pairs": [],
+      "phys_tcp_to_handle_mm": 97.455
+    },
+    "joint_margins_rad": {
+      "AR5-5_07L-W4C4A2_joint_1": 2.9063,
+      "AR5-5_07L-W4C4A2_joint_2": 0.3628,
+      "AR5-5_07L-W4C4A2_joint_3": 1.2051,
+      "AR5-5_07L-W4C4A2_joint_4": 1.3637,
+      "AR5-5_07L-W4C4A2_joint_5": 2.6943,
+      "AR5-5_07L-W4C4A2_joint_6": 0.004,
+      "AR5-5_07L-W4C4A2_joint_7": 0.1878
+    },
+    "hand_vs_world_contacts": [],
+    "pass": true
+  }
+}

@@ -1,0 +1,23 @@
+-- The CXX compiler identification is GNU 11.4.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- pinocchio_default FOUND. pinocchio_default at /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_default.so
+-- pinocchio_parsers FOUND. pinocchio_parsers at /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libpinocchio_parsers.so
+-- boost_filesystem FOUND. boost_filesystem at /usr/lib/x86_64-linux-gnu/libboost_filesystem.so
+-- Found Boost: /usr/include (found version "1.74.0") found components: filesystem serialization 
+-- coal FOUND. coal at /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/install/lib/libcoal.so
+-- Found Boost: /usr/include (found version "1.74.0") found components: serialization filesystem 
+-- Default C++ standard: 201703
+-- Minimal C++ standard upgraded to 11
+-- C++ standard sufficient: Minimal required 11, currently defined: 17
+-- CMAKE_CXX_STANDARD was not set: automatically set to currently defined standard 17
+-- C++ standard sufficient: Minimal required 11, currently defined: 17
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- Configuring done (0.4s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/rocos/sia/AVIATOR/build/aviator_clearance/third_party/build/pin_ik-2.2.0
