@@ -1039,6 +1039,8 @@ system.yaml 统一配置总线与服务端点，开发默认服务 tcp://127.0.0
 
 arm.state.execution 包含 trajectory_id、tick、target[14]、stopping、fault、error。accepted_command 仍只表示接纳；执行游标表示指令进度，不能用作实际到位证明。software_lock 表示软件操作阶段，wheel_reference 表示当前指令参考。只有 MuJoCo 发布 wheel_measurement，供观测与独立仿真测试使用。
 
+Managed 入口的 Rokae 待机就绪判据使用 arm.state 的 `status_mono_us`（同机单调微秒，设备状态发布时间）；未使能时 RT 采样可以无效。Managed flight.state.valid 表示整机状态发布依据及 Core 拥有线程更新有效，机械臂采样时效仍通过 freshness.arm.valid 单独报告；这允许 Gateway 在未使能时自动识别 Core，不表示机械臂数据有效。只有 UNINITIALIZED/INITIALIZED/DISABLED、无进行中轨迹和无停止任务时允许此判据。开始运动后仍检查原始采样时间及 valid，不使用 status_mono_us 给关节/TCP 采样续期。旧 Manipulator 不提供该字段，需与 Core 一起升级。
+
 ### 19.3 服务与生命周期
 
 本次采用 REQ/REP 单帧服务。describe 只读返回 server_session、q、target、speed、backend 和 config_id；authorize 在未使能且无故障、无进行中操作时绑定 Core 会话，返回 control_epoch。其余操作为 enable、disable、stop、lock、unlock、reset_fault。
@@ -1053,6 +1055,10 @@ arm.state.execution 包含 trajectory_id、tick、target[14]、stopping、fault�
 
 保留原示例已废除的判据：不按 TCP 偏差、关节跟踪偏差、grasp.ready 或抓握丢失阻断执行。软件锁定不等于独立抓握验证。缺失手部与视觉测量为 null/invalid，不阻止当前仅双臂的本地开环任务；它们不能伪装成有效测量。
 
-新增 `aviator_core_servo` 本地任务入口：默认自动绑定第一条通过来源、时钟、有效性和时效检查的 flight_gateway 消息的 session，也可用 --gateway-session 手动指定。接收 source=JOYSTICK 的 flight.command，按 `roll * 0.87266` rad、`min(pitch, 0) * 0.170` m 映射并调用 ServoWheel(v=1)。入口显式启用 JOYSTICK POSITION_HOLD，按第 5.1 节检查设备检查时间、消息接收时效、有效位和序号；普通输入仍检查原始采样时效。失效后停止更新目标，由 Servo 超时减速，同一会话恢复有效数据后可恢复跟随。自动绑定只进行一次，网关重启后必须重启 Core 重新绑定，不在失效后自动切换会话。flight.state.control_source 在有效跟随时为 JOYSTICK，否则为 NONE。设备轨迹仍使用 Core 的 local.task 来源，尚未把网关原始 origin 贯穿到 Manipulator，不能将此入口解释为完整飞控授权链路。具体启动命令和超时边界见 Core README。
+`aviator_core` 与 `aviator_core_servo` 为直接调用 Aviator 功能函数的本地任务入口，不经整机业务状态机；`aviator_core_sml` 只做离线状态机测试，不发布/订阅 ZMQ。`aviator_core_managed` 调用 Aviator 的六个状态机操作，导出真实整机状态并控制既有设备接口；它保留本地终端操作，并默认接入摇杆六操作 ZMQ 服务与 flight.command（`--console` 切换为终端目标测试）；RS422 路径仍未实现。Gateway 的 core_session 默认留空，从首个合法、新鲜、有效的 flight.state 自动绑定 Core 会话，请求自动携带 server_session_id；绑定后不自动跨会话切换，Core 重启需重启 Gateway 重新识别。此本地测试入口不依赖安全证据文件，守卫使用设备反馈、Gateway 时效和本地策略，软件急停仅在当前进程锁存。Managed 服务默认 ROUTER bind 5559，强制匹配 Gateway/Core 会话、同机时钟、1–10000 ms 请求期限及六操作白名单，拒绝记录副本；本次 Core 会话最多保存 1024 条原始应答去重，不淘汰执行身份。长动作即时返回 ACCEPTED，最终状态看 flight.state，尚无 get_result/异步最终应答。parameters 恰好为 source=JOYSTICK、button=1..11、server_session_id；不使用第 14.5 节尚未实现的 RS422 参数。默认绑定第一条有效输入的 Gateway 会话，也可显式指定 --gateway-session。仅 CONTROL 调用大写 ServoWheel，POSITION_HOLD 使用通过校验的设备检查时间放行目标，检查时间必须属于本次操控；输入丢失走整机 SAFE 保护，不自动恢复操控。`aviator_core_servo`：默认自动绑定第一条通过来源、时钟、有效性和时效检查的 flight_gateway 消息的 session，也可用 --gateway-session 手动指定。接收 source=JOYSTICK 的 flight.command，按 `roll * 0.87266` rad、`min(pitch, 0) * 0.170` m 映射并调用 ServoWheel(v=1)。入口显式启用 JOYSTICK POSITION_HOLD，按第 5.1 节检查设备检查时间、消息接收时效、有效位和序号；普通输入仍检查原始采样时效。失效后停止更新目标，由 Servo 超时减速，同一会话恢复有效数据后可恢复跟随。自动绑定只进行一次，网关重启后必须重启 Core 重新绑定，不在失效后自动切换会话。flight.state.control_source 在有效跟随时为 JOYSTICK，否则为 NONE。设备轨迹仍使用 Core 的 local.task 来源，尚未把网关原始 origin 贯穿到 Manipulator，不能将此入口解释为完整飞控授权链路。具体启动命令和超时边界见 Core README。
 
-双臂控制节点没有实现真实手部控制、视觉闭环或跨主机控制。离散服务与短轨迹能力只对明确支持本节约定的节点开放，既有 simulation 节点不能直接消费此轨迹模式。
+Core 已通过同机 hand.command / hand.state 接入真实手开合，软件 lock 不表示抓握已验证；尚未实现视觉闭环或跨主机控制。离散服务与短轨迹能力只对明确支持本节约定的节点开放，既有 simulation 节点不能直接消费此轨迹模式。
+
+### Managed 状态补充：READY / HOMING
+
+启动流程为 INIT → INITIALIZING（资源初始化、上使能、阻抗配置）→ READY，不自动回 home。外部 enter_standby 触发 READY → HOMING；实际到 home 且停稳后 STANDBY。READY 状态码 11、HOMING 状态码 12，原有状态码保留。六个操作名称不变。释放任务现在包含撤离后回 home，完成后为 STANDBY；初始化 30 s，回 home/抓握/释放各 180 s。部署时同步升级 Core、Gateway 和消费状态枚举的程序。

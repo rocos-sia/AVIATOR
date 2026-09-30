@@ -13,9 +13,12 @@
 #include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <future>
 
 namespace aviator {
 
@@ -67,7 +70,7 @@ class Aviator::Impl {
         if (servo_thread_.joinable()) servo_thread_.join();
     }
 
-    void Init() {
+    void init() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
 
@@ -78,6 +81,9 @@ class Aviator::Impl {
         std::cout << "Planning collision checks: "
                   << (collision_check_enabled_ ? "enabled" : "disabled") << std::endl;
 
+        home_position_tolerance_ = config["home_position_tolerance"].as<double>(0.02);
+        require(std::isfinite(home_position_tolerance_) && home_position_tolerance_ > 0 && home_position_tolerance_ <= 0.15,
+                "Invalid home_position_tolerance (rad): expected (0, 0.15]");
         home_speed_ = config["home_speed"].as<double>(0.1);
         approach_speed_ = config["approach_speed"].as<double>(0.1);
         joint_acceleration_ = config["joint_acceleration"].as<double>(0.2);
@@ -186,7 +192,7 @@ class Aviator::Impl {
         servo_thread_ = std::thread([this] { servoLoop(); });
     }
 
-    void Enable() {
+    void enable() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         require(GetState() == "INITIALIZED" || GetState() == "DISABLED", "Invalid state for enable");
@@ -216,7 +222,7 @@ class Aviator::Impl {
         setState(grasp().locked ? "LOCKED" : "ENABLED");
     }
 
-    void Disable() {
+    void disable() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         if (grasp().locked) command(GraspCommand::Unlock);
@@ -226,7 +232,77 @@ class Aviator::Impl {
         setState("DISABLED");
     }
 
-    void ApproachHandles() {
+    void homeMotion(bool verify_position) {
+        moveJoints(home_, home_speed_);
+        const double deadline = datalink_->time() + 5.0;
+        double stable_since = -1;
+        double longest_stable = 0;
+        Joints actual{}, velocity{};
+        bool stopped = false;
+        while (datalink_->time() < deadline) {
+            datalink_->waitTick();
+            require(!cancel_, "Motion stopped");
+            requireBackend(!grasp().fault, "Backend grasp fault while homing");
+            require(datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right),
+                    "A drive is no longer enabled");
+            actual = measured();
+            checkElbows(actual);
+            bool settled = true;
+            for (int i = 0; i < 14; ++i) {
+                require(std::isfinite(actual[i]), "Nonfinite joint feedback while homing");
+                velocity[i] = datalink_->getJointVelocity(static_cast<Side>(i / 7), i % 7);
+                require(std::isfinite(velocity[i]), "Nonfinite joint velocity while homing");
+                settled = settled && std::abs(velocity[i]) < 0.02 &&
+                    (!verify_position || std::abs(actual[i] - home_[i]) <= home_position_tolerance_);
+            }
+            const double now = datalink_->time();
+            if (!settled) stable_since = -1;
+            else if (stable_since < 0) stable_since = now;
+            if (stable_since >= 0) longest_stable = std::max(longest_stable, now - stable_since);
+            if (stable_since >= 0 && now - stable_since >= 0.15) {
+                stopped = true;
+                break;
+            }
+        }
+        if (!stopped) {
+            std::ostringstream detail;
+            detail << std::fixed << std::setprecision(6)
+                   << "Home settling timeout after 5 s: position_check=" << verify_position
+                   << " position_tolerance_rad=" << home_position_tolerance_
+                   << " speed_limit_rad_s=0.020000 required_stable_ms=150 longest_stable_ms="
+                   << longest_stable * 1000 << "; final joint feedback:";
+            // Include every joint: the final sample can pass even though the stable window did not.
+            for (int i = 0; i < 14; ++i) {
+                const double error = actual[i] - home_[i];
+                detail << '\n' << (i < 7 ? "left" : "right") << ".J" << i % 7 + 1
+                       << " target_rad=" << home_[i] << " actual_rad=" << actual[i]
+                       << " error_rad=" << error << " velocity_rad_s=" << velocity[i]
+                       << " position_ok=" << (!verify_position || std::abs(error) <= home_position_tolerance_)
+                       << " speed_ok=" << (std::abs(velocity[i]) < 0.02);
+            }
+            requireBackend(false, detail.str().c_str());
+        }
+
+    }
+
+    void moveHome() {
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Another control operation is running");
+        require(GetState() == "ENABLED" && !grasp().locked &&
+                datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right),
+                "Home requires enabled, unlocked arms");
+        cancel_ = false;
+        setState("HOMING");
+        try {
+            homeMotion(true);
+            setState("ENABLED");
+        } catch (const std::exception& e) {
+            setMotionError(std::string("MoveHome: ") + e.what());
+            stopSafely(); setState("FAULT"); throw;
+        } catch (...) { stopSafely(); setState("FAULT"); throw; }
+    }
+
+    void approachHandles(bool from_home = false) {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         auto f = grasp();
@@ -240,36 +316,7 @@ class Aviator::Impl {
 
         const char *phase = "home trajectory";
         try {
-            // 第一阶段：当前位置 → home，指令轨迹完成、双臂停稳后继续，不要求实际角度到位。
-            moveJoints(home_, home_speed_);
-            phase = "home settling";
-            const double deadline = datalink_->time() + 5.0;
-            double stable_since = -1;
-            bool stopped = false;
-            while (datalink_->time() < deadline) {
-                datalink_->waitTick();
-                require(!cancel_, "Motion stopped");
-                requireBackend(!grasp().fault, "Backend grasp fault while homing");
-                require(datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right),
-                        "A drive is no longer enabled");
-                const auto actual = measured();
-                checkElbows(actual);
-                bool settled = true;
-                for (int i = 0; i < 14; ++i) {
-                    require(std::isfinite(actual[i]), "Nonfinite joint feedback while homing");
-                    const double velocity = datalink_->getJointVelocity(static_cast<Side>(i / 7), i % 7);
-                    require(std::isfinite(velocity), "Nonfinite joint velocity while homing");
-                    settled = settled && std::abs(velocity) < 0.02;
-                }
-                const double now = datalink_->time();
-                if (!settled) stable_since = -1;
-                else if (stable_since < 0) stable_since = now;
-                if (stable_since >= 0 && now - stable_since >= 0.15) {
-                    stopped = true;
-                    break;
-                }
-            }
-            requireBackend(stopped, "Home settling timeout (joint speed must stay below 0.02 rad/s)");
+            if (!from_home) homeMotion(false); // Preserve the Direct demo home stage.
 
             // 第二阶段：确认 home 指令完成且双臂停稳，从上一段指令末点规划到预接近位置。
             phase = "pre-approach";
@@ -332,7 +379,18 @@ class Aviator::Impl {
         }
     }
 
-    void LockHandles() {
+    void prepareGrasp() {
+        if (GetState() == "INITIALIZED" || GetState() == "DISABLED") {
+            enable(); // RemoteLink opens and confirms hands before enabling.
+        } else {
+            std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+            require(lock.owns_lock() && !servo_active_ && GetState() == "ENABLED",
+                    "Grasp preparation requires a stable enabled executor");
+            command(GraspCommand::Unlock); // Re-grasp after release: confirm actual hands open too.
+        }
+    }
+
+    void lockHandles() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         require(GetState() == "APPROACHED" || GetState() == "LOCKED", "Approach before locking");
@@ -341,7 +399,7 @@ class Aviator::Impl {
     }
 
     // Plan once, stretch time to respect wheel AND joint velocity limits, then execute.
-    void MoveWheel(double angle, double displacement, double v) {
+    void moveWheel(double angle, double displacement, double v) {
         validateWheelInput(angle, displacement, v);
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
@@ -379,7 +437,7 @@ class Aviator::Impl {
     }
 
     // Only validate/publish a target here. IK, collision checks and execution run in servoLoop.
-    void ServoWheel(double angle, double displacement, double v) {
+    void servoWheel(double angle, double displacement, double v) {
         validateWheelInput(angle, displacement, v);
         std::lock_guard<std::mutex> mailbox(servo_mutex_);
         if (!servo_active_) {
@@ -397,7 +455,7 @@ class Aviator::Impl {
         servo_cv_.notify_one();
     }
 
-    void UnlockHandles() {
+    void unlockHandles() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         require(GetState() == "LOCKED" || GetState() == "FAULT", "No software lock to release");
@@ -406,7 +464,7 @@ class Aviator::Impl {
         setState("ENABLED");
     }
 
-    void ReleaseHandles() {
+    void releaseHandles() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         require(GetState() == "LOCKED" || GetState() == "ENABLED", "Release requires a stable enabled executor");
@@ -441,7 +499,7 @@ class Aviator::Impl {
         } catch (...) { stopSafely(); setState("FAULT"); throw; }
     }
 
-    void ResetFault() {
+    void resetFault() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         command(GraspCommand::ResetFault);
@@ -452,7 +510,7 @@ class Aviator::Impl {
         setState(enabled ? (grasp().locked == 3 ? "LOCKED" : "ENABLED") : "DISABLED");
     }
 
-    void AcknowledgeFault() {
+    void acknowledgeFault() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Executor has not stopped");
         const auto feedback = grasp();
@@ -465,7 +523,7 @@ class Aviator::Impl {
         // The Core owns subsequent motion authorization; do not restart a trajectory here.
     }
 
-    void Stop() noexcept {
+    void stop() noexcept {
         cancel_ = true;
     }
 
@@ -860,6 +918,7 @@ class Aviator::Impl {
 
     std::string config_file_;
     mutable std::mutex status_mutex_;
+    double home_position_tolerance_ = 0.02;
     std::string state_ = "UNINITIALIZED";
 
     double home_speed_, approach_speed_, joint_acceleration_, joint_jerk_;
@@ -898,32 +957,222 @@ class Aviator::Impl {
     mutable std::mutex mutex_;
 };
 
-// Aviator 外部接口实现
+namespace {
+uint64_t managedNow() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+}
+
+// The FSM is owned by Aviator, not by the console or a worker thread.
+class Aviator::Managed {
+public:
+    Managed(Impl& executor, ManagedOptions options)
+        : executor_(executor), options_(std::move(options)), owner_(std::this_thread::get_id()) {
+        require(options_.snapshot && options_.allow_motion && options_.heartbeat && options_.request_brake,
+                "Managed Aviator requires live evidence, motion gate, heartbeat and brake adapters");
+        options_.allow_motion(false);
+    }
+    ~Managed() {
+        cancelled_ = true;
+        executor_.stop();
+        try { options_.allow_motion(false); } catch (...) {}
+        while (worker_.valid() && worker_.wait_for(std::chrono::milliseconds(5)) != std::future_status::ready) {
+            try { options_.heartbeat(); } catch (...) {}
+        }
+        if (worker_.valid()) { try { worker_.get(); } catch (...) {} }
+    }
+    void owner() const {
+        require(owner_ == std::this_thread::get_id(), "Managed Aviator API must run on its owner thread");
+    }
+    fsm::Snapshot snapshot() const {
+        auto s = options_.snapshot();
+        s.executor_idle = !worker_.valid();
+        const auto phase = executor_.GetState();
+        s.settled = s.settled && s.executor_idle && phase != "SERVO" && phase != "MOVING" &&
+                    phase != "APPROACHING" && phase != "RELEASING" && phase != "HOMING";
+        if (phase == "FAULT") {
+            s.ready = false;
+            // Maintenance may have removed the device fault; ResetError acknowledges the local fault.
+            if (std::string(machine_.state()) != "ERROR" && std::string(machine_.state()) != "SAFE")
+                s.fault = executor_.GetStatus().motion_error;
+        }
+        if (machine_.acceptsControl()) {
+            const auto now = managedNow();
+            const auto last = input_at_ ? input_at_ : machine_.controlSince();
+            s.input_ready = s.input_ready && now >= last && now - last < 100000;
+        }
+        return s;
+    }
+    SystemStatus status() const {
+        owner();
+        return {machine_.state(), machine_.currentError(), machine_.lastError(), machine_.stateCode(),
+                machine_.generation(), machine_.acceptsControl(), brake_requested_, snapshot()};
+    }
+    void init() {
+        owner();
+        require(!booted_, "Managed Init may only be called once; use EnterStandby to recover");
+        booted_ = true;
+        options_.heartbeat();
+        machine_.boot(snapshot(), managedNow());
+        effects();
+    }
+    void update() {
+        owner();
+        require(booted_, "Call managed Init first");
+        options_.heartbeat();
+        machine_.supervise(snapshot(), managedNow()); // Fault/emergency precedes completion.
+        if (worker_.valid() && worker_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            try { worker_.get(); completion_ = active_; }
+            catch (const std::exception& e) { machine_.failed(active_->generation, e.what()); }
+            catch (...) { machine_.failed(active_->generation, "Unknown executor failure"); }
+            active_.reset();
+        }
+        if (completion_) {
+            if (completion_->generation != machine_.generation()) completion_.reset();
+            else {
+                auto s = snapshot();
+                if (s.settled || completion_->job == fsm::Job::grasp) {
+                    machine_.done(completion_->generation, s);
+                    completion_.reset();
+                }
+            }
+        }
+        effects();
+    }
+    fsm::Reply request(fsm::Operation operation) {
+        update();
+        const auto reply = machine_.request(operation, snapshot(), managedNow());
+        if (reply == fsm::Reply::completed && operation == fsm::Operation::start_control) input_at_ = 0;
+        if (reply == fsm::Reply::completed && operation == fsm::Operation::reset_error) {
+            try { executor_.acknowledgeFault(); }
+            catch (const std::exception& e) { machine_.fault(e.what()); }
+        }
+        effects();
+        if ((reply == fsm::Reply::accepted ||
+             (reply == fsm::Reply::completed && operation == fsm::Operation::reset_error)) &&
+            std::string(machine_.state()) == "ERROR") return fsm::Reply::capability_unavailable;
+        return reply;
+    }
+    bool servo(double angle, double displacement, double speed, uint64_t sample) {
+        update();
+        const auto now = managedNow();
+        if (!machine_.acceptsControl() || sample < machine_.controlSince() || sample > now ||
+            now - sample >= 100000 || (input_at_ && sample <= input_at_)) return false;
+        try {
+            executor_.servoWheel(angle, displacement, speed);
+            input_at_ = sample; // Never refresh the lease with a replayed old target.
+            return true;
+        } catch (const std::exception& e) {
+            machine_.fault(e.what()); effects(); return false;
+        }
+    }
+    void emergency(const std::string& reason) {
+        owner(); machine_.emergency(reason); effects();
+    }
+private:
+    void report() { if (options_.report) options_.report(status()); }
+    void protection() {
+        if (machine_.takeStop()) {
+            cancelled_ = true;
+            executor_.stop();
+            input_at_ = 0;
+            if (std::string(machine_.state()) != "FOLLOWING") options_.allow_motion(false);
+        }
+        if (machine_.takeBrake()) {
+            brake_requested_ = true;
+            try { options_.request_brake(); }
+            catch (const std::exception& e) { machine_.fault(e.what()); }
+        }
+    }
+    void effects() {
+        protection();
+        report(); // Publish the transition before submitting a blocking executor task.
+        if (auto task = machine_.takeTask()) {
+            machine_.supervise(snapshot(), managedNow());
+            if (task->generation != machine_.generation()) { protection(); report(); return; }
+            if (worker_.valid()) { machine_.failed(task->generation, "Executor slot occupied"); protection(); report(); return; }
+            active_ = task;
+            cancelled_ = false;
+            try {
+                options_.allow_motion(true);
+                worker_ = std::async(std::launch::async, [this, job = task->job] {
+                    const auto check = [&] { require(!cancelled_, "Managed task cancelled"); };
+                    check();
+                    if (job == fsm::Job::initialize) {
+                        if (executor_.GetState() == "UNINITIALIZED") executor_.init();
+                        check();
+                        executor_.enable(); // Rokae prepare/start configures joint impedance and holds current pose.
+                    } else if (job == fsm::Job::home) {
+                        if (executor_.GetState() == "INITIALIZED" || executor_.GetState() == "DISABLED") {
+                            executor_.enable(); check();
+                        }
+                        executor_.moveHome();
+                    } else if (job == fsm::Job::grasp) {
+                        executor_.prepareGrasp(); check();
+                        executor_.approachHandles(true); check();
+                        executor_.lockHandles();
+                    } else if (job == fsm::Job::release) {
+                        executor_.releaseHandles(); check();
+                        executor_.moveHome(); // STANDBY always means home has been reached.
+                    }
+                });
+            } catch (const std::exception& e) {
+                active_.reset(); machine_.failed(task->generation, e.what()); protection(); report();
+            }
+        }
+    }
+    Impl& executor_;
+    ManagedOptions options_;
+    const std::thread::id owner_;
+    fsm::RobotStateMachine machine_;
+    std::future<void> worker_;
+    std::optional<fsm::Task> active_, completion_;
+    std::atomic<bool> cancelled_{false};
+    bool booted_ = false, brake_requested_ = false;
+    uint64_t input_at_ = 0;
+};
+
 Aviator::Aviator(std::unique_ptr<DataLink> datalink, std::unique_ptr<Kinematics> kinematics,
-                 std::unique_ptr<CollisionChecker> collision_checker,
-                 const std::string &config_file)
+                 std::unique_ptr<CollisionChecker> collision_checker, const std::string& config_file,
+                 std::optional<ManagedOptions> options)
     : impl_(std::make_unique<Impl>(std::move(datalink), std::move(kinematics),
-                                   std::move(collision_checker), config_file)) {}
-
+                                   std::move(collision_checker), config_file)) {
+    if (options) managed_ = std::make_unique<Managed>(*impl_, std::move(*options));
+}
 Aviator::~Aviator() = default;
-
-void Aviator::Init() { impl_->Init(); }
-void Aviator::Enable() { impl_->Enable(); }
-void Aviator::Disable() { impl_->Disable(); }
-void Aviator::ApproachHandles() { impl_->ApproachHandles(); }
-void Aviator::LockHandles() { impl_->LockHandles(); }
-void Aviator::MoveWheel(double angle_rad, double displacement_m, double v) {
-    impl_->MoveWheel(angle_rad, displacement_m, v);
+void Aviator::requireDirect() const { require(!managed_, "Direct action is disabled on a managed Aviator"); }
+Aviator::Managed& Aviator::managed() const {
+    require(bool(managed_), "State-machine operation requires ManagedOptions");
+    managed_->owner();
+    return *managed_;
 }
-void Aviator::ServoWheel(double angle_rad, double displacement_m, double v) {
-    impl_->ServoWheel(angle_rad, displacement_m, v);
+void Aviator::Init() { managed().init(); }
+void Aviator::Update() { managed().update(); }
+fsm::Reply Aviator::EnterStandby() { return managed().request(fsm::Operation::enter_standby); }
+fsm::Reply Aviator::GraspWheel() { return managed().request(fsm::Operation::grasp_wheel); }
+fsm::Reply Aviator::StartControl() { return managed().request(fsm::Operation::start_control); }
+fsm::Reply Aviator::ExitControl() { return managed().request(fsm::Operation::exit_control); }
+fsm::Reply Aviator::LeaveWheel() { return managed().request(fsm::Operation::leave_wheel); }
+fsm::Reply Aviator::ResetError() { return managed().request(fsm::Operation::reset_error); }
+bool Aviator::ServoWheel(double angle, double displacement, double speed, uint64_t sample) {
+    return managed().servo(angle, displacement, speed, sample);
 }
-void Aviator::UnlockHandles() { impl_->UnlockHandles(); }
-void Aviator::ReleaseHandles() { impl_->ReleaseHandles(); }
-void Aviator::ResetFault() { impl_->ResetFault(); }
-void Aviator::AcknowledgeFault() { impl_->AcknowledgeFault(); }
-void Aviator::Stop() noexcept { impl_->Stop(); }
+void Aviator::EmergencyStop(const std::string& reason) { managed().emergency(reason); }
+SystemStatus Aviator::GetSystemStatus() const { return managed().status(); }
+std::string Aviator::GetSystemState() const { return GetSystemStatus().state; }
+void Aviator::init() { requireDirect(); impl_->init(); }
+void Aviator::enable() { requireDirect(); impl_->enable(); }
+void Aviator::disable() { requireDirect(); impl_->disable(); }
+void Aviator::approachHandles() { requireDirect(); impl_->approachHandles(); }
+void Aviator::lockHandles() { requireDirect(); impl_->lockHandles(); }
+void Aviator::moveWheel(double a, double d, double v) { requireDirect(); impl_->moveWheel(a, d, v); }
+void Aviator::servoWheel(double a, double d, double v) { requireDirect(); impl_->servoWheel(a, d, v); }
+void Aviator::unlockHandles() { requireDirect(); impl_->unlockHandles(); }
+void Aviator::releaseHandles() { requireDirect(); impl_->releaseHandles(); }
+void Aviator::resetFault() { requireDirect(); impl_->resetFault(); }
+void Aviator::acknowledgeFault() { requireDirect(); impl_->acknowledgeFault(); }
+void Aviator::stop() { requireDirect(); impl_->stop(); }
 Status Aviator::GetStatus() { return impl_->GetStatus(); }
 std::string Aviator::GetState() const { return impl_->GetState(); }
-
 } // namespace aviator

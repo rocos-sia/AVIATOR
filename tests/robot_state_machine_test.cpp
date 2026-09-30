@@ -17,6 +17,8 @@ void finish(RobotStateMachine& m, Snapshot s = healthy()) {
 }
 void following(RobotStateMachine& m) {
     m.boot(healthy(), 1); finish(m);
+    check(m.request(Operation::enter_standby, healthy(), 2) == Reply::accepted, "home rejected");
+    finish(m);
     check(m.request(Operation::grasp_wheel, healthy(), 2) == Reply::accepted, "grasp rejected");
     finish(m); state(m, "FOLLOWING");
 }
@@ -25,7 +27,13 @@ int main() try {
     state(m, "INIT"); m.boot(s, 1); state(m, "INITIALIZING"); check(m.stateCode() == 10, "init code");
     check(m.request(Operation::enter_standby, s, 2) == Reply::busy, "transition not busy");
     auto job = m.takeTask(); m.done(job->generation + 1, s); state(m, "INITIALIZING");
-    m.done(job->generation, s); state(m, "STANDBY");
+    m.done(job->generation, s); state(m, "READY");
+    check(!m.takeTask(), "initialization automatically started home");
+    check(m.request(Operation::grasp_wheel, s, 2) == Reply::invalid_state, "grasp before home accepted");
+    check(m.request(Operation::enter_standby, s, 2) == Reply::accepted, "external home rejected");
+    state(m, "HOMING"); check(m.stateCode() == 12, "home state code");
+    check(m.request(Operation::grasp_wheel, s, 2) == Reply::busy, "grasp during home accepted");
+    finish(m); state(m, "STANDBY");
     check(m.request(Operation::start_control, s, 3) == Reply::invalid_state, "standby control accepted");
     check(m.request(Operation::enter_standby, s, 4) == Reply::completed && !m.takeTask(), "standby idempotence");
     s.following_authorized = false;
@@ -46,7 +54,7 @@ int main() try {
     check(m.request(Operation::reset_error, s, 13) == Reply::invalid_state, "uncleared reset");
     s = healthy(); m.request(Operation::reset_error, s, 14); state(m, "SAFE");
     check(m.currentError().empty() && m.lastError() == "second", "error history");
-    m.request(Operation::enter_standby, s, 15); state(m, "INITIALIZING"); finish(m); state(m, "STANDBY");
+    m.request(Operation::enter_standby, s, 15); state(m, "HOMING"); finish(m); state(m, "STANDBY");
     RobotStateMachine failure; failure.boot(s, 1); auto old = failure.takeTask(); failure.failed(old->generation, "submit failed");
     failure.done(old->generation, s); state(failure, "ERROR");
     RobotStateMachine timeout({10,10,10}); timeout.boot(s, 1); auto stale = timeout.takeTask();
@@ -63,16 +71,23 @@ int main() try {
     s = healthy(); input_lost.request(Operation::enter_standby, s, 5); finish(input_lost);
     check(input_lost.currentError().empty() && !input_lost.lastError().empty(), "recovery error history");
     // Every non-emergency state has an emergency edge and no normal exit afterwards.
-    for (int index = 0; index < 9; ++index) {
+    for (const std::string wanted : {"INIT", "INITIALIZING", "READY", "HOMING", "STANDBY", "GRASPING", "FOLLOWING", "CONTROL", "RELEASING", "SAFE", "ERROR"}) {
         RobotStateMachine e; s = healthy();
-        if (index == 1) e.boot(s, 1);
-        if (index >= 2) { e.boot(s, 1); finish(e); }
-        if (index >= 3 && index <= 6) e.request(Operation::grasp_wheel, s, 2);
-        if (index >= 4 && index <= 6) finish(e);
-        if (index == 5) e.request(Operation::start_control, s, 3);
-        if (index == 6) e.request(Operation::leave_wheel, s, 3);
-        if (index == 7 || index == 8) e.fault("fault");
-        if (index == 8) e.request(Operation::reset_error, s, 4);
+        if (wanted != "INIT") e.boot(s, 1);
+        if (wanted != "INIT" && wanted != "INITIALIZING") finish(e);
+        if (wanted != "INIT" && wanted != "INITIALIZING" && wanted != "READY") {
+            e.request(Operation::enter_standby, s, 2);
+            if (wanted != "HOMING") finish(e);
+        }
+        if (wanted == "GRASPING" || wanted == "FOLLOWING" || wanted == "CONTROL" || wanted == "RELEASING") {
+            e.request(Operation::grasp_wheel, s, 3);
+            if (wanted != "GRASPING") finish(e);
+        }
+        if (wanted == "CONTROL") e.request(Operation::start_control, s, 4);
+        if (wanted == "RELEASING") e.request(Operation::leave_wheel, s, 4);
+        if (wanted == "SAFE" || wanted == "ERROR") e.fault("fault");
+        if (wanted == "SAFE") e.request(Operation::reset_error, s, 4);
+        state(e, wanted.c_str());
         auto generation = e.generation(); e.emergency("hardware latch"); state(e, "EMERGENCY_STOP");
         check(e.takeBrake(), "no independent brake request"); e.emergency("again"); check(!e.takeBrake(), "brake repeated");
         for (auto op : {Operation::enter_standby,Operation::grasp_wheel,Operation::start_control,

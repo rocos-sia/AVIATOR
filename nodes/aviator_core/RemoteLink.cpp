@@ -48,11 +48,13 @@ void RemoteLink::reportSystem(const Json& body) {
     std::lock_guard<std::mutex> lock(mutex_);
     system_body_ = body;
 }
-DeviceState RemoteLink::snapshot(bool& fresh) const {
+DeviceState RemoteLink::snapshot(bool& fresh, bool* status_fresh) const {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto now = monotonic_us();
     fresh = feedback_valid_ && received_ && now >= received_ && now >= sample_ &&
             now - received_ < config_.timeout_us && now - sample_ < config_.timeout_us && error_.empty();
+    if (status_fresh) *status_fresh = received_ && status_sample_ && now >= received_ && now >= status_sample_ &&
+        now - received_ < config_.timeout_us && now - status_sample_ < config_.timeout_us && error_.empty();
     auto result = state_;
     if (hand_.enabled()) {
         const auto reason = hand_.fault();
@@ -358,6 +360,13 @@ void RemoteLink::io() {
                     continue;
                 if (m.body.value("config_id", "") != config_.config_id)
                     continue;
+                uint64_t status_sample = 0;
+                if (m.body.contains("status_mono_us")) {
+                    const auto& stamp = m.body.at("status_mono_us");
+                    if (!stamp.is_number_unsigned() || stamp.get<uint64_t>() > max_json_integer ||
+                        stamp.get<uint64_t>() > now) continue;
+                    status_sample = stamp.get<uint64_t>();
+                }
                 DeviceState state;
                 for (int side = 0; side < 2; ++side) {
                     const auto &a = m.body.at("arms").at(side ? "right" : "left");
@@ -389,6 +398,7 @@ void RemoteLink::io() {
                 arm_body_ = m.body;
                 received_ = now;
                 sample_ = m.header.sample_mono_us;
+                status_sample_ = status_sample;
                 last_arm_seq = m.header.sequence;
                 changed_.notify_all();
             }
@@ -484,7 +494,17 @@ void RemoteLink::io() {
                                         {"current_error_code", state_.fault ? 28673 : 0},
                                         {"last_error_code", state_.fault ? 28673 : 0},
                                         {"task_phase", phase_}};
-                    if (!system_body_.is_null()) m.body["system"] = system_body_;
+                    if (!system_body_.is_null()) {
+                        m.body["system"] = system_body_;
+                        // Managed status can be trustworthy while disabled Rokae RT samples are
+                        // unavailable. Arm sample usability is still reported in freshness.arm.
+                        const auto owner_at = heartbeat_.load();
+                        const auto status_now = monotonic_us(); // Read after the concurrent owner heartbeat.
+                        m.header.valid = received_ && status_sample_ && owner_at && error_.empty() &&
+                            status_now >= received_ && status_now >= status_sample_ && status_now >= owner_at &&
+                            status_now - received_ < config_.timeout_us && status_now - status_sample_ < config_.timeout_us &&
+                            status_now - owner_at < 100000;
+                    }
                     m.body["arms"] = arm_body_.value("arms", Json::object());
                     m.body["hands"] = hand_body_.value("hands", Json::object());
                     m.body["vision"] = {
@@ -505,7 +525,7 @@ void RemoteLink::io() {
                             {"valid", hand.fresh}, {"age_ms", hand.age_ms}, {"sequence", hand.sequence}};
                         m.body["hand_control"] = {{"enabled", true}, {"error", hand.error},
                                                    {"target_version", hand.target_version}};
-                        if (!hand.error.empty()) m.header.valid = false;
+                        if (!hand.error.empty() && system_body_.is_null()) m.header.valid = false;
                     }
                     m.body["software_lock"] = state_.locked;
                     m.body["wheel_reference"] = {{"angle", state_.angle},

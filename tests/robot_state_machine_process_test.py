@@ -1,4 +1,4 @@
-"""Isolated MuJoCo process regression; never uses deployment endpoints or real hardware."""
+"""Isolated MuJoCo regression of the managed Aviator API; no deployment endpoints/hardware."""
 import json
 import os
 from pathlib import Path
@@ -6,7 +6,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 
 import yaml
@@ -39,22 +38,6 @@ def main():
     (directory / "system.yaml").write_text(yaml.safe_dump(config))
     (directory / "robot.yaml").write_text(yaml.safe_dump(robot))
     children, logs = [], []
-    safety = directory / "safety.json"
-    stop_evidence = threading.Event()
-    clear_of_wheel = threading.Event()
-
-    def refresh_evidence():
-        while not stop_evidence.is_set():
-            data = dict(clock_id=socket.gethostname() + "-" + Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
-                        sample_mono_us=time.monotonic_ns() // 1000, emergency_latched=False,
-                        clear_of_wheel=clear_of_wheel.is_set(), following_authorized=True, release_authorized=True,
-                        fault_cleared=True, source_authorized=True, input_ready=True)
-            temporary = safety.with_suffix(".tmp")
-            temporary.write_text(json.dumps(data))
-            temporary.replace(safety)
-            stop_evidence.wait(.01)
-    evidence_thread = threading.Thread(target=refresh_evidence)
-    evidence_thread.start()
     context = zmq.Context()
     sub = context.socket(zmq.SUB)
     sub.subscribe(b"flight.state")
@@ -90,21 +73,15 @@ def main():
         start("bus", [bus, "--input", endpoints[0], "--output", endpoints[1],
                       "--lock-file", str(directory / "bus.lock")])
         start("manipulator", [manipulator, "--config", str(directory / "system.yaml"), "--headless"])
-        deadline = time.monotonic() + 2
-        while not safety.exists() and time.monotonic() < deadline:
-            time.sleep(.01)
-        arguments = [core, "--config", str(directory / "system.yaml"), "--state-machine", "--safety-file", str(safety)]
+        arguments = [core, "--config", str(directory / "system.yaml"), "--console"]
         process = start("core", arguments)
-        wait_state("ERROR", 30)  # Connected is not enough: no initial clearance evidence.
-        command("RESET_ERROR")
-        state = wait_state("SAFE", 3)
-        assert state["current_error_code"] == 0 and state["last_error_code"] != 0
-        command("ENTER_STANDBY")
+        wait_state("READY", 30)  # Init/enable completed; no automatic home.
+        command("GRASP_WHEEL")
         time.sleep(.1)
-        clear_of_wheel.set()
-        time.sleep(.05)
+        wait_state("READY", 3)
         command("ENTER_STANDBY")
-        wait_state("STANDBY", 3)
+        wait_state("HOMING", 3)
+        wait_state("STANDBY", 120)
         command("START_CONTROL")
         time.sleep(.1)
         command("GRASP_WHEEL")
@@ -112,9 +89,16 @@ def main():
         wait_state("FOLLOWING", 120)
         command("START_CONTROL")
         wait_state("CONTROL", 3)
+        # Target calls go through Aviator::ServoWheel, not through the console's own FSM.
+        for _ in range(25):
+            command("servo 0.01 -0.001 0.5")
+            time.sleep(.02)
+        wait_state("CONTROL", 3)
         command("EXIT_CONTROL")
         wait_state("FOLLOWING", 3)
-        time.sleep(.2)
+        deadline = time.monotonic() + 15
+        while not wait_state("FOLLOWING", 3).get("settled"):
+            assert time.monotonic() < deadline, "executor did not acknowledge normal stop"
         command("LEAVE_WHEEL")
         wait_state("RELEASING", 3)
         wait_state("STANDBY", 30)
@@ -126,16 +110,9 @@ def main():
         wait_state("EMERGENCY_STOP", 3)
         command("quit")
         assert process.wait(timeout=10) == 0
-        assert Path(str(safety) + ".emergency").exists()
-        assert Path(str(safety) + ".brake-request").exists()
-        # Drain the old publisher before checking a new process starts latched.
-        while sub.poll(0):
-            sub.recv_multipart()
-        process = start("core-restarted", arguments)
-        wait_state("EMERGENCY_STOP", 15)
-        command("quit")
-        assert process.wait(timeout=10) == 0
-        print("PASS: real bus/executor FSM cycle, input gate, release and emergency latch", flush=True)
+        assert not list(directory.glob("*.emergency"))
+        assert not list(directory.glob("*.brake-request"))
+        print("PASS: file-free FSM cycle, input gate, release and process-local emergency latch", flush=True)
     finally:
         for child in reversed(children):
             if child.poll() is None:
@@ -147,8 +124,6 @@ def main():
                     child.wait()
         for log in logs:
             log.close()
-        stop_evidence.set()
-        evidence_thread.join()
         sub.close(0)
         context.term()
 

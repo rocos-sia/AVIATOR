@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
         auto link = std::make_unique<aviator::RemoteLink>(settings);
         auto *connection = link.get();
         aviator::Aviator robot(std::move(link), nullptr, nullptr, settings.robot.string());
-        robot.Init();
+        robot.init();
         const auto robot_config = YAML::LoadFile(settings.robot.string());
         const auto period = static_cast<uint64_t>(robot_config["servo_period"].as<double>(0.02) * 1e6);
         std::signal(SIGINT, interrupt);
@@ -65,14 +65,14 @@ int main(int argc, char **argv) {
         std::thread startup([&] {
             try {
                 if (interrupted) throw std::runtime_error("Startup interrupted");
-                robot.Enable();
+                robot.enable();
                 if (interrupted) throw std::runtime_error("Startup interrupted");
                 std::cout << "DEMO approaching handles" << std::endl;
-                robot.ApproachHandles();
+                robot.approachHandles();
                 status(robot);
-                std::cout << "robot.ApproachHandles() done" << std::endl;
+                std::cout << "robot.approachHandles() done" << std::endl;
                 if (interrupted) throw std::runtime_error("Startup interrupted");
-                robot.LockHandles();
+                robot.lockHandles();
                 status(robot);
             } catch (...) { startup_error = std::current_exception(); }
             approached = true;
@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
         while (!approached) {
             connection->heartbeat();
             connection->report(robot.GetState());
-            if (interrupted) robot.Stop();
+            if (interrupted) robot.stop();
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         startup.join();
@@ -149,7 +149,7 @@ int main(int argc, char **argv) {
                     (state == "LOCKED" || (state == "SERVO" && current.motion_error.empty()))) {
                     const double angle = roll * 0.87266;
                     const double displacement = std::min(pitch, 0.0) * 0.170;
-                    robot.ServoWheel(angle, displacement, 1.0);
+                    robot.servoWheel(angle, displacement, 1.0);
                     next_servo = now + period; // 不补发错过的周期。
                     if (now >= next_print) {
                         std::cout << "Servo target angle=" << angle << " displacement=" << displacement
@@ -164,14 +164,14 @@ int main(int argc, char **argv) {
             std::cerr << "Execution failed: " << e.what() << std::endl;
             result = 1;
         }
-        robot.Stop();
+        robot.stop();
         while (robot.GetState() == "SERVO") {
             connection->heartbeat();
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         auto cleanup = std::async(std::launch::async, [&] {
-            if (robot.GetState() == "LOCKED") robot.UnlockHandles();
-            robot.Disable();
+            if (robot.GetState() == "LOCKED") robot.unlockHandles();
+            robot.disable();
         });
         while (cleanup.wait_for(std::chrono::milliseconds(5)) != std::future_status::ready)
             connection->heartbeat();

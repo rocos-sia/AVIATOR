@@ -61,6 +61,12 @@ void JoystickSample::update(const input_event& event, std::uint64_t now) {
     if (event.type == EV_SYN && event.code == SYN_DROPPED) {
         invalidate(); return;
     }
+    // A report queued during the initial ioctl snapshot may predate that snapshot.
+    if (initial_snapshot_us && event.input_event_sec >= 0 && event.input_event_usec >= 0 &&
+        event.input_event_usec < 1000000 &&
+        static_cast<std::uint64_t>(event.input_event_sec) <= aviator::max_json_integer / 1000000 &&
+        static_cast<std::uint64_t>(event.input_event_sec) * 1000000 + event.input_event_usec < initial_snapshot_us)
+        return;
     if (event.type == EV_ABS) {
         report_pending = true;
         if (event.code == roll.code) roll.value = event.value;
@@ -81,6 +87,18 @@ void JoystickSample::update(const input_event& event, std::uint64_t now) {
     sample_us = time;
     valid = true;
     report_pending = false;
+}
+void JoystickSample::initializePosition(int roll_raw, int pitch_raw, std::uint64_t now) {
+    if (valid || failed || report_pending) return;
+    roll.value = roll_raw;
+    pitch.value = pitch_raw;
+    if (!axis_valid(roll) || !axis_valid(pitch) || !now || now > aviator::max_json_integer) {
+        invalidate(); return;
+    }
+    roll_value = normalized(roll);
+    pitch_value = normalized(pitch);
+    initial_snapshot_us = sample_us = now;
+    valid = true;
 }
 void JoystickSample::deviceChecked(std::uint64_t now) {
     if (failed || report_pending) return;
@@ -109,14 +127,41 @@ aviator::Message command(const JoystickSample& sample, const std::string& sessio
         {"control", {{"roll", sample.roll_value}, {"pitch", sample.pitch_value}}}};
     return result;
 }
+CoreFeedback::CoreFeedback(const std::string& session, const std::string& clock) {
+    policy_.topic = aviator::Topic::flight_state;
+    policy_.publisher_id = "aviator_core";
+    policy_.session_id = session;
+    policy_.clock_id = clock;
+    if (!session.empty()) guard_.emplace(policy_);
+}
+bool CoreFeedback::accept(const aviator::Message& message, std::uint64_t now, std::string& error) {
+    if (!valid_state_summary(message)) { error = "invalid Core system summary"; return false; }
+    const auto& system = message.body.at("system");
+    if (system.contains("source_authorized") && !system.at("source_authorized").is_boolean()) {
+        error = "invalid Core source_authorized"; return false;
+    }
+    if (guard_) {
+        if (!guard_->accept(message, now, error)) return false;
+        source_authorized_ = system.value("source_authorized", false);
+        return true;
+    }
+    auto candidate_policy = policy_;
+    candidate_policy.session_id = message.header.session_id;
+    aviator::InputGuard candidate(candidate_policy);
+    if (!candidate.accept(message, now, error)) return false;
+    policy_ = std::move(candidate_policy);
+    guard_ = std::move(candidate);
+    source_authorized_ = system.value("source_authorized", false);
+    return true;
+}
 bool valid_state_summary(const aviator::Message& message) {
     if (message.topic != aviator::Topic::flight_state) return false;
     try {
         const auto& system = message.body.at("system");
         const auto state = system.at("state").get<std::string>();
-        constexpr std::array<const char*, 10> states{
+        constexpr std::array<const char*, 12> states{
             "INIT", "STANDBY", "GRASPING", "FOLLOWING", "CONTROL", "SAFE", "ERROR", "EMERGENCY_STOP",
-            "INITIALIZING", "RELEASING"};
+            "INITIALIZING", "RELEASING", "READY", "HOMING"};
         if (std::find(states.begin(), states.end(), state) == states.end()) return false;
         for (const char* key : {"current_error_code", "last_error_code"}) {
             const auto& value = system.at(key);

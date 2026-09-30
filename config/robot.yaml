@@ -21,8 +21,8 @@ rokae:
   right_local_ip: 192.168.2.100
 
 # 控制用 URDF：包含双臂运动链、物理关节限位及 14 个驱动的硬件映射。
-urdf: ../models/control/aviator_control.urdf
-
+# urdf: ../models/control/aviator_control.urdf
+urdf: ../models/urdf/aviator.urdf
 # 离线轨迹检查使用的 Pinocchio 碰撞 URDF（由 scripts/generate_aviator.py 导出，
 # 分片凸网格 + 圆柱/胶囊工具 + SRDF 排除对），用于碰撞检查。
 # 模型资源位于 AVIATOR/models/control，路径仅相对本配置解析。
@@ -41,6 +41,8 @@ grasp: grasp.json
 posture: posture.json
 
 # Ruckig 自动计算时长；以下为关节峰值约束，两臂共用同步轨迹。
+# Managed STANDBY requires actual joint positions within this tolerance of home (rad).
+home_position_tolerance: 0.15
 home_speed: 0.2          # 当前位置 → home，rad/s
 approach_speed: 0.2      # home → 预接近位置，rad/s
 joint_acceleration: 0.5  # Home、预接近关节加速度上限，rad/s²
@@ -67,7 +69,7 @@ joint_speed: 1.9
 stop_acceleration: 2.0
 
 # 不按关节跟踪偏差中止运动；仍检查反馈时效、关节限位和 SDK 故障。
-# home 指令结束后仅确认停稳，不检查实际角度到位；未停稳超时则停止。
+# Direct Demo 的 home 仅确认停稳；Managed 回 home 另检查 home_position_tolerance，超时停止。
 
 # 运动结束后的开环驻留时间，单位 s。统一仿真与真机：只按时间等待运动收尾，
 # 不校验轮盘是否停稳；期间保留取消/故障/肘部安全检查。

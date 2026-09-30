@@ -13,9 +13,10 @@ class RemoteLink final : public DataLink {
     void heartbeat();
     void report(const std::string &state, const std::string &source = "NONE");
     void reportSystem(const Json&); // Immutable owner-thread FSM export, separate from executor phase.
-    DeviceState snapshot(bool& fresh) const;
+    DeviceState snapshot(bool& fresh, bool* status_fresh = nullptr) const;
     void allowMotion(bool); // Revokes queued ordinary output on protective cancellation.
     const std::string& backend() const { return backend_; }
+    const std::string& session() const { return session_; }
     double getJointPosition(Side, int) const override;
     double getJointVelocity(Side, int) const override;
     std::array<double, 14> jointTargets() const override;
@@ -62,6 +63,7 @@ class RemoteLink final : public DataLink {
     uint64_t stream_first_ = 0;
     bool streaming_ = false, stream_finished_ = false;
     uint64_t trajectory_id_ = 0, start_ = 0, received_ = 0, sample_ = 0, ack_ = 0;
+    uint64_t status_sample_ = 0;
     bool enabled_ = false, publishing_ = false, feedback_valid_ = false;
     std::string error_, phase_ = "INIT", source_ = "NONE";
     std::thread thread_;

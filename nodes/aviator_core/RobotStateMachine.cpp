@@ -5,7 +5,7 @@
 
 namespace aviator::fsm {
 RobotStateMachine::RobotStateMachine(Timeouts t) : timeouts_(t) {
-    for (auto value : {t.initialize, t.grasp, t.release})
+    for (auto value : {t.initialize, t.grasp, t.release, t.home})
         if (!value || value > 3600000000ULL) throw std::invalid_argument("Task timeout must be 1us..1h");
 }
 void RobotStateMachine::snapshot(const Snapshot& s) {
@@ -21,7 +21,8 @@ void RobotStateMachine::snapshot(const Snapshot& s) {
 }
 void RobotStateMachine::deadline(std::uint64_t now) {
     const auto duration = context_.job == Job::initialize ? timeouts_.initialize :
-                          context_.job == Job::grasp ? timeouts_.grasp : timeouts_.release;
+                          context_.job == Job::grasp ? timeouts_.grasp :
+                          context_.job == Job::home ? timeouts_.home : timeouts_.release;
     if (now > std::numeric_limits<std::uint64_t>::max() - duration) {
         fault("Monotonic deadline overflow"); return;
     }
@@ -44,7 +45,8 @@ void RobotStateMachine::supervise(const Snapshot& s, std::uint64_t now) {
     const bool following = machine_.is(sml::state<GRASPING>) || machine_.is(sml::state<FOLLOWING>) ||
                            machine_.is(sml::state<CONTROL>);
     if ((following && (!s.ready || !s.following_authorized)) ||
-        (machine_.is(sml::state<RELEASING>) && !s.ready) ||
+        ((machine_.is(sml::state<RELEASING>) || machine_.is(sml::state<READY>) ||
+          machine_.is(sml::state<HOMING>) || machine_.is(sml::state<STANDBY>)) && !s.ready) ||
         (machine_.is(sml::state<CONTROL>) && (!s.source_authorized || !s.input_ready)))
         safetyLost("Required resource, authorization or control input lost");
 }
@@ -68,6 +70,7 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
         return Reply::completed;
     }
     const bool permitted =
+        (machine_.is(sml::state<READY>) && op == Operation::enter_standby) ||
         (machine_.is(sml::state<STANDBY>) && op == Operation::grasp_wheel) ||
         (machine_.is(sml::state<FOLLOWING>) && (op == Operation::start_control ||
             op == Operation::leave_wheel || op == Operation::enter_standby)) ||
@@ -75,7 +78,7 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
         (machine_.is(sml::state<ERROR>) && op == Operation::reset_error);
     if (!permitted) return Reply::invalid_state;
     if (!s.executor_idle || !s.settled) return Reply::busy;
-    if ((machine_.is(sml::state<SAFE>) && op == Operation::enter_standby && !s.clear_of_wheel) ||
+    if (((machine_.is(sml::state<SAFE>) || machine_.is(sml::state<READY>)) && op == Operation::enter_standby && !s.clear_of_wheel) ||
         (op == Operation::reset_error && !s.fault_cleared)) return Reply::invalid_state;
     return Reply::capability_unavailable;
 }
@@ -87,7 +90,7 @@ void RobotStateMachine::done(std::uint64_t generation, const Snapshot& s) {
     if (context_.job == Job::grasp && !s.following_authorized) { safetyLost("Following authorization lost"); return; }
     const auto completed = context_.job;
     if (!machine_.process_event(Done{generation})) fault("Task completed without required postconditions");
-    else if (completed == Job::initialize || completed == Job::release) error_.clear();
+    else if (completed == Job::initialize || completed == Job::home || completed == Job::release) error_.clear();
 }
 void RobotStateMachine::failed(std::uint64_t generation, const std::string& why) {
     if (context_.job != Job::none && generation == context_.generation) fault(why);
@@ -111,13 +114,15 @@ bool RobotStateMachine::takeStop() { return std::exchange(context_.stop_requeste
 bool RobotStateMachine::takeBrake() { return std::exchange(context_.brake_requested, false); }
 const char* RobotStateMachine::state() const {
 #define STATE(s) if (machine_.is(sml::state<s>)) return #s
-    STATE(INIT); STATE(INITIALIZING); STATE(STANDBY); STATE(GRASPING); STATE(FOLLOWING);
+    STATE(INIT); STATE(INITIALIZING); STATE(READY); STATE(HOMING); STATE(STANDBY); STATE(GRASPING); STATE(FOLLOWING);
     STATE(CONTROL); STATE(RELEASING); STATE(SAFE); STATE(ERROR); STATE(EMERGENCY_STOP);
 #undef STATE
     throw std::logic_error("Unknown SML state");
 }
 unsigned RobotStateMachine::stateCode() const {
     if (machine_.is(sml::state<INITIALIZING>)) return 10;
+    if (machine_.is(sml::state<READY>)) return 11;
+    if (machine_.is(sml::state<HOMING>)) return 12;
     const char* states[] = {"INIT", "STANDBY", "GRASPING", "FOLLOWING", "CONTROL", "SAFE", "ERROR", "EMERGENCY_STOP", "RELEASING"};
     for (unsigned i = 0; i < 9; ++i) if (std::string(state()) == states[i]) return i;
     throw std::logic_error("Unknown state code");

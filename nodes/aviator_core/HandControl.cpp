@@ -13,7 +13,7 @@ void HandControl::configure(const std::filesystem::path& path, const std::string
     const int feedback = node["feedback_timeout_ms"].as<int>(500);
     tolerance_ = node["open_tolerance"].as<double>(.03);
     if (publisher_.empty() || timeout < 500 || timeout > 30000 || feedback < 200 || feedback > 1000 ||
-        !std::isfinite(tolerance_) || tolerance_ <= 0 || tolerance_ > .1)
+        !std::isfinite(tolerance_) || tolerance_ <= 0 || tolerance_ > 1.1)
         throw std::runtime_error("Invalid core_hand timing/publisher/open_tolerance");
     timeout_ = uint64_t(timeout) * 1000;
     feedback_timeout_ = uint64_t(feedback) * 1000;

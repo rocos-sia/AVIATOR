@@ -1,5 +1,8 @@
 #pragma once
 #include "aviator/DataLink.hpp"
+#include "aviator/RobotStateMachine.hpp"
+#include <functional>
+#include <optional>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -26,57 +29,69 @@ struct Status {
     GraspResult result = GraspResult::Ok;
 };
 
-// Aviator 双臂控制器
-// 除 ServoWheel/Stop/状态读取外，动作接口阻塞到完成；失败抛 std::runtime_error
-// Stop 可由另一线程调用；GetStatus 可在运动期间读取
+// Read-only whole-robot status, distinct from the existing actuator Status/GetState().
+struct SystemStatus {
+    std::string state, current_error, last_error;
+    unsigned state_code = 0;
+    uint64_t generation = 0;
+    bool accepts_control = false, brake_requested = false;
+    fsm::Snapshot conditions;
+};
+// Supplied by a trusted same-host runtime; no simulated defaults in managed mode.
+struct ManagedOptions {
+    std::function<fsm::Snapshot()> snapshot;
+    std::function<void(bool)> allow_motion;
+    std::function<void()> heartbeat;
+    std::function<void()> request_brake;
+    std::function<void(const SystemStatus&)> report;
+};
+
+// Lowercase: direct executor API. Uppercase operations: managed FSM API.
+// Managed Init enables/configures impedance and ends in READY; EnterStandby homes before STANDBY.
+// Managed API/queries must be called by the creating thread; Update() runs every ~5 ms.
+// Blocking executor tasks use one worker; it never calls the state machine.
 class Aviator {
   public:
     // 构造函数（依赖注入）：直接传入数据链接、运动学和碰撞检测器。
     // 运行时注入 RemoteLink；运动学和碰撞检查器为空时按 robot.yaml 创建。
     Aviator(std::unique_ptr<DataLink> datalink, std::unique_ptr<Kinematics> kinematics,
-            std::unique_ptr<CollisionChecker> collision_checker, const std::string &config_file);
+            std::unique_ptr<CollisionChecker> collision_checker, const std::string &config_file,
+            std::optional<ManagedOptions> managed = std::nullopt);
 
     ~Aviator();
 
     Aviator(const Aviator &) = delete;
     Aviator &operator=(const Aviator &) = delete;
 
-    // 初始化（加载配置）
+    // Managed lifecycle: Boot is internal, not a seventh external operation.
     void Init();
+    void Update();
+    fsm::Reply EnterStandby();
+    fsm::Reply GraspWheel();
+    fsm::Reply StartControl();
+    fsm::Reply ExitControl();
+    fsm::Reply LeaveWheel();
+    fsm::Reply ResetError();
+    // sample_mono_us must come from the validated input, in local monotonic time.
+    // POSITION_HOLD adapters supply the validated device-check time, not a fabricated local refresh.
+    bool ServoWheel(double angle_rad, double displacement_m, double v, uint64_t sample_mono_us);
+    void EmergencyStop(const std::string& reason); // Internal safety input, not a normal operation.
+    SystemStatus GetSystemStatus() const;
+    std::string GetSystemState() const;
 
-    // 使能/失能双臂
-    void Enable();
-    void Disable();
-
-    // 接近把手（当前位置 → home 并停稳 → 预接近 → 精确对准）
-    void ApproachHandles();
-
-    // 锁定抓取
-    void LockHandles();
-
-    // 操纵轮盘
-    // angle_rad: 目标转角 (rad)
-    // displacement_m: 目标推拉位移 (m)
-    // v: 速度比例 (0, 1]，同时约束轮盘转速、推拉速度与各关节速度。
-    void MoveWheel(double angle_rad, double displacement_m, double v = 0.5);
-
-    // 发布最新绝对目标，立即返回；建议每 20 ms 更新，超过 servo_timeout 则减速保持。
-    // 先锁定把手；异步错误见 Status.motion_error / GetState()。
-    // Stop 后等待状态离开 SERVO，再执行其他动作。
-    void ServoWheel(double angle_rad, double displacement_m, double v = 0.5);
-
-    // 解锁抓取
-    void UnlockHandles();
-    // Explicit release program: unlock, retreat along the approach offset; never home.
-    void ReleaseHandles();
-
-    // 重置故障
-    void ResetFault();
-    // Acknowledge a fault already cleared by maintenance; no device reset/unlock/enable.
-    void AcknowledgeFault();
-
-    // 请求减速停止（可从另一线程调用）；反馈/控制故障时转为停止后端控制。
-    void Stop() noexcept;
+    // Direct mode only; same algorithms and blocking behavior as the original API.
+    void init();
+    void enable();
+    void disable();
+    void approachHandles();
+    void lockHandles();
+    void moveWheel(double angle_rad, double displacement_m, double v = 0.5);
+    void servoWheel(double angle_rad, double displacement_m, double v = 0.5);
+    void unlockHandles();
+    void releaseHandles();
+    void resetFault();
+    void acknowledgeFault();
+    void stop(); // Direct mode cancellation, callable from another thread.
 
     // 获取状态
     Status GetStatus();
@@ -87,6 +102,10 @@ class Aviator {
   private:
     class Impl;
     std::unique_ptr<Impl> impl_;
+    class Managed;
+    std::unique_ptr<Managed> managed_; // Destroy worker before executor.
+    void requireDirect() const;
+    Managed& managed() const;
 };
 
 } // namespace aviator

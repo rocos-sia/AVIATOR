@@ -96,16 +96,37 @@ if(TARGET aviator_core_servo AND TARGET manipulator AND AVIATOR_BUILD_MUJOCO)
     if(FSM_PYTHON_DEPS EQUAL 0)
       add_test(NAME robot_state_machine_process COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/robot_state_machine_process_test.py
-        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core> ${PROJECT_SOURCE_DIR})
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
       set_tests_properties(robot_state_machine_process PROPERTIES TIMEOUT 220)
+      add_test(NAME managed_gateway_process COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/managed_gateway_process_test.py
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
+      set_tests_properties(managed_gateway_process PROPERTIES TIMEOUT 300)
+      add_test(NAME managed_idle_startup COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/managed_startup_test.py
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
+      set_tests_properties(managed_idle_startup PROPERTIES TIMEOUT 30)
     endif()
   endif()
 endif()
 
-if(TARGET aviator_core_control)
+if(TARGET aviator_robot_state_machine)
   aviator_add_test_executable(aviator_robot_state_machine_test robot_state_machine_test.cpp)
   target_link_libraries(aviator_robot_state_machine_test PRIVATE aviator_robot_state_machine)
   add_test(NAME robot_state_machine COMMAND aviator_robot_state_machine_test)
+  add_test(NAME core_sml_demo COMMAND aviator_core_sml --demo)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME core_sml_cli COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/core_sml_test.py $<TARGET_FILE:aviator_core_sml>)
+    set_tests_properties(core_sml_cli PROPERTIES TIMEOUT 10)
+  endif()
+endif()
+
+if(TARGET aviator_core_control)
+  aviator_add_test_executable(aviator_managed_test aviator_managed_test.cpp)
+  target_link_libraries(aviator_managed_test PRIVATE aviator_core_control)
+  add_test(NAME aviator_managed_api COMMAND aviator_managed_test)
+  set_tests_properties(aviator_managed_api PROPERTIES TIMEOUT 10)
   aviator_add_test_executable(aviator_servo_planner_test servo_planner_test.cpp)
   target_link_libraries(aviator_servo_planner_test PRIVATE aviator_core_control ruckig::ruckig)
   add_test(NAME servo_planner COMMAND aviator_servo_planner_test ${PROJECT_SOURCE_DIR})

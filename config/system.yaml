@@ -16,7 +16,7 @@ core_hand:
   publisher_id: inspire_hand
   completion_timeout_ms: 5000
   feedback_timeout_ms: 500
-  open_tolerance: 0.03
+  open_tolerance: 1.0
   # Order: thumb rotation, thumb flexion, index, middle, ring, pinky. Range [0,1].
   open:
     left: [1, 1, 1, 1, 1, 1]

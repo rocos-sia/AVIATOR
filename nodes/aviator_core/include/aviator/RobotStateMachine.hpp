@@ -5,7 +5,7 @@
 #include <optional>
 namespace aviator::fsm {
 namespace sml = boost::sml;
-struct INIT {}; struct INITIALIZING {}; struct STANDBY {};
+struct INIT {}; struct INITIALIZING {}; struct READY {}; struct HOMING {}; struct STANDBY {};
 struct GRASPING {}; struct FOLLOWING {}; struct CONTROL {};
 struct RELEASING {}; struct SAFE {}; struct ERROR {};
 struct EMERGENCY_STOP {};
@@ -14,7 +14,7 @@ struct ENTER_STANDBY {}; struct GRASP_WHEEL {}; struct START_CONTROL {};
 struct EXIT_CONTROL {}; struct LEAVE_WHEEL {}; struct RESET_ERROR {};
 struct Done { std::uint64_t generation; };
 struct Fault {}; struct SafetyLost {}; struct Emergency {};
-enum class Job { none, initialize, grasp, release };
+enum class Job { none, initialize, home, grasp, release };
 struct Context {
   bool ready{}, following_authorized{}, source_authorized{}, input_ready{};
   bool settled{}, clear_of_wheel{}, fault_cleared{}, emergency_latched{};
@@ -49,6 +49,10 @@ struct RobotMachine {
       return e.generation == c.generation && c.job == Job::initialize &&
              c.ready && c.settled && c.clear_of_wheel && c.executor_idle;
     };
+    const auto home_done = [](const Done& e, const Context& c) {
+      return e.generation == c.generation && c.job == Job::home &&
+             c.ready && c.settled && c.clear_of_wheel && c.executor_idle;
+    };
     const auto grasp_done = [](const Done& e, const Context& c) {
       return e.generation == c.generation && c.job == Job::grasp &&
              c.ready && c.following_authorized && c.executor_idle;
@@ -58,6 +62,7 @@ struct RobotMachine {
              c.settled && c.clear_of_wheel && c.executor_idle;
     };
     const auto initialize = [](Context& c) { c.begin(Job::initialize); };
+    const auto home = [](Context& c) { c.begin(Job::home); };
     const auto grasp = [](Context& c) { c.begin(Job::grasp); };
     const auto release = [](Context& c) { c.begin(Job::release); };
     const auto finished = [](Context& c) { c.job = Job::none; };
@@ -71,7 +76,9 @@ struct RobotMachine {
     };
     return make_transition_table(
       *state<INIT> + event<Boot>[free] / initialize = state<INITIALIZING>,
-      state<INITIALIZING> + event<Done>[init_done] / finished = state<STANDBY>,
+      state<INITIALIZING> + event<Done>[init_done] / finished = state<READY>,
+      state<READY> + event<ENTER_STANDBY>[recover_ok] / home = state<HOMING>,
+      state<HOMING> + event<Done>[home_done] / finished = state<STANDBY>,
       state<STANDBY> + event<ENTER_STANDBY> / [] {},
       state<STANDBY> + event<GRASP_WHEEL>[grasp_ok] / grasp = state<GRASPING>,
       state<GRASPING> + event<Done>[grasp_done] / finished = state<FOLLOWING>,
@@ -81,9 +88,12 @@ struct RobotMachine {
       state<FOLLOWING> + event<LEAVE_WHEEL>[release_ok] / release = state<RELEASING>,
       state<FOLLOWING> + event<ENTER_STANDBY>[release_ok] / release = state<RELEASING>,
       state<RELEASING> + event<Done>[release_done] / finished = state<STANDBY>,
-      state<SAFE> + event<ENTER_STANDBY>[recover_ok] / initialize = state<INITIALIZING>,
+      state<SAFE> + event<ENTER_STANDBY>[recover_ok] / home = state<HOMING>,
       state<SAFE> + event<LEAVE_WHEEL>[release_ok] / release = state<RELEASING>,
       state<ERROR> + event<RESET_ERROR>[reset_ok] / stop = state<SAFE>,
+      state<READY> + event<SafetyLost> / stop = state<SAFE>,
+      state<HOMING> + event<SafetyLost> / stop = state<SAFE>,
+      state<STANDBY> + event<SafetyLost> / stop = state<SAFE>,
       state<GRASPING> + event<SafetyLost> / stop = state<SAFE>,
       state<FOLLOWING> + event<SafetyLost> / stop = state<SAFE>,
       state<CONTROL> + event<SafetyLost> / stop = state<SAFE>,
@@ -91,6 +101,8 @@ struct RobotMachine {
       state<INIT> + event<Fault> / stop = state<ERROR>,
       state<INITIALIZING> + event<Fault> / stop = state<ERROR>,
       state<STANDBY> + event<Fault> / stop = state<ERROR>,
+      state<READY> + event<Fault> / stop = state<ERROR>,
+      state<HOMING> + event<Fault> / stop = state<ERROR>,
       state<GRASPING> + event<Fault> / stop = state<ERROR>,
       state<FOLLOWING> + event<Fault> / stop = state<ERROR>,
       state<CONTROL> + event<Fault> / stop = state<ERROR>,
@@ -99,6 +111,8 @@ struct RobotMachine {
       state<INIT> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
       state<INITIALIZING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
       state<STANDBY> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
+      state<READY> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
+      state<HOMING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
       state<GRASPING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
       state<FOLLOWING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
       state<CONTROL> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
@@ -118,7 +132,7 @@ struct Snapshot {
 enum class Operation { enter_standby, grasp_wheel, start_control, exit_control, leave_wheel, reset_error };
 enum class Reply { accepted, completed, busy, invalid_state, capability_unavailable };
 struct Task { Job job; std::uint64_t generation, deadline; };
-struct Timeouts { std::uint64_t initialize = 30000000, grasp = 180000000, release = 60000000; };
+struct Timeouts { std::uint64_t initialize = 30000000, grasp = 180000000, release = 180000000, home = 180000000; };
 class RobotStateMachine {
  public:
   explicit RobotStateMachine(Timeouts = {});

@@ -98,22 +98,14 @@ int main(int argc, char** argv) {
             {roll_axis, roll.minimum, roll.maximum, roll.value, invert_roll},
             {pitch_axis, pitch.minimum, pitch.maximum, pitch.value, invert_pitch}};
         const auto session = aviator::new_session_id(), clock = aviator::local_clock_id();
-        std::unique_ptr<aviator::InputGuard> feedback;
-        if (!core_session.empty()) {
-            aviator::InputPolicy policy;
-            policy.topic = aviator::Topic::flight_state;
-            policy.publisher_id = "aviator_core";
-            policy.session_id = core_session;
-            policy.clock_id = clock;
-            feedback = std::make_unique<aviator::InputGuard>(policy);
-        }
+        flight_gateway::CoreFeedback feedback(core_session, clock);
         zmq::context_t context{1};
         zmq::socket_t pub(context, zmq::socket_type::pub), sub(context, zmq::socket_type::sub);
         aviator::configure(pub); aviator::configure(sub);
         aviator::subscribe(sub, "flight.state");
         pub.connect(pub_endpoint); sub.connect(sub_endpoint);
         std::cout << "STARTED source=JOYSTICK session=" << session << " clock=" << clock
-                  << " feedback=" << (feedback ? "STALE" : "UNCONFIGURED") << std::endl;
+                  << " feedback=" << (core_session.empty() ? "AUTO_DISCOVERY" : "STALE") << std::endl;
         aviator::print_startup(
             "flight_gateway",
             {{"Config", config_path},
@@ -123,8 +115,8 @@ int main(int argc, char** argv) {
               "flight.command (50 Hz); record.service.request / record.service.reply"},
              {"SUB connect", sub_endpoint},
              {"SUB topics", "flight.state"},
-             {"Feedback", feedback ? "Configured; waiting for fresh Core feedback"
-                                   : "UNCONFIGURED (flight.yaml core_session is empty)"},
+             {"Feedback", !core_session.empty() ? "Configured; waiting for fresh Core feedback"
+                                   : "AUTO_DISCOVERY; waiting for valid Core status"},
              {"Session", session},
              {"Transport", "Async connect; bus connectivity is not yet confirmed."},
              {"Exit", "Ctrl+C"}});
@@ -149,14 +141,19 @@ int main(int argc, char** argv) {
                 return;
             }
             nlohmann::json parameters = {{"source", "JOYSTICK"}, {"button", index + 1}};
-            if (!core_session.empty())
-                parameters["server_session_id"] = core_session;
+            if (!feedback.session().empty())
+                parameters["server_session_id"] = feedback.session();
             auto request = aviator::make_service_request("flight_gateway", session, "aviator_core",
                                                          buttons.operations[index], parameters,
                                                          service_timeout_ms);
             // Record the attempted request even when no Core is connected. Optional observation
             // metadata is not part of the service envelope sent to Core.
-            const bool sent = aviator::send_service(service, request);
+            const bool sent = feedback.requestsReady(aviator::monotonic_us()) && aviator::send_service(service, request);
+            if (feedback.session().empty())
+                std::cerr << "Core session not discovered yet; button not sent, press again after binding\n";
+            else if (!feedback.requestsReady(aviator::monotonic_us()))
+                std::cerr << "Core feedback stale or Gateway binding not confirmed; button not sent, "
+                             "press again after service_ready=1\n";
             auto record = request;
             record["gateway_observation"] = sent ? "QUEUED" : "NOT_SENT";
             if (!aviator::send(pub, aviator::service_request_topic, record.dump()))
@@ -171,6 +168,8 @@ int main(int argc, char** argv) {
         aviator::ReceiveState receive_state;
         std::uint64_t sequence = 0, next_publish = aviator::monotonic_us();
         std::string error, payload, last_status = "STALE", system_state;
+        std::string feedback_error;
+        bool last_service_ready = false;
         bool running = true;
         std::uint64_t next_print = 0;
         const auto publish = [&](std::uint64_t now) {
@@ -225,11 +224,19 @@ int main(int argc, char** argv) {
                 const auto received = aviator::receive(sub, receive_state, wire, error);
                 if (received == aviator::ReceiveResult::empty) break;
                 aviator::Message state;
-                if (received == aviator::ReceiveResult::received && feedback &&
+                const bool discovering = feedback.session().empty();
+                if (received == aviator::ReceiveResult::received &&
                     aviator::decode(wire.topic, wire.payload, state, error) &&
-                    flight_gateway::valid_state_summary(state) &&
-                    feedback->accept(state, aviator::monotonic_us(), error))
+                    feedback.accept(state, aviator::monotonic_us(), error)) {
+                    if (discovering) {
+                        finish_value_line();
+                        std::cout << "Bound aviator_core session=" << feedback.session() << std::endl;
+                    }
                     system_state = state.body.at("system").at("state").get<std::string>();
+                    feedback_error.clear();
+                } else if (received != aviator::ReceiveResult::empty) {
+                    feedback_error = error;
+                }
             }
             for (unsigned i = 0; i < 32; ++i) {
                 std::string raw;
@@ -275,13 +282,23 @@ int main(int argc, char** argv) {
                 } else
                     ++it;
             }
-            if (feedback) {
-                const auto status = feedback->expired(current) ? "STALE" : system_state;
+            if (!feedback.session().empty()) {
+                const auto status = feedback.expired(current) ? "STALE" : system_state;
                 if (status != last_status) {
                     finish_value_line();
                     std::cout << "feedback=" << status << std::endl;
+                    if (status == "STALE")
+                        std::cerr << "No accepted Core feedback within 100 ms; last rejection="
+                                  << (feedback_error.empty() ? "none (check Core/bus publication)" : feedback_error)
+                                  << '\n';
                     last_status = status;
                 }
+            }
+            const bool service_ready = feedback.requestsReady(current);
+            if (service_ready != last_service_ready) {
+                finish_value_line();
+                std::cout << "service_ready=" << service_ready << std::endl;
+                last_service_ready = service_ready;
             }
             if (current >= next_publish) {
                 // Query kernel device availability every 20 ms. This is not a new hardware sample.
@@ -306,7 +323,9 @@ int main(int argc, char** argv) {
                         std::cerr << "flight_gateway: invalid/changed axis range; restart required\n";
                         close(device); device = -1;
                     } else if (input_drained) {
-                        sample.deviceChecked(aviator::monotonic_us());
+                        const auto checked = aviator::monotonic_us();
+                        sample.initializePosition(current_roll.value, current_pitch.value, checked);
+                        sample.deviceChecked(checked);
                     }
                 }
                 publish(aviator::monotonic_us());

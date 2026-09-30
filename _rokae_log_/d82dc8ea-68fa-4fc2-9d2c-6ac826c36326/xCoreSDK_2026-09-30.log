@@ -18,3 +18,245 @@
 [I|2026-09-30 09:55:33.575 137982] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
 [I|2026-09-30 10:50:52.459 137956] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
 [I|2026-09-30 10:50:52.467 137956] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 10:53:23.527 147087] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 10:53:23.527 147087] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 10:53:23.570 147087] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 10:53:23.915 147087] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 10:53:23.917 147087] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 10:53:23.919 147087] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 10:53:23.921 147087] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 10:53:23.921 147087] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 10:53:23.922 147087] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 10:55:20.057 147113] uid: ac51bacd-19a5 | setPowerState end, switch motor true (0)
+[I|2026-09-30 10:55:20.059 147113] uid: ac51bacd-19a5 | set state data port to 1338
+[I|2026-09-30 10:55:20.303 147113] uid: ac51bacd-19a5 | startReceiveRobotState end, 1 ["dq_m", "pos_m", "q_m"] (0)
+[I|2026-09-30 10:55:20.304 147113] uid: ac51bacd-19a5 | setJointImpedance [500, 500, 500, 500, 50, 50, 50] (0)
+[I|2026-09-30 10:55:20.829 147113] uid: ac51bacd-19a5 | RtControlT startMove jointImpedance
+[I|2026-09-30 10:55:20.829 147113] uid: ac51bacd-19a5 | exec startLoop false
+[I|2026-09-30 10:55:38.237 147113] uid: ac51bacd-19a5 | exec stopLoop
+[I|2026-09-30 10:55:38.242 147113] uid: ac51bacd-19a5 | RtControlT stopMove
+[I|2026-09-30 10:55:38.380 147113] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
+[I|2026-09-30 11:30:26.990 147087] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 11:30:26.997 147087] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 15:28:26.785 185034] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 15:28:26.785 185034] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 15:28:26.830 185034] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 15:28:27.177 185034] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 15:28:27.179 185034] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 15:28:27.181 185034] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 15:28:27.183 185034] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 15:28:27.183 185034] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 15:28:27.184 185034] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 15:31:53.021 185034] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 15:31:53.029 185034] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 15:36:11.893 187504] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 15:36:11.893 187504] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 15:36:11.938 187504] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 15:36:12.281 187504] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 15:36:12.283 187504] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 15:36:12.285 187504] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 15:36:12.287 187504] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 15:36:12.287 187504] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 15:36:12.288 187504] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 15:37:56.925 187504] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 15:37:56.932 187504] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 15:38:09.381 187624] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 15:38:09.381 187624] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 15:38:09.426 187624] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 15:38:09.770 187624] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 15:38:09.772 187624] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 15:38:09.774 187624] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 15:38:09.776 187624] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 15:38:09.776 187624] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 15:38:09.777 187624] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 15:38:43.637 187624] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 15:38:43.644 187624] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 15:51:01.913 191317] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 15:51:01.913 191317] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 15:51:01.957 191317] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 15:51:02.301 191317] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 15:51:02.303 191317] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (-3)
+[I|2026-09-30 15:51:02.393 191317] uid: d82dc8ea-6326 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 15:51:02.398 191317] uid: d82dc8ea-6326 | disconnectFromRobot end (0)
+[I|2026-09-30 15:51:18.425 191358] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 15:51:18.425 191358] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 15:51:18.470 191358] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 15:51:18.813 191358] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 15:51:18.815 191358] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 15:51:18.818 191358] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 15:51:18.820 191358] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 15:51:18.820 191358] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 15:51:18.821 191358] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 15:57:20.461 191358] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 15:57:20.469 191358] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 15:59:16.401 191685] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 15:59:16.401 191685] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 15:59:16.449 191685] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 15:59:16.797 191685] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 15:59:16.798 191685] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 15:59:16.800 191685] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 15:59:16.801 191685] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 15:59:16.801 191685] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 15:59:16.802 191685] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 16:03:34.094 191685] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 16:03:34.100 191685] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 16:27:44.089 201785] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 16:27:44.089 201785] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 16:27:44.133 201785] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 16:27:44.477 201785] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 16:27:44.479 201785] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 16:27:44.481 201785] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 16:27:44.482 201785] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 16:27:44.482 201785] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 16:27:44.483 201785] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 16:27:55.766 201811] uid: ac51bacd-19a5 | setPowerState end, switch motor true (0)
+[I|2026-09-30 16:27:55.768 201811] uid: ac51bacd-19a5 | set state data port to 1338
+[I|2026-09-30 16:27:56.009 201811] uid: ac51bacd-19a5 | startReceiveRobotState end, 1 ["dq_m", "pos_m", "q_m"] (0)
+[I|2026-09-30 16:27:56.010 201811] uid: ac51bacd-19a5 | setJointImpedance [500, 500, 500, 500, 50, 50, 50] (0)
+[I|2026-09-30 16:27:56.537 201811] uid: ac51bacd-19a5 | RtControlT startMove jointImpedance
+[I|2026-09-30 16:27:56.537 201811] uid: ac51bacd-19a5 | exec startLoop false
+[I|2026-09-30 16:28:58.703 201811] uid: ac51bacd-19a5 | exec stopLoop
+[I|2026-09-30 16:28:58.708 201811] uid: ac51bacd-19a5 | RtControlT stopMove
+[I|2026-09-30 16:28:58.837 201811] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
+[I|2026-09-30 16:33:24.661 201785] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 16:33:24.667 201785] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 16:35:40.441 204465] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 16:35:40.441 204465] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 16:35:40.489 204465] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 16:35:40.838 204465] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 16:35:40.839 204465] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 16:35:40.842 204465] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 16:35:40.844 204465] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 16:35:40.844 204465] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 16:35:40.844 204465] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 16:35:46.703 204491] uid: ac51bacd-19a5 | setPowerState end, switch motor true (0)
+[I|2026-09-30 16:35:46.704 204491] uid: ac51bacd-19a5 | set state data port to 1338
+[I|2026-09-30 16:35:46.949 204491] uid: ac51bacd-19a5 | startReceiveRobotState end, 1 ["dq_m", "pos_m", "q_m"] (0)
+[I|2026-09-30 16:35:46.950 204491] uid: ac51bacd-19a5 | setJointImpedance [500, 500, 500, 500, 50, 50, 50] (0)
+[I|2026-09-30 16:35:47.477 204491] uid: ac51bacd-19a5 | RtControlT startMove jointImpedance
+[I|2026-09-30 16:35:47.477 204491] uid: ac51bacd-19a5 | exec startLoop false
+[I|2026-09-30 16:36:12.920 204491] uid: ac51bacd-19a5 | exec stopLoop
+[I|2026-09-30 16:36:12.924 204491] uid: ac51bacd-19a5 | RtControlT stopMove
+[I|2026-09-30 16:36:13.064 204491] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
+[I|2026-09-30 16:36:58.542 204465] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 16:36:58.550 204465] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 16:39:51.557 205350] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 16:39:51.557 205350] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 16:39:51.605 205350] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 16:39:51.949 205350] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 16:39:51.950 205350] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 16:39:51.952 205350] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 16:39:51.953 205350] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 16:39:51.953 205350] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 16:39:51.954 205350] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 16:39:54.978 205377] uid: ac51bacd-19a5 | setPowerState end, switch motor true (0)
+[I|2026-09-30 16:39:54.980 205377] uid: ac51bacd-19a5 | set state data port to 1338
+[I|2026-09-30 16:39:55.225 205377] uid: ac51bacd-19a5 | startReceiveRobotState end, 1 ["dq_m", "pos_m", "q_m"] (0)
+[I|2026-09-30 16:39:55.226 205377] uid: ac51bacd-19a5 | setJointImpedance [500, 500, 500, 500, 50, 50, 50] (0)
+[I|2026-09-30 16:39:55.752 205377] uid: ac51bacd-19a5 | RtControlT startMove jointImpedance
+[I|2026-09-30 16:39:55.752 205377] uid: ac51bacd-19a5 | exec startLoop false
+[I|2026-09-30 16:40:11.043 205377] uid: ac51bacd-19a5 | exec stopLoop
+[I|2026-09-30 16:40:11.048 205377] uid: ac51bacd-19a5 | RtControlT stopMove
+[I|2026-09-30 16:40:11.188 205377] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
+[I|2026-09-30 16:41:05.917 205350] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 16:41:05.924 205350] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 16:44:50.541 206417] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 16:44:50.541 206417] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 16:44:50.585 206417] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 16:44:50.929 206417] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 16:44:50.931 206417] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 16:44:50.933 206417] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 16:44:50.934 206417] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 16:44:50.934 206417] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 16:44:50.935 206417] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 16:44:54.523 206443] uid: ac51bacd-19a5 | setPowerState end, switch motor true (0)
+[I|2026-09-30 16:44:54.524 206443] uid: ac51bacd-19a5 | set state data port to 1338
+[I|2026-09-30 16:44:54.765 206443] uid: ac51bacd-19a5 | startReceiveRobotState end, 1 ["dq_m", "pos_m", "q_m"] (0)
+[I|2026-09-30 16:44:54.766 206443] uid: ac51bacd-19a5 | setJointImpedance [500, 500, 500, 500, 50, 50, 50] (0)
+[I|2026-09-30 16:44:55.293 206443] uid: ac51bacd-19a5 | RtControlT startMove jointImpedance
+[I|2026-09-30 16:44:55.293 206443] uid: ac51bacd-19a5 | exec startLoop false
+[I|2026-09-30 16:46:46.580 206443] uid: ac51bacd-19a5 | exec stopLoop
+[I|2026-09-30 16:46:46.585 206443] uid: ac51bacd-19a5 | RtControlT stopMove
+[I|2026-09-30 16:46:46.721 206443] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
+[I|2026-09-30 16:57:24.430 206417] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 16:57:24.441 206417] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 17:03:57.765 209413] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 17:03:57.765 209413] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 17:03:57.810 209413] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 17:03:58.154 209413] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 17:03:58.156 209413] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 17:03:58.159 209413] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 17:03:58.161 209413] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 17:03:58.161 209413] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 17:03:58.161 209413] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 17:06:54.143 209439] uid: ac51bacd-19a5 | setPowerState end, switch motor true (0)
+[I|2026-09-30 17:06:54.144 209439] uid: ac51bacd-19a5 | set state data port to 1338
+[I|2026-09-30 17:06:54.385 209439] uid: ac51bacd-19a5 | startReceiveRobotState end, 1 ["dq_m", "pos_m", "q_m"] (0)
+[I|2026-09-30 17:06:54.386 209439] uid: ac51bacd-19a5 | setJointImpedance [500, 500, 500, 500, 50, 50, 50] (0)
+[I|2026-09-30 17:06:54.916 209439] uid: ac51bacd-19a5 | RtControlT startMove jointImpedance
+[I|2026-09-30 17:06:54.916 209439] uid: ac51bacd-19a5 | exec startLoop false
+[I|2026-09-30 17:18:42.916 209439] uid: ac51bacd-19a5 | exec stopLoop
+[I|2026-09-30 17:18:42.920 209439] uid: ac51bacd-19a5 | RtControlT stopMove
+[I|2026-09-30 17:18:43.055 209439] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
+[I|2026-09-30 17:21:45.081 209413] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 17:21:45.087 209413] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 17:23:11.789 214214] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 17:23:11.789 214214] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 17:23:11.833 214214] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 17:23:12.177 214214] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 17:23:12.178 214214] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 17:23:12.180 214214] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 17:23:12.182 214214] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 17:23:12.182 214214] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 17:23:12.182 214214] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 17:23:33.575 214240] uid: ac51bacd-19a5 | setPowerState end, switch motor true (0)
+[I|2026-09-30 17:23:33.576 214240] uid: ac51bacd-19a5 | set state data port to 1338
+[I|2026-09-30 17:23:33.817 214240] uid: ac51bacd-19a5 | startReceiveRobotState end, 1 ["dq_m", "pos_m", "q_m"] (0)
+[I|2026-09-30 17:23:33.818 214240] uid: ac51bacd-19a5 | setJointImpedance [500, 500, 500, 500, 50, 50, 50] (0)
+[I|2026-09-30 17:23:34.344 214240] uid: ac51bacd-19a5 | RtControlT startMove jointImpedance
+[I|2026-09-30 17:23:34.344 214240] uid: ac51bacd-19a5 | exec startLoop false
+[I|2026-09-30 17:24:24.099 214240] uid: ac51bacd-19a5 | exec stopLoop
+[I|2026-09-30 17:24:24.103 214240] uid: ac51bacd-19a5 | RtControlT stopMove
+[I|2026-09-30 17:24:24.232 214240] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
+[I|2026-09-30 17:25:18.282 214214] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 17:25:18.289 214214] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 17:26:59.693 216112] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 17:26:59.693 216112] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 17:26:59.741 216112] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 17:27:00.085 216112] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 17:27:00.087 216112] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 17:27:00.090 216112] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 17:27:00.091 216112] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 17:27:00.091 216112] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 17:27:00.092 216112] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 17:27:03.764 216138] uid: ac51bacd-19a5 | setPowerState end, switch motor true (0)
+[I|2026-09-30 17:27:03.765 216138] uid: ac51bacd-19a5 | set state data port to 1338
+[I|2026-09-30 17:27:04.009 216138] uid: ac51bacd-19a5 | startReceiveRobotState end, 1 ["dq_m", "pos_m", "q_m"] (0)
+[I|2026-09-30 17:27:04.010 216138] uid: ac51bacd-19a5 | setJointImpedance [500, 500, 500, 500, 50, 50, 50] (0)
+[I|2026-09-30 17:27:04.541 216138] uid: ac51bacd-19a5 | RtControlT startMove jointImpedance
+[I|2026-09-30 17:27:04.541 216138] uid: ac51bacd-19a5 | exec startLoop false
+[I|2026-09-30 17:39:24.283 216138] uid: ac51bacd-19a5 | exec stopLoop
+[I|2026-09-30 17:39:24.288 216138] uid: ac51bacd-19a5 | RtControlT stopMove
+[I|2026-09-30 17:39:24.423 216138] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
+[I|2026-09-30 17:39:29.145 216112] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 17:39:29.152 216112] uid: ac51bacd-19a5 | disconnectFromRobot end (0)
+[I|2026-09-30 17:49:11.221 222135] uid: d82dc8ea-6326 | re-watch event: moveExecution 
+[I|2026-09-30 17:49:11.221 222135] uid: d82dc8ea-6326 | Connect to 192.168.1.160 from 192.168.1.100
+[I|2026-09-30 17:49:11.265 222135] uid: d82dc8ea-6326 | setRtNetworkTolerance end, percent: 20% (0)
+[I|2026-09-30 17:49:11.610 222135] uid: d82dc8ea-6326 | setMotionControlMode end, mode: RtCommand (0)
+[I|2026-09-30 17:49:11.611 222135] uid: d82dc8ea-6326 | setOperationMode end, switch to auto (0)
+[I|2026-09-30 17:49:11.614 222135] uid: d82dc8ea-6326 | setToolset end, Set toolset to end:trans:[0, 0, 0.1], rpy:[0, 1.5707963267948963, -0], ref:trans:[0, 0, 0], rpy:[0, 0, 0], load:m:0.82316, cog:[0.009571113016310001, -0.01225178580982, 0.03667256806684] (0)
+[I|2026-09-30 17:49:11.616 222135] uid: d82dc8ea-6326 | set rt local port to 1337
+[I|2026-09-30 17:49:11.616 222135] uid: d82dc8ea-6326 | set timeout to 3 ms
+[I|2026-09-30 17:49:11.617 222135] uid: d82dc8ea-6326 | setEndEffectorFrame [-2.220446049250313e-16, 0, 1.0000000000000002, 0, 0, 1, 0, 0, -1.0000000000000002, 0, -2.220446049250313e-16, 0.1, 0, 0, 0, 1] (0)
+[I|2026-09-30 17:49:41.478 222161] uid: ac51bacd-19a5 | setPowerState end, switch motor true (0)
+[I|2026-09-30 17:49:41.480 222161] uid: ac51bacd-19a5 | set state data port to 1338
+[I|2026-09-30 17:49:41.721 222161] uid: ac51bacd-19a5 | startReceiveRobotState end, 1 ["dq_m", "pos_m", "q_m"] (0)
+[I|2026-09-30 17:49:41.722 222161] uid: ac51bacd-19a5 | setJointImpedance [500, 500, 500, 500, 50, 50, 50] (0)
+[I|2026-09-30 17:49:42.248 222161] uid: ac51bacd-19a5 | RtControlT startMove jointImpedance
+[I|2026-09-30 17:49:42.248 222161] uid: ac51bacd-19a5 | exec startLoop false
+[I|2026-09-30 17:52:04.640 222161] uid: ac51bacd-19a5 | exec stopLoop
+[I|2026-09-30 17:52:04.645 222161] uid: ac51bacd-19a5 | RtControlT stopMove
+[I|2026-09-30 17:52:04.784 222161] uid: ac51bacd-19a5 | setPowerState end, switch motor false (0)
+[I|2026-09-30 17:52:04.877 222135] uid: ac51bacd-19a5 | setMotionControlMode end, mode: Idle (0)
+[I|2026-09-30 17:52:04.883 222135] uid: ac51bacd-19a5 | disconnectFromRobot end (0)

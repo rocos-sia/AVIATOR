@@ -1,102 +1,294 @@
 # aviator_core
 
-从 `examples/AviatorRobot_simple` 迁移的双臂业务控制节点。保留 Home、接近、软件锁定、MoveWheel、ServoWheel、停止、复位和交互操作。PIN-IK、Pinocchio 碰撞检查和 Ruckig 规划都在本进程；不连接设备、不加载 xCore SDK，也不创建 MuJoCo 窗口。
+当前保留直接执行、受状态机管理、纯离线测试三类入口：
 
-## 整机状态机入口
+| 程序 | 用途 | 执行方式 |
+| --- | --- | --- |
+| `aviator_core` | 原交互、`--demo`、`--servo-demo` | 直接顺序调用 Aviator 功能函数，保留动作检查和设备 watchdog |
+| `aviator_core_servo` | 原自动抓握和摇杆控制 | 直接调用功能函数，Servo 周期更新目标 |
+| `aviator_core_managed` | 六操作管理设备 | 调用 Aviator 大写接口，异步执行原有功能；使用设备反馈、输入时效及本地测试策略，不依赖安全文件 |
+| `aviator_core_sml` | **纯软件整机状态机测试** | 真实 SML 转换逻辑 + 模拟守卫、执行器、时钟；不连接设备 |
 
-新增 `--state-machine`，按 [整机状态机设计](../../docs/AVIATOR机器人状态机设计.md) 使用本地
-`boost::sml` 1.2.0。原有交互、`--demo`、`--servo-demo` 和 `aviator_core_servo` 保留原行为，
-与状态机入口二选一；不能把旧入口的执行器阶段当作新状态机的整机状态。
+两个原 Core 使用小写接口绕过整机业务状态机，不能把它们的执行器阶段当作十二状态整机状态。
+真实手开合与 HandLink 独立通信线程保留。设备入口均不依赖 safety.json；同一 Manipulator 只运行一个设备控制 Core。
+
+Core 负责 PIN-IK、Pinocchio 碰撞检查和 Ruckig 规划，通过 RemoteLink 与设备节点通信，不直接加载 xCore SDK 或创建 MuJoCo 窗口。
+
+## 离线状态机测试入口
+
+参考 `SurgicalRobotArm/src/robot.cpp` 的“事件 → SML 转换表 → 动作 → 完成/失败事件”结构，
+保留 [整机状态机设计](../../docs/AVIATOR机器人状态机设计.md) 的十二状态和六操作。
+
+- `include/aviator/RobotStateMachine.hpp`：事件、守卫、转换表及动作登记。
+- `RobotStateMachine.cpp`：请求结果、任务 generation / 超时、完成和保护事件。
+- `main_sml.cpp`：终端测试及模拟执行器；不实例化 Aviator / RemoteLink，只链接状态机库。
+- `Aviator.cpp` 的 `Aviator::Managed`：拥有实际状态机和唯一任务槽，执行器完成/异常由拥有线程处理。
+- `StateMachineRuntime.cpp/.hpp` 和 `ManagedGateway.cpp/.hpp`：`aviator_core_managed` 的设备反馈、终端和 Gateway 适配，调用 Aviator 大写 API，不再另建状态机。
+
+状态机动作只登记任务，耗时执行与转换表分开。测试执行器通过 `done` / `fail` 回传结果，
+所有状态机调用在单线程进行，不照搬参考文件的全局 Robot 指针和多线程直接修改状态机方式。
+功能动作仍留在 Aviator / RemoteLink；Managed 路径已复用这些功能，不重复规划或手控制代码。
+
+从仓库根目录运行，不需要 Bus、Manipulator、手节点、相机、配置文件或安全文件：
 
 ```bash
-cmake --build build --target aviator_core --parallel 2
-./build/bin/aviator_core --config config/system.yaml --state-machine \
-  --safety-file /run/aviator/safety.json
+cmake -S . -B build
+cmake --build build --target aviator_core_sml aviator_robot_state_machine_test -j2
+# 自动演示完整正常状态流程，完成后退出
+./build/bin/aviator_core_sml --demo
+# 交互测试
+./build/bin/aviator_core_sml
 ```
 
-先启动同配置的 bus 和 manipulator。状态机入口在主线程处理所有事件，阻塞的初始化、抓握、
-撤离只占用一个异步任务槽；每个任务有 generation 和截止时间，取消后的回调不能恢复旧状态。
-初始化预算 30 秒、抓握 180 秒、撤离 60 秒；不是串口 100 ms 应答时间。初始化仅加载规划配置，
-不自动使能、回零或释放；没有已脱离方向盘的证据时不会报告 STANDBY。
+也可在不构建机器人依赖的配置下编译：
 
-终端支持六个操作名称：
+```bash
+cmake -S . -B build-sml -DAVIATOR_COMMUNICATION_ONLY=ON -DAVIATOR_BUILD_EXAMPLES=OFF
+cmake --build build-sml --target aviator_core_sml aviator_robot_state_machine_test -j2
+```
+
+启动后模拟 Boot 进入 INITIALIZING，普通守卫默认 true、emergency_latched 默认 false。
+执行中 executor_idle / settled 为 false；`done` 模拟任务结束，恢复两者为 true；抓握开始后
+clear_of_wheel 为 false，释放完成后为 true。手工设置的其他证据仍须满足状态机守卫。
+这些值只存在测试进程内，不是真实设备反馈。
+
+正常流程逐条输入（第一个 done 完成初始化/使能；ENTER_STANDBY 后的 done 模拟回 home 完成）：
 
 ```text
+done
 ENTER_STANDBY
+done
 GRASP_WHEEL
+done
 START_CONTROL
 EXIT_CONTROL
 LEAVE_WHEEL
-RESET_ERROR
+done
+quit
 ```
 
-正常流程为 `INIT → INITIALIZING → STANDBY → GRASPING → FOLLOWING → CONTROL → FOLLOWING → RELEASING → STANDBY`。
-`GRASP_WHEEL` 复用 Enable/ApproachHandles/LockHandles；`ReleaseHandles` 从当前参考解除软件锁定后，
-沿既有接近偏移退至预接近位置，复用 IK、轨迹验证和执行，不回 home。该释放程序须单独授权；
-启用 `core_hand` 时，LockHandles 等待真实手节点接收闭合指令；ReleaseHandles 等待实际驱动位置达到张开目标后再撤离。闭合应答不代表物理抓握已验证。
+对应 `INIT → INITIALIZING → READY → HOMING → STANDBY → GRASPING → FOLLOWING → CONTROL → FOLLOWING → RELEASING → STANDBY`。
+`done` 表示模拟动作完成，不会发送张开、闭合、使能或撤离指令。
 
-`FOLLOWING` 当前执行适配为保持现有参考；安全监督器只能为这个已批准策略设置
-`following_authorized=true`，不能把它当作已实现被动柔顺跟随。退出 CONTROL 立即关闭目标接纳，
-调用非阻塞 Stop 让 Servo 从当前参考减速；未稳定期间拒绝重新操控或释放。
-保护取消会撤销 RemoteLink 普通轨迹发布，迟到工作线程也不能重新发布；需工作线程退出及设备
-停止游标确认后才视作稳定。底层仍独立检查指令 watchdog。
+| 指令 | 作用 |
+| --- | --- |
+| 六操作名称 | ENTER_STANDBY、GRASP_WHEEL、START_CONTROL、EXIT_CONTROL、LEAVE_WHEEL、RESET_ERROR |
+| `status` / `help` | 查看当前状态、控制接纳、错误、任务编号及全部模拟守卫 / 帮助 |
+| `set <guard> <0\|1>` | 修改守卫并立即执行监督；例如 `set source_authorized 0`、`set input_ready 0` |
+| `done` / `fail` | 模拟当前任务完成 / 失败 |
+| `late_done` | 重放上次任务的完成事件，测试取消后的迟到回调 |
+| `advance <毫秒>` | 推进模拟时间，不实际等待，范围 0～3600000 |
+| `fault` / `safety_lost` / `emergency` | 注入故障 / 安全条件丢失 / 急停 |
+| `quit` | 退出测试 |
 
-状态机返回 `ACCEPTED`、`COMPLETED`、`BUSY`、`INVALID_STATE` 或 `CAPABILITY_UNAVAILABLE`。
-`status` 查看整机和执行器状态，`emergency` 触发本地急停，`quit` 退出。
-本地调试目标 `servo <angle_rad> <displacement_m> [v]` 仅在 CONTROL 接受，需在 100 ms 内持续更新；
-开始操控后 100 ms 没有首条目标或输入中断会进入 SAFE，不缓存 FOLLOWING 期间的目标。
-普通终端手工输入不适合连续 Servo 调试，应由测试程序按周期提供。
+例如 GRASPING 中输入 `advance 180000` 触发抓握任务超时；INITIALIZING 与 RELEASING 的预算分别为
+30000 / 180000 ms，独立回 home 任务也是 180000 ms。CONTROL 中 `set input_ready 0` 模拟输入失效进入 SAFE，恢复为 1 不自动回 CONTROL。
+`fail` 进入 ERROR 后可用 RESET_ERROR 到 SAFE；若仍未脱离方向盘，ENTER_STANDBY 会拒绝，
+可模拟获准的 LEAVE_WHEEL，再 done 返回 STANDBY。
 
-### 安全证据与能力边界
+输出包含事件、转换前后状态、请求前守卫快照、接纳/拒绝结果和模拟动作。
+模拟 stop 立即确认稳定，不模拟实际制动时间。时间仅由指令推进，交互等待不会触发真实输入时效；
+测试输入超时用 input_ready=false，不宣称验证了 ZMQ watchdog。
+急停只在当前进程锁存，普通请求不能解除；不写急停文件、不请求实际手刹，重启创建新的模拟实例。
+独立安全监督器、物理手刹、真实抓握及真实 FOLLOWING 控制律均不属于此入口的验证范围。
 
-`--safety-file` 是独立同机监督器**原子替换、持续更新**的 JSON 快照。字段如下；下面的时间戳和
-clock 仅示意，不能直接用静态文件作为运行证据：
-
-```json
-{
-  "clock_id": "<本机 hostname-boot_id>",
-  "sample_mono_us": 123456789,
-  "emergency_latched": false,
-  "clear_of_wheel": false,
-  "following_authorized": false,
-  "release_authorized": false,
-  "fault_cleared": false,
-  "source_authorized": false,
-  "input_ready": false
-}
-```
-
-证据需要与当前启动周期同一时钟，且年龄小于 100 ms。缺失、非法、过期或急停置位都直接进入
-EMERGENCY_STOP。`ready` 和 `settled` 由设备反馈/执行进度派生，不能通过此文件强行置真。
-故障复位还要求实际设备不再故障、工作线程退出和执行器稳定；本入口不自动替代设备维护复位。
-
-急停时额外持久化 `<safety-file>.emergency` 和 `<safety-file>.brake-request`；后者是供独立安全执行器
-读取的幂等请求，不经过普通轨迹队列。重启前先检查锁存，锁存或证据未知时不申请普通运动授权。
-普通命令不能删除文件或解除急停。此软件证据不能替代独立硬件锁存、急停电路和手刹供电保障。
-**本仓库尚无独立安全监督器及手刹执行硬件适配器**，因此导出 `brake_confirmed=false`，不会把发请求
-当作手刹到位。部署前需实现监督器、独立执行/反馈和维护解除规程。
-
-`--fsm-simulation` 仅允许 MuJoCo 后端，提供显式的仿真测试守卫，不读取/持久化硬件安全证据；
-不能用于真机。当前部署的 `config/robot.yaml` 为 Rokae，需另用仿真配置副本，勿直接在真机配置上测试。
-
-本轮最小接入的普通事件来源为本地终端，`flight.state.system` 与 `system.state.system` 导出真实 SML
-状态、状态码、错误历史、任务代号和手刹请求。Gateway 已接纳 INITIALIZING/RELEASING 字符串。
-没有新增 RS422 REQUEST/REPLY、Core ZMQ 服务端或飞控来源适配；`aviator_core_servo` 仍是原独立入口，
-不能视作已受此状态机门控。RS422 的 Word/线上状态码迁移留待串口适配时确认。
-
-### 无硬件验证
-
-启用 `BUILD_TESTING` 后，`robot_state_machine` 覆盖转换、守卫、迟到回调、任务超时、故障恢复、
-全部非急停状态进入急停及急停无出口。带 pyzmq/PyYAML 的 Python 可执行进程级测试：
+离线回归（Python 只使用标准库）：
 
 ```bash
-~/miniconda3/envs/apriltag_realsense/bin/python tests/robot_state_machine_process_test.py \
-  "$PWD/build/bin/aviator_bus" "$PWD/build/bin/manipulator" \
-  "$PWD/build/bin/aviator_core" "$PWD"
+ctest --test-dir build -R '^(robot_state_machine|core_sml_demo|core_sml_cli)$' --output-on-failure
 ```
 
-测试只使用临时 MuJoCo 配置、随机 loopback 端口和模拟安全监督器，不连接真机；日志目录打印为
-`/tmp/aviator-fsm-test-*`。覆盖完整抓握/撤离流程、非法状态拒绝、急停请求和 Core 重启锁存。
+覆盖正常流程、非法状态、授权守卫、故障恢复、输入失效、任务超时、迟到事件与急停无出口。
+`robot_state_machine_process_test.py` 单独验证 Managed 路径与隔离 MuJoCo 的集成，见下节；它不属于纯离线入口。
+
+## Aviator 的最小状态机接入
+
+构造时不传 `ManagedOptions` 为 Direct 模式，两个原 main 只把动作调用改为小写，流程不变。
+传入 `ManagedOptions` 为 Managed 模式，外部小写动作会抛错，避免绕过正在工作的状态机。
+两个模式共用同一组 `Impl` 功能实现；原接近和撤离轨迹不重写，只增加组合任务以及再次抓握前的张开确认。
+
+| Managed API | 事件 / 行为 |
+| --- | --- |
+| `Init()` | 内部 Boot → initialize 任务；初始化资源、双臂使能及阻抗配置完成后 READY，保持当前位置，不自动回 home |
+| `EnterStandby()` | ENTER_STANDBY；READY/已脱离的 SAFE → HOMING，实际到 home 并停稳 → STANDBY；STANDBY 幂等；FOLLOWING 先释放撤离再回 home |
+| `GraspWheel()` | GRASP_WHEEL；确认手张开 → approachHandles(from_home=true) → lockHandles；不重复使能或回 home |
+| `StartControl()` | START_CONTROL；检查守卫并建立新输入时间边界 |
+| `ExitControl()` | EXIT_CONTROL；关闭接纳并非阻塞减速，等 settled 后才能释放/重启操控 |
+| `LeaveWheel()` | LEAVE_WHEEL；releaseHandles 张开撤离 → moveHome，实际回 home 并停稳后 STANDBY |
+| `ResetError()` | RESET_ERROR；故障已排除后确认本地错误，ERROR → SAFE，不调用会隐式解锁/失能的 resetFault |
+| `ServoWheel(a,d,v,sample_mono_us)` | 目标接口，不是第七个操作；仅 CONTROL 接受本次操控后的有效时间戳，拒绝过期、未来、重复/倒退目标 |
+| `Update()` | 拥有线程每约 5 ms 调用，刷新证据/心跳，监督、收取任务结果和执行转换 |
+| `EmergencyStop(reason)` | 内部急停输入，撤销普通输出并请求独立手刹通道，不是普通六操作 |
+
+直接接口为 `init/enable/disable/approachHandles/lockHandles/moveWheel/servoWheel/unlockHandles/releaseHandles/resetFault/acknowledgeFault/stop`。
+原来的单步大写 Enable、ApproachHandles、LockHandles 等不再作为公共 API；调用方使用直接接口或六个业务操作。
+`GetState()` 仍为执行器阶段，`GetSystemState()` / `GetSystemStatus()` 仅用于 Managed 整机状态，二者不混用。
+
+`ManagedOptions` 必须提供 snapshot、allow_motion、heartbeat、request_brake 回调，可另提供 report。
+回调来自可信运行适配器，不能让普通业务消息直接填写任意守卫。所有大写管理接口在创建 Aviator 的同一线程执行，
+耗时动作由一个工作线程完成；等待结果时仍须持续调用 Update，不能在拥有线程上阻塞等待整个抓握过程。
+此设备测试入口以本地策略授权跟随和释放，ready/settled/fault_cleared 使用设备反馈和执行器情况。调用 ServoWheel 前由输入适配器验证来源、会话和数值，
+sample_mono_us 必须来自该有效输入；POSITION_HOLD 使用通过校验的 checked_mono_us 作为目标有效期依据，原始轴事件时间保留在输入报文中。不能用 Core 当前时间伪造续期。
+
+独立设备控制入口（不要与两个原 Core 同时控制一个 Manipulator）：
+
+```bash
+cmake --build build --target aviator_core_managed -j2
+# 设备、Bus、手节点准备好后；--console 为终端目标测试模式
+./build/bin/aviator_core_managed --config config/system.yaml --console
+# MuJoCo 使用同一套设备反馈守卫，只切换配置中的后端
+./build/bin/aviator_core_managed --config /path/to/mujoco/system.yaml --console
+```
+
+初始化/使能完成后停在 READY。先输入 ENTER_STANDBY，等待 HOMING → STANDBY，再输入 GRASP_WHEEL，等待 FOLLOWING；输入 START_CONTROL 后需要程序每小于 100 ms 更新
+`servo <angle_rad> <displacement_m> [v]`，普通手工打字不适合持续控制。EXIT_CONTROL 后等待 settled，
+再 LEAVE_WHEEL。Managed 入口没有 `done`，完成事件来自真实执行函数返回和设备执行确认。
+`quit` / Ctrl+C 撤销输出并等待任务退出，不自动执行正常撤离；正常离开须先走 EXIT_CONTROL / LEAVE_WHEEL。
+
+此入口不再读取 safety.json，也不再支持 `--safety-file` / `--fsm-simulation`，system.yaml 无需 managed_core.safety_file。
+真机和 MuJoCo 使用同一套运行适配；只由 robot.yaml 选择后端。各条件来源为：
+
+- ready：通常要求实时反馈新鲜且无故障。Rokae 的 UNINITIALIZED/INITIALIZED/DISABLED 阶段在无轨迹、未停止中时，允许用新鲜设备状态进入待机/使能流程；使能完成、接近及操控仍要求实时反馈。fault_cleared 仍要求实时反馈新鲜且无故障。Aviator 还检查本地执行器故障。
+- settled：设备停止确认、撤销输出后的轨迹清空、工作任务结束及执行器阶段。
+- input_ready / source_authorized：Gateway 输入有效期及绑定会话；终端测试仍受 ServoWheel 的 100 ms 目标时效限制。
+- clear_of_wheel：设备软件锁已解除，且执行器处于初始化/已使能/已失能等非接触流程阶段；这只是程序判据，不是物理脱离检测。
+- following_authorized / release_authorized：启动这个本地测试入口即允许这两类业务操作，具体执行仍由状态机守卫决定。
+
+终端 emergency 和 Aviator::EmergencyStop 仍进入不可用普通请求退出的 EMERGENCY_STOP。
+锁存仅在当前进程内保存，不再读写 `.emergency` / `.brake-request` 文件；进程重启不恢复该软件锁存。
+硬件急停状态未独立接入，不能将软件急停状态解释为硬件急停检测。
+
+**当前接入限制**：未接入独立安全监督器和物理手刹驱动，brake_confirmed 始终为 false，急停时 brake_status=UNAVAILABLE；FOLLOWING
+仅保持现有参考，需要相应策略授权，不是柔顺控制。保护/退出撤销手目标后仍沿用手节点的默认张开 safe_pose，
+不能宣称满足设计文档的保护时抓握保持。真实硬件策略需另行落实。本次实现和验证没有驱动真机。
+
+```bash
+ctest --test-dir build -R '^(aviator_managed_api|robot_state_machine|core_sml_demo|core_sml_cli|core_hand)$' --output-on-failure
+# 需要 pyzmq / PyYAML；测试自动使用随机 loopback 端口和临时 MuJoCo 配置
+~/miniconda3/envs/apriltag_realsense/bin/python tests/robot_state_machine_process_test.py \
+  "$PWD/build/bin/aviator_bus" "$PWD/build/bin/manipulator" "$PWD/build/bin/aviator_core_managed" "$PWD"
+```
+
+## Managed Core：摇杆按钮与连续目标驱动真机
+
+默认启用 Gateway 模式，无需输入 `--flight-gateway`。`ManagedGateway` 在拥有线程中同时处理：
+
+- `flight.command`：SUB 连接 system.yaml 的 Bus 输出，校验生产者、固定 Gateway 会话、时钟、序号、有效位和时效。
+- 六操作服务：ROUTER 默认 bind `tcp://127.0.0.1:5559`，调用 Aviator 六个大写接口，由同一状态机决定是否执行。
+- 仅 CONTROL 向大写 `ServoWheel()` 传目标，沿用 `angle = roll * 0.87266` rad、`displacement = min(pitch, 0) * 0.170` m、`v = 1`。最大约 50 Hz，不补发错过周期。
+
+目标仍是绝对目标；进入 CONTROL 后，下一份通过校验的输入可能立即要求运动到当前摇杆对应位置。
+静止摇杆通过新鲜设备检查保持位置；重复检查时间不能续期。原始轴事件可早于本次 START_CONTROL，
+但用于放行的设备检查时间必须晚于本次操控开始。普通非 POSITION_HOLD 输入仍使用原始采样时间。
+有效操控时 `flight.state.system.control_source=JOYSTICK`，否则为 NONE；额外导出 input_ready、source_authorized。
+
+启动即自动使能双臂：Rokae 复用 `prepare()` 的上电、状态订阅及 `setJointImpedance`，随后 `startMove(jointImpedance)` 保持当前位置。
+现有 RemoteLink 使能流程会先张开手并等待确认，因此需先启动手节点。任一准备步骤失败进入 ERROR，不进入 READY。
+新增 READY=11、HOMING=12，原状态编号保留。STANDBY 要求 home 轨迹完成后，每个关节实际位置误差不超过
+`robot.yaml: home_position_tolerance`（当前配置 0.15 rad，约 8.59°；省略时默认 0.02 rad，允许范围 (0, 0.15]），且速度连续 0.15 s 低于 0.02 rad/s；到位等待最多 5 s。
+若报 `Home settling timeout`，错误中会列出左右各关节的 `target_rad`、`actual_rad`、`error_rad`、
+`velocity_rad_s`、`position_ok` 和 `speed_ok`，以及最长连续达标时间 `longest_stable_ms`。
+轨迹执行结束不代表实测到位；依据上述反馈区分位置残差和速度未稳定，超时仍进入 ERROR。
+Direct Demo 原先只检查 home 停稳的逻辑保持不变；此新位置判据仅用于 Managed 回 home。
+
+### 启动顺序
+
+从仓库根目录，在不同终端执行。以下是实际设备入口，不与其他 Core 同时运行。
+CAN 接口按手节点 README 预先配置，`config/robot.yaml` 选择实际后端。
+
+```bash
+cmake --build build --target aviator_bus aviator_hand manipulator aviator_core_managed flight_gateway -j2
+
+# 1. Bus
+./build/bin/aviator_bus
+# 2. 真实手节点
+./build/bin/aviator_hand --config config/inspire_hand.yaml
+# 3. 双臂设备节点；sudo 用于真机实时调度权限
+sudo ./build/bin/manipulator --config config/system.yaml
+# 4. 启动 Managed Core，无需安全证据文件
+./build/bin/aviator_core_managed --config config/system.yaml
+```
+
+不需要创建 `/run/aviator/safety.json`，也不需要启动安全文件监督程序。Gateway 模式默认开启；
+`--console` 可切换到原终端目标测试模式。设备故障、反馈丢失、输入超时、任务超时及非法状态转换检查仍保留。
+
+Gateway 默认自动识别 Core 会话，无需复制 UUID。保持 [config/flight.yaml](../../config/flight.yaml) 默认值即可：
+
+```yaml
+core_session: ""
+service: tcp://127.0.0.1:5559
+```
+
+核对 device 指向实际 evdev 摇杆后，启动 Gateway：
+
+```bash
+# 5. Gateway；所有参数从 config/flight.yaml 读取
+./build/bin/flight_gateway
+```
+
+Gateway 会用首次成功设备查询建立初始位置，摇杆静止也能绑定；Core 应打印 `Bound flight_gateway session=...` 和
+`Managed flight input: valid`。默认仅绑定第一条完整通过校验的输入会话，不自动切换。
+如需预先指定会话，在启动 Core 时加 `--gateway-session <Gateway UUID>`；每次进程重启都重新核对会话。
+Gateway 显示 `Bound aviator_core session=...` 后会自动为服务请求携带匹配的 server_session_id；再看到 `service_ready=1`（收到 Core 绑定确认）后按按钮。未识别、未确认或反馈过期时按钮显示 NOT_SENT，不缓存。绑定仅在进程内保存，不写回配置。
+
+可用 `--operation-service tcp://127.0.0.1:<端口>` 更改 Core 服务地址，同时修改 flight.yaml 的 service；
+该端点不能与 Bus 或 Manipulator 服务相同。Gateway 模式在 stdin 关闭时继续工作，可用 Ctrl+C 退出。
+终端六操作、status、emergency、quit 保留；终端 servo 在此模式下拒绝，避免混用目标来源。
+
+### 按钮验证
+
+按钮编号由 Gateway 打印的 evdev 映射决定，不保证等于外壳标号。默认流程：
+
+| 步骤 | 默认按钮 | 预期行为 / 状态 |
+| --- | --- | --- |
+| 初始化 | 无需按钮 | INITIALIZING → READY；自动使能并设置阻抗，保持当前位置 |
+| 回 home 待机 | 1 / enter_standby | READY → HOMING → STANDBY；已在 STANDBY 则幂等确认 |
+| 抓握 | 2 / grasp_wheel | ACCEPTED，GRASPING → FOLLOWING |
+| 操控 | 3 / start_control | 输入有效且守卫满足后 CONTROL，连续轴值驱动机器人 |
+| 退出操控 | 4 / exit_control | FOLLOWING；等待 `system.settled=true` |
+| 释放撤离 | 5 / leave_wheel | ACCEPTED，RELEASING 内完成松手、撤离及回 home → STANDBY |
+| 故障确认 | 6 / reset_error | 仅 ERROR 且故障已消除等条件满足时 → SAFE，不自动回操控 |
+
+CONTROL 中按钮 1/5 不直接释放，先按钮 4。FOLLOWING 中按钮 1 同样执行释放、撤离及回 home。
+新鲜输入恢复不会自动退出 SAFE/ERROR；按实际状态和证据走恢复流程。
+**现有保护未更改**：输入/设备检查失效触发 CONTROL → SAFE 并撤销普通输出，后续设备故障可能进入 ERROR；
+手节点仍可能因目标超时执行默认张开 safe_pose。它不同于按钮 4 的正常减速保持，实际测试前须理解此行为。
+
+服务即时回复 ACCEPTED/COMPLETED/REJECTED/EXPIRED；REJECTED 的 `result.reason` 给出 BUSY、INVALID_STATE、
+CAPABILITY_UNAVAILABLE 或协议拒绝原因。ACCEPTED 仅表示登记任务，动作完成看 flight.state 的最终状态和错误。
+此最小适配不实现 get_result 或异步最终服务应答；相同请求重发返回原始应答，不作为完成查询。
+请求在 Core 会话内去重，最多保存 1024 项，不淘汰后重复执行；满后拒绝新请求，需在安全停止后重启并重新配置会话。
+服务期限检查范围 1–10000 ms；Gateway 默认等待 100 ms，该期限不是机械动作时限。
+超时显示 UNKNOWN，不自动重试或用新请求猜测执行结果。记录副本不执行；身份白名单仅适用于受控本机，不是密码学认证。
+
+### 启动与请求拒绝排查
+
+Rokae 未使能时尚无 RT TCP/速度采样，不能把这一条件当成初始化前的掉线。
+Manipulator 的 arm.state 新增 `status_mono_us`，仅代表设备状态发布时间；Core 仍保留原始关节采样时间及 valid。
+本次更新后需**同时重启 Manipulator 和 Managed Core**；旧设备节点没有此状态时间字段，不能用于新待机判据。
+
+Gateway 按钮请求和连续轴值走不同通道，首次按钮可能先于首个有效轴值抵达。
+先看到 `Bound flight_gateway session=...` 和 `system.state=READY`，按按钮 1 回 home；等 `system.state=STANDBY` 再按按钮 2 抓握，输入有效后按按钮 3 操控。
+请求拒绝的 result.reason 已拆分：GATEWAY_NOT_BOUND（未绑定）、GATEWAY_SESSION_MISMATCH（网关重启/会话不符）、
+CLOCK_DOMAIN_MISMATCH（时钟域不符）、CORE_SESSION_REQUIRED（旧版客户端未发送 Core 会话）、
+CORE_SESSION_MISMATCH（旧 Core 会话）；应答另含 expected_gateway_session / expected_clock_id。
+默认 core_session 留空：Core 重启后重启 Gateway 自动识别，无需编辑配置；非空值仅供手动固定绑定。
+ERROR 状态不会因摇杆输入恢复而自动退出；故障排除后按 RESET_ERROR → SAFE，再 ENTER_STANDBY。
+
+### 隔离联调
+
+```bash
+# 需要 pyzmq / PyYAML；临时配置固定 MuJoCo，四个随机 loopback 端口，不使用实际摇杆/CAN/机器人
+~/miniconda3/envs/apriltag_realsense/bin/python tests/managed_gateway_process_test.py \
+  "$PWD/build/bin/aviator_bus" "$PWD/build/bin/manipulator" "$PWD/build/bin/aviator_core_managed" "$PWD"
+# 若 CMake 选用的 Python 具备依赖，也会注册为 CTest：
+ctest --test-dir build -R '^managed_gateway_process$' --output-on-failure
+```
+
+覆盖 Gateway 同格式请求/输入、来源/时钟/期限/会话校验、去重及冲突、非法状态和忙碌拒绝、静止位置保持到达目标、
+完整抓握/操控/释放、设备检查冻结触发保护、恢复输入不自动恢复操控及 stdin EOF。测试不验证实际 USB 按钮标号或真实抓握。
+
+## 原 Core 构建与使用
 
 从 AVIATOR 根目录构建：
 
@@ -152,7 +344,7 @@ Servo 预填充至少 80 ms，随后持续追加不可改写的样本，Core 队
 ./build/bin/aviator_core_servo
 ```
 
-真机的 `manipulator` 需要实时调度权限，可用 `sudo ./build/bin/manipulator --config config/system.yaml` 启动；Core 不需要 sudo。网关自定义总线时，使用 `--publish` / `--subscribe` 与 system.yaml 保持一致。
+真机的 `manipulator` 需要实时调度权限，可用 `sudo ./build/bin/manipulator --config config/system.yaml` 启动；Core 不需要 sudo。网关自定义总线时，修改 config/flight.yaml 的 publish / subscribe，与 system.yaml 保持一致。
 
 默认配置路径与原 Core 相同，开发构建读取源码根目录 `config/system.yaml`。省略 `--gateway-session` 时，自动绑定第一条通过来源、时钟、有效性和时效检查的 flight_gateway 消息，日志打印绑定的 session；无效或过期消息不能抢先绑定。也可用 `--config <system.yaml>` 指定配置，或用 `--gateway-session <UUID>` 手动指定会话。自动绑定只进行一次，不因输入过期而解除绑定。
 
@@ -170,7 +362,7 @@ Servo 预填充至少 80 ms，随后持续追加不可改写的样本，Core 队
 
 ## Core 控制真实机械手
 
-`aviator_core`（交互、Demo、状态机）与 `aviator_core_servo` 共用 `RemoteLink` 的手部控制。
+`aviator_core`（交互、Demo）与 `aviator_core_servo` 共用 `RemoteLink` 的手部控制。
 配置位于 [`config/system.yaml`](../../config/system.yaml) 的 `core_hand`，手节点仍读取
 [`config/inspire_hand.yaml`](../../config/inspire_hand.yaml)。两者需连接同一个 Bus，运行在同一主机。
 当前源码配置启用真实手控制，双手张开为 `[1,1,1,1,1,1]`，闭合为用户指定的 `[0,0,0,0,0,0]`。
@@ -218,7 +410,7 @@ status
 
 - `enable`：先发送张开目标并等待双手实际位置到位，再使能机械臂，确保接近时手已张开。
 - `lock`：发送闭合目标，收到本 Core 会话、当前目标对应的 `accepted_command` 且实际反馈有效后，执行机械臂软件 lock。不会等待闭合位置全为 0，也不宣称已接触或抓稳方向盘。
-- `unlock`：持续发送张开目标，等待两手各六路实际位置距目标不超过 `open_tolerance`，再执行软件 unlock；超时抛错，不继续状态机撤离。
+- `unlock`：持续发送张开目标，等待两手各六路实际位置距目标不超过 `open_tolerance`，再执行软件 unlock；超时抛错，不继续后续动作。
 - `stop`：只停止机械臂运动，保持当前手目标；等运动停止后可输入 `unlock`、`disable`、`quit`。普通 `unlock` 不带机械臂撤离。
 - `disable`：若软件仍锁定，先解锁张开，再失能。正常退出也保持监督心跳直到清理动作结束。
 
@@ -230,8 +422,7 @@ status
 ```
 
 Servo 入口会自动张开、使能、接近、闭合，然后接收摇杆输入。两个 Core 入口只能运行一个。
-状态机模式中 `GRASP_WHEEL`/`LEAVE_WHEEL` 自动复用上述开合；它仍要求本说明前述外部安全监督器，
-本次没有新增其摇杆/RS422 适配。
+`aviator_core_sml` 仅测试状态转换，不执行上述开合，也不提供摇杆/RS422 接入。
 
 Core 的独立手部通信线程 `HandLink` 以 50 Hz 发布 `hand.command`，并独立接收 `hand.state`。
 它拥有单独的 PUB/SUB socket、目标/反馈锁和条件变量，不使用机械臂 IO 线程的锁。`lock/unlock`
@@ -242,8 +433,8 @@ Core 的独立手部通信线程 `HandLink` 以 50 Hz 发布 `hand.command`，�
 origin 保留主线程的真实监督心跳。发送线程在取得手部锁后先读取心跳快照，再读取当前单调时间，
 避免“先读取旧 now、再读取更新后的 heartbeat”造成误判。真正超时会打印 `age_us` 和 `limit_us`，
 时钟顺序异常单独报告 `ahead_us`，发送线程不会自行刷新主线程心跳。
-主线程心跳超过 100 ms、状态机撤销授权或 Core 退出后，不再续发旧目标，手节点按自身
-`timeout_ms`（默认 100 ms）回到 `safe_pose`（默认全张开）。因此 SAFE/ERROR/急停不会保证继续抓握；
+主线程心跳超过 100 ms、发布授权撤销或 Core 退出后，不再续发旧目标，手节点按自身
+`timeout_ms`（默认 100 ms）回到 `safe_pose`（默认全张开）。因此通信保护/退出不会保证继续抓握；
 软件锁定状态也不表示手仍闭合。这里沿用手节点既有超时策略，没有实现物理制动。
 
 实际手反馈超时、只读模式、被其他会话占用或节点重启会终止相关操作并阻断普通机械臂轨迹发布。

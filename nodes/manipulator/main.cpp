@@ -705,6 +705,9 @@ int main(int argc, char **argv) {
                     m.header.sample_mono_us =
                         uint64_t(std::min(feedback.sample_time[0], feedback.sample_time[1]) * 1e6);
                 m.body = armState(state, feedback, backend);
+                // Device status remains available before Rokae's enabled RT callbacks exist.
+                // This is NOT a replacement for the original joint/TCP sample timestamp.
+                m.body["status_mono_us"] = now;
                 m.body["config_id"] = config.config_id;
                 m.body["accepted_command"] = state.sequence ? Json{{"publisher_id", "aviator_core"},
                                                                    {"session_id", core_session},

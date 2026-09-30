@@ -55,6 +55,42 @@ int main(int argc, char** argv) {
         h.receive(pending, now + 30001, session); check(!h.complete(now + 30001), "open completed before actual position");
         auto opened = feedback(opening, now + 40000, 4);
         h.receive(opened, now + 40000, session); check(h.complete(now + 40000), "open did not complete");
+        // Continuous command/ACK traffic does not imply physical opening completed.
+        // Reproduce a release with one finger stuck: publish until the completion
+        // deadline, then stop despite fresh heartbeat, feedback and CAN-write ACKs.
+        for (bool stuck : {false, true}) {
+            auto release = create();
+            release.request(true, now);
+            auto close = *release.command(now, now, session);
+            release.receive(feedback(close, now + 1, 1), now + 1, session);
+            check(release.complete(now + 1), "release setup close acknowledgement failed");
+            const auto start = now + 20000;
+            release.request(false, start);
+            uint64_t feedback_sequence = 1;
+            unsigned sent = 0;
+            for (uint64_t elapsed = 0; elapsed < 500000; elapsed += 20000) {
+                const auto t = start + elapsed;
+                auto cmd = release.command(t, t, session);
+                check(cmd.has_value(), "release command stopped before completion deadline");
+                ++sent;
+                auto observed = feedback(*cmd, t + 1, ++feedback_sequence);
+                if (stuck) observed.body["hands"]["left"]["drive_position_normalized"][0] = .9;
+                release.receive(observed, t + 1, session);
+                check(release.fresh(t + 1), "release test feedback unexpectedly stale");
+                check(release.complete(t + 1) == !stuck, "release actual-position gate incorrect");
+            }
+            check(sent == 25, "release did not publish at every 20 ms step");
+            const auto deadline = start + 500000; // Test configuration uses 500 ms, production 5 s.
+            if (stuck) {
+                check(release.fault(deadline).find("Hand target timeout") != std::string::npos,
+                      "fresh transport with a stuck finger did not hit target timeout");
+                check(!release.command(deadline, deadline, session),
+                      "target failure did not revoke ongoing publication");
+            } else {
+                check(release.fault(deadline).empty() && release.command(deadline, deadline, session).has_value(),
+                      "completed open target should continue publishing after deadline");
+            }
+        }
         h.revoke(); check(!h.command(now + 50000, now + 50000, session), "revoked hand still publishing");
         auto expired = create(); expired.request(true, now);
         check(!expired.command(now + 100000, now, session), "stale heartbeat published");

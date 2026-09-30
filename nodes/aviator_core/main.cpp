@@ -14,7 +14,6 @@
 #include <thread>
 #include <future>
 #include "RemoteLink.hpp"
-#include "StateMachineRuntime.hpp"
 #include <csignal>
 namespace fs = std::filesystem;
 static volatile std::sig_atomic_t interrupted = 0;
@@ -27,36 +26,26 @@ static void interactive(aviator::Aviator &robot, std::atomic<bool> &exit);
 int main(int argc, char **argv) {
     try {
         bool demo = false, servo_demo = false;
-        bool state_machine = false, fsm_simulation = false;
-        std::string safety_file;
         fs::path config = aviator::defaultSystemConfig();
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--demo") demo = true;
-            else if (arg == "--state-machine") state_machine = true;
-            else if (arg == "--fsm-simulation") { state_machine = true; fsm_simulation = true; }
-            else if (arg == "--safety-file" && i + 1 < argc) { state_machine = true; safety_file = argv[++i]; }
             else if (arg == "--servo-demo") servo_demo = true;
             else if (arg == "--headless") {} // Window belongs to manipulator.
             else if (arg == "--config" && i + 1 < argc) config = argv[++i];
             else if (arg == "--help") {
                 std::cout << "aviator_core [--config <system.yaml>] [--demo | --servo-demo]\n"
-                             "             [--state-machine [--safety-file PATH] | --fsm-simulation]\n"
+                             "Offline state-machine testing: use aviator_core_sml.\n"
                              "Start aviator_bus and manipulator first. Backend is configured in robot.yaml.\n";
                 return 0;
             } else throw std::runtime_error("Unknown or incomplete option: " + arg);
         }
         if (demo && servo_demo) throw std::runtime_error("Choose --demo or --servo-demo");
-        if (state_machine && (demo || servo_demo)) throw std::runtime_error("FSM and legacy demos are separate modes");
         const auto settings = aviator::loadMotionConfig(config);
-        if (state_machine) {
-            std::signal(SIGINT, interrupt); std::signal(SIGTERM, interrupt);
-            return aviator::runStateMachine(settings, safety_file, fsm_simulation, interrupted);
-        }
         auto link = std::make_unique<aviator::RemoteLink>(settings);
         auto* connection = link.get();
         aviator::Aviator robot(std::move(link), nullptr, nullptr, settings.robot.string());
-        robot.Init();
+        robot.init();
         std::signal(SIGINT, interrupt);
         std::signal(SIGTERM, interrupt);
         std::cout << "Core connected through ZMQ | config: " << settings.system << std::endl;
@@ -66,14 +55,14 @@ int main(int argc, char **argv) {
         std::thread task([&] {
             try {
                 if (demo || servo_demo) {
-                    robot.Enable();
+                    robot.enable();
                     std::cout << "DEMO approaching handles" << std::endl;
-                    robot.ApproachHandles();
+                    robot.approachHandles();
                     status(robot);
-                    std::cout << "robot.ApproachHandles() done" << std::endl;
-                    robot.LockHandles();
+                    std::cout << "robot.approachHandles() done" << std::endl;
+                    robot.lockHandles();
                     status(robot);
-                    std::cout << "robot.LockHandles() done" << std::endl;
+                    std::cout << "robot.lockHandles() done" << std::endl;
                     if (demo) {
                         // 每行依次为：转角 rad、推拉 m、速度倍率 v。
                         for (const auto target : {std::array<double, 3>{.87266, 0, .8},
@@ -84,7 +73,7 @@ int main(int argc, char **argv) {
                             if (exit) break;
                             std::cout << "DEMO target angle=" << target[0]
                                       << " displacement=" << target[1] << std::endl;
-                            robot.MoveWheel(target[0], target[1], target[2]);
+                            robot.moveWheel(target[0], target[1], target[2]);
                             status(robot);
                         }
                     } else {
@@ -94,28 +83,28 @@ int main(int argc, char **argv) {
                                                   {0, 0, .5}}) {
                             auto next = std::chrono::steady_clock::now();
                             for (int tick = 0; tick < 100 && !exit; ++tick) {
-                                robot.ServoWheel(target[0], target[1], target[2]);
+                                robot.servoWheel(target[0], target[1], target[2]);
                                 next += std::chrono::milliseconds(20);
                                 std::this_thread::sleep_until(next);
                             }
                             status(robot);
                         }
-                        robot.Stop();
+                        robot.stop();
                         while (robot.GetState() == "SERVO")
                             std::this_thread::sleep_for(std::chrono::milliseconds(5));
                         if (robot.GetState() != "LOCKED")
                             throw std::runtime_error(robot.GetStatus().motion_error);
                     }
 
-                    robot.UnlockHandles();
-                    robot.Disable();
+                    robot.unlockHandles();
+                    robot.disable();
                     std::cout << "Demo completed" << std::endl;
                 } else {
                     interactive(robot, exit);
                 }
             } catch (const std::exception &e) {
                 std::cerr << "Execution failed: " << e.what() << std::endl;
-                robot.Stop(); result = 1;
+                robot.stop(); result = 1;
             }
             exit = true;
             task_done = true;
@@ -123,7 +112,7 @@ int main(int argc, char **argv) {
         while (!exit) {
             connection->heartbeat();
             connection->report(robot.GetState());
-            if (interrupted) { robot.Stop(); exit = true; }
+            if (interrupted) { robot.stop(); exit = true; }
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         // Keep the local-task lease alive while the motion worker finishes cancellation.
@@ -133,7 +122,7 @@ int main(int argc, char **argv) {
         }
         task.join();
         try {
-            auto cleanup = std::async(std::launch::async, [&] { robot.Disable(); });
+            auto cleanup = std::async(std::launch::async, [&] { robot.disable(); });
             while (cleanup.wait_for(std::chrono::milliseconds(5)) != std::future_status::ready)
                 connection->heartbeat();
             cleanup.get();
@@ -184,7 +173,7 @@ static void interactive(aviator::Aviator &robot, std::atomic<bool> &exit) {
             in >> command;
             if (command.empty()) continue;
             if (command == "quit" || command == "exit") { exit = true; break; }
-            if (command == "stop") { robot.Stop(); continue; }
+            if (command == "stop") { robot.stop(); continue; }
             if (command == "status") { status(robot); continue; }
 
             double angle = 0, displacement = 0, v = 0.5;
@@ -201,20 +190,20 @@ static void interactive(aviator::Aviator &robot, std::atomic<bool> &exit) {
 
             // Servo 本身非阻塞，直接调用；不创建指令队列或每周期线程。
             if (command == "servo") {
-                robot.ServoWheel(angle, displacement, v);
+                robot.servoWheel(angle, displacement, v);
                 continue;
             }
             if (action.joinable()) action.join();
             busy = true;
             action = std::thread([&, command, angle, displacement, v] {
                 try {
-                    if (command == "enable") robot.Enable();
-                    else if (command == "disable") robot.Disable();
-                    else if (command == "approach") robot.ApproachHandles();
-                    else if (command == "lock") robot.LockHandles();
-                    else if (command == "unlock") robot.UnlockHandles();
-                    else if (command == "reset") robot.ResetFault();
-                    else if (command == "wheel") robot.MoveWheel(angle, displacement, v);
+                    if (command == "enable") robot.enable();
+                    else if (command == "disable") robot.disable();
+                    else if (command == "approach") robot.approachHandles();
+                    else if (command == "lock") robot.lockHandles();
+                    else if (command == "unlock") robot.unlockHandles();
+                    else if (command == "reset") robot.resetFault();
+                    else if (command == "wheel") robot.moveWheel(angle, displacement, v);
                     std::cout << "[ok] " << robot.GetState() << std::endl;
                 } catch (const std::exception &e) {
                     std::cerr << "[error] " << e.what() << std::endl;
@@ -225,7 +214,7 @@ static void interactive(aviator::Aviator &robot, std::atomic<bool> &exit) {
             std::cerr << "[error] " << e.what() << std::endl;
         }
     }
-    if (exit) robot.Stop();
+    if (exit) robot.stop();
     if (action.joinable()) action.join();
-    robot.Stop();
+    robot.stop();
 }

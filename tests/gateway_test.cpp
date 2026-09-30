@@ -20,6 +20,45 @@ int main() {
     try {
         auto sample = stick();
         check(!sample.fresh(1000000, 100000), "no sample on startup");
+        auto idle = stick();
+        idle.initializePosition(0, 32767, 1000000);
+        idle.deviceChecked(1000000);
+        check(idle.fresh(1000000, 100000) && idle.roll_value == 0 && idle.pitch_value == 0,
+              "stationary startup gets a valid queried position without an evdev event");
+        const auto startup_command = flight_gateway::command(idle, aviator::new_session_id(), "boot", 1,
+                                                              1000000, 1, 100000);
+        aviator::InputPolicy startup_policy;
+        startup_policy.publisher_id = "flight_gateway";
+        startup_policy.session_id = startup_command.header.session_id;
+        startup_policy.clock_id = "boot";
+        startup_policy.source = "JOYSTICK";
+        startup_policy.allow_joystick_position_hold = true;
+        aviator::InputGuard startup_guard(startup_policy);
+        std::string startup_error;
+        check(startup_guard.accept(startup_command, 1000000, startup_error),
+              "Core can bind a stationary Gateway before the first button press");
+        idle.initializePosition(32767, 65534, 1020000);
+        idle.deviceChecked(1020000);
+        check(idle.sample_us == 1000000 && idle.roll_value == 0,
+              "periodic checks do not fabricate a new position sample");
+        idle.update(event(EV_ABS, ABS_X, 123, 999999), 1020000);
+        idle.update(event(EV_SYN, SYN_REPORT, 0, 999999), 1020000);
+        check(!idle.failed && idle.roll_value == 0 && idle.roll.value == 0,
+              "queued pre-snapshot reports cannot roll back initial position");
+        idle.update(event(EV_ABS, ABS_X, 32767, 1030000), 1030000);
+        idle.update(event(EV_SYN, SYN_REPORT, 0, 1030000), 1030000);
+        idle.deviceChecked(1030000);
+        check(idle.fresh(1030000, 100000) && idle.roll_value == 1, "events replace initial snapshot");
+        idle.invalidate();
+        idle.initializePosition(0, 32767, 1040000);
+        check(idle.failed && !idle.valid, "snapshot cannot revive a failed device");
+        idle = stick();
+        idle.update(event(EV_ABS, ABS_X, 1, 1000000), 1000000);
+        idle.initializePosition(0, 32767, 1000000);
+        check(!idle.valid, "snapshot cannot complete a partial report");
+        idle = stick();
+        idle.initializePosition(40000, 32767, 1000000);
+        check(idle.failed, "invalid initial axis snapshot rejected");
         sample.update(event(EV_ABS, ABS_X, -32768, 1000000), 1000000);
         check(!sample.valid, "axis update is not a complete report");
         sample.update(event(EV_ABS, ABS_Y, 65534, 1000000), 1000000);
@@ -91,13 +130,45 @@ int main() {
         state.header = {"1.0", 1, 1, 1000000, "boot", "aviator_core", session, true};
         state.body = {{"system", {{"state", "CONTROL"}, {"current_error_code", 0}, {"last_error_code", 8194}}}};
         check(flight_gateway::valid_state_summary(state), "valid state summary");
-        for (const char* name : {"INITIALIZING", "RELEASING"}) {
+        for (const char* name : {"INITIALIZING", "RELEASING", "READY", "HOMING"}) {
             state.body["system"]["state"] = name;
             check(flight_gateway::valid_state_summary(state), "new Core transition state rejected");
         }
         state.body["system"]["state"] = "STOPPING";
         check(!flight_gateway::valid_state_summary(state), "retired STOPPING accepted");
         state.body["system"]["state"] = "CONTROL";
+        flight_gateway::CoreFeedback discovered("", "boot");
+        check(discovered.session().empty() && discovered.expired(1000000), "discovery starts unbound");
+        auto bad = state;
+        bad.header.valid = false;
+        check(!discovered.accept(bad, 1000000, error) && discovered.session().empty(), "invalid status bound Core");
+        bad = state; bad.header.clock_id = "other-boot";
+        check(!discovered.accept(bad, 1000000, error) && discovered.session().empty(), "foreign clock bound Core");
+        bad = state; bad.header.publisher_id = "other";
+        check(!discovered.accept(bad, 1000000, error) && discovered.session().empty(), "foreign publisher bound Core");
+        check(!discovered.accept(state, 1100000, error) && discovered.session().empty(), "stale status bound Core");
+        check(discovered.accept(state, 1000000, error) && discovered.session() == session, "automatic Core binding failed");
+        check(!discovered.requestsReady(1000000), "Core discovery alone cannot authorize a button");
+        check(!discovered.accept(state, 1000001, error), "replayed Core status accepted");
+        bad = state; bad.header.sequence = 2; bad.header.session_id = aviator::new_session_id();
+        check(!discovered.accept(bad, 1000001, error) && discovered.session() == session, "auto-switched Core session");
+        check(discovered.expired(1100000), "silent Core remained fresh");
+        check(!discovered.accept(bad, 1100000, error) && discovered.session() == session, "expiry unbound Core session");
+        auto authorized = state;
+        authorized.header.sequence = 2;
+        authorized.header.sample_mono_us = 1100000;
+        authorized.body["system"]["source_authorized"] = true;
+        check(discovered.accept(authorized, 1100000, error) && discovered.requestsReady(1100000),
+              "fresh Core binding confirmation enables buttons");
+        check(!discovered.requestsReady(1200000), "stale Core feedback disables button submission");
+        authorized.header.sequence = 3;
+        authorized.header.sample_mono_us = 1200000;
+        authorized.body["system"]["source_authorized"] = false;
+        check(discovered.accept(authorized, 1200000, error) && !discovered.requestsReady(1200000),
+              "revoked source disables button submission");
+        flight_gateway::CoreFeedback pinned(session, "boot");
+        check(!pinned.accept(bad, 1000001, error), "manual Core binding ignored");
+        check(pinned.accept(state, 1000000, error), "manual Core binding failed");
         aviator::InputPolicy policy;
         policy.topic = aviator::Topic::flight_state; policy.publisher_id = "aviator_core";
         policy.session_id = session; policy.clock_id = "boot";

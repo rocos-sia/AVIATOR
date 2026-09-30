@@ -2,10 +2,15 @@
 
 版本：V1.0 设计稿。范围：aviator_core 整机业务状态机及其与 Gateway、Manipulator 的接口。本文件细化状态、事件、异步动作和最小 boost::sml 实现方式，不代表运行代码或手刹控制已经实现。
 
-实施进度：现已新增 `RobotStateMachine.hpp/.cpp` 及 Core 的 `--state-machine` 可选入口，
-原有 Demo/Servo 入口保留。十状态转换、异步任务代号/超时、执行门控、软件急停持久化请求和状态导出
-见 [Core 使用说明](../nodes/aviator_core/README.md#整机状态机入口)。独立安全监督器、手刹硬件执行/反馈、
-六操作的 RS422/ZMQ 服务适配尚未实现；后文涉及这些硬件和接口的内容仍为设计要求，不是已验收能力。
+实施进度：`RobotStateMachine.hpp/.cpp` 已实现十二状态、六操作、守卫、任务编号/超时与保护转换。
+Aviator 已增加 Managed 模式，大写六操作经同一个状态机判定，唯一工作任务调用小写功能实现；
+`aviator_core_managed` 通过 StateMachineRuntime 适配真实反馈、本地测试策略、终端及 Gateway 六请求/连续目标，不再在入口拥有第二套状态机。
+`aviator_core` / `aviator_core_servo` 使用 Direct 模式和小写接口，原测试流程、真实手控制与执行层保护保留。
+`main_sml.cpp` / `aviator_core_sml` 继续仅测试纯状态机，不连接总线或设备。
+接入方法见 [Core 说明](../nodes/aviator_core/README.md#aviator-的最小状态机接入)。
+当前设备测试入口已移除外部安全证据文件：跟随/释放由本地策略授权，clear_of_wheel 按软件锁和执行器阶段判断；设备/输入/任务守卫保留。软件急停只在当前进程锁存，不跨重启保存，尚未独立检测硬件急停。
+代码接入不代表实机验收：独立安全监督器、物理手刹、RS422 接入及柔顺 FOLLOWING 尚未实现；摇杆六操作 ZMQ 服务已接入 Managed Core；
+手节点超时默认张开的策略也尚不满足保护时保持抓握的目标。本轮只做离线和隔离 MuJoCo 验证。
 
 ## 1. 依据与设计边界
 
@@ -20,30 +25,33 @@
 
 SML 的转换表由源状态、事件、守卫、动作和目标状态组成；无目标的内部转换适合幂等确认。本设计只用这些基础能力，参见 [SML 官方教程](https://boost-ext.github.io/sml/tutorial.html)。工程以本地固定版本为准，不依赖在线最新版。
 
-本次设计按用户指定的十个状态执行。旧协议的 STOPPING 不作为本设计状态；INITIALIZING 是新增过渡状态。协议差异集中列于第 9 节，不静默更改已经形成的 RS422 Word 文件或现有协议枚举。
+本次按已确认流程增加 READY（准备完成）和 HOMING（回 home 中），共十二个状态。旧协议的 STOPPING 不作为本设计状态；INITIALIZING 是新增过渡状态。协议差异集中列于第 9 节，不静默更改已经形成的 RS422 Word 文件或现有协议枚举。
 
 ## 2. 状态定义
 
 | 状态 | 分类 | 进入后的行为 | 允许主动执行飞控目标 |
 | --- | --- | --- | --- |
 | INIT | 起始状态 | 创建状态机；检查急停锁存；无锁存时自动投递一次内部 Boot。 | 否 |
-| INITIALIZING | 过渡状态 | 异步连接、自检、校准配置检查和初始状态确认。 | 否 |
-| STANDBY | 稳定状态 | 已完成初始化、已脱离方向盘，等待操作；不等于断电或自动回零。 | 否 |
+| INITIALIZING | 过渡状态 | 初始化资源、双臂使能和关节阻抗模式设置，保持当前位置。 | 否 |
+| READY | 稳定状态 | 启动准备已完成，等待外部 ENTER_STANDBY；不自动回 home。 | 否 |
+| HOMING | 过渡状态 | 执行回 home，检查实际关节到位和停稳。 | 否 |
+| STANDBY | 稳定状态 | 双臂已实际回到 home 且停稳，保持使能及阻抗模式，等待抓握。 | 否 |
 | GRASPING | 过渡状态 | 执行既有接近/抓握程序；只允许一个活动任务。 | 否 |
 | FOLLOWING | 稳定状态 | 经授权的柔顺或目标随动；执行批准的跟随控制律。 | 否 |
 | CONTROL | 稳定状态 | 接纳合法、授权、新鲜的飞控目标，受本地输入 watchdog 限制。 | 是，仍须通过执行门控 |
-| RELEASING | 过渡状态 | 执行松开并离开方向盘的程序。 | 否 |
+| RELEASING | 过渡状态 | 执行松开、撤离及回 home，到位后进入 STANDBY。 | 否 |
 | SAFE | 保护状态 | 中止当前普通任务、关闭主动操控、按批准策略保持/减速；待显式恢复。 | 否 |
 | ERROR | 故障状态 | 记录当前及上次错误，中止任务并执行本地保护；不得自动恢复操控。 | 否 |
 | EMERGENCY_STOP | 不可逆锁存状态 | 关闭操控、中止普通任务、请求拉动手刹并锁存急停。 | 否，永久禁止本状态机实例恢复 |
 
-INITIALIZING、GRASPING、RELEASING 都是“命令已受理、任务尚未完成”的正式状态，不用布尔 `busy` 替代线上状态。状态名称定义业务模式，不保证物理动作已到位。
+INITIALIZING、HOMING、GRASPING、RELEASING 都是“命令已受理、任务尚未完成”的正式状态，不用布尔 `busy` 替代线上状态。状态名称定义业务模式，不保证物理动作已到位。
 
 ### 2.1 初始化边界
 
-正常启动：`INIT → INITIALIZING → STANDBY`；初始化提交失败、自检失败或超时进入 ERROR。Boot 由 Core 启动流程自动产生，不增加串口消息或外部指令。
+正常启动：`INIT → INITIALIZING → READY`；收到外部 ENTER_STANDBY 后 `READY → HOMING → STANDBY`；初始化提交失败、自检失败或超时进入 ERROR。Boot 由 Core 启动流程自动产生，不增加串口消息或外部指令。
 
-初始化默认不包含隐式机械臂回零、松手或其他未授权运动。成功须确认设备及配置满足待机要求、机器人已脱离方向盘且当前执行已稳定；若开机时位置或接触关系未知，进入 ERROR，由维护流程确认，不能仅因设备连接成功报告 STANDBY。若部署需要运动初始化，必须明确该任务轨迹、授权及可中止方式。
+初始化包含原有资源初始化、双臂上使能和阻抗配置；沿用 RemoteLink 使能前张开并确认手的流程。Rokae 后端调用 prepare/setJointImpedance/startMove(jointImpedance)，首帧对齐实测位置后保持，不自动运动到 home。
+READY 不能直接抓握。ENTER_STANDBY 创建独立 home 任务；轨迹完成、实际位置误差满足 home_position_tolerance 且停稳后才进入 STANDBY。Managed 抓握从 home 开始，不再重复上使能/回 home。释放任务增加撤离后回 home，因此完成时仍为 STANDBY。两个 Direct Demo 的顺序流程保留。
 
 ### 2.2 FOLLOWING 与退出操控
 
@@ -94,7 +102,9 @@ FOLLOWING 不消费主动飞控 roll/pitch，即使串口仍有 50 Hz CONTROL �
 | 当前状态 | 事件 | 守卫/前提 | 下一状态 | 动作及应答 |
 | --- | --- | --- | --- | --- |
 | INIT | Boot | 无急停锁存、任务空闲 | INITIALIZING | 登记初始化任务；内部事件无 REPLY。 |
-| INITIALIZING | Done | 当前 generation，初始化完成，ready/settled/clear_of_wheel | STANDBY | 清活动任务。 |
+| INITIALIZING | Done | 当前 generation，初始化完成，ready/settled/clear_of_wheel | READY | 清活动任务。 |
+| READY | ENTER_STANDBY | ready、settled、clear_of_wheel、任务空闲 | HOMING | 登记 home 任务，ACCEPTED。 |
+| HOMING | Done | 当前 generation、ready、settled、clear_of_wheel | STANDBY | 已到 home 并停稳。 |
 | STANDBY | ENTER_STANDBY | 正常状态 | STANDBY | 内部幂等转换，COMPLETED；不重复初始化。 |
 | STANDBY | GRASP_WHEEL | ready、settled、跟随已授权、任务空闲 | GRASPING | 登记抓握任务，ACCEPTED。 |
 | GRASPING | Done | 当前 generation，动作完成，ready、跟随仍授权 | FOLLOWING | 清任务，执行器启用跟随模式。 |
@@ -102,12 +112,12 @@ FOLLOWING 不消费主动飞控 roll/pitch，即使串口仍有 50 Hz CONTROL �
 | CONTROL | EXIT_CONTROL | 随动仍获授权；否则先处理 SafetyLost | FOLLOWING | 关闭主动目标、清目标缓存、连续接管；COMPLETED 的含义见第 2.2 节。 |
 | FOLLOWING | EXIT_CONTROL | 无更高优先级安全事件 | FOLLOWING | 幂等 COMPLETED，不重新触发执行器。 |
 | FOLLOWING | LEAVE_WHEEL 或 ENTER_STANDBY | ready、settled、任务空闲 | RELEASING | 登记释放任务，ACCEPTED。 |
-| RELEASING | Done | 当前 generation，settled、clear_of_wheel | STANDBY | 清任务；不隐含回零。 |
+| RELEASING | Done | 当前 generation，settled、clear_of_wheel | STANDBY | 释放、撤离及回 home 均已完成，清任务。 |
 | ERROR | RESET_ERROR | fault_cleared、settled、无急停锁存 | SAFE | 确认清当前故障，保留 last_error；COMPLETED，不自动回操控。 |
-| SAFE | ENTER_STANDBY | ready、settled、clear_of_wheel、任务空闲 | INITIALIZING | 显式重新初始化检查，ACCEPTED。 |
+| SAFE | ENTER_STANDBY | ready、settled、clear_of_wheel、任务空闲 | HOMING | 必要时重新使能，然后回 home，ACCEPTED。 |
 | SAFE | LEAVE_WHEEL | ready、settled、任务空闲，释放动作已获准 | RELEASING | 显式受控脱离，ACCEPTED；不是安全状态自动松手。 |
 
-ERROR 恢复统一经 SAFE：已脱离方向盘则 ENTER_STANDBY 重新检查；仍处于接触关系则按批准流程 LEAVE_WHEEL。RESET_ERROR 不直接执行释放动作。
+ERROR 恢复统一经 SAFE：已脱离方向盘则 ENTER_STANDBY 回 home；仍处于接触关系则按批准流程 LEAVE_WHEEL。RESET_ERROR 不直接执行释放动作。
 
 CONTROL 下 ENTER_STANDBY、LEAVE_WHEEL 拒绝，须先 EXIT_CONTROL。所有未列出的外部事件均拒绝：过渡状态中的普通请求返回 BUSY，其他非法组合返回 INVALID_STATE；守卫失败按原因返回 CAPABILITY_UNAVAILABLE、INVALID_STATE 或 BUSY。不把未知事件自动当故障，也不重复执行耗时任务。
 
@@ -116,9 +126,9 @@ CONTROL 下 ENTER_STANDBY、LEAVE_WHEEL 拒绝，须先 EXIT_CONTROL。所有未
 | 当前状态集合 | 事件 | 下一状态 | 规则 |
 | --- | --- | --- | --- |
 | 除 EMERGENCY_STOP 外的全部状态 | Emergency | EMERGENCY_STOP | 不受普通任务占用、守卫或队列容量限制。 |
-| INIT、INITIALIZING、STANDBY、GRASPING、FOLLOWING、CONTROL、RELEASING、SAFE | Fault | ERROR | 关闭操控，中止任务，记录错误。 |
+| INIT、INITIALIZING、READY、HOMING、STANDBY、GRASPING、FOLLOWING、CONTROL、RELEASING、SAFE | Fault | ERROR | 关闭操控，中止任务，记录错误。 |
 | ERROR | Fault | ERROR | 仅更新诊断，不重复启动停止动作。 |
-| GRASPING、FOLLOWING、CONTROL、RELEASING | SafetyLost | SAFE | 中止本次动作，关闭主动操控；不自动释放。 |
+| READY、HOMING、STANDBY、GRASPING、FOLLOWING、CONTROL、RELEASING | SafetyLost | SAFE | 中止本次动作，关闭主动操控；不自动释放。 |
 | INIT、INITIALIZING | 必需资源失效 | ERROR | 分类为初始化 Fault。 |
 | STANDBY、SAFE | 非当前模式必需输入断流 | 原状态 | 更新健康标志，不因待机没有飞控目标而反复报控制超时。 |
 | EMERGENCY_STOP | 任何事件 | EMERGENCY_STOP | 无出边；只允许诊断及手刹执行反馈更新。 |
@@ -127,8 +137,10 @@ CONTROL 下 ENTER_STANDBY、LEAVE_WHEEL 拒绝，须先 EXIT_CONTROL。所有未
 stateDiagram-v2
     [*] --> INIT
     INIT --> INITIALIZING: 自动 Boot
-    INITIALIZING --> STANDBY: 初始化完成
+    INITIALIZING --> READY: 初始化完成
     INITIALIZING --> ERROR: 失败或超时
+    READY --> HOMING: ENTER_STANDBY / 回 home
+    HOMING --> STANDBY: Done / 到位停稳
     STANDBY --> GRASPING: GRASP_WHEEL
     GRASPING --> FOLLOWING: 抓握程序完成
     FOLLOWING --> CONTROL: START_CONTROL
@@ -136,7 +148,7 @@ stateDiagram-v2
     FOLLOWING --> RELEASING: LEAVE_WHEEL / ENTER_STANDBY
     RELEASING --> STANDBY: 释放完成
     ERROR --> SAFE: RESET_ERROR
-    SAFE --> INITIALIZING: ENTER_STANDBY / 已脱离
+    SAFE --> HOMING: ENTER_STANDBY / 已脱离
     SAFE --> RELEASING: LEAVE_WHEEL / 允许释放
     CONTROL --> SAFE: SafetyLost
     GRASPING --> ERROR: Fault
@@ -186,12 +198,8 @@ Emergency 的入口可以是独立硬件急停、监护进程或经过授权的�
 Context 的 accepts_control 是执行门控，不是第二份状态枚举；每次真正提交目标仍检查 `sm.is(state<CONTROL>)`、门控和输入有效性。状态对外导出使用 `is()` 或 `visit_current_states()` 映射，不能再维护一个可独立修改的 current_state。
 
 ```cpp
-#pragma once
-#include <boost/sml.hpp>
-#include <cstdint>
-namespace aviator::fsm {
-namespace sml = boost::sml;
-struct INIT {}; struct INITIALIZING {}; struct STANDBY {};
+// 节选自 include/aviator/RobotStateMachine.hpp；外层为 aviator::fsm，sml=boost::sml。
+struct INIT {}; struct INITIALIZING {}; struct READY {}; struct HOMING {}; struct STANDBY {};
 struct GRASPING {}; struct FOLLOWING {}; struct CONTROL {};
 struct RELEASING {}; struct SAFE {}; struct ERROR {};
 struct EMERGENCY_STOP {};
@@ -200,75 +208,86 @@ struct ENTER_STANDBY {}; struct GRASP_WHEEL {}; struct START_CONTROL {};
 struct EXIT_CONTROL {}; struct LEAVE_WHEEL {}; struct RESET_ERROR {};
 struct Done { std::uint64_t generation; };
 struct Fault {}; struct SafetyLost {}; struct Emergency {};
-enum class Job { none, initialize, grasp, release };
+enum class Job { none, initialize, home, grasp, release };
 struct Context {
   bool ready{}, following_authorized{}, source_authorized{}, input_ready{};
   bool settled{}, clear_of_wheel{}, fault_cleared{}, emergency_latched{};
+  bool executor_idle{}, release_authorized{}, pending_job{}, stop_requested{};
   bool accepts_control{}, brake_requested{};
   Job job{Job::none};
   std::uint64_t generation{};
-  void cancel() { accepts_control = false; job = Job::none; ++generation; }
-  void begin(Job value) { cancel(); job = value; }
+  void cancel() { accepts_control = false; job = Job::none; pending_job = false; ++generation; }
+  void begin(Job value) { cancel(); job = value; pending_job = true; }
 };
 struct RobotMachine {
   auto operator()() const {
     using namespace sml;
-    const auto free = [](const Context& c) { return c.job == Job::none; };
+    const auto free = [](const Context& c) { return c.job == Job::none && c.executor_idle && !c.emergency_latched; };
     const auto grasp_ok = [](const Context& c) {
-      return c.ready && c.settled && c.following_authorized && c.job == Job::none;
+      return c.ready && c.settled && c.following_authorized && c.job == Job::none && c.executor_idle;
     };
     const auto control_ok = [](const Context& c) {
       return c.ready && c.settled && c.following_authorized &&
-             c.source_authorized && c.input_ready && c.job == Job::none;
+             c.source_authorized && c.input_ready && c.job == Job::none && c.executor_idle;
     };
     const auto release_ok = [](const Context& c) {
-      return c.ready && c.settled && c.job == Job::none;
+      return c.ready && c.settled && c.release_authorized && c.job == Job::none && c.executor_idle;
     };
     const auto recover_ok = [](const Context& c) {
-      return c.ready && c.settled && c.clear_of_wheel && c.job == Job::none;
+      return c.ready && c.settled && c.clear_of_wheel && c.job == Job::none && c.executor_idle;
     };
     const auto reset_ok = [](const Context& c) {
-      return c.fault_cleared && c.settled && !c.emergency_latched;
+      return c.fault_cleared && c.settled && c.executor_idle && !c.emergency_latched;
     };
     const auto init_done = [](const Done& e, const Context& c) {
       return e.generation == c.generation && c.job == Job::initialize &&
-             c.ready && c.settled && c.clear_of_wheel;
+             c.ready && c.settled && c.clear_of_wheel && c.executor_idle;
+    };
+    const auto home_done = [](const Done& e, const Context& c) {
+      return e.generation == c.generation && c.job == Job::home &&
+             c.ready && c.settled && c.clear_of_wheel && c.executor_idle;
     };
     const auto grasp_done = [](const Done& e, const Context& c) {
       return e.generation == c.generation && c.job == Job::grasp &&
-             c.ready && c.following_authorized;
+             c.ready && c.following_authorized && c.executor_idle;
     };
     const auto release_done = [](const Done& e, const Context& c) {
       return e.generation == c.generation && c.job == Job::release &&
-             c.settled && c.clear_of_wheel;
+             c.settled && c.clear_of_wheel && c.executor_idle;
     };
     const auto initialize = [](Context& c) { c.begin(Job::initialize); };
+    const auto home = [](Context& c) { c.begin(Job::home); };
     const auto grasp = [](Context& c) { c.begin(Job::grasp); };
     const auto release = [](Context& c) { c.begin(Job::release); };
     const auto finished = [](Context& c) { c.job = Job::none; };
     const auto enable = [](Context& c) { c.accepts_control = true; };
     const auto disable = [](Context& c) {
-      c.accepts_control = false; c.settled = false;
+      c.accepts_control = false; c.settled = false; c.stop_requested = true;
     };
-    const auto stop = [](Context& c) { c.cancel(); };
+    const auto stop = [](Context& c) { c.cancel(); c.stop_requested = true; };
     const auto emergency = [](Context& c) {
-      c.cancel(); c.emergency_latched = true; c.brake_requested = true;
+      c.cancel(); c.emergency_latched = true; c.brake_requested = true; c.stop_requested = true;
     };
     return make_transition_table(
       *state<INIT> + event<Boot>[free] / initialize = state<INITIALIZING>,
-      state<INITIALIZING> + event<Done>[init_done] / finished = state<STANDBY>,
+      state<INITIALIZING> + event<Done>[init_done] / finished = state<READY>,
+      state<READY> + event<ENTER_STANDBY>[recover_ok] / home = state<HOMING>,
+      state<HOMING> + event<Done>[home_done] / finished = state<STANDBY>,
       state<STANDBY> + event<ENTER_STANDBY> / [] {},
       state<STANDBY> + event<GRASP_WHEEL>[grasp_ok] / grasp = state<GRASPING>,
       state<GRASPING> + event<Done>[grasp_done] / finished = state<FOLLOWING>,
       state<FOLLOWING> + event<START_CONTROL>[control_ok] / enable = state<CONTROL>,
-      state<CONTROL> + event<EXIT_CONTROL> / disable = state<FOLLOWING>,
+      state<CONTROL> + event<EXIT_CONTROL>[([](const Context& c) { return c.following_authorized; })] / disable = state<FOLLOWING>,
       state<FOLLOWING> + event<EXIT_CONTROL> / [] {},
       state<FOLLOWING> + event<LEAVE_WHEEL>[release_ok] / release = state<RELEASING>,
       state<FOLLOWING> + event<ENTER_STANDBY>[release_ok] / release = state<RELEASING>,
       state<RELEASING> + event<Done>[release_done] / finished = state<STANDBY>,
-      state<SAFE> + event<ENTER_STANDBY>[recover_ok] / initialize = state<INITIALIZING>,
+      state<SAFE> + event<ENTER_STANDBY>[recover_ok] / home = state<HOMING>,
       state<SAFE> + event<LEAVE_WHEEL>[release_ok] / release = state<RELEASING>,
       state<ERROR> + event<RESET_ERROR>[reset_ok] / stop = state<SAFE>,
+      state<READY> + event<SafetyLost> / stop = state<SAFE>,
+      state<HOMING> + event<SafetyLost> / stop = state<SAFE>,
+      state<STANDBY> + event<SafetyLost> / stop = state<SAFE>,
       state<GRASPING> + event<SafetyLost> / stop = state<SAFE>,
       state<FOLLOWING> + event<SafetyLost> / stop = state<SAFE>,
       state<CONTROL> + event<SafetyLost> / stop = state<SAFE>,
@@ -276,6 +295,8 @@ struct RobotMachine {
       state<INIT> + event<Fault> / stop = state<ERROR>,
       state<INITIALIZING> + event<Fault> / stop = state<ERROR>,
       state<STANDBY> + event<Fault> / stop = state<ERROR>,
+      state<READY> + event<Fault> / stop = state<ERROR>,
+      state<HOMING> + event<Fault> / stop = state<ERROR>,
       state<GRASPING> + event<Fault> / stop = state<ERROR>,
       state<FOLLOWING> + event<Fault> / stop = state<ERROR>,
       state<CONTROL> + event<Fault> / stop = state<ERROR>,
@@ -284,6 +305,8 @@ struct RobotMachine {
       state<INIT> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
       state<INITIALIZING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
       state<STANDBY> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
+      state<READY> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
+      state<HOMING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
       state<GRASPING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
       state<FOLLOWING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
       state<CONTROL> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
@@ -293,7 +316,6 @@ struct RobotMachine {
     );
   }
 };
-} // namespace aviator::fsm
 ```
 
 Core 构造 `Context context; sml::sm<RobotMachine> machine{context};` 后，machine 初始确为 INIT。先读外部急停锁存：已锁存则处理 Emergency，否则由启动流程自动 `process_event(Boot{})`。采用显式内部 Boot 便于初始化依赖和验证初态；对飞控而言仍是自动初始化，无需发指令。
@@ -340,13 +362,13 @@ target_link_libraries(aviator_core_control PUBLIC sml::sml)
 
 | 接口项 | 当前文档 | 本设计及实施时的同步要求 |
 | --- | --- | --- |
-| INIT / INITIALIZING | RS422 仅有 INIT | INIT 保持 0；建议新增 INITIALIZING=10，不挪用现有状态值。启动 INIT 可非常短，外部可能首次只观察到 INITIALIZING。 |
+| INIT / INITIALIZING | RS422 仅有 INIT | INIT 保持 0；INITIALIZING=10、READY=11、HOMING=12，不挪用现有状态值。启动 INIT 可非常短，外部可能首次只观察到 INITIALIZING。 |
 | 其他状态值 | STANDBY=1、GRASPING=2、FOLLOWING=3、CONTROL=4、SAFE=5、ERROR=6、EMERGENCY_STOP=7、RELEASING=8、STOPPING=9 | 保留 1..8；9 退役保留，不发送；本设计不含 STOPPING。 |
 | EXIT_CONTROL | RS422 经 STOPPING 到 FOLLOWING | 改为 FOLLOWING 直接接管，phase 可为 DECELERATE；该协议变更须同时更新 Markdown/Word 并确认。 |
-| ENTER_STANDBY | RS422 主要是 STANDBY 幂等确认 | 增加 FOLLOWING→RELEASING 和 SAFE→INITIALIZING 的明确路径；仍拒绝 CONTROL 直接待机。 |
+| ENTER_STANDBY | RS422 主要是 STANDBY 幂等确认 | 增加 FOLLOWING→RELEASING 和 READY→HOMING 和 SAFE→HOMING 的明确路径；仍拒绝 CONTROL 直接待机。 |
 | RESET_ERROR | RS422 可恢复 SAFE/STANDBY | 收敛为 ERROR→SAFE，不直接恢复 STANDBY 或 CONTROL。 |
 | EMERGENCY_STOP | 现有协议描述为硬件急停/驱动保护 | 本设计明确手刹动作和无出口锁存。一般可恢复驱动故障归 ERROR，不一律映射成不可逆急停。 |
-| ZMQ system.state | 旧枚举缺 INITIALIZING、RELEASING | 增加两个字符串枚举及接收端校验；保留内部服务 request_id/session/epoch 机制。 |
+| ZMQ system.state | 旧枚举缺 INITIALIZING、RELEASING | 增加 INITIALIZING、READY、HOMING、RELEASING 字符串枚举及接收端校验；保留内部服务 request_id/session/epoch 机制。 |
 | STATUS.operation | 最近受理操作类别 | 初始化 Boot 非外部操作，启动时为 0；正常外部事件受理后更新；拒绝不覆盖。 |
 | STATUS.phase | 已有阶段 0..7 | INITIALIZING 默认 NONE，详细自检子阶段写内部诊断；无需为最小设计扩展线上字段。 |
 
@@ -362,9 +384,9 @@ CONTROL 只在 CONTROL 状态及门控有效时转换为执行目标；首条有
 
 | 验证项 | 预期 |
 | --- | --- |
-| 正常启动 | 构造为 INIT；自动 Boot 后 INITIALIZING；成功后 STANDBY。 |
+| 正常启动 | 构造为 INIT；自动 Boot 后 INITIALIZING；使能及阻抗准备成功后 READY，收到 ENTER_STANDBY 才经 HOMING 到 STANDBY。 |
 | 初始化失败/超时/提交失败 | ERROR，不假报 STANDBY。 |
-| 正常循环 | STANDBY→GRASPING→FOLLOWING→CONTROL→FOLLOWING→RELEASING→STANDBY。 |
+| 正常循环 | READY→HOMING→STANDBY→GRASPING→FOLLOWING→CONTROL→FOLLOWING→RELEASING（撤离并回 home）→STANDBY。 |
 | 守卫失败/非法事件 | 状态不变，明确拒绝；STANDBY 不能直接 START_CONTROL。 |
 | 重复请求/过渡中再请求 | 同请求不重复执行，其他互斥请求 BUSY。 |
 | EXIT_CONTROL 接管 | 立即不接纳飞控目标；未稳定时拒绝释放/重新操控，指令连续。 |
@@ -379,4 +401,4 @@ CONTROL 只在 CONTROL 状态及门控有效时转换为执行目标；首条有
 
 本文转换骨架已在临时独立工程中通过本地 `third_party/sml-1.2.0` 的 `add_subdirectory` / `sml::sml` 目标，以 C++20 Debug 构建并运行断言测试。覆盖启动、正常循环、守卫拒绝、释放、SafetyLost、故障复位、初始化失败、迟到完成、全部九个非急停状态进入急停，以及急停后六种外部事件均不可退出；不代表异步执行器、手刹硬件或全部故障注入已经通过实机验收。
 
-实施前需冻结：FOLLOWING 连续接管接口、三类任务最大时长、ready/settled 的实际来源、取消确认机制、SAFE 释放授权、急停独立执行及跨重启锁存、INITIALIZING 状态码和旧 STOPPING 的协议迁移。
+实施前需冻结：FOLLOWING 连续接管接口、初始化/回 home/抓握/释放任务最大时长、ready/settled 的实际来源、取消确认机制、SAFE 释放授权、急停独立执行及跨重启锁存、INITIALIZING 状态码和旧 STOPPING 的协议迁移。
