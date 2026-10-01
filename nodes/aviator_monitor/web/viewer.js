@@ -1,4 +1,4 @@
-import {THREE, URDFLoader, OrbitControls} from './vendor.js';
+import {THREE, URDFLoader, OrbitControls, ViewportGizmo} from './vendor.js';
 const $ = id => document.getElementById(id);
 function kindFor(name) {
   if (name.startsWith('AR5-5_07L')) return 'arms.left';
@@ -22,22 +22,26 @@ export class Viewer {
     this.renderer.outputColorSpace=THREE.SRGBColorSpace;
     container.append(this.renderer.domElement);
     this.controls=new OrbitControls(this.camera,this.renderer.domElement);
-    this.controls.enableDamping=true; this.controls.target.set(0,0,.5);
+    this.controls.enableDamping=true; this.controls.dampingFactor=.35; this.controls.target.set(0,0,.5);
     this.scene.add(new THREE.HemisphereLight(0xffffff,0x777777,2));
     const key=new THREE.DirectionalLight(0xffffff,3); key.position.set(2,-3,5); this.scene.add(key);
     this.grid=new THREE.GridHelper(6,30,0xaaaaaa,0x777777); this.grid.rotation.x=Math.PI/2; this.scene.add(this.grid);
-    this.axes=new THREE.AxesHelper(.35); this.axes.position.set(-.8,-.8,.01); this.scene.add(this.axes);
+    this.linkAxes=[]; this.jointAxes=[];
+    this.gizmo=new ViewportGizmo(this.camera,this.renderer,{container,size:100,placement:'bottom-left',id:'viewport-gizmo',offset:{left:8,bottom:8}});
+    this.gizmo.attachControls(this.controls);
     this.resizeObserver=new ResizeObserver(() => this.resize()); this.resizeObserver.observe(container);
     $('fit-model').onclick=()=>this.fit(); $('reset-view').onclick=()=>this.fit();
     $('grid-toggle').onclick=()=>{this.grid.visible=!this.grid.visible; $('grid-toggle').setAttribute('aria-pressed',String(this.grid.visible));};
-    $('axes-toggle').onclick=()=>{this.axes.visible=!this.axes.visible; $('axes-toggle').setAttribute('aria-pressed',String(this.axes.visible));};
-    $('cockpit-opacity').oninput=()=>this.style(); $('reload-model').onclick=()=>this.load();
+    for (const id of ['axes-toggle','joint-axes-toggle']) $(id).onclick=()=>{
+      $(id).setAttribute('aria-pressed',String($(id).getAttribute('aria-pressed')!=='true')); this.updateHelpers();
+    };
+    $('robot-opacity').oninput=()=>this.style(); $('cockpit-opacity').oninput=()=>this.style(); $('reload-model').onclick=()=>this.load();
     this.load();
   }
   resize() {
     const width=this.container.clientWidth,height=this.container.clientHeight;
     if (!width || !height) return;
-    this.camera.aspect=width/height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width,height,false);
+    this.camera.aspect=width/height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width,height,false); this.gizmo.update();
   }
   note(message,failed=false) {
     $('model-loading').textContent=message; $('model-loading').classList.toggle('failed',failed);
@@ -49,7 +53,7 @@ export class Viewer {
   async load() {
     const generation=++this.generation; this.note('正在加载模型结构…'); this.loaded=false;
     if (this.robot) { this.scene.remove(this.robot); this.disposeRobot(this.robot); this.robot=null; }
-    this.sources.clear(); this.materials=[];
+    this.clearHelpers(); this.sources.clear(); this.materials=[];
     try {
       const r=await fetch('/api/model-manifest'); if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const manifest=await r.json(); if (generation !== this.generation) return;
@@ -81,11 +85,53 @@ export class Viewer {
           });
           object.material=Array.isArray(object.material)?cloned:cloned[0];
         });
-        this.scene.add(robot); this.loaded=true; this.apply(); this.fit(); this.note(''); this.style();
+        this.scene.add(robot); this.createHelpers(); this.loaded=true; this.apply(); this.fit(); this.note(''); this.style();
       };
       const loader=new URDFLoader(manager); loader.parseVisual=true; loader.parseCollision=false;
       loader.load(manifest.model_url, result=>{robot=result; this.note('结构已解析，正在加载网格…');}, undefined,error=>{if(generation===this.generation) this.note(`模型加载失败：${error.message}`,true);});
     } catch(error) { if (generation===this.generation) this.note(`模型加载失败：${error.message}`,true); }
+  }
+  clearHelpers() {
+    for (const {helper} of [...this.linkAxes,...this.jointAxes]) {
+      this.scene.remove(helper);
+      helper.traverse(object=>{object.geometry?.dispose();
+        const materials=Array.isArray(object.material)?object.material:[object.material];
+        materials.forEach(material=>material?.dispose());});
+    }
+    this.linkAxes=[]; this.jointAxes=[];
+  }
+  createHelpers() {
+    const add=(target,helper,list)=>{
+      helper.matrixAutoUpdate=false;
+      helper.traverse(object=>{if(object.material) {
+        object.material.depthTest=false; object.material.depthWrite=false; object.renderOrder=10;
+      }});
+      this.scene.add(helper); list.push({target,helper});
+    };
+    for (const link of Object.values(this.robot.links)) add(link,new THREE.AxesHelper(.055),this.linkAxes);
+    for (const joint of Object.values(this.robot.joints)) {
+      if (joint.jointType==='fixed') continue;
+      const helper=new THREE.Group(),axis=joint.axis.clone().normalize();
+      helper.add(new THREE.ArrowHelper(axis,new THREE.Vector3(),.10,0xffcc55,.022,.012));
+      if (joint.jointType==='revolute' || joint.jointType==='continuous') {
+        // Positive rotation follows the right-hand rule about the URDF axis.
+        const arc=new THREE.Group(),points=[],radius=.035,end=Math.PI*1.5;
+        for(let i=0;i<=32;i++) {const a=end*i/32;points.push(new THREE.Vector3(radius*Math.cos(a),radius*Math.sin(a),0));}
+        arc.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xff9955})));
+        arc.add(new THREE.ArrowHelper(new THREE.Vector3(-Math.sin(end),Math.cos(end),0),points.at(-1),.016,0xff9955,.012,.009));
+        arc.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),axis); helper.add(arc);
+      }
+      add(joint,helper,this.jointAxes);
+    }
+    this.updateHelpers();
+  }
+  updateHelpers() {
+    this.robot?.updateMatrixWorld(true);
+    for (const [list,id] of [[this.linkAxes,'axes-toggle'],[this.jointAxes,'joint-axes-toggle']])
+      for (const {target,helper} of list) {
+        helper.visible=$(id).getAttribute('aria-pressed')==='true';
+        if(helper.visible) { helper.matrix.copy(target.matrixWorld); helper.matrixWorldNeedsUpdate=true; }
+      }
   }
   fit() {
     if (!this.robot) return;
@@ -142,16 +188,17 @@ export class Viewer {
   style() {
     const groups=this.groups();
     for(const {material,kind,color} of this.materials) {
-      if (kind==='aircraft') { material.transparent=true; material.opacity=Number($('cockpit-opacity').value); material.depthWrite=false; continue; }
+      if (kind==='aircraft') { material.opacity=Number($('cockpit-opacity').value); material.transparent=material.opacity<1; material.depthWrite=!material.transparent; continue; }
       const group=groups[kind],valid=!this.invalidGroups.has(kind) && this.isLive(group) && group?.current && Object.keys(group.current.model_joints ?? {}).length>0;
       material.color.copy(valid ? color : new THREE.Color('#999999'));
-      material.transparent=!valid; material.opacity=valid?1:.35; material.depthWrite=!!valid;
+      const opacity=kind==='yoke_observation' ? Number($('cockpit-opacity').value) : Number($('robot-opacity').value)/100;
+      material.opacity=opacity; material.transparent=material.opacity<1; material.depthWrite=!material.transparent;
     }
   }
   animate() {
     if (!this.visible) return;
     this.frame=requestAnimationFrame(()=>this.animate());
     const now=performance.now(); if(now-this.lastFrame<30) return;
-    this.lastFrame=now; this.apply(); this.controls.update(); this.renderer.render(this.scene,this.camera);
+    this.lastFrame=now; this.apply(); this.controls.update(); this.updateHelpers(); this.renderer.render(this.scene,this.camera); this.gizmo.render();
   }
 }

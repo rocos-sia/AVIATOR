@@ -33,7 +33,7 @@ cmake --build build/communication --target aviator_monitor --parallel
 - 飞控指令显示百分比、物理等价值与二维指令/视觉实测对照。指令刻度 ±100%，对照图 ±110%，反馈允许 roll ±52°、pitch −5～175 mm，映射仍为 ±50°/0～170 mm 对应 ±100%。
 - 过期部件保留灰色旧姿态，当前数值及图形标记取消；HTTP 断连时保留内容明确属于旧快照。每部分的时效在浏览器本地继续推进。
 
-模型允许旋转、平移、缩放、复位、网格/坐标轴及驾驶舱透明度调整，不能拖动机器人产生指令。源会话变化会重置相应显示插值，存在多个近期候选来源时停止该部件更新。
+模型允许旋转、平移、缩放和复位；左下角 gizmo 与视角同步并支持点击切换视向。“坐标轴”显示所有 link 的局部坐标系（红 X、绿 Y、蓝 Z），“关节轴”显示所有非 fixed joint 的正轴箭头与转动正方向（右手定则）。驾驶舱和机器人透明度可分别调整，不能拖动机器人产生指令。源会话变化会重置相应显示插值，存在多个近期候选来源时停止该部件更新。
 
 ## 独立 RGB 预览
 
@@ -114,7 +114,7 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 流与服务事务各最多 64 项；每流保留最新消息及最多 512 个接收时刻。HTTP 最多 8 个同时连接，请求头 4096 字节，整个请求 2 s；慢客户端不阻塞 SUB。
 
-前端依赖固定为 Three.js 0.186.1、URDFLoader 0.13.1。提交的 vendor.js 可离线运行，普通 CMake 构建与运行无需 Node.js/CDN。修改依赖时使用 Node ≥18，在 `web/` 中执行 `npm ci --ignore-scripts && npm run build:vendor`；许可见 [THIRD_PARTY_NOTICES.md](web/THIRD_PARTY_NOTICES.md)。
+前端依赖固定为 Three.js 0.186.1、URDFLoader 0.13.1、three-viewport-gizmo 2.2.0。提交的 vendor.js 可离线运行，普通 CMake 构建与运行无需 Node.js/CDN。修改依赖时使用 Node ≥18，在 `web/` 中执行 `npm ci --ignore-scripts && npm run build:vendor`；许可见 [THIRD_PARTY_NOTICES.md](web/THIRD_PARTY_NOTICES.md)。
 
 ## 验证
 

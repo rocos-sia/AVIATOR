@@ -34,6 +34,60 @@ async function main() {
     await page.waitForFunction(()=>document.getElementById('actual-pitch').textContent==='73.1 mm');
     await page.waitForFunction(()=>!document.getElementById('camera-image').hidden && document.getElementById('camera-image').naturalWidth>0);
     await page.waitForFunction(()=>!document.getElementById('command-marker').hasAttribute('hidden') && !document.getElementById('measured-marker').hasAttribute('hidden'));
+    // Capture the active viewer through its render hook without adding a production debug API.
+    await page.evaluate(async()=>{
+      const {Viewer}=await import('/assets/viewer.js'),update=Viewer.prototype.updateHelpers;
+      Viewer.prototype.updateHelpers=function(){window.testViewer=this;return update.call(this);};
+    });
+    await page.waitForFunction(()=>window.testViewer?.robot);
+    assert(await page.evaluate(()=>{
+      const v=window.testViewer;
+      return v.linkAxes.length===Object.keys(v.robot.links).length &&
+        v.jointAxes.length===Object.values(v.robot.joints).filter(j=>j.jointType!=='fixed').length &&
+        v.linkAxes.every(({helper,target})=>helper.visible && helper.matrix.equals(target.matrixWorld));
+    }));
+    assert(await page.locator('#viewport-gizmo').isVisible());
+    await page.locator('#joint-axes-toggle').click();
+    assert.strictEqual(await page.locator('#joint-axes-toggle').getAttribute('aria-pressed'),'true');
+    await page.locator('#axes-toggle').click();
+    assert.strictEqual(await page.locator('#axes-toggle').getAttribute('aria-pressed'),'false');
+    await page.locator('#robot-opacity').fill('50');
+    assert(await page.evaluate(()=>{
+      const v=window.testViewer;
+      return v.linkAxes.every(({helper})=>!helper.visible) && v.jointAxes.every(({helper})=>helper.visible) &&
+        v.materials.filter(m=>m.kind.startsWith('arms.') || m.kind.startsWith('hands.')).every(m=>m.material.opacity===.5) &&
+        v.materials.filter(m=>m.kind==='aircraft').every(m=>m.material.opacity===.1);
+    }));
+    for (const opacity of [0,.5,1]) {
+      await page.locator('#cockpit-opacity').fill(String(opacity));
+      assert(await page.evaluate(opacity=>{
+        const materials=window.testViewer.materials;
+        return ['aircraft','yoke_observation'].every(kind=>{
+          const group=materials.filter(m=>m.kind===kind);
+          return group.length>0 && group.every(m=>m.material.opacity===opacity && m.material.transparent===(opacity<1));
+        }) && materials.filter(m=>m.kind.startsWith('arms.') || m.kind.startsWith('hands.')).every(m=>m.material.opacity===.5);
+      },opacity));
+    }
+    await page.locator('#cockpit-opacity').fill('0.1');
+    await page.locator('#viewport-gizmo').click({position:{x:70,y:50}});
+    await page.locator('#reset-view').click();
+    await page.locator('#robot-opacity').fill('100');
+    assert(await page.evaluate(()=>window.testViewer.materials
+      .filter(m=>m.kind.startsWith('arms.') || m.kind.startsWith('hands.'))
+      .every(m=>m.material.opacity===1 && !m.material.transparent && m.material.depthWrite)));
+    await page.locator('#robot-opacity').fill('0');
+    assert(await page.evaluate(()=>window.testViewer.materials
+      .filter(m=>m.kind.startsWith('arms.') || m.kind.startsWith('hands.'))
+      .every(m=>m.material.opacity===0)));
+    await page.locator('#robot-opacity').fill('100');
+    await page.locator('#joint-axes-toggle').click();
+    await page.locator('#reload-model').click();
+    await page.waitForFunction(()=>document.getElementById('model-loading').hidden);
+    assert(await page.evaluate(()=>{
+      const v=window.testViewer;
+      return v.linkAxes.every(({helper})=>!helper.visible) && v.jointAxes.every(({helper})=>!helper.visible) &&
+        v.scene.children.filter(o=>o.type==='AxesHelper').length===v.linkAxes.length;
+    }));
     await page.screenshot({path:path.join(directory,'overview.png')});
     await page.locator('#publisher-lights button').filter({hasText:'Camera'}).click();
     await page.waitForFunction(()=>document.querySelectorAll('#rows tr').length===1 && document.getElementById('rows').textContent.includes('camera.detection'));
