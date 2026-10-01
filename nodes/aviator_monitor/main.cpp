@@ -122,6 +122,7 @@ void response(Client& client, monitor::State& state, monitor::Preview& preview,
 int main(int argc, char** argv) {
     try {
         unsigned port = 8081;
+        std::string bind_address = "0.0.0.0";
         std::string endpoint = aviator::subscribe_endpoint, config_path, preview_endpoint;
         namespace fs = std::filesystem;
         const auto deployed =
@@ -141,17 +142,23 @@ int main(int argc, char** argv) {
             const std::string key = argv[i];
             if (key == "--help" || key == "-h") {
                 std::cout
-                    << "Usage: aviator_monitor [--port 8081] [--subscribe tcp://127.0.0.1:5556]\n"
+                    << "Usage: aviator_monitor [--bind 0.0.0.0] [--port 8081]\n"
+                       "  [--subscribe tcp://127.0.0.1:5556]\n"
                        "  [--config monitor.json] [--model-root MODELS] [--preview "
                        "tcp://127.0.0.1:5561|off]\n"
-                       "Read-only dual-tab Web UI on http://127.0.0.1:PORT (SIGINT/SIGTERM to "
-                       "stop).\n";
+                       "Read-only dual-tab Web UI; HTTP listens on all IPv4 interfaces by "
+                       "default.\n"
+                       "Open http://<server-LAN-IP>:PORT/ from another computer; use "
+                       "--bind 127.0.0.1 for local-only access.\n"
+                       "SIGINT/SIGTERM to stop.\n";
                 return 0;
             }
             if (++i == argc)
                 throw std::runtime_error("missing option value");
             if (key == "--port")
                 port = number(argv[i], 65535);
+            else if (key == "--bind")
+                bind_address = argv[i];
             else if (key == "--subscribe")
                 endpoint = argv[i];
             else if (key == "--config")
@@ -166,6 +173,11 @@ int main(int argc, char** argv) {
         }
         if (endpoint.rfind("tcp://", 0) != 0)
             throw std::runtime_error("subscription must use TCP");
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        if (inet_pton(AF_INET, bind_address.c_str(), &address.sin_addr) != 1)
+            throw std::runtime_error("--bind must be an IPv4 address: " + bind_address);
+        address.sin_port = htons(static_cast<unsigned short>(port));
         sigset_t signals;
         sigemptyset(&signals);
         sigaddset(&signals, SIGINT);
@@ -178,10 +190,6 @@ int main(int argc, char** argv) {
             throw std::runtime_error("cannot create server/signal fd");
         int reuse = 1;
         setsockopt(server.value, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-        sockaddr_in address{};
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        address.sin_port = htons(static_cast<unsigned short>(port));
         if (bind(server.value, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0 ||
             listen(server.value, 8) < 0)
             throw std::runtime_error(std::strerror(errno));
@@ -285,11 +293,18 @@ int main(int argc, char** argv) {
         });
         Join image_join{stop, images};
         std::array<Client, 8> clients;
-        std::cout << "aviator_monitor 已启动，请在浏览器打开：http://127.0.0.1:" << port << "/\n"
-                  << "subscribe=" << endpoint << std::endl;
+        const auto listen_url = "http://" + bind_address + ":" + std::to_string(port) + "/";
+        const auto local_url = "http://" +
+                               (bind_address == "0.0.0.0" ? "127.0.0.1" : bind_address) + ":" +
+                               std::to_string(port) + "/";
+        std::cout << "aviator_monitor 已启动，HTTP 监听：" << listen_url << '\n'
+                  << "本机浏览器打开：" << local_url << '\n';
+        if (bind_address == "0.0.0.0")
+            std::cout << "局域网浏览器打开：http://<本机局域网IP>:" << port << "/\n";
+        std::cout << "subscribe=" << endpoint << std::endl;
         aviator::print_startup(
             "aviator_monitor",
-            {{"HTTP listen", "http://127.0.0.1:" + std::to_string(port) + "/"},
+            {{"HTTP listen", listen_url},
              {"SUB connect", endpoint},
              {"SUB topics", "* (all topics; empty ZMQ subscription filter)"},
              {"PUB topics", "None (read-only monitor)"},

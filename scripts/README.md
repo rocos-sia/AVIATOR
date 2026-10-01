@@ -1,5 +1,34 @@
 # 项目配置脚本
 
+## 一键启动
+
+按 [启动流程](../docs/启动流程.txt) 启动 Bus、Manipulator（sudo）、Gateway、
+RH56FTP、Core、Camera、Monitor，打开全屏 Chrome，最后启动 Logger：
+
+```bash
+./scripts/start_aviator.sh --dry-run
+./scripts/start_aviator.sh
+```
+
+脚本可从任意目录调用。启动前检查文件，通过标准输入自动提交脚本内配置的 sudo 密码；
+Manipulator 在独立会话内直接认证，停止时也直接认证，不依赖 sudo 缓存，
+各节点日志写入输出的
+`/tmp/aviator-start.*` 目录；保持终端打开，Ctrl+C 停止本次启动的所有节点。
+节点退出会触发其余节点停止，浏览器保留打开。锁阻止该脚本重复运行；使用前应先停止手动启动的节点。
+启动顺序之间默认等待 2 秒（不代表设备已就绪），Monitor HTTP 就绪后打开浏览器。
+相机仍使用 `--show`，因此需要桌面显示环境。
+Logger 使用 `config/recording.yaml`，录制输出为仓库根目录的
+`recording_年月日_时分秒_纳秒.mcap`（北京时间，按 Logger 启动时间命名）；
+其运行日志保存在上述日志目录的 `logger.log`。
+
+默认 Python 环境为 `~/miniconda3/envs/rh56-pendant/bin/python3` 和
+`~/miniconda3/envs/apriltag_realsense/bin/python`，Monitor 使用
+`build/bin/aviator_monitor`。可通过 `CONDA_ROOT`、`HAND_PYTHON`、
+`CAMERA_PYTHON`、`MONITOR_BIN`、`START_DELAY` 环境变量覆盖。
+脚本直接使用环境 Python 并设置 PATH，不执行自定义 Conda 激活钩子。
+`/tmp/aviator_session.uuid` 不存在或为空时生成 UUID，否则沿用现有值。
+`--dry-run` 只打印启动命令，不启动节点、不请求 sudo、不写文件。
+
 ## 安装 apt 依赖（Ubuntu 22.04）
 
 ```bash

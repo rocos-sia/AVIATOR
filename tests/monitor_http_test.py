@@ -22,11 +22,12 @@ base = f'http://127.0.0.1:{port}'
 endpoint = f'tcp://127.0.0.1:{zmq_port}'
 children = []
 slow = None
+http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
-def fetch(path, method='GET'):
-    req = urllib.request.Request(base + path, method=method)
-    with urllib.request.urlopen(req, timeout=2) as response:
+def fetch(path, method='GET', origin=base):
+    req = urllib.request.Request(origin + path, method=method)
+    with http.open(req, timeout=2) as response:
         return response.read()
 
 
@@ -49,6 +50,11 @@ try:
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     children.append(web)
     until(lambda: fetch('/'))
+    # A second local IPv4 address catches a server bound only to 127.0.0.1.
+    alternate = f'http://127.0.0.2:{port}'
+    assert b'AVIATOR' in fetch('/', origin=alternate)
+    assert json.loads(fetch('/api/state', origin=alternate))['streams'] == []
+    assert b'textContent' in fetch('/assets/app.js', origin=alternate)
     assert json.loads(fetch('/api/state'))['streams'] == []
     assert b'AVIATOR' in fetch('/') and b'textContent' in fetch('/assets/app.js')
     assert len(json.loads(fetch('/api/overview'))['publishers']) == 7
@@ -93,6 +99,22 @@ try:
     until(lambda: json.loads(fetch('/api/state'))['streams'][0]['status'] == 'STALE')
     web.send_signal(signal.SIGTERM)
     assert web.wait(timeout=2) == 0
+    for address, excluded in [('127.0.0.1', '127.0.0.2'), ('127.0.0.2', '127.0.0.1')]:
+        web = subprocess.Popen([sys.argv[1], '--bind', address, '--port', str(port),
+                                '--subscribe', endpoint, '--preview', 'off'],
+                               stdout=subprocess.DEVNULL)
+        children.append(web)
+        until(lambda: fetch('/', origin=f'http://{address}:{port}'))
+        with socket.socket() as sock:
+            sock.settimeout(1)
+            assert sock.connect_ex((excluded, port)) != 0, '--bind must restrict the listener'
+        web.send_signal(signal.SIGTERM)
+        assert web.wait(timeout=2) == 0
+    for args in [ ['--bind'], ['--bind', 'localhost'], ['--bind', '256.0.0.1'],
+                  ['--bind', '::1'] ]:
+        result = subprocess.run([sys.argv[1], *args], capture_output=True, timeout=2)
+        assert result.returncode != 0
+        assert b'missing option value' in result.stderr or b'IPv4 address' in result.stderr
     print('monitor HTTP/TCP tests passed')
 finally:
     if slow:

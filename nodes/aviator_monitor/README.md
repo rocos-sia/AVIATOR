@@ -10,11 +10,21 @@ cmake --build build/communication --target aviator_monitor --parallel
 ./build/communication/bin/aviator_monitor
 ```
 
-浏览器打开 `http://127.0.0.1:8081/`。先启动 Bus 和需要观测的节点，或使用 `--subscribe` 连接隔离测试/回放总线。HTTP 固定监听本机回环地址；SIGINT/SIGTERM 正常退出。
+本机浏览器打开 `http://127.0.0.1:8081/`，局域网其他计算机打开 `http://<运行 Monitor 的主机局域网 IP>:8081/`。HTTP 默认监听 `0.0.0.0`（所有 IPv4 网卡），可通过 `--bind` 指定监听地址；`0.0.0.0` 是监听地址，其他计算机访问时必须使用服务主机的实际 IP，`127.0.0.1` 始终指向浏览器所在的计算机。先启动 Bus 和需要观测的节点，或使用 `--subscribe` 连接隔离测试/回放总线；SIGINT/SIGTERM 正常退出。
+
+```bash
+# 仅允许本机访问
+./build/communication/bin/aviator_monitor --bind 127.0.0.1
+# 仅监听指定网卡（替换为本机实际局域网 IP）
+./build/communication/bin/aviator_monitor --bind 192.168.1.100
+```
+
+页面、API、模型和相机预览均通过同一 HTTP 地址提供，浏览器无需直接连接 ZMQ。若仍无法访问，先用 `ss -ltnp 'sport = :8081'` 确认监听地址，再检查局域网路由和防火墙是否允许 TCP 8081。
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `--port` | `8081` | 本地 HTTP 端口。 |
+| `--bind` | `0.0.0.0` | HTTP 监听 IPv4 地址；`127.0.0.1` 限制为本机访问。 |
+| `--port` | `8081` | HTTP 端口。 |
 | `--subscribe` | `tcp://127.0.0.1:5556` | Bus XPUB 出口或回放总线。 |
 | `--config` | 源码或安装目录的 `monitor.json` | 监测专用 JSON 配置；部分字段覆盖默认值。 |
 | `--model-root` | 源码或安装目录的 `models/` | 包含 `urdf/aviator.urdf` 和 `meshes/` 的目录。 |

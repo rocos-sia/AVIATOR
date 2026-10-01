@@ -1,17 +1,26 @@
+//1、启动bus
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_bus --config config/system.yaml 
 
-
+//2、启动manipulator 注意sudo
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ sudo ./build/bin/manipulator  --config config/system.yaml 
 
-
+//3、启动gateway
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/flight_gateway 
 
-
+//4、启动rh56ftp
 conda activate rh56-pendant
 (rh56-pendant) rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ python3 nodes/rh56ftp_hand/rh56ftp_node.py   --right-host 192.168.21.210   --left-host 192.168.11.210   --speed 500 --force 500
 
-
+//5、启动core
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_core_managed --config config/system.yaml 
+//6、启动camera
+rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ~/miniconda3/envs/apriltag_realsense/bin/python nodes/camera/main.py   --config config/camera.yaml --recording-config config/recording.yaml   --camera-id cockpit --session "$(cat /tmp/aviator_session.uuid)"   --show --print-pose
 
+//7、启动monitor,
+rocos@rocos-controller:~/Documents/GitHub/AVIATOR/build/bin$ ./aviator_monitor 
 
-rocos@rocos-controller:~/Documents/GitHub/AVIATOR/build/debug/bin$ ./aviator_monitor 
+//8、启动chrome并全屏显示 http://127.0.0.1:8081
+rocos@rocos-controller:~/Documents/GitHub/AVIATOR/build/bin$ google-chrome-stable --start-fullscreen http://127.0.0.1:8081
+
+//9、日志打印
+rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_logger --config config/recording.yaml --output recording.mcap
