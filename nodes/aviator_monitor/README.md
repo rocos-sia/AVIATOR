@@ -29,8 +29,8 @@ cmake --build build/communication --target aviator_monitor --parallel
 - 发布灯显示 Flight Gateway、Core、Manipulator、Inspire Hand、Camera 的消息接收新鲜度；Logger/Bus 缺少独立状态源时显示未观测。Camera 搜索目标期间发布灯仍可以绿色，检测结果单独判定。
 - 完整 URDF 使用本地 Three.js + URDFLoader 加载。左右机械臂按七个实际关节反馈联动；手部实际六通道驱动条独立显示。
 - 手部默认将六通道实际归一化驱动反馈映射到所加载 URDF 的关节行程，更新三维手部；提供标定曲线时优先使用曲线。显示为驱动反馈估算姿态，目标回显不充当测量。
-- 相机位姿经几何标定求解驾驶盘 roll/pitch。未配置标定时不进行猜测换算，实测为 `—`，RGB 仍可使用。
-- 飞控指令显示百分比、物理等价值与二维指令/视觉实测对照。指令刻度 ±100%，对照图 ±110%，反馈允许 roll ±52°、pitch −5～175 mm，映射仍为 ±50°/0～170 mm 对应 ±100%。
+- 优先使用 `camera.detection.steering_wheel` 的已标定 roll/pitch 驱动驾驶盘；不含该字段的旧消息才使用 Monitor 几何标定。无有效观测时实测为 `—`，RGB 仍可使用。
+- 飞控指令显示百分比、物理等价值与二维指令/视觉实测对照。指令刻度 ±100%，对照图 ±110%，roll 反馈允许 ±52°，相机派生 pitch 行程为 0～170 mm（旧几何标定路径允许 −5～175 mm），映射仍为 ±50°/0～170 mm 对应 ±100%。
 - 过期部件保留灰色旧姿态，当前数值及图形标记取消；HTTP 断连时保留内容明确属于旧快照。每部分的时效在浏览器本地继续推进。
 
 模型默认显示不透明的驾驶舱和机器人、网格，不显示坐标轴和关节轴。模型允许旋转、平移、缩放和复位；左下角 gizmo 与视角同步并支持点击切换视向。“坐标轴”显示所有 link 的局部坐标系（红 X、绿 Y、蓝 Z），“关节轴”显示所有非 fixed joint 的正轴箭头与转动正方向（右手定则）。驾驶舱和机器人透明度可分别调整，不能拖动机器人产生指令。源会话变化会重置相应显示插值，存在多个近期候选来源时停止该部件更新。
@@ -56,7 +56,7 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 ## 配置与标定
 
-[monitor.json](../../config/monitor.json) 控制概览的发布者筛选、各 Topic 时效、预览身份、关节映射和标定。`sources` 中空字符串可用于观察任意发布者，但仍会报告多源冲突；也可将某个来源配置为 `{ "publisher_id": "aviator_core", "session_id": "实际会话 UUID" }`，显式固定会话。默认匹配项目中的实际发布者，旧 Manipulator 的手状态占位不覆盖 Inspire Hand 反馈。
+[monitor.json](../../config/monitor.json) 控制概览的发布者筛选、各 Topic 时效、预览身份、关节映射和标定。`sources` 中空字符串可用于观察任意发布者，但仍会报告多源冲突；也可将某个来源配置为 `{ "publisher_id": "aviator_core", "session_id": "实际会话 UUID" }`，显式固定会话。仓库配置的 `sources["hand.state"]` 为当前 Modbus TCP 后端的 `rh56ftp_hand`；使用 `aviator_hand` CAN 后端时改为其 `node.publisher_id`（默认 `inspire_hand`）。配置修改后需重启 Monitor。若消息页已有 `hand.state`，概览却显示“尚无样本”，先检查该筛选值是否与消息的 `publisher_id` 一致。
 
 默认时效：flight 100 ms，arm 50 ms，hand.state 300 ms，hand.command 100 ms，camera 200 ms，RGB 500 ms；其他流 2 s。左右臂/手还检查侧级采样时间和反馈年龄。原始 `sample_mono_us` 在匹配本机 clock_id 时才计算年龄，未知不伪造为零。JOYSTICK POSITION_HOLD 使用 checked_mono_us 判断显示有效期，同时保留原始采样年龄。
 
@@ -64,7 +64,15 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 ### 驾驶盘标定
 
-默认 `yoke_calibration=null`。配置非空对象时必须提供全部字段：
+优先读取 `camera.detection.steering_wheel`，无需另配 Monitor 的 `yoke_calibration`：
+
+- `roll_input_joint = theta_rad`（rad）。
+- `pitch_input_joint = translation_along_axis_m - 0.085`（m），将 `[-0.085, 0.085]` 映射到 `[-0.170, 0]`；零位对应 `-0.085`。
+- 概览的物理行程仍为 `(translation_along_axis_m + 0.085) × 1000` mm（0～170 mm），百分比为 `translation_along_axis_m / 0.085 × 100`，与飞控指令刻度一致。
+
+显示使用相机提供的 `calibration_id`；检查相机身份、消息有效性/时效、TRACKING 状态及 `steering_wheel.valid`。非数值、roll 超出 ±52°、平移超出 ±0.085 m 或 `axis_match=false` 时停止更新，保留灰色旧姿态；`axis_match=null` 允许零位附近观测。字段存在但无效时不回退到原始 pose。浏览器将此路径的 pitch 显示限位设为 `[-0.170, 0]`，覆盖 URDF 的 `[-0.165, 0]`，不修改模型文件。
+
+默认 `yoke_calibration=null`。只有不含 `steering_wheel` 的旧消息使用下列几何标定路径；配置非空对象时必须提供全部字段：
 
 | 字段 | 要求 |
 | --- | --- |
@@ -79,7 +87,7 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 | `max_rotation_residual_deg` / `max_translation_residual_mm` | 机构拟合残差上限，正值。 |
 | `model` | `roll_sign`、`roll_offset_rad`、`pitch_sign`、`pitch_offset_m`，用于物理量到显示模型的变换。 |
 
-检测的 camera_id 必须与 preview.camera_id 相同，避免把另一相机的位姿套用本标定。使用 `T_aircraft_camera × T_camera_tag × T_tag_yoke`，相对零位分解转动和移动；拒绝无效四元数、低置信度、过大拟合残差和超出物理容许范围的样本。显示限位仅在已配置驾驶盘标定时扩展到其对应的 ±52°、−5～175 mm；原始 URDF 文件不修改。当前 URDF 的 pitch −0.165～0 m 与 ICD 的物理行程不同，必须实测确认符号和零偏。
+检测的 camera_id 必须与 preview.camera_id 相同，避免把另一相机的位姿套用本标定。使用 `T_aircraft_camera × T_camera_tag × T_tag_yoke`，相对零位分解转动和移动；拒绝无效四元数、低置信度、过大拟合残差和超出物理容许范围的样本。此旧消息路径的显示限位在已配置驾驶盘标定时扩展到其对应的 ±52°、−5～175 mm；原始 URDF 文件不修改。当前 URDF 的 pitch −0.165～0 m 与 ICD 的物理行程不同，必须实测确认符号和零偏。
 
 ### 灵巧手标定
 
@@ -127,7 +135,7 @@ python nodes/camera/test_preview.py
 python nodes/camera/test_camera.py
 ```
 
-使用相机 Python 环境执行后两项，均无需真实相机。概览测试覆盖物理换算、标定缺失、范围、左右侧独立时效、跨时钟、多源、JPEG 缓存和路径白名单；原有缓存/服务及 HTTP/TCP 测试继续保留。
+使用相机 Python 环境执行后两项，均无需真实相机。概览测试覆盖相机方向盘直接映射及端点、无效观测拒绝、旧标定兼容、物理换算、标定缺失、范围、左右侧独立时效、跨时钟、多源、JPEG 缓存和路径白名单；原有缓存/服务及 HTTP/TCP 测试继续保留。
 
 可选真实浏览器验证（测试环境安装 playwright-core，运行节点不依赖它）：
 

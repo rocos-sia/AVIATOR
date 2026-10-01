@@ -204,6 +204,39 @@ void yoke(Json& g, const Json& b, const Json& c, const std::string& camera_id) {
         invalidate(g, "INVALID", "target_not_tracking");
         return;
     }
+    // New camera publishers already resolve motion against their calibration.
+    // Never fall back to raw pose when a supplied observation is invalid.
+    if (b.contains("steering_wheel")) {
+        const auto& wheel = at(b, "steering_wheel");
+        g["calibration_id"] = at(wheel, "calibration_id");
+        const auto& theta = at(wheel, "theta_rad");
+        const auto& translation = at(wheel, "translation_along_axis_m");
+        if (!yes(at(wheel, "valid")) || !finite(theta) || !finite(translation)) {
+            invalidate(g, "INVALID", "invalid_steering_wheel");
+            return;
+        }
+        if (at(wheel, "axis_match") == false) {
+            invalidate(g, "INVALID", "steering_wheel_axis_mismatch");
+            return;
+        }
+        const double roll = theta.get<double>() * 180 / pi;
+        const double travel = translation.get<double>();
+        if (std::abs(roll) > 52 + 1e-6 || travel < -.085 || travel > .085) {
+            invalidate(g, "INVALID", "physical_feedback_out_of_range");
+            return;
+        }
+        g["current"] = {
+            {"roll_deg", roll},
+            {"pitch_mm", (travel + .085) * 1000},
+            {"roll_percent", roll * 2},
+            {"pitch_percent", travel / .085 * 100},
+            {"confidence", at(b, "confidence")},
+            {"camera_id", at(b, "camera_id")},
+            {"frame_id", at(b, "frame_id")},
+            {"pose_mapping", "CAMERA_STEERING_WHEEL"},
+            {"model_joints", {{"roll_input_joint", theta}, {"pitch_input_joint", travel - .085}}}};
+        return;
+    }
     if (c.is_null()) {
         invalidate(g, "UNCALIBRATED", "yoke_calibration_missing");
         return;

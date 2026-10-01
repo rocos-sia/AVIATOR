@@ -218,6 +218,49 @@ int main(int argc, char** argv) {
         monitor::validate_config(vision.config);
         check(vision.overview(1010000, "clock")["yoke_observation"]["measurement_state"] == "VALID",
               "explicit source session not selected");
+        // Camera-derived motion works without monitor geometry calibration and
+        // takes precedence over legacy pose/model transforms when configured.
+        auto wheel_detection = detection(-20, 10);
+        wheel_detection["steering_wheel"] = {{"valid", true}, {"theta_rad", .25},
+                                             {"translation_along_axis_m", 0},
+                                             {"axis_match", nullptr},
+                                             {"calibration_id", "camera-test"}};
+        for (bool legacy : {false, true}) {
+            for (double travel : {-.085, 0., .085}) {
+                monitor::State direct;
+                if (legacy)
+                    direct.config["yoke_calibration"] = calibration();
+                wheel_detection["steering_wheel"]["translation_along_axis_m"] = travel;
+                ingest(direct, aviator::Topic::camera_detection, wheel_detection);
+                auto observed = direct.overview(1010000, "clock")["yoke_observation"];
+                const auto& current = observed["current"];
+                check(observed["measurement_state"] == "VALID" &&
+                          observed["calibration_id"] == "camera-test" &&
+                          current["model_joints"]["roll_input_joint"] == .25 &&
+                          std::abs(current["model_joints"]["pitch_input_joint"].get<double>() -
+                                   (travel - .085)) < 1e-9 &&
+                          std::abs(current["pitch_mm"].get<double>() - (travel + .085) * 1000) < 1e-9 &&
+                          std::abs(current["pitch_percent"].get<double>() - travel / .085 * 100) < 1e-9 &&
+                          current["pose_mapping"] == "CAMERA_STEERING_WHEEL",
+                      "camera wheel mapping or calibration precedence");
+                check(direct.overview(1200000, "clock")["yoke_observation"]["current"].is_null(),
+                      "stale camera wheel drives model");
+            }
+        }
+        for (const Json& patch : {
+                 Json{{"valid", false}}, Json{{"theta_rad", nullptr}},
+                 Json{{"translation_along_axis_m", "0"}}, Json{{"axis_match", false}},
+                 Json{{"translation_along_axis_m", -.086}},
+                 Json{{"translation_along_axis_m", .086}}, Json{{"theta_rad", 1.}}}) {
+            monitor::State bad_wheel;
+            bad_wheel.config["yoke_calibration"] = calibration();
+            auto bad_detection = wheel_detection;
+            bad_detection["steering_wheel"].update(patch);
+            ingest(bad_wheel, aviator::Topic::camera_detection, bad_detection);
+            auto rejected = bad_wheel.overview(1010000, "clock")["yoke_observation"];
+            check(rejected["measurement_state"] == "INVALID" && rejected["current"].is_null(),
+                  "invalid camera wheel fell back to raw pose");
+        }
         monitor::Preview preview(state.config["preview"]);
         std::ifstream image(argv[1], std::ios::binary);
         std::string jpeg((std::istreambuf_iterator<char>(image)), {});

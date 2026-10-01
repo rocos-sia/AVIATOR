@@ -27,6 +27,7 @@ async function main() {
     browser=await chromium.launch({executablePath:process.env.AVIATOR_CHROME || '/usr/bin/google-chrome',headless:true,
       args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
     const page=await browser.newPage({viewport:{width:1920,height:1080}}),errors=[];
+    page.setDefaultTimeout(30000);
     page.on('pageerror',e=>errors.push(e.message));
     await page.goto(`http://127.0.0.1:${http}/`,{waitUntil:'domcontentloaded'});
     await page.waitForFunction(()=>document.getElementById('command-roll').textContent.includes('+35.0'),{timeout:15000});
@@ -40,6 +41,32 @@ async function main() {
       Viewer.prototype.updateHelpers=function(){window.testViewer=this;return update.call(this);};
     });
     await page.waitForFunction(()=>window.testViewer?.robot);
+    // Verify camera-derived roll and the full negative pitch stroke in the real
+    // URDF loader, including the endpoint outside the original 165 mm limit.
+    for (const [travel,expected] of [[-.085,-.170],[0,-.085],[.085,0]]) {
+      fs.writeFileSync(controlPath,JSON.stringify({wheel_translation:travel,wheel_roll:-.3}));
+      await page.waitForFunction(expected=>{
+        const v=window.testViewer,g=v.data.yoke_observation;
+        return v.isLive(g) && g.current?.pose_mapping==='CAMERA_STEERING_WHEEL' &&
+          !v.invalidGroups.has('yoke_observation') &&
+          Math.abs(v.robot.joints.pitch_input_joint.angle-expected)<1e-5 &&
+          Math.abs(v.robot.joints.roll_input_joint.angle+.3)<1e-5;
+      },expected);
+    }
+    fs.writeFileSync(controlPath,JSON.stringify({wheel_valid:false}));
+    await page.waitForFunction(()=>window.testViewer.data.yoke_observation.measurement_state==='INVALID');
+    assert(await page.evaluate(()=>Math.abs(window.testViewer.robot.joints.pitch_input_joint.angle)<1e-5));
+    fs.writeFileSync(controlPath,JSON.stringify({legacy_camera:true}));
+    await page.waitForFunction(()=>{
+      const v=window.testViewer;
+      return v.data.yoke_observation.current &&
+        !v.data.yoke_observation.current.pose_mapping &&
+        Math.abs(v.robot.joints.pitch_input_joint.angle+.0731)<1e-5;
+    });
+    fs.writeFileSync(controlPath,'{}');
+    await page.waitForFunction(()=>window.testViewer.data.yoke_observation.current?.pose_mapping==='CAMERA_STEERING_WHEEL');
+    await page.screenshot({path:path.join(directory,'camera-wheel.png')});
+    console.log('Camera wheel checks passed: roll, pitch endpoints/midpoint, invalid feedback, legacy fallback.');
     // Exercise the real HandState -> overview -> URDF path, including the
     // endpoints, distinct channels, and recursively coupled mimic joints.
     async function handPose(positions,sides=['left','right']) {

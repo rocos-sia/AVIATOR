@@ -74,6 +74,8 @@ export class Viewer {
         for (const [name,limits] of Object.entries(manifest.yoke_display_limits ?? {})) {
           if (robot.joints[name]) Object.assign(robot.joints[name].limit,limits);
         }
+        this.legacyYokeLimits=Object.fromEntries(['roll_input_joint','pitch_input_joint']
+          .filter(name=>robot.joints[name]).map(name=>[name,{...robot.joints[name].limit}]));
         robot.traverse(object=>{
           if (!object.isMesh) return;
           let link=object; while(link.parent && !link.isURDFLink) link=link.parent;
@@ -187,6 +189,16 @@ export class Viewer {
       const old=this.sources.get(kind);
       if (old && source && old.key!==source) for (const name of old.joints) this.robot.joints[name]?.setJointValue(0);
       if (!this.isLive(g) || !g.current) { const state=g?.measurement_state === 'VALID' ? 'STALE' : g?.measurement_state ?? 'UNAVAILABLE'; notes.push(`${groupLabels[kind]}：${stateLabels[state] ?? state} · ${old ? '旧姿态' : '参考姿态'}`); continue; }
+      if (kind==='yoke_observation') {
+        // Camera motion spans the full 170 mm travel (the URDF stops at 165 mm).
+        const limits=g.current.pose_mapping==='CAMERA_STEERING_WHEEL' ? {
+          roll_input_joint:{lower:-52*Math.PI/180,upper:52*Math.PI/180},
+          pitch_input_joint:{lower:-.170,upper:0}
+        } : this.legacyYokeLimits;
+        for (const [name,limit] of Object.entries(limits ?? {})) {
+          if (this.robot.joints[name]) Object.assign(this.robot.joints[name].limit,limit);
+        }
+      }
       const values=this.modelJoints(kind,g);
       if (!values && kind.startsWith('hands.')) {
         this.invalidGroups.add(kind); notes.push(`${groupLabels[kind]}：关节映射/限位不匹配`); continue;

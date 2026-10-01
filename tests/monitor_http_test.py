@@ -44,7 +44,8 @@ def until(predicate, timeout=4):
 
 
 try:
-    web = subprocess.Popen([sys.argv[1], '--port', str(port), '--subscribe', endpoint],
+    web = subprocess.Popen([sys.argv[1], '--port', str(port), '--subscribe', endpoint,
+                            '--preview', 'off'],
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     children.append(web)
     until(lambda: fetch('/'))

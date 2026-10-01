@@ -79,8 +79,12 @@ try:
             angle = math.radians(17)
             pose = dict(position=dict(x=0,y=0,z=(73.1-85)/1000),
                         orientation=dict(qx=0,qy=0,qz=math.sin(angle/2),qw=math.cos(angle/2)))
+            wheel = {} if control.get('legacy_camera') else dict(steering_wheel=dict(
+                valid=control.get('wheel_valid', True), theta_rad=control.get('wheel_roll', angle),
+                translation_along_axis_m=control.get('wheel_translation', (73.1-85)/1000),
+                axis_match=None, calibration_id='CAMERA-BROWSER-TEST'))
             send('camera.detection','CameraDetection','camera',dict(camera_id='cockpit',frame_id=sequence,
-                 status='TRACKING',confidence=.9,pose=pose),sample)
+                 status='TRACKING',confidence=.9,pose=pose,**wheel),sample)
             preview.submit(image,session_id=session,clock_id=clock,frame_id=sequence,sample_mono_us=sample)
         pub.send_multipart([b'record.service.request',json.dumps(request).encode()])
         pub.send_multipart([b'record.service.reply',json.dumps(reply).encode()])
