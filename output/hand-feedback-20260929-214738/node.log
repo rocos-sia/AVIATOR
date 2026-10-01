@@ -1,5 +1,0 @@
-inspire_hand: right=can0(id 1) left=can1(id 2)
-inspire_hand: sub=tcp://127.0.0.1:5556 pub=tcp://127.0.0.1:36353 publisher_id=inspire_hand_feedback_check
-inspire_hand: session=7319e9bb-726a-4a1a-8144-f60a7d69f481 clock=rocos-controller-1b6cc362-52ea-47c1-b931-0d345b222682
-inspire_hand: feedback=10 Hz timeout=300 ms feedback_only=true
-inspire_hand: stopped

@@ -1,9 +1,0 @@
-{
-  "message_counts_match_indexes": true,
-  "crc_chunk_and_data_passed": true,
-  "decoded_frames": 29143,
-  "image_packets": 29143,
-  "decode_exit_code": 0,
-  "decode_error_log_bytes": 0,
-  "all_sensor_gaps_have_consecutive_application_frame_ids": true
-}

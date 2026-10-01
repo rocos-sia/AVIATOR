@@ -1,8 +1,0 @@
-aviator_camera: 按型号 'D436' 选中 RealSense D436 (405622075095)
-aviator_camera: RealSense D436 (405622075095) 1280x720@30
-aviator_camera: detector=apriltag settings={'family': 'tag36h11', 'tag_id': 0, 'tag_size_m': 0.05, 'use_distortion': False, 'min_decision_margin': 0.0, 'confidence_margin': 50.0}
-aviator_camera: endpoint=tcp://127.0.0.1:60315 bind=True
-aviator_camera: session=67c8b45b-11e6-4e59-acd2-ae316d902731 clock=rocos-controller-1b6cc362-52ea-47c1-b931-0d345b222682 warmup_s=5.0 recording=enabled record_depth=False
-/tmp/pip-install-kbbqnb4c/apriltag_acf18152fc7c4abfb8866b32e67dd373/core/contrib/apriltag_quad_contour.c:467: warning: count < 8 :(
-camera recording: queued-to-zmq=303, dropped=0
-aviator_camera: stopped
