@@ -5,8 +5,7 @@ device: /dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick
 publish: tcp://127.0.0.1:5555
 subscribe: tcp://127.0.0.1:5556
 service: tcp://127.0.0.1:5559
-# 留空自动识别本次 Core 会话，无需手动复制 UUID；填写 UUID 可固定绑定。
-# 绑定后不自动切换；Core 重启时重启 Gateway 重新识别。
+# 兼容旧配置，已忽略：不再固定或校验 Core 会话；按发布者和新鲜反馈接收。
 core_session: ""
 # 空字符串使用 /tmp/flight_gateway-<uid>.lock。
 lock_file: ""

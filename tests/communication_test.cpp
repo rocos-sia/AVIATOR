@@ -57,7 +57,7 @@ void codec_tests() {
     }
     json = nlohmann::json::parse(good);
     json["session_id"] = "not-a-uuid";
-    check(!decode("flight.command", json.dump(), parsed, error), "session UUID format");
+    check(decode("flight.command", json.dump(), parsed, error), "text startup marker accepted");
     json = nlohmann::json::parse(good);
     json["valid"] = 1;
     check(!decode("flight.command", json.dump(), parsed, error), "boolean constraint");
@@ -110,9 +110,8 @@ void runtime_tests() {
     message.header.sample_mono_us = 1100001;
     check(!guard.accept(message, 1100000, error), "future sample rejected");
     message.header.sample_mono_us = 1100000;
+    // Session is no longer pinned; independent checks still reject invalid inputs.
     message.header.session_id = "new-session";
-    check(!guard.accept(message, 1100000, error), "restart cannot authorize itself");
-    message.header.session_id = flight().header.session_id;
     message.header.clock_id = "other-boot";
     check(!guard.accept(message, 1100000, error), "cross-clock rejected");
     message.header.clock_id = "host-boot";
@@ -126,6 +125,15 @@ void runtime_tests() {
     message.header.valid = true;
     check(!guard.accept(message, 1100000, error), "invalid report advanced observed sequence");
 
+    message.header.session_id = "run-after-restart";
+    message.header.sequence = 1;
+    message.header.sample_mono_us = 1100001;
+    check(guard.accept(message, 1100001, error), "fresh restart must reset sequence tracking");
+    check(!guard.accept(message, 1100001, error), "restart duplicate rejected");
+    auto old_instance = flight();
+    check(!guard.accept(old_instance, 1100001, error), "old instance must not revive");
+    message.header.sample_mono_us = 1100000;
+
     auto policy = flight_policy();
     policy.topic = Topic::arm_command;
     policy.publisher_id = "aviator_core";
@@ -136,7 +144,7 @@ void runtime_tests() {
     message.topic = Topic::arm_command;
     message.header.publisher_id = "aviator_core";
     message.body = {{"control_epoch", "epoch-1"}, {"origin", {
-        {"publisher_id", "flight_gateway"}, {"session_id", flight().header.session_id},
+        {"publisher_id", "flight_gateway"}, {"session_id", "unconfigured-origin-instance"},
         {"sequence", 1}, {"sample_mono_us", 1000000}, {"clock_id", "host-boot"}}}};
     check(!arm.accept(message, 1100000, error), "fresh command cannot hide stale origin");
     message.body["origin"]["sample_mono_us"] = 1090000;
@@ -156,7 +164,9 @@ void runtime_tests() {
     left.clear(); check(!left.load(), "mailbox clear");
     check(utc_us() > 0 && monotonic_us() > 0, "Linux clocks");
     check(local_clock_id() == local_clock_id(), "shared boot clock identity");
-    check(new_session_id() != new_session_id(), "new UUID per session");
+    check(new_session_id() != new_session_id(), "unique request/epoch UUID");
+    const auto instance = new_instance_id();
+    check(instance.rfind("run-", 0) == 0 && instance != new_instance_id(), "unique text startup marker");
 }
 
 void position_hold_tests() {

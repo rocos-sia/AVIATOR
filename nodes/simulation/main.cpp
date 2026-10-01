@@ -17,7 +17,7 @@ void stop(int) { stopping=1; }
 void usage() {
     std::cout << "Usage: simulation [--model path] [--headless] [--no-camera] [--duration seconds]\n"
         "  [--pub-endpoint endpoint] [--sub-endpoint endpoint]\n"
-        "  [--core-session UUID --control-epoch UUID --origin-session UUID]\n"
+        "  [--control-epoch UUID] (legacy --core-session/--origin-session are ignored)\n"
         "  [--core-publisher id] [--origin-publisher id] [--camera-timeout-ms ms]\n"
         "Defaults: bus 5555/5556; no command authorization; EGL camera 640x480.\n"
         "--headless disables the viewer; --no-camera disables EGL and reports OFFLINE.\n";
@@ -59,7 +59,7 @@ int main(int argc,char** argv) {
                 else { auth.camera_timeout_us=static_cast<std::uint64_t>(v*1000); if(!auth.camera_timeout_us) throw std::runtime_error("camera timeout too small"); }
             } else throw std::runtime_error("unknown argument: "+arg);
         }
-        if (auth.session.empty() && (!auth.epoch.empty() || !auth.origin_session.empty())) throw std::runtime_error("authorization requires --core-session");
+        if (auth.epoch.empty() && (!auth.session.empty() || !auth.origin_session.empty())) throw std::runtime_error("authorization requires --control-epoch");
         if (pub_endpoint==sub_endpoint) throw std::runtime_error("PUB and SUB endpoints must differ");
         std::signal(SIGINT,stop); std::signal(SIGTERM,stop);
         simulation::Simulation sim(model,auth);
@@ -94,7 +94,7 @@ int main(int argc,char** argv) {
             {"SUB topics", "arm.command, hand.command, camera.command"},
             {"Viewer", headless ? "HEADLESS" : "GLFW window"},
             {"Camera", no_camera ? "OFFLINE (--no-camera); detection still published" : "EGL 640x480"},
-            {"Authorization", auth.session.empty() ? "UNCONFIGURED (state publishing remains enabled)" : "Configured Core session: " + auth.session},
+            {"Authorization", auth.epoch.empty() ? "UNCONFIGURED (state publishing remains enabled)" : "Configured publisher/control epoch"},
             {"Session", sim.session()},
             {"Model", model},
             {"Transport", "Async connect; bus connectivity is not yet confirmed."},

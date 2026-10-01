@@ -1,0 +1,1224 @@
+{
+  "hand.command": {
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "control_epoch": "5fa4e1bb-2bff-43a5-83ed-363efa699b1c",
+    "hands": {
+      "left": {
+        "drive_position_normalized": [
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "right": {
+        "drive_position_normalized": [
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    "mode": "NORMALIZED_POSITION",
+    "msg_type": "HandCommand",
+    "origin": {
+      "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+      "publisher_id": "aviator_core",
+      "sample_mono_us": 15068537709,
+      "sequence": 7761,
+      "session_id": "run-1790881677514826-68604-1"
+    },
+    "publisher_id": "aviator_core",
+    "sample_mono_us": 15068541901,
+    "sequence": 7761,
+    "session_id": "run-1790881677514826-68604-1",
+    "timestamp": 1790881836925635,
+    "valid": true,
+    "version": "1.0"
+  },
+  "record.arm.target": {
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "derivatives_available": false,
+    "joint_acceleration": null,
+    "joint_position": null,
+    "joint_velocity": null,
+    "msg_type": "RecordedArmTarget",
+    "publisher_id": "aviator_logger",
+    "reason": "accepted_window_not_cached",
+    "sample_mono_us": 15068542258,
+    "sequence": 1,
+    "session_id": "run-1790881836916423-68949-1",
+    "source_command": {
+      "control_epoch": "40e53532-0905-4b96-94a8-91157680b2b2",
+      "publisher_id": "aviator_core",
+      "sequence": 15819,
+      "session_id": "run-1790881677514826-68604-1"
+    },
+    "source_state": {
+      "publisher_id": "manipulator",
+      "sample_mono_us": 15068536534,
+      "sequence": 16292,
+      "session_id": "run-1790881674013809-68545-1"
+    },
+    "streaming": null,
+    "tick": 4346,
+    "time_basis": "arm.state.status_mono_us",
+    "timestamp": 1790881836925992,
+    "trajectory_id": 2,
+    "valid": false,
+    "version": "1.0"
+  },
+  "arm.state": {
+    "accepted_command": {
+      "control_epoch": "40e53532-0905-4b96-94a8-91157680b2b2",
+      "publisher_id": "aviator_core",
+      "sequence": 15819,
+      "session_id": "run-1790881677514826-68604-1"
+    },
+    "arms": {
+      "left": {
+        "enabled": true,
+        "error_code": 0,
+        "joint_position": [
+          0.4551121260574941,
+          1.5323958741419077,
+          -1.6442857510750262,
+          2.212080350753462,
+          0.12208929122332007,
+          -0.10812143741162888,
+          -0.030141284374964206
+        ],
+        "joint_velocity": [
+          0.0,
+          -0.0,
+          0.0,
+          -0.0,
+          0.0,
+          0.0,
+          0.0020943951023931952
+        ],
+        "sample_mono_us": 15068537263,
+        "status": "ACTIVE",
+        "tcp_pose": {
+          "frame_id": "left_base",
+          "orientation": {
+            "qw": -0.459218032768423,
+            "qx": 0.5726455542525823,
+            "qy": 0.5177155638783456,
+            "qz": -0.43950706762597036
+          },
+          "position": {
+            "x": 0.23632550630154134,
+            "y": -0.36859991320019336,
+            "z": 0.1549966121524998
+          }
+        },
+        "valid": true
+      },
+      "right": {
+        "enabled": true,
+        "error_code": 0,
+        "joint_position": [
+          -0.4035859510769136,
+          1.4908615466761683,
+          1.5760051503077608,
+          2.148627475147071,
+          0.054132264528499424,
+          -0.15291103988841043,
+          -0.13799259735722635
+        ],
+        "joint_velocity": [
+          0.0,
+          0.0008726646259971647,
+          -0.0020943951023931952,
+          -0.0010471975511965976,
+          0.0010471975511965976,
+          -0.0,
+          0.0
+        ],
+        "sample_mono_us": 15068536534,
+        "status": "ACTIVE",
+        "tcp_pose": {
+          "frame_id": "right_base",
+          "orientation": {
+            "qw": 0.4738947758755592,
+            "qx": 0.5357671383284965,
+            "qy": -0.47280205604816217,
+            "qz": -0.5146217355318156
+          },
+          "position": {
+            "x": 0.27046641045139147,
+            "y": 0.386394187285796,
+            "z": 0.1741780702193379
+          }
+        },
+        "valid": true
+      }
+    },
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "config_id": "aviator-control-v1",
+    "execution": {
+      "error": "",
+      "fault": false,
+      "stopping": false,
+      "target": [
+        0.4528954876000086,
+        1.5349821705439728,
+        -1.6456884049979732,
+        2.2157652985768816,
+        0.1250353876128738,
+        -0.10981611653548322,
+        -0.03364994797845067,
+        -0.401390821373656,
+        1.4939669331221062,
+        1.5763988336937984,
+        2.1523225802668873,
+        0.05035274892003641,
+        -0.14295991903085556,
+        -0.1442340093848114
+      ],
+      "tick": 4346,
+      "trajectory_id": 2
+    },
+    "msg_type": "ArmState",
+    "publisher_id": "manipulator",
+    "sample_mono_us": 15068536534,
+    "sequence": 16292,
+    "session_id": "run-1790881674013809-68545-1",
+    "software_lock": false,
+    "status_mono_us": 15068542258,
+    "timestamp": 1790881836925992,
+    "valid": true,
+    "version": "1.0",
+    "wheel_reference": {
+      "angle": 0.0,
+      "displacement": -0.085
+    }
+  },
+  "flight.command": {
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "control": {
+      "pitch": -0.002932551319648094,
+      "roll": -0.002932551319648094
+    },
+    "input_state": {
+      "checked_mono_us": 15068542406,
+      "device_connected": true,
+      "mode": "POSITION_HOLD"
+    },
+    "msg_type": "FlightCommand",
+    "publisher_id": "flight_gateway",
+    "sample_mono_us": 14994865844,
+    "sequence": 8104,
+    "session_id": "run-1790881674863943-68572-1",
+    "source": "JOYSTICK",
+    "timestamp": 1790881836926141,
+    "valid": true,
+    "version": "1.0"
+  },
+  "flight.state": {
+    "arms": {
+      "left": {
+        "enabled": true,
+        "error_code": 0,
+        "joint_position": [
+          0.4551121260574941,
+          1.5323958741419077,
+          -1.6442857510750262,
+          2.212080350753462,
+          0.12208929122332007,
+          -0.10812143741162888,
+          -0.030141284374964206
+        ],
+        "joint_velocity": [
+          0.0,
+          -0.0,
+          0.0,
+          -0.0,
+          0.0,
+          0.0,
+          0.0020943951023931952
+        ],
+        "sample_mono_us": 15068537263,
+        "status": "ACTIVE",
+        "tcp_pose": {
+          "frame_id": "left_base",
+          "orientation": {
+            "qw": -0.459218032768423,
+            "qx": 0.5726455542525823,
+            "qy": 0.5177155638783456,
+            "qz": -0.43950706762597036
+          },
+          "position": {
+            "x": 0.23632550630154134,
+            "y": -0.36859991320019336,
+            "z": 0.1549966121524998
+          }
+        },
+        "valid": true
+      },
+      "right": {
+        "enabled": true,
+        "error_code": 0,
+        "joint_position": [
+          -0.4035859510769136,
+          1.4908615466761683,
+          1.5760051503077608,
+          2.148627475147071,
+          0.054132264528499424,
+          -0.15291103988841043,
+          -0.13799259735722635
+        ],
+        "joint_velocity": [
+          0.0,
+          0.0008726646259971647,
+          -0.0020943951023931952,
+          -0.0010471975511965976,
+          0.0010471975511965976,
+          -0.0,
+          0.0
+        ],
+        "sample_mono_us": 15068536534,
+        "status": "ACTIVE",
+        "tcp_pose": {
+          "frame_id": "right_base",
+          "orientation": {
+            "qw": 0.4738947758755592,
+            "qx": 0.5357671383284965,
+            "qy": -0.47280205604816217,
+            "qz": -0.5146217355318156
+          },
+          "position": {
+            "x": 0.27046641045139147,
+            "y": 0.386394187285796,
+            "z": 0.1741780702193379
+          }
+        },
+        "valid": true
+      }
+    },
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "freshness": {
+      "arm": {
+        "age_ms": 14.724,
+        "sequence": 16292,
+        "valid": true
+      },
+      "camera": {
+        "age_ms": null,
+        "sequence": null,
+        "valid": false
+      },
+      "hand": {
+        "age_ms": 34.888,
+        "sequence": 2679,
+        "valid": true
+      }
+    },
+    "hand_control": {
+      "enabled": true,
+      "error": "",
+      "target_version": 2
+    },
+    "hands": {
+      "left": {
+        "angle": [
+          0,
+          1000,
+          997,
+          1000,
+          998,
+          999
+        ],
+        "angle_raw": [
+          0,
+          1000,
+          997,
+          1000,
+          998,
+          999
+        ],
+        "closing_hold_active": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "closing_hold_position_normalized": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "commanded_drive_position_normalized": [
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "current": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "drive_position_normalized": [
+          0.0,
+          1.0,
+          0.997,
+          1.0,
+          0.998,
+          0.999
+        ],
+        "drive_position_raw": [
+          0,
+          1000,
+          997,
+          1000,
+          998,
+          999
+        ],
+        "enabled": true,
+        "err": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "error": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "error_code": 0,
+        "error_codes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "feedback_age_ms": 40.126,
+        "feedback_available": true,
+        "feedback_io_errors": 0,
+        "feedback_last_error": "",
+        "feedback_samples": 2673,
+        "force": [
+          -248,
+          63,
+          128,
+          102,
+          82,
+          17
+        ],
+        "grasp_verified": false,
+        "joint_position": null,
+        "joint_velocity": null,
+        "position_source": "angle_act_register",
+        "requested_drive_position_normalized": [
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "sample_mono_us": 15068476316,
+        "sample_time_basis": "host_modbus_read",
+        "status": "ACTIVE",
+        "status_code": [
+          1,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "status_codes": [
+          1,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "status_values": [
+          1,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "temp": [
+          42,
+          34,
+          40,
+          42,
+          40,
+          38
+        ],
+        "temperature": [
+          42,
+          34,
+          40,
+          42,
+          40,
+          38
+        ],
+        "valid": true
+      },
+      "right": {
+        "angle": [
+          0,
+          1000,
+          999,
+          999,
+          999,
+          999
+        ],
+        "angle_raw": [
+          0,
+          1000,
+          999,
+          999,
+          999,
+          999
+        ],
+        "closing_hold_active": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "closing_hold_position_normalized": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "commanded_drive_position_normalized": [
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "current": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "drive_position_normalized": [
+          0.0,
+          1.0,
+          0.999,
+          0.999,
+          0.999,
+          0.999
+        ],
+        "drive_position_raw": [
+          0,
+          1000,
+          999,
+          999,
+          999,
+          999
+        ],
+        "enabled": true,
+        "err": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "error": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "error_code": 0,
+        "error_codes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "feedback_age_ms": 49.33,
+        "feedback_available": true,
+        "feedback_io_errors": 0,
+        "feedback_last_error": "",
+        "feedback_samples": 2673,
+        "force": [
+          165,
+          67,
+          46,
+          59,
+          101,
+          35
+        ],
+        "grasp_verified": false,
+        "joint_position": null,
+        "joint_velocity": null,
+        "position_source": "angle_act_register",
+        "requested_drive_position_normalized": [
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "sample_mono_us": 15068467112,
+        "sample_time_basis": "host_modbus_read",
+        "status": "ACTIVE",
+        "status_code": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "status_codes": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "status_values": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "temp": [
+          42,
+          34,
+          40,
+          42,
+          44,
+          40
+        ],
+        "temperature": [
+          42,
+          34,
+          40,
+          42,
+          44,
+          40
+        ],
+        "valid": true
+      }
+    },
+    "msg_type": "FlightState",
+    "publisher_id": "aviator_core",
+    "sample_mono_us": 15068551262,
+    "sequence": 7770,
+    "session_id": "run-1790881677514826-68604-1",
+    "software_lock": false,
+    "system": {
+      "brake_confirmed": false,
+      "brake_requested": false,
+      "brake_status": "NOT_REQUESTED",
+      "control_source": "NONE",
+      "current_error": "",
+      "current_error_code": 0,
+      "generation": 2,
+      "input_ready": true,
+      "last_error": "",
+      "last_error_code": 0,
+      "ready": true,
+      "settled": true,
+      "source_authorized": true,
+      "state": "STANDBY",
+      "state_code": 1,
+      "task_phase": "ENABLED"
+    },
+    "timestamp": 1790881836934994,
+    "valid": true,
+    "version": "1.0",
+    "vision": {
+      "confidence": 0,
+      "status": "OFFLINE",
+      "yoke": {
+        "detected": false,
+        "pitch": null,
+        "roll": null
+      }
+    },
+    "wheel_reference": {
+      "angle": 0.0,
+      "displacement": -0.085
+    }
+  },
+  "camera.detection": {
+    "msg_type": "CameraDetection",
+    "version": "1.0",
+    "sequence": 4511,
+    "timestamp": 1790881836943410,
+    "sample_mono_us": 15068548614,
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "publisher_id": "camera",
+    "session_id": "run-1790881681021893584-68618",
+    "valid": true,
+    "camera_id": "cockpit",
+    "frame_id": 4648,
+    "image_width": 1280,
+    "image_height": 720,
+    "status": "TRACKING",
+    "confidence": 1.0,
+    "pose": {
+      "position": {
+        "x": -0.02655822247109318,
+        "y": -0.13766536496371432,
+        "z": 0.8114394385141821
+      },
+      "orientation": {
+        "qx": -0.0077199904531907474,
+        "qy": -0.3262574187297104,
+        "qz": 0.9443592510500208,
+        "qw": -0.04101345422508127
+      }
+    },
+    "detector": "apriltag",
+    "tag_id": 0,
+    "decision_margin": 57.05415725708008,
+    "steering_wheel": {
+      "valid": true,
+      "reason": "",
+      "theta_rad": 0.020238511383296257,
+      "translation_along_axis_m": 0.007826189044942936,
+      "translation_vector_m": [
+        0.0012528581556298622,
+        -0.004295842063842981,
+        0.006599733323039869
+      ],
+      "axis_direction": [
+        -0.015756422409889045,
+        -0.6138671716593854,
+        0.7892520704513533
+      ],
+      "axis_frame": "camera_color_optical_frame",
+      "axis_error_rad": null,
+      "axis_match": null,
+      "calibration_id": "3d840d474215f346"
+    }
+  },
+  "hand.state": {
+    "msg_type": "HandState",
+    "version": "1.0",
+    "sequence": 2680,
+    "timestamp": 1790881836961187,
+    "sample_mono_us": 15068577378,
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "publisher_id": "rh56ftp_hand",
+    "session_id": "run-1790881676210608972-68600",
+    "valid": true,
+    "command_valid": true,
+    "feedback_only": false,
+    "hands": {
+      "left": {
+        "valid": true,
+        "status": "ACTIVE",
+        "enabled": true,
+        "angle": [
+          0,
+          1000,
+          997,
+          1000,
+          998,
+          999
+        ],
+        "force": [
+          -248,
+          63,
+          128,
+          102,
+          82,
+          17
+        ],
+        "current": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "err": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "error": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status_code": [
+          1,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "status_values": [
+          1,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "temp": [
+          42,
+          34,
+          40,
+          42,
+          40,
+          38
+        ],
+        "error_code": 0,
+        "error_codes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status_codes": [
+          1,
+          1,
+          0,
+          1,
+          1,
+          1
+        ],
+        "temperature": [
+          42,
+          34,
+          40,
+          42,
+          40,
+          38
+        ],
+        "feedback_available": true,
+        "position_source": "angle_act_register",
+        "sample_mono_us": 15068530183,
+        "sample_time_basis": "host_modbus_read",
+        "feedback_age_ms": 47.195,
+        "angle_raw": [
+          0,
+          1000,
+          997,
+          1000,
+          998,
+          999
+        ],
+        "drive_position_raw": [
+          0,
+          1000,
+          997,
+          1000,
+          998,
+          999
+        ],
+        "drive_position_normalized": [
+          0.0,
+          1.0,
+          0.997,
+          1.0,
+          0.998,
+          0.999
+        ],
+        "commanded_drive_position_normalized": [
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "joint_position": null,
+        "joint_velocity": null,
+        "grasp_verified": false,
+        "feedback_samples": 2674,
+        "feedback_io_errors": 0,
+        "feedback_last_error": "",
+        "requested_drive_position_normalized": [
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "closing_hold_active": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "closing_hold_position_normalized": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      "right": {
+        "valid": true,
+        "status": "ACTIVE",
+        "enabled": true,
+        "angle": [
+          0,
+          1000,
+          999,
+          999,
+          999,
+          999
+        ],
+        "force": [
+          165,
+          67,
+          46,
+          59,
+          101,
+          36
+        ],
+        "current": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "err": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "error": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status_code": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "status_values": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "temp": [
+          42,
+          34,
+          40,
+          42,
+          44,
+          40
+        ],
+        "error_code": 0,
+        "error_codes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status_codes": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "temperature": [
+          42,
+          34,
+          40,
+          42,
+          44,
+          40
+        ],
+        "feedback_available": true,
+        "position_source": "angle_act_register",
+        "sample_mono_us": 15068527200,
+        "sample_time_basis": "host_modbus_read",
+        "feedback_age_ms": 50.178,
+        "angle_raw": [
+          0,
+          1000,
+          999,
+          999,
+          999,
+          999
+        ],
+        "drive_position_raw": [
+          0,
+          1000,
+          999,
+          999,
+          999,
+          999
+        ],
+        "drive_position_normalized": [
+          0.0,
+          1.0,
+          0.999,
+          0.999,
+          0.999,
+          0.999
+        ],
+        "commanded_drive_position_normalized": [
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "joint_position": null,
+        "joint_velocity": null,
+        "grasp_verified": false,
+        "feedback_samples": 2674,
+        "feedback_io_errors": 0,
+        "feedback_last_error": "",
+        "requested_drive_position_normalized": [
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "closing_hold_active": [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "closing_hold_position_normalized": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    "accepted_command": {
+      "publisher_id": "aviator_core",
+      "session_id": "run-1790881677514826-68604-1",
+      "sequence": 7762,
+      "sample_mono_us": 15068562374,
+      "control_epoch": "5fa4e1bb-2bff-43a5-83ed-363efa699b1c"
+    }
+  },
+  "system.state": {
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "lifecycle": "RUNNING",
+    "msg_type": "SystemState",
+    "node": "aviator_core",
+    "publisher_id": "aviator_core",
+    "ready": true,
+    "sample_mono_us": 15068618011,
+    "sequence": 796,
+    "session_id": "run-1790881677514826-68604-1",
+    "system": {
+      "brake_confirmed": false,
+      "brake_requested": false,
+      "brake_status": "NOT_REQUESTED",
+      "control_source": "NONE",
+      "current_error": "",
+      "current_error_code": 0,
+      "generation": 2,
+      "input_ready": true,
+      "last_error": "",
+      "last_error_code": 0,
+      "ready": true,
+      "settled": true,
+      "source_authorized": true,
+      "state": "STANDBY",
+      "state_code": 1,
+      "task_phase": "ENABLED"
+    },
+    "timestamp": 1790881837001744,
+    "uptime_ms": 0,
+    "valid": true,
+    "version": "1.0"
+  },
+  "record.service.request": {
+    "client_id": "flight_gateway",
+    "client_session_id": "run-1790881674863943-68572-1",
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "deadline_ms": 100,
+    "gateway_observation": "QUEUED",
+    "issued_mono_us": 15173245635,
+    "msg_type": "ServiceRequest",
+    "operation": "enter_standby",
+    "parameters": {
+      "button": 1,
+      "source": "JOYSTICK"
+    },
+    "request_id": "ac1ab987-1b3a-445f-ad29-a61b122526c8",
+    "target": "aviator_core",
+    "timestamp": 1790881941629367,
+    "version": "1.0"
+  },
+  "record.service.reply": {
+    "client_id": "flight_gateway",
+    "client_session_id": "run-1790881674863943-68572-1",
+    "error_code": 0,
+    "msg_type": "ServiceReply",
+    "request_id": "ac1ab987-1b3a-445f-ad29-a61b122526c8",
+    "result": {
+      "expected_clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+      "generation": 2,
+      "reason": "COMPLETED",
+      "state": "STANDBY"
+    },
+    "server_id": "aviator_core",
+    "server_session_id": "run-1790881677514826-68604-1",
+    "status": "COMPLETED",
+    "timestamp": 1790881941633316,
+    "version": "1.0"
+  },
+  "record.camera.cockpit.rgb": {
+    "bitstream_format": "annexb",
+    "byte_order": "little",
+    "calibration": {
+      "coeffs": [
+        -0.0522734560072422,
+        0.05931650474667549,
+        -0.00035805621882900596,
+        0.00023786240490153432,
+        -0.01846938207745552
+      ],
+      "distortion_model": "distortion.inverse_brown_conrady",
+      "fx": 645.319580078125,
+      "fy": 644.295166015625,
+      "height": 720,
+      "ppx": 657.60498046875,
+      "ppy": 324.0669860839844,
+      "serial": "405622075095",
+      "to_color_rotation": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "to_color_translation_m": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "width": 1280
+    },
+    "camera_id": "cockpit",
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "config_id": "b2d3dbd9484f10ca",
+    "encoded_pixel_format": "yuv420p",
+    "encoder": "libx264",
+    "encoder_preset": "veryfast",
+    "encoding": "h264",
+    "fps": 30,
+    "frame_id": 4649,
+    "height": 720,
+    "keyframe": true,
+    "lossless": false,
+    "original_size_bytes": 2764800,
+    "pixel_format": "RGB8",
+    "publisher_id": "camera",
+    "receive_clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "receive_mono_us": 15068587563,
+    "sample_mono_us": 15068581520,
+    "sample_time_basis": "host_frameset_receive",
+    "sensor_timestamp_domain": "timestamp_domain.global_time",
+    "sensor_timestamp_ms": 1790881836955.4873,
+    "sequence": 4650,
+    "session_id": "run-1790881681021893584-68618",
+    "stream": "rgb",
+    "stride_bytes": 3840,
+    "timestamp_us": 1790881836965259,
+    "version": 1,
+    "width": 1280
+  }
+}

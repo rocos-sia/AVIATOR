@@ -38,7 +38,7 @@ aviator::CameraFrame frame(bool rgb, unsigned sequence) {
                   {"camera_id", "cockpit"},
                   {"stream", rgb ? "rgb" : "depth"},
                   {"publisher_id", "camera"},
-                  {"session_id", "11111111-1111-4111-8111-111111111111"},
+                  {"session_id", "run-camera-test"},
                   {"clock_id", "test-boot"},
                   {"config_id", "test-calibration-v1"},
                   {"pixel_format", rgb ? "RGB8" : "Z16"},

@@ -139,8 +139,7 @@ Json callService(zmq::context_t &ctx, const MotionConfig &cfg, const Json &reque
         require(!socket.get(zmq::sockopt::rcvmore), "Multipart service reply rejected");
         auto reply = parseService(frame.to_string());
         require(reply.at("msg_type") == "ServiceReply" &&
-                    reply.at("request_id") == request.at("request_id") &&
-                    reply.at("client_session_id") == request.at("client_session_id"),
+                    reply.at("request_id") == request.at("request_id"),
                 "Service correlation mismatch");
         const auto status = reply.at("status").get<std::string>();
         if (status == "COMPLETED")

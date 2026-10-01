@@ -45,6 +45,12 @@ int main(int argc, char** argv) {
         auto wrong = state; wrong.header.publisher_id = "manipulator";
         h.receive(wrong, now + 1, session); check(!h.complete(now + 1), "synthetic feedback accepted");
         h.receive(state, now + 1, session); check(h.complete(now + 1), "close ack rejected");
+        auto restarted_hand = state;
+        restarted_hand.header.session_id = "hand-restarted";
+        restarted_hand.header.sample_mono_us = now + 2;
+        restarted_hand.body["accepted_command"]["session_id"] = "ignored-core-label";
+        h.receive(restarted_hand, now + 2, session);
+        check(h.complete(now + 2) && h.fault(now + 2).empty(), "hand restart or ACK label rejected");
         check(h.command(now + 20000, now + 20000, session).has_value(), "hold publication missing");
         h.request(false, now + 30000);
         auto opening = *h.command(now + 30000, now + 30000, session);
@@ -137,10 +143,10 @@ int main(int argc, char** argv) {
             auto cmd = *test.command(now, now, session);
             auto m = feedback(cmd, now + 1, 1);
             if (failure == 0) m.body["feedback_only"] = true;
-            if (failure == 1) m.body["accepted_command"]["session_id"] = new_session_id();
+            if (failure == 1) m.body["accepted_command"]["publisher_id"] = "another-controller";
             if (failure == 2) m.body["accepted_command"]["sequence"] = 999;
             test.receive(m, now + 1, session);
-            if (failure == 3) { m.header.sequence = 2; m.header.session_id = new_session_id(); test.receive(m, now + 2, session); }
+            if (failure == 3) { m.header.sequence = 2; m.header.clock_id = "other-clock"; test.receive(m, now + 2, session); }
             const auto t = failure >= 2 ? now + 600000 : now + 2;
             check(!test.fault(t).empty(), "missing failure detection");
             check(!test.command(t, t, session), "faulted command published");

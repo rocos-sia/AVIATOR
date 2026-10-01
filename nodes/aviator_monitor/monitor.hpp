@@ -27,7 +27,7 @@ struct Service {
 // One bounded cache, shared by the SUB thread and HTTP thread. No control output.
 struct State {
     Json config = default_config();
-    std::string session_id = aviator::new_session_id();
+    std::string session_id = aviator::new_instance_id();
     std::uint64_t snapshot_revision = 0;
     std::mutex mutex;
     std::vector<Stream> streams;

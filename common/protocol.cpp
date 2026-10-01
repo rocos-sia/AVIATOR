@@ -142,7 +142,7 @@ bool read_origin(const Json& body, Origin& output, std::string& error) {
         const auto& value = body.at("origin");
         Origin origin;
         origin.publisher_id = identifier(value, "publisher_id");
-        origin.session_id = uuid(value, "session_id");
+        origin.session_id = identifier(value, "session_id");
         origin.sequence = integer(value, "sequence", true);
         origin.sample_mono_us = integer(value, "sample_mono_us");
         origin.clock_id = identifier(value, "clock_id");
@@ -185,7 +185,7 @@ bool decode(std::string_view topic, std::string_view payload,
         h.sample_mono_us = integer(json, "sample_mono_us");
         h.clock_id = identifier(json, "clock_id");
         h.publisher_id = identifier(json, "publisher_id");
-        h.session_id = uuid(json, "session_id");
+        h.session_id = identifier(json, "session_id");
         require(json.at("valid").is_boolean(), "valid must be boolean");
         h.valid = json.at("valid").get<bool>();
         for (const auto* key : header_keys) json.erase(key);

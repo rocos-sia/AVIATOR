@@ -90,6 +90,25 @@ def private_node(ingress, egress):
 
 
 class NodeTests(unittest.TestCase):
+    def test_text_instance_restart_keeps_sequence_and_epoch_checks(self):
+        node, _ = self.make_node()
+        first = command(node, sequence=10)
+        guard = module.CommandGuard()
+        guard.accept(first, node.clock_now, node.command_timeout_us, node.clock_id)
+        node.clock_now += 1
+        restarted = command(node)
+        restarted["session_id"] = "restarted-core"
+        restarted["origin"]["session_id"] = "unconfigured-origin"
+        module.decode_command("hand.command", json.dumps(restarted))
+        guard.accept(restarted, node.clock_now, node.command_timeout_us, node.clock_id)
+        with self.assertRaises(ValueError):
+            guard.accept(restarted, node.clock_now, node.command_timeout_us, node.clock_id)
+        with self.assertRaises(ValueError):
+            guard.accept(first, node.clock_now, node.command_timeout_us, node.clock_id)
+        changed = dict(restarted, sequence=2, control_epoch="another-epoch")
+        with self.assertRaises(PermissionError):
+            guard.accept(changed, node.clock_now, node.command_timeout_us, node.clock_id)
+
     def make_node(self):
         links = {"left": FakeLink(), "right": FakeLink()}
         node = module.Rh56FtpNode(links, clock_id="test-clock",

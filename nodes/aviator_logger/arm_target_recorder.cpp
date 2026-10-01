@@ -33,7 +33,7 @@ void ArmTargetRecorder::command(std::string_view payload) {
             throw std::invalid_argument("unsupported command");
         const auto epoch = m.body.at("control_epoch").get<std::string>();
         for (auto& w : windows_) {
-            if (w.header.publisher_id == m.header.publisher_id && w.header.session_id == m.header.session_id &&
+            if (w.header.publisher_id == m.header.publisher_id &&
                 w.header.clock_id == m.header.clock_id && w.header.sequence == m.header.sequence && w.epoch == epoch) {
                 // Whitespace differences do not create a conflicting trajectory.
                 if (Json::parse(w.payload) != Json::parse(payload)) w.conflict = true;
@@ -85,7 +85,7 @@ std::optional<Json> ArmTargetRecorder::state(std::string_view payload) {
         const auto seq = integer(ack.at("sequence"));
         const Window* found = nullptr;
         for (const auto& w : windows_) {
-            if (w.header.publisher_id == ack.at("publisher_id") && w.header.session_id == ack.at("session_id") &&
+            if (w.header.publisher_id == ack.at("publisher_id") &&
                 w.header.sequence == seq && w.epoch == ack.at("control_epoch") && w.header.clock_id == m.header.clock_id) {
                 found = &w; break;
             }

@@ -17,7 +17,7 @@ double number(const Json& j) {
 }
 }
 Simulation::Simulation(const std::string& path, const Authorization& auth)
-    : session_(aviator::new_session_id()), clock_(aviator::local_clock_id()) {
+    : session_(aviator::new_instance_id()), clock_(aviator::local_clock_id()) {
     char error[2048]{};
     model_.reset(mj_loadXML(path.c_str(), nullptr, error, sizeof(error)));
     if (!model_) throw std::runtime_error(error);
@@ -45,7 +45,7 @@ Simulation::Simulation(const std::string& path, const Authorization& auth)
     roll_ = id(m, mjOBJ_JOINT, "roll_input_joint");
     pitch_ = id(m, mjOBJ_JOINT, "pitch_input_joint");
     mj_forward(m, data());
-    if (!auth.session.empty()) {
+    if (!auth.epoch.empty()) {
         for (int i = 0; i < 3; ++i) {
             aviator::InputPolicy p;
             p.topic = i == 0 ? aviator::Topic::arm_command : i == 1 ? aviator::Topic::hand_command : aviator::Topic::camera_command;

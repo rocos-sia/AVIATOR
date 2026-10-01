@@ -56,7 +56,7 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 ## 配置与标定
 
-[monitor.json](../../config/monitor.json) 控制概览的发布者筛选、各 Topic 时效、预览身份、关节映射和标定。`sources` 中空字符串可用于观察任意发布者，但仍会报告多源冲突；也可将某个来源配置为 `{ "publisher_id": "aviator_core", "session_id": "实际会话 UUID" }`，显式固定会话。仓库配置的 `sources["hand.state"]` 为当前 Modbus TCP 后端的 `rh56ftp_hand`；使用 `aviator_hand` CAN 后端时改为其 `node.publisher_id`（默认 `inspire_hand`）。配置修改后需重启 Monitor。若消息页已有 `hand.state`，概览却显示“尚无样本”，先检查该筛选值是否与消息的 `publisher_id` 一致。
+[monitor.json](../../config/monitor.json) 控制概览的发布者筛选、各 Topic 时效、预览身份、关节映射和标定。`sources` 中空字符串可用于观察任意发布者，但仍会报告多源冲突；可使用发布者字符串或 `{ "publisher_id": "aviator_core" }` 筛选；旧配置的 `session_id` 字段兼容读取但不再用于筛选。仓库配置的 `sources["hand.state"]` 为当前 Modbus TCP 后端的 `rh56ftp_hand`；使用 `aviator_hand` CAN 后端时改为其 `node.publisher_id`（默认 `inspire_hand`）。配置修改后需重启 Monitor。若消息页已有 `hand.state`，概览却显示“尚无样本”，先检查该筛选值是否与消息的 `publisher_id` 一致。
 
 默认时效：flight 100 ms，arm 50 ms，hand.state 300 ms，hand.command 100 ms，camera 200 ms，RGB 500 ms；其他流 2 s。左右臂/手还检查侧级采样时间和反馈年龄。原始 `sample_mono_us` 在匹配本机 clock_id 时才计算年龄，未知不伪造为零。驾驶盘显示以本地接收 `camera.detection` 的时间判断时效，不因采样延迟或相机时钟域不同拒绝有效检测；停止接收达到 camera 超时后显示过期。JOYSTICK POSITION_HOLD 使用 checked_mono_us 判断显示有效期，同时保留原始采样年龄。
 
@@ -101,7 +101,7 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 保留 Topic、发布者、会话、原始样本年龄、接收频率、最新接收间隔、完整序号、缺口和重复/乱序计数。两秒接收窗口在启动阶段逐渐增长，不表示源端精确频率。搜索与状态过滤只影响显示。
 
-服务事务继续订阅 `record.service.request/reply` 副本，不连接 Core 5559 执行操作。按客户端、客户端会话和 request_id 关联，网关 QUEUED/NOT_SENT/TIMEOUT_UNKNOWN 与 Core ACCEPTED/COMPLETED/REJECTED 分列。保留 REPLY_ONLY、晚到响应、已知应答不被超时覆盖等行为。
+服务事务继续订阅 `record.service.request/reply` 副本，不连接 Core 5559 执行操作。按客户端和 request_id 关联，网关 QUEUED/NOT_SENT/TIMEOUT_UNKNOWN 与 Core ACCEPTED/COMPLETED/REJECTED 分列。保留 REPLY_ONLY、晚到响应、已知应答不被超时覆盖等行为。
 
 当前 Core 长动作仅即时返回 ACCEPTED，界面不会根据后续 flight.state 自动推断某笔请求已完成。副本可能丢失，超时不能证明未执行，副本次数不是动作执行次数；观测应答间隔也不是设备执行耗时。
 

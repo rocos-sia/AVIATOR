@@ -1,6 +1,7 @@
 #include "runtime.hpp"
 
 #include <ctime>
+#include <atomic>
 #include <fstream>
 #include <stdexcept>
 #include <unistd.h>
@@ -28,6 +29,11 @@ bool motion(Topic topic) { return topic == Topic::arm_command || topic == Topic:
 std::uint64_t utc_us() { return clock_us(CLOCK_REALTIME); }
 std::uint64_t monotonic_us() { return clock_us(CLOCK_MONOTONIC); }
 std::string new_session_id() { return read_id("/proc/sys/kernel/random/uuid"); }
+std::string new_instance_id() {
+    static std::atomic<std::uint64_t> counter{0};
+    return "run-" + std::to_string(utc_us()) + "-" + std::to_string(getpid()) +
+           "-" + std::to_string(++counter);
+}
 std::string local_clock_id() {
     char hostname[256]{};
     if (gethostname(hostname, sizeof(hostname) - 1) != 0)
@@ -36,14 +42,14 @@ std::string local_clock_id() {
 }
 
 InputGuard::InputGuard(InputPolicy policy) : policy_(std::move(policy)) {
-    if (policy_.publisher_id.empty() || policy_.session_id.empty() ||
+    if (policy_.publisher_id.empty() ||
         policy_.clock_id.empty() || policy_.timeout_us == 0 ||
         (policy_.allow_joystick_position_hold &&
          (policy_.topic != Topic::flight_command || policy_.source != "JOYSTICK")) ||
         (policy_.topic == Topic::flight_command &&
          policy_.source != "FLIGHT" && policy_.source != "JOYSTICK") ||
         (motion(policy_.topic) && (policy_.control_epoch.empty() ||
-         policy_.origin_publisher_id.empty() || policy_.origin_session_id.empty() ||
+         policy_.origin_publisher_id.empty() ||
          policy_.origin_timeout_us == 0)))
         throw std::invalid_argument("incomplete input authorization policy");
 }
@@ -51,11 +57,14 @@ InputGuard::InputGuard(InputPolicy policy) : policy_(std::move(policy)) {
 bool InputGuard::accept(const Message& message, std::uint64_t now, std::string& error) {
     const auto reject = [&](const char* reason) { error = reason; return false; };
     const auto& h = message.header;
-    if (message.topic != policy_.topic || h.publisher_id != policy_.publisher_id ||
-        h.session_id != policy_.session_id) return reject("unauthorized topic/publisher/session");
+    if (message.topic != policy_.topic || h.publisher_id != policy_.publisher_id)
+        return reject("unauthorized topic/publisher");
     if (h.clock_id != policy_.clock_id) return reject("clock domain mismatch");
-    if (h.sequence == 0 || h.sequence > max_json_integer || h.sequence <= sequence_)
+    const bool restarted = instance_ != h.session_id;
+    if (h.sequence == 0 || h.sequence > max_json_integer || (!restarted && h.sequence <= sequence_))
         return reject("duplicate or out-of-order sequence");
+    if (restarted && sequence_ && h.sample_mono_us <= event_sample_)
+        return reject("regressing producer restart");
     if (message.topic == Topic::flight_command &&
         (!message.body.contains("source") || message.body.at("source") != policy_.source))
         return reject("unauthorized source");
@@ -65,6 +74,7 @@ bool InputGuard::accept(const Message& message, std::uint64_t now, std::string& 
         bool connected;
         if (!read_position_hold(message, effective_sample, connected, error)) return false;
         if (!h.valid || !connected) {
+            instance_ = h.session_id;
             sequence_ = h.sequence;
             valid_ = false;
             return reject(connected ? "invalid joystick state" : "joystick device disconnected");
@@ -85,12 +95,12 @@ bool InputGuard::accept(const Message& message, std::uint64_t now, std::string& 
         if (!read_origin(message.body, origin, error)) return false;
         if (message.body.at("origin").value("topic", "flight.command") != policy_.origin_topic)
             return reject("unauthorized origin topic");
-        if (origin.publisher_id != policy_.origin_publisher_id ||
-            origin.session_id != policy_.origin_session_id || origin.clock_id != policy_.clock_id)
+        if (origin.publisher_id != policy_.origin_publisher_id || origin.clock_id != policy_.clock_id)
             return reject("unauthorized origin");
         if (!fresh(origin.sample_mono_us, now, policy_.origin_timeout_us, policy_.future_tolerance_us))
             return reject("stale or future origin");
     }
+    instance_ = h.session_id;
     sequence_ = h.sequence;
     if (!h.valid) {
         valid_ = false; // Keep last numeric snapshot but immediately revoke usability.

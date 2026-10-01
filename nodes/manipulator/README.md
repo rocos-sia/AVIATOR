@@ -9,7 +9,7 @@
 
 `config/robot.yaml` 的 backend 选择 mujoco/rokae，viewer 控制 MuJoCo 窗口；--headless 优先。窗口支持鼠标旋转、平移、缩放、R 复位视角、Esc 退出。真机配置分别包含 left_ip、right_ip、left_local_ip、right_local_ip、joint_stiffness；只有此进程需要设备和实时调度权限。
 
-启动保持未使能。Core 先通过可靠服务读取本次 server_session 和关节保持目标，再显式授权/使能。重启更换会话，旧请求不能对新进程生效；重连不自动使能。初次使能后的当前位置保持允许最多 1 s 的命令接入窗口，进入目标流后使用配置的 50 ms watchdog。没有指令时不会自动向 Home 运动。
+启动保持未使能。Core 先通过可靠服务读取本次 server_session 和关节保持目标，再显式授权/使能。启动标记使用普通文本，不校验会话匹配；重启后仍需重新 authorize，重连不自动使能。初次使能后的当前位置保持允许最多 1 s 的命令接入窗口，进入目标流后使用配置的 50 ms watchdog。没有指令时不会自动向 Home 运动。
 
 显式 `stop` 从上一条关节指令本地减速并保持使能，制动期间持续更新反馈；完成后清除首次命令等待计时，不因静止保位超过 1 s 再次报错。下一段已授权轨迹会重新启用 50 ms watchdog；首次 `enable` 的 1 s 接入期限仍保留。
 
@@ -21,7 +21,7 @@ SDK 回调有独立命令截止时间，通信或执行线程停顿不能无限�
 
 lock/unlock 是软件阶段；MuJoCo 额外切换把手 weld 以模拟物理连接，不做 TCP 对齐判断。wheel_reference 为指令参考，只有 MuJoCo 提供独立 wheel_measurement，不能把软件参考冒充真机传感器。
 
-可靠服务包括 describe、authorize、enable、disable、stop、lock、unlock、reset_fault、get_result。单帧 REQ/REP，长操作先返回 ACCEPTED，客户端使用同一请求身份查询已有状态。服务缓存有界，不重复执行同 ID 请求；同 ID 改内容被拒绝。请求绑定 server_session，服务重启后旧请求必须对账，不能自动重放。接口约束见 [协议文档](../../docs/AVIATOR_ZMQ协议格式说明.md)。
+可靠服务包括 describe、authorize、enable、disable、stop、lock、unlock、reset_fault、get_result。单帧 REQ/REP，长操作先返回 ACCEPTED，客户端使用同一请求身份查询已有状态。服务缓存有界，不重复执行同 ID 请求；同 ID 改内容被拒绝。server_session 仅兼容旧请求，不再用于匹配。请求 UUID 去重、config_id、时钟、期限和显式控制授权仍检查。接口约束见 [协议文档](../../docs/AVIATOR_ZMQ协议格式说明.md)。
 
 独立 `nodes/simulation` 保留为另一套仿真测试入口；同一控制总线只能启动一个机械臂状态生产者。本节点使用迁移后的 `models/control` 模型，未覆盖原来的完整手部模型。
 

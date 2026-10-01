@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
         if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
             std::cout << "Usage: flight_gateway\n"
                          "Configuration: config/flight.yaml (installed: share/aviator/config/flight.yaml).\n"
-                         "Edit the YAML file for device, endpoints, axes, session and 11 button mappings.\n"
+                         "Edit the YAML file for device, endpoints, axes and 11 button mappings.\n"
                          "Publishes at 50 Hz; restart after configuration changes.\n";
             return 0;
         }
@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
         flight_gateway::JoystickSample sample{
             {roll_axis, roll.minimum, roll.maximum, roll.value, invert_roll},
             {pitch_axis, pitch.minimum, pitch.maximum, pitch.value, invert_pitch}};
-        const auto session = aviator::new_session_id(), clock = aviator::local_clock_id();
+        const auto session = aviator::new_instance_id(), clock = aviator::local_clock_id();
         flight_gateway::CoreFeedback feedback(core_session, clock);
         zmq::context_t context{1};
         zmq::socket_t pub(context, zmq::socket_type::pub), sub(context, zmq::socket_type::sub);
@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
         aviator::subscribe(sub, "flight.state");
         pub.connect(pub_endpoint); sub.connect(sub_endpoint);
         std::cout << "STARTED source=JOYSTICK session=" << session << " clock=" << clock
-                  << " feedback=" << (core_session.empty() ? "AUTO_DISCOVERY" : "STALE") << std::endl;
+                  << " feedback=WAITING" << std::endl;
         aviator::print_startup(
             "flight_gateway",
             {{"Config", config_path},
@@ -115,8 +115,7 @@ int main(int argc, char** argv) {
               "flight.command (50 Hz); record.service.request / record.service.reply"},
              {"SUB connect", sub_endpoint},
              {"SUB topics", "flight.state"},
-             {"Feedback", !core_session.empty() ? "Configured; waiting for fresh Core feedback"
-                                   : "AUTO_DISCOVERY; waiting for valid Core status"},
+             {"Feedback", "Waiting for valid Core publisher status; no session pinning"},
              {"Session", session},
              {"Transport", "Async connect; bus connectivity is not yet confirmed."},
              {"Exit", "Ctrl+C"}});
@@ -141,8 +140,6 @@ int main(int argc, char** argv) {
                 return;
             }
             nlohmann::json parameters = {{"source", "JOYSTICK"}, {"button", index + 1}};
-            if (!feedback.session().empty())
-                parameters["server_session_id"] = feedback.session();
             auto request = aviator::make_service_request("flight_gateway", session, "aviator_core",
                                                          buttons.operations[index], parameters,
                                                          service_timeout_ms);
@@ -150,9 +147,9 @@ int main(int argc, char** argv) {
             // metadata is not part of the service envelope sent to Core.
             const bool sent = feedback.requestsReady(aviator::monotonic_us()) && aviator::send_service(service, request);
             if (feedback.session().empty())
-                std::cerr << "Core session not discovered yet; button not sent, press again after binding\n";
+                std::cerr << "No valid Core feedback yet; button not sent, press again after service_ready=1\n";
             else if (!feedback.requestsReady(aviator::monotonic_us()))
-                std::cerr << "Core feedback stale or Gateway binding not confirmed; button not sent, "
+                std::cerr << "Core feedback stale or Gateway input not confirmed; button not sent, "
                              "press again after service_ready=1\n";
             auto record = request;
             record["gateway_observation"] = sent ? "QUEUED" : "NOT_SENT";
@@ -230,7 +227,7 @@ int main(int argc, char** argv) {
                     feedback.accept(state, aviator::monotonic_us(), error)) {
                     if (discovering) {
                         finish_value_line();
-                        std::cout << "Bound aviator_core session=" << feedback.session() << std::endl;
+                        std::cout << "Received aviator_core startup marker=" << feedback.session() << std::endl;
                     }
                     system_state = state.body.at("system").at("state").get<std::string>();
                     feedback_error.clear();

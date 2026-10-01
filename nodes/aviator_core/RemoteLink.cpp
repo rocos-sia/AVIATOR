@@ -3,11 +3,10 @@
 #include <cmath>
 #include <iostream>
 namespace aviator {
-RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), session_(new_session_id()) {
+RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), session_(new_instance_id()) {
     const auto info = callService(context_, c, serviceRequest(session_, "describe", Json::object()));
     if (info.at("config_id") != c.config_id)
         throw std::runtime_error("Core/device config_id mismatch");
-    server_ = info.at("server_session");
     backend_ = info.at("backend");
     hand_.configure(c.system, backend_);
     std::cout << "Core hand control: " << (hand_.enabled() ? "dedicated ZMQ worker (50 Hz)" : "disabled / simulation") << std::endl;
@@ -92,7 +91,7 @@ Json RemoteLink::operation(const std::string &op) {
     std::lock_guard<std::mutex> lock(service_mutex_);
     return callService(
         context_, config_,
-        serviceRequest(session_, op, {{"server_session", server_}, {"config_id", config_.config_id}}));
+        serviceRequest(session_, op, {{"config_id", config_.config_id}}));
 }
 double RemoteLink::getJointPosition(Side s, int j) const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -381,7 +380,8 @@ void RemoteLink::io() {
         sub.connect(config_.subscribe);
         ReceiveState receiver;
         uint64_t command_seq = 0, flight_seq = 0, system_seq = 0, last_arm_seq = 0, next = 0, flight_at = 0,
-                 system_at = 0;
+                 system_at = 0, last_arm_sample = 0;
+        std::string last_arm_instance;
         while (!quit_) {
             for (int n = 0; n < 64; ++n) {
                 WireMessage wire;
@@ -392,7 +392,7 @@ void RemoteLink::io() {
                 Message m;
                 if (received != ReceiveResult::received || !decode(wire.topic, wire.payload, m, error))
                     continue;
-                if (m.header.publisher_id != "manipulator" || m.header.session_id != server_ ||
+                if (m.header.publisher_id != "manipulator" ||
                     m.header.clock_id != local_clock_id())
                     continue;
                 const auto now = monotonic_us();
@@ -404,7 +404,8 @@ void RemoteLink::io() {
                     hand_body_ = m.body;
                     continue;
                 }
-                if (m.topic != Topic::arm_state || m.header.sequence <= last_arm_seq)
+                if (m.topic != Topic::arm_state ||
+                    (m.header.session_id == last_arm_instance && m.header.sequence <= last_arm_seq))
                     continue;
                 if (m.body.value("config_id", "") != config_.config_id)
                     continue;
@@ -415,6 +416,9 @@ void RemoteLink::io() {
                         stamp.get<uint64_t>() > now) continue;
                     status_sample = stamp.get<uint64_t>();
                 }
+                const auto instance_sample = status_sample ? status_sample : m.header.sample_mono_us;
+                if (m.header.session_id != last_arm_instance && last_arm_seq &&
+                    instance_sample <= last_arm_sample) continue;
                 DeviceState state;
                 for (int side = 0; side < 2; ++side) {
                     const auto &a = m.body.at("arms").at(side ? "right" : "left");
@@ -447,6 +451,8 @@ void RemoteLink::io() {
                 received_ = now;
                 sample_ = m.header.sample_mono_us;
                 status_sample_ = status_sample;
+                last_arm_instance = m.header.session_id;
+                last_arm_sample = instance_sample;
                 last_arm_seq = m.header.sequence;
                 changed_.notify_all();
             }

@@ -80,22 +80,19 @@ bool HandControl::fresh(uint64_t now) const {
     return valid_ && received_ && now >= received_ && now >= sample_ &&
            now - received_ < feedback_timeout_ && now - sample_ < feedback_timeout_;
 }
-void HandControl::receive(const Message& m, uint64_t now, const std::string& session) {
+void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
     if (m.topic != Topic::hand_state || m.header.publisher_id != publisher_ ||
         m.header.clock_id != local_clock_id() || m.header.sample_mono_us > now ||
         now - m.header.sample_mono_us >= feedback_timeout_) return;
-    if (!node_session_.empty() && m.header.session_id != node_session_) {
-        if (active_) fail("aviator_hand restarted; restart Core to bind the new session");
-        return;
-    }
-    if (m.header.sequence <= state_sequence_) return;
+    const bool restarted = m.header.session_id != node_session_;
+    if ((!restarted && m.header.sequence <= state_sequence_) ||
+        (restarted && state_sequence_ && m.header.sample_mono_us <= sample_)) return;
     try {
         // Validate before consuming the sequence or binding the feedback session.
         const bool readonly = m.body.at("feedback_only").get<bool>();
         const bool accepted = m.body.at("command_valid").get<bool>();
         const auto& ack = m.body.at("accepted_command");
         const auto publisher = ack.at("publisher_id").get<std::string>();
-        const auto owner = ack.at("session_id").get<std::string>();
         const auto seq = ack.at("sequence").get<uint64_t>();
         const auto stamp = ack.at("sample_mono_us").get<uint64_t>();
         bool valid = m.header.valid;
@@ -115,10 +112,10 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string& ses
         body_ = m.body;
         if (!active_) return;
         if (readonly) { fail("aviator_hand is feedback-only; restart it in control mode"); return; }
-        if (accepted && (publisher != "aviator_core" || owner != session)) {
-            fail("aviator_hand bound to another publisher/session; restart aviator_hand and Core"); return;
+        if (accepted && publisher != "aviator_core") {
+            fail("aviator_hand bound to another publisher; restart aviator_hand and Core"); return;
         }
-        if (accepted && publisher == "aviator_core" && owner == session &&
+        if (accepted && publisher == "aviator_core" &&
             seq >= first_sequence_ && seq <= command_sequence_ && stamp >= requested_ &&
             stamp <= now && now - stamp < 100000) {
             accepted_at_ = now;
@@ -146,7 +143,7 @@ std::string HandControl::fault(uint64_t now) const {
     if (acknowledged_ && (!fresh(now) || now - accepted_at_ >= feedback_timeout_))
         return "hand.state feedback/command acknowledgement expired";
     if ((!synchronized_ || endpoint_ || !acknowledged_) && !complete(now) && now - requested_ >= timeout_)
-        return "Hand target timeout: check CAN, pose, feedback and publisher binding; restart hand/Core if session changed";
+        return "Hand target timeout: check CAN, pose, feedback and publisher binding";
     return {};
 }
 std::optional<Message> HandControl::command(uint64_t now, uint64_t heartbeat, const std::string& session) {

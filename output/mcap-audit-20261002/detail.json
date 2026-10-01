@@ -1,0 +1,106 @@
+{
+  "counts": {
+    "target.streaming.None": 1,
+    "target.derivatives.False": 98562,
+    "arm.execution_target.valid14": 98715,
+    "arm.left.joint_position.nonnull": 98715,
+    "arm.left.joint_velocity.nonnull": 98715,
+    "arm.left.tcp_pose.nonnull": 98715,
+    "arm.right.joint_position.nonnull": 98715,
+    "arm.right.joint_velocity.nonnull": 98715,
+    "arm.right.tcp_pose.nonnull": 98715,
+    "flight.camera_freshness.False": 47496,
+    "flight.vision.OFFLINE": 47496,
+    "target.streaming.False": 52515,
+    "camera.steering_wheel.valid.True": 23808,
+    "hand.left.joint_position.nonnull": 0,
+    "hand.left.joint_velocity.nonnull": 0,
+    "hand.left.drive_position_normalized.nonnull": 16454,
+    "hand.left.force.nonnull": 16454,
+    "hand.left.current.nonnull": 16454,
+    "hand.left.temperature.nonnull": 16454,
+    "hand.right.joint_position.nonnull": 0,
+    "hand.right.joint_velocity.nonnull": 0,
+    "hand.right.drive_position_normalized.nonnull": 16454,
+    "hand.right.force.nonnull": 16454,
+    "hand.right.current.nonnull": 16454,
+    "hand.right.temperature.nonnull": 16454,
+    "target.streaming.True": 46199,
+    "camera.steering_wheel.valid.False": 5065,
+    "target.derivatives.True": 153
+  },
+  "invalid_window_by_phase": {
+    "CONTROL": 46039,
+    "FOLLOWING": 7
+  },
+  "target_reason_ranges": [
+    {
+      "reason": "accepted_window_not_cached",
+      "first_ns": 1790881836926234000,
+      "last_ns": 1790881836926234000,
+      "count": 1
+    },
+    {
+      "reason": "matched_position_only",
+      "first_ns": 1790881836936248000,
+      "last_ns": 1790882056706701000,
+      "count": 21978
+    },
+    {
+      "reason": "invalid_window",
+      "first_ns": 1790882056718994000,
+      "last_ns": 1790882159575588000,
+      "count": 10287
+    },
+    {
+      "reason": "matched",
+      "first_ns": 1790882159585750000,
+      "last_ns": 1790882161105624000,
+      "count": 153
+    },
+    {
+      "reason": "matched_position_only",
+      "first_ns": 1790882161115869000,
+      "last_ns": 1790882466476729000,
+      "count": 30537
+    },
+    {
+      "reason": "invalid_window",
+      "first_ns": 1790882466486229000,
+      "last_ns": 1790882824153161000,
+      "count": 35759
+    }
+  ],
+  "first_invalid_window": {
+    "clock_id": "rocos-controller-ba1e69e4-4d45-40fe-a0f9-8a08616cd856",
+    "derivatives_available": false,
+    "joint_acceleration": null,
+    "joint_position": null,
+    "joint_velocity": null,
+    "msg_type": "RecordedArmTarget",
+    "publisher_id": "aviator_logger",
+    "reason": "invalid_window",
+    "sample_mono_us": 15288334676,
+    "sequence": 21980,
+    "session_id": "run-1790881836916423-68949-1",
+    "source_command": {
+      "control_epoch": "40e53532-0905-4b96-94a8-91157680b2b2",
+      "publisher_id": "aviator_core",
+      "sequence": 37798,
+      "session_id": "run-1790881677514826-68604-1"
+    },
+    "source_state": {
+      "publisher_id": "manipulator",
+      "sample_mono_us": 15288329553,
+      "sequence": 38271,
+      "session_id": "run-1790881674013809-68545-1"
+    },
+    "streaming": true,
+    "tick": 8,
+    "time_basis": "arm.state.status_mono_us",
+    "timestamp": 1790882056718411,
+    "trajectory_id": 4,
+    "valid": false,
+    "version": "1.0"
+  }
+}

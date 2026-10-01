@@ -150,10 +150,11 @@ int main() {
         check(discovered.accept(state, 1000000, error) && discovered.session() == session, "automatic Core binding failed");
         check(!discovered.requestsReady(1000000), "Core discovery alone cannot authorize a button");
         check(!discovered.accept(state, 1000001, error), "replayed Core status accepted");
-        bad = state; bad.header.sequence = 2; bad.header.session_id = aviator::new_session_id();
-        check(!discovered.accept(bad, 1000001, error) && discovered.session() == session, "auto-switched Core session");
-        check(discovered.expired(1100000), "silent Core remained fresh");
-        check(!discovered.accept(bad, 1100000, error) && discovered.session() == session, "expiry unbound Core session");
+        bad = state; bad.header.sequence = 1; bad.header.session_id = "restarted-core";
+        bad.header.sample_mono_us = 1000001;
+        check(discovered.accept(bad, 1000001, error) && discovered.session() == "restarted-core", "Core restart rejected");
+        check(discovered.expired(1100001), "silent Core remained fresh");
+        check(!discovered.accept(bad, 1100001, error) && discovered.session() == "restarted-core", "expiry unbound Core session");
         auto authorized = state;
         authorized.header.sequence = 2;
         authorized.header.sample_mono_us = 1100000;
@@ -167,16 +168,16 @@ int main() {
         check(discovered.accept(authorized, 1200000, error) && !discovered.requestsReady(1200000),
               "revoked source disables button submission");
         flight_gateway::CoreFeedback pinned(session, "boot");
-        check(!pinned.accept(bad, 1000001, error), "manual Core binding ignored");
-        check(pinned.accept(state, 1000000, error), "manual Core binding failed");
+        check(pinned.accept(bad, 1000001, error), "legacy manual Core pin was enforced");
         aviator::InputPolicy policy;
         policy.topic = aviator::Topic::flight_state; policy.publisher_id = "aviator_core";
         policy.session_id = session; policy.clock_id = "boot";
         aviator::InputGuard feedback(policy);
         check(feedback.accept(state, 1000000, error), "authorized Core feedback");
         check(feedback.expired(1100000), "Core silence becomes stale");
-        state.header.sequence = 2; state.header.session_id = aviator::new_session_id();
-        check(!feedback.accept(state, 1000001, error), "Core restart requires new session authorization");
+        state.header.sequence = 1; state.header.session_id = "another-core-instance";
+        state.header.sample_mono_us = 1000001;
+        check(feedback.accept(state, 1000001, error), "Core restart blocked by session authorization");
         state.body["system"]["state"] = "UNKNOWN";
         check(!flight_gateway::valid_state_summary(state), "unknown state rejected");
         state.body["system"]["state"] = "CONTROL";

@@ -34,13 +34,17 @@ Python 相机节点不是 Logger 的运行依赖。相机在推理前提交图�
 | 参数 | 默认值 / 含义 |
 | --- | --- |
 | `--config` | 不自动查找；读取指定 YAML。 |
-| `--output` | 自动生成 `aviator_DATE_TIME-UUID.mcap`；覆盖 `output.path`。父目录须存在。 |
+| `--output` | 自动生成 `aviator_YYYY-MM-DD_HH-MM-SS_ffffff.mcap`（本地时间，末尾为六位微秒，无 UUID）；覆盖 `output.path`。父目录须存在。 |
 | `--image-output` | 覆盖 `output.image_path`；未设置时由数据路径派生，例如 `data.mcap` → `data.images.mcap`。仅图像启用时创建。 |
 | `--subscribe` | `tcp://127.0.0.1:5556`；覆盖 `bus.subscribe_endpoint`。 |
-| `--session` | 新 UUID，Logger 会话与源会话分开。 |
+| `--session` | 普通文本启动标记，Logger 记录会话与源会话分开，无需手动设置。 |
 | `--queue-bytes` | 16777216；仅覆盖业务队列。 |
 | `--receive-hwm` | 4096；仅覆盖业务 SUB HWM。 |
 | `--help` / `-h` | 显示用法。 |
+
+一次 Logger 启动对应一个记录批次。默认数据文件与图像文件共享时间前缀，例如 `aviator_2026-10-02_15-30-00_123456.mcap` 和 `aviator_2026-10-02_15-30-00_123456.images.mcap`；也可用 `--output batch_001.mcap` 指定批次名，图像文件自动命名为 `batch_001.images.mcap`（未显式设置图像路径时）。已有文件不会被覆盖。
+
+节点消息中的 `session_id` 使用普通文本启动标记，不再生成或校验会话 UUID；Logger 可将不同节点、不同启动标记的数据记录到同一批次。`--session` 仅设置 Logger 自身的记录会话，不用于筛选来源；数据与图像 MCAP 共享此记录会话，并通过 `recording_files` 元数据保存配对路径。
 
 完整示例见 [`recording.yaml`](../../config/recording.yaml)。可省略非版本字段，未填写部分使用内置默认值。未知/重复键、非法类型、未知模式、越界数值在启动阶段失败；数值参数不使用引号。`config_version` 必须为整数 `1`。字节预算与 Chunk 大小当前上限为 `INT_MAX`。
 
@@ -74,7 +78,7 @@ arm_command:
 - `full`：按收到的原始字节保存每条 `arm.command`，包含完整重叠窗口，适合通信排查。
 - `compact`：不写入原始 `arm.command`，在每条可解析的 `arm.state` 到达时生成一条 `record.arm.target`。原始 `arm.state`、手、相机、服务及其他消息仍照常记录。
 
-精简模块只在 Logger 写线程内工作，不发布消息。使用 `arm.state.accepted_command` 的发布者、Core 会话、序号、control_epoch，以及 clock_id、config_id、trajectory_id 和 tick 匹配缓存窗口；提取的目标还必须与 `execution.target` 一致。不能用窗口第一个点或最新窗口代替已接纳的对应点。
+精简模块只在 Logger 写线程内工作，不发布消息。使用 `arm.state.accepted_command` 的发布者、序号、control_epoch，以及 clock_id、config_id、trajectory_id 和 tick 匹配缓存窗口；提取的目标还必须与 `execution.target` 一致。不能用窗口第一个点或最新窗口代替已接纳的对应点。
 
 `record.arm.target` 是 MCAP 专用 JSON Topic（Schema `RecordedArmTarget/1.0`），不是控制指令，也不是实际关节测量：
 
@@ -130,13 +134,11 @@ CTest 覆盖配置校验与 CLI 覆盖、三模式 TCP 接入、原始字节、H
 
 ```bash
 ./build/bin/aviator_logger --config config/recording.yaml \
-  --output output/data.mcap --image-output output/images.mcap \
-  --session "$(cat /tmp/aviator_session.uuid)"
+  --output output/data.mcap --image-output output/images.mcap
 
 # 另一个终端（使用安装了相机依赖的 Python 环境）
 python nodes/camera/main.py --config config/camera.yaml \
-  --recording-config config/recording.yaml --camera-id cockpit \
-  --session "$(cat /tmp/aviator_session.uuid)"
+  --recording-config config/recording.yaml --camera-id cockpit
 ```
 
 `data.mcap` 包含业务 JSON（包括 `camera.detection`），`images.mcap` 包含 RGB 和按配置启用的深度帧。首帧被 Writer 接收后输出 `first image recorded`，正常停止时分别打印数据和图像条数。先停止相机，再停止 logger，使已入队图像完成写入。注意 `build/bin/config/recording.yaml` 是另一份配置；修改仓库配置后应同步，或两个进程都使用仓库配置的绝对路径。

@@ -1,7 +1,6 @@
 #include "config.hpp"
 #include <cmath>
 #include <fstream>
-#include <regex>
 #include <set>
 #include <stdexcept>
 namespace monitor {
@@ -79,12 +78,7 @@ void validate_config(const Json& c) {
                         !value.at("publisher_id").get<std::string>().empty() &&
                         value.at("publisher_id").get<std::string>().size() <= 128,
                     "source must be publisher string or publisher/session selector");
-            const auto session = value.value("session_id", std::string());
-            require(
-                session.empty() ||
-                    std::regex_match(session, std::regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]"
-                                                         "{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")),
-                "invalid source session UUID");
+            // Legacy session selectors are accepted but no longer filter sources.
         }
     }
     for (const auto& [topic, value] : c.at("timeouts_ms").items()) {

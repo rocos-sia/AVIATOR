@@ -70,7 +70,7 @@ message CameraPacket {
 | --- | --- |
 | `version` | 正整数，当前为 1。 |
 | `camera_id`、`stream` | 已配置 ID；stream 为 `rgb` 或 `depth`。Topic 由 Logger 配置映射，不信任发送端自由指定 Topic。 |
-| `publisher_id`、`session_id`、`clock_id`、`config_id` | 非空字符串，最多 256 字节；session_id 为 UUID 文本。 |
+| `publisher_id`、`session_id`、`clock_id`、`config_id` | 非空字符串，最多 256 字节；session_id 为普通文本启动标记，无 UUID 格式要求。 |
 | `sequence` | 正 uint64，逐源流序号；保留完整值。 |
 | `timestamp_us`、`sample_mono_us` | 正整数，源快照 UTC 与源采样单调时刻；UTC 微秒检查转纳秒溢出。 |
 | `width`、`height` | 正整数，上限 16384；实际帧字节数还受单条大小上限约束。 |

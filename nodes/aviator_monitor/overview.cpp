@@ -34,13 +34,11 @@ const Stream* select(const State& state, aviator::Topic topic, std::uint64_t now
     const auto rule = state.config.at("sources").value(name, Json(""));
     const auto publisher =
         rule.is_string() ? rule.get<std::string>() : rule.at("publisher_id").get<std::string>();
-    const auto session = rule.is_object() ? rule.value("session_id", std::string()) : std::string();
     const Stream* last = nullptr;
     unsigned live = 0;
     for (const auto& s : state.streams) {
         if (s.message.topic != topic ||
-            (!publisher.empty() && s.message.header.publisher_id != publisher) ||
-            (!session.empty() && s.message.header.session_id != session))
+            (!publisher.empty() && s.message.header.publisher_id != publisher))
             continue;
         if (now >= s.received_us && now - s.received_us < state.timeout_us(topic)) {
             ++live;
@@ -52,7 +50,6 @@ const Stream* select(const State& state, aviator::Topic topic, std::uint64_t now
         for (const auto& s : state.streams)
             if (s.message.topic == topic &&
                 (publisher.empty() || s.message.header.publisher_id == publisher) &&
-                (session.empty() || s.message.header.session_id == session) &&
                 (!last || s.received_us > last->received_us))
                 last = &s;
     }

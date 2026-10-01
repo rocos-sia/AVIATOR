@@ -54,7 +54,7 @@ std::string identity(const Json& meta) {
 }
 } // namespace
 Preview::Preview(Json settings)
-    : settings_(std::move(settings)), session_(aviator::new_session_id()) {}
+    : settings_(std::move(settings)), session_(aviator::new_instance_id()) {}
 void Preview::reject(const std::string& reason) {
     std::lock_guard<std::mutex> lock(mutex_);
     ++rejected_;

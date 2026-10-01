@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -16,20 +17,25 @@
 #include <thread>
 
 namespace {
-// Default output name carries the recording start time so repeated runs do not
-// overwrite each other. Local time, sortable, colons avoided for portability.
+// Use local start time as the readable batch name, with microsecond precision
+// for rapid restarts. RecordingWriter still refuses to overwrite existing files.
 std::string default_output_path() {
-    const std::time_t now = std::time(nullptr);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    const std::time_t now = static_cast<std::time_t>(elapsed / 1'000'000);
     std::tm local{};
     localtime_r(&now, &local);
     char buffer[40];
     std::strftime(buffer, sizeof(buffer), "aviator_%Y-%m-%d_%H-%M-%S", &local);
-    return std::string(buffer) + "-" + aviator::new_session_id() + ".mcap";
+    char suffix[24];
+    std::snprintf(suffix, sizeof(suffix), "_%06lld.mcap",
+                  static_cast<long long>(elapsed % 1'000'000));
+    return std::string(buffer) + suffix;
 }
 
 void usage() {
     std::cout << "Usage: aviator_logger [--config config/recording.yaml] [--output FILE] [--image-output FILE]\n"
-                 "                       [--subscribe tcp://127.0.0.1:5556] [--session UUID]\n"
+                 "                       [--subscribe tcp://127.0.0.1:5556] [--session LABEL]\n"
                  "                       [--queue-bytes 16777216] [--receive-hwm 4096]\n"
                  "Writes data and images to separate MCAP files; SIGINT/SIGTERM finalizes.\n";
 }
@@ -69,7 +75,7 @@ int main(int argc, char** argv) {
         }
         std::string endpoint = config.subscribe_endpoint;
         std::string output = config.output.empty() ? default_output_path() : config.output;
-        std::string session = aviator::new_session_id();
+        std::string session = aviator::new_instance_id();
         aviator::RecorderOptions options = config.options;
         for (int i = 1; i < argc; ++i) {
             const std::string key = argv[i];

@@ -226,10 +226,7 @@ service: tcp://127.0.0.1:5559
 ./build/bin/flight_gateway
 ```
 
-Gateway 会用首次成功设备查询建立初始位置，摇杆静止也能绑定；Core 应打印 `Bound flight_gateway session=...` 和
-`Managed flight input: valid`。默认仅绑定第一条完整通过校验的输入会话，不自动切换。
-如需预先指定会话，在启动 Core 时加 `--gateway-session <Gateway UUID>`；每次进程重启都重新核对会话。
-Gateway 显示 `Bound aviator_core session=...` 后会自动为服务请求携带匹配的 server_session_id；再看到 `service_ready=1`（收到 Core 绑定确认）后按按钮。未识别、未确认或反馈过期时按钮显示 NOT_SENT，不缓存。绑定仅在进程内保存，不写回配置。
+Gateway 会用首次成功设备查询建立初始位置，摇杆静止也可提供有效输入；Core 应打印 `Received valid flight_gateway input` 和 `Managed flight input: valid`。会话不再参与授权，`--gateway-session` 与配置的 `core_session` 仅兼容旧调用并忽略。Gateway 收到新鲜 Core 状态及 source_authorized 确认后显示 `service_ready=1`，此时可按按钮；反馈过期时按钮仍显示 NOT_SENT，不缓存。
 
 可用 `--operation-service tcp://127.0.0.1:<端口>` 更改 Core 服务地址，同时修改 flight.yaml 的 service；
 该端点不能与 Bus 或 Manipulator 服务相同。Gateway 模式在 stdin 关闭时继续工作，可用 Ctrl+C 退出。
@@ -257,7 +254,7 @@ CONTROL 中按钮 1/5 不直接释放，先按钮 4。FOLLOWING 中按钮 1 同�
 服务即时回复 ACCEPTED/COMPLETED/REJECTED/EXPIRED；REJECTED 的 `result.reason` 给出 BUSY、INVALID_STATE、
 CAPABILITY_UNAVAILABLE 或协议拒绝原因。ACCEPTED 仅表示登记任务，动作完成看 flight.state 的最终状态和错误。
 此最小适配不实现 get_result 或异步最终服务应答；相同请求重发返回原始应答，不作为完成查询。
-请求在 Core 会话内去重，最多保存 1024 项，不淘汰后重复执行；满后拒绝新请求，需在安全停止后重启并重新配置会话。
+请求在 Core 会话内去重，最多保存 1024 项，不淘汰后重复执行；满后拒绝新请求，需在安全停止后重启。
 服务期限检查范围 1–10000 ms；Gateway 默认等待 100 ms，该期限不是机械动作时限。
 超时显示 UNKNOWN，不自动重试或用新请求猜测执行结果。记录副本不执行；身份白名单仅适用于受控本机，不是密码学认证。
 
@@ -268,11 +265,8 @@ Manipulator 的 arm.state 新增 `status_mono_us`，仅代表设备状态发布�
 本次更新后需**同时重启 Manipulator 和 Managed Core**；旧设备节点没有此状态时间字段，不能用于新待机判据。
 
 Gateway 按钮请求和连续轴值走不同通道，首次按钮可能先于首个有效轴值抵达。
-先看到 `Bound flight_gateway session=...` 和 `system.state=READY`，按按钮 1 回 home；等 `system.state=STANDBY` 再按按钮 2 抓握，输入有效后按按钮 3 操控。
-请求拒绝的 result.reason 已拆分：GATEWAY_NOT_BOUND（未绑定）、GATEWAY_SESSION_MISMATCH（网关重启/会话不符）、
-CLOCK_DOMAIN_MISMATCH（时钟域不符）、CORE_SESSION_REQUIRED（旧版客户端未发送 Core 会话）、
-CORE_SESSION_MISMATCH（旧 Core 会话）；应答另含 expected_gateway_session / expected_clock_id。
-默认 core_session 留空：Core 重启后重启 Gateway 自动识别，无需编辑配置；非空值仅供手动固定绑定。
+先看到 `Received valid flight_gateway input` 和 `system.state=READY`，按按钮 1 回 home；等 `system.state=STANDBY` 再按按钮 2 抓握，输入有效后按按钮 3 操控。
+请求拒绝的 result.reason 包括 GATEWAY_NOT_BOUND（尚无通过校验的输入）、CLOCK_DOMAIN_MISMATCH（时钟域不符）和 INVALID_PARAMETERS；应答保留 expected_clock_id。已取消 Gateway/Core 会话匹配及 server_session_id 必填要求，旧客户端提供此参数时忽略。
 ERROR 状态不会因摇杆输入恢复而自动退出；故障排除后按 RESET_ERROR → SAFE，再 ENTER_STANDBY。
 
 ### 隔离联调
@@ -285,7 +279,7 @@ ERROR 状态不会因摇杆输入恢复而自动退出；故障排除后按 RESE
 ctest --test-dir build -R '^managed_gateway_process$' --output-on-failure
 ```
 
-覆盖 Gateway 同格式请求/输入、来源/时钟/期限/会话校验、去重及冲突、非法状态和忙碌拒绝、静止位置保持到达目标、
+覆盖 Gateway 同格式请求/输入、来源/时钟/期限校验及跨启动实例接收、去重及冲突、非法状态和忙碌拒绝、静止位置保持到达目标、
 完整抓握/操控/释放、设备检查冻结触发保护、恢复输入不自动恢复操控及 stdin EOF。测试不验证实际 USB 按钮标号或真实抓握。
 
 ## 原 Core 构建与使用
@@ -348,15 +342,15 @@ Managed 进入 SAFE 等保护状态时，RemoteLink 撤销普通轨迹发布并�
 
 真机的 `manipulator` 需要实时调度权限，可用 `sudo ./build/bin/manipulator --config config/system.yaml` 启动；Core 不需要 sudo。网关自定义总线时，修改 config/flight.yaml 的 publish / subscribe，与 system.yaml 保持一致。
 
-默认配置路径与原 Core 相同，开发构建读取源码根目录 `config/system.yaml`。省略 `--gateway-session` 时，自动绑定第一条通过来源、时钟、有效性和时效检查的 flight_gateway 消息，日志打印绑定的 session；无效或过期消息不能抢先绑定。也可用 `--config <system.yaml>` 指定配置，或用 `--gateway-session <UUID>` 手动指定会话。自动绑定只进行一次，不因输入过期而解除绑定。
+默认配置路径与原 Core 相同，开发构建读取源码根目录 `config/system.yaml`，可用 `--config` 指定。输入按 flight_gateway 发布者、时钟、有效性、时效和序号检查；`--gateway-session` 已忽略，不再固定启动会话。
 
 两个摇杆入口共用 `joystickWheelDisplacement()`，`main_servo.cpp` 的映射为：`angle = roll * 0.87266` rad，`displacement = 0.085 * (pitch - 1.0)` m，`v = 1.0`。pitch 的 -1、0、+1 分别对应 -0.170、-0.085、0 m；轮盘速度上限由 robot.yaml 的 wheel_*_speed 决定，目标仍经 Servo 规划执行；不再按应用层关节动态上限拦截。
 
-仅接收已绑定会话、同一时钟域、publisher_id=flight_gateway、source=JOYSTICK 的有限且处于 [-1,1] 的数据。沿用 InputGuard 检查序号与 valid。POSITION_HOLD 输入显式按 input_state.checked_mono_us 和消息接收时刻检查时效，同时保留原始轴事件时间并拒绝时间倒退；没有扩展的普通输入仍按原始采样时间检查。输入时效取 system.yaml 的 origin_timeout_ms（默认 100 ms）。失效后不再更新 Servo 目标，现有 servo_timeout（默认 250 ms）触发减速并保持软件锁定，因此停更到触发停止的上限约为两项超时之和，实际停止还需制动时间。同一会话恢复有效数据后可恢复跟随；网关重启后需重启本入口重新绑定，不自动切换来源，手动指定模式则需更新 UUID。Ctrl+C 停止、调用 UnlockHandles（启用真实手时等待张开）、释放软件锁定并失能。
+仅接收同一时钟域、publisher_id=flight_gateway、source=JOYSTICK 的有限且处于 [-1,1] 的数据。沿用 InputGuard 检查序号与 valid。POSITION_HOLD 输入显式按 input_state.checked_mono_us 和消息接收时刻检查时效，同时保留原始轴事件时间并拒绝时间倒退；没有扩展的普通输入仍按原始采样时间检查。输入时效取 system.yaml 的 origin_timeout_ms（默认 100 ms）。失效后不再更新 Servo 目标，现有 servo_timeout（默认 250 ms）触发减速并保持软件锁定，因此停更到触发停止的上限约为两项超时之和，实际停止还需制动时间。有效数据恢复后可恢复跟随；网关重启后按新启动标记重新计数，不需要手动绑定会话。Ctrl+C 停止、调用 UnlockHandles（启用真实手时等待张开）、释放软件锁定并失能。
 
 新入口有效跟随时 flight.state 的 control_source=JOYSTICK，等待或失效时为 NONE。Manipulator 仍验证 Core 的 local.task 心跳；网关输入时效在本入口检查，不宣称已实现端到端 flight.command origin 传播。位置保持输入在设备检查正常时允许静止持杆，详见 [flight_gateway 位置保持与设备检查](../flight_gateway/README.md#位置保持与设备检查)。网关与 Core 需一起更新并重启。
 
-`control_nodes_flight_hold` 验证长时间无新轴事件的阶跃跟随、设备查询过期、网关静默和设备断开；`control_nodes_flight` / `control_nodes_flight_auto` 分别验证普通输入的手动指定与自动绑定会话，通过 ZMQ 注入同格式输入，验证完整接近/锁定流程、正负映射、最大速度参数、无效消息不能抢先绑定、其他会话不能替换当前绑定、旧采样重发不能维持运动、输入恢复和 Ctrl+C 退出；使用无头 MuJoCo，不连接真机或 USB 摇杆。
+`control_nodes_flight_hold` 验证长时间无新轴事件的阶跃跟随、设备查询过期、网关静默和设备断开；`control_nodes_flight` / `control_nodes_flight_auto` 分别验证普通输入的旧参数兼容与发布者接收，通过 ZMQ 注入同格式输入，验证完整接近/锁定流程、正负映射、最大速度参数、无效消息不能抢先绑定、其他启动实例仍须满足来源和时效检查、旧采样重发不能维持运动、输入恢复和 Ctrl+C 退出；使用无头 MuJoCo，不连接真机或 USB 摇杆。
 
 已废除的 TCP 对齐、grasp.ready、跟踪误差及锁定丢失判据没有迁移。软件锁定只表示操作阶段。限位、IK 失败、碰撞规划、来源/时效、指令连续性、设备故障和取消仍独立生效。Home 完成后保留关节速度停稳检查。MuJoCo 实测轮盘跟踪只作为测试断言，不能反向成为运行准入条件。
 
@@ -412,7 +406,7 @@ status
 
 - `enable`：先发送张开目标并等待双手实际位置到位，再使能机械臂，确保接近时手已张开。
 - `approach`：从 home 连续到达最终抓握位姿；各侧 tool 到目标进入 `grasp.json.hand_closing_distance`（默认 0.07 m）后，手指从 `core_hand.open` 平滑闭合到 `core_hand.close`，跟随机械臂执行游标，与臂轨迹共用终点。没有预接近停靠。
-- `lock`：同步接近已提交闭合终点并收到本 Core 会话、当前目标对应的 `accepted_command` 且实际反馈有效后，执行机械臂软件 lock，不再启动一段闭合动作。不会等待闭合位置全为 0，也不宣称已接触或抓稳方向盘。
+- `lock`：同步接近已提交闭合终点并收到本 Core 发布者、当前目标对应的 `accepted_command` 且实际反馈有效后，执行机械臂软件 lock，不再启动一段闭合动作。不会等待闭合位置全为 0，也不宣称已接触或抓稳方向盘。
 - `unlock`：持续发送张开目标，等待两手各六路实际位置距目标不超过 `open_tolerance`，再执行软件 unlock；超时抛错，不继续后续动作。
 - `stop`：只停止机械臂运动，保持当前手目标；等运动停止后可输入 `unlock`、`disable`、`quit`。普通 `unlock` 不带机械臂撤离。
 - `disable`：若软件仍锁定，或同步接近已闭合手指但尚未 lock，先张开，再失能。正常退出也保持监督心跳直到清理动作结束。
@@ -440,9 +434,9 @@ origin 保留主线程的真实监督心跳。发送线程在取得手部锁后�
 `timeout_ms`（默认 100 ms）回到 `safe_pose`（默认全张开）。因此通信保护/退出不会保证继续抓握；
 软件锁定状态也不表示手仍闭合。这里沿用手节点既有超时策略，没有实现物理制动。
 
-实际手反馈超时、只读模式、被其他会话占用或节点重启会终止相关操作并阻断普通机械臂轨迹发布。
-通信故障会锁存手部错误，排障后重启 Core 和手节点；节点重启后不自动切换反馈会话。
-不要同时运行 `hand_command.py` 或旧 `inspire_hand_node`；手节点绑定首个有效发布会话，重启 Core 后也需
+实际手反馈超时、只读模式、被其他发布者占用会终止相关操作并阻断普通机械臂轨迹发布。
+通信故障会锁存手部错误，排障后重启 Core 和手节点；节点重启后可接受新鲜反馈，不再固定反馈会话。
+不要同时运行 `hand_command.py` 或旧 `inspire_hand_node`；手节点仍绑定首个有效发布者和 control_epoch，Core 重启导致 epoch 变化时仍需
 重启手节点重新绑定。`flight.state.hands` 现在来自真实手节点，`freshness.hand` 报告实际反馈时效，
 `hand_control.error` 报告控制错误；`grasp_verified` 仍由手节点保持 false。
 
@@ -478,4 +472,4 @@ wheel_initial:
 
 直接调用 `moveWheel/servoWheel` 的位移参数仍是绝对位置。`main.cpp --demo/--servo-demo` 中写明的目标值保持原样（目标 0 仍会移到零位）；改变的是抓取起始位形。
 
-修改初值后需重启 Manipulator 和 Core；使用手节点/Gateway 时按现有会话绑定规则一起重启。启动日志显示 `Manipulator initial wheel`，READY/STANDBY/抓取前可检查 `wheel_reference.displacement=-0.085`。启动前真机轮盘应处于所声明的位形，这不是轮盘位置测量。
+修改初值后需重启 Manipulator 和 Core；使用手节点/Gateway 时按控制 epoch 授权流程一起重启。启动日志显示 `Manipulator initial wheel`，READY/STANDBY/抓取前可检查 `wheel_reference.displacement=-0.085`。启动前真机轮盘应处于所声明的位形，这不是轮盘位置测量。

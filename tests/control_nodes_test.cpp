@@ -261,16 +261,20 @@ int main(int argc, char **argv) {
         }
         if (mode == "service") {
             const auto config = loadMotionConfig(directory / "system.yaml");
-            const auto client = new_session_id();
+            const auto client = new_instance_id();
             auto info = callService(ctx, config, serviceRequest(client, "describe", Json::object()));
             const Json parameters = {{"server_session", info.at("server_session")},
                                      {"config_id", config.config_id}};
             auto request = serviceRequest(client, "authorize", parameters);
             auto first = callService(ctx, config, request), second = callService(ctx, config, request);
             check(first == second, "Duplicate authorize generated a different epoch");
+            auto relabeled = request;
+            relabeled["client_session_id"] = "restarted-core";
+            relabeled["parameters"].erase("server_session");
+            check(callService(ctx, config, relabeled) == first, "Session label broke request deduplication");
             auto query = parameters;
             query["original_request_id"] = request.at("request_id");
-            query["original_client_session_id"] = client;
+            query["original_client_session_id"] = "ignored-origin-marker";
             auto result = callService(ctx, config, serviceRequest(client, "get_result", query));
             check(result.at("status") == "COMPLETED" && result.at("result") == first,
                   "Result query lost original outcome");
@@ -307,7 +311,7 @@ int main(int argc, char **argv) {
             } catch (const std::exception &) {
                 rejected = true;
             }
-            check(rejected, "Old session enabled restarted device");
+            check(rejected, "Device enabled without a new control authorization");
             std::cout
                 << "PASS service: deduplication, conflicting identities, malformed input, restart fencing\n";
             return 0;
@@ -409,8 +413,8 @@ int main(int argc, char **argv) {
                     const double pitch = flight_stage == 3 ? (position_hold ? -.1 : -.02) :
                                          flight_stage == 6 ? -1 : 1;
                     message.body = {{"source", "JOYSTICK"}, {"control", {{"roll", roll}, {"pitch", pitch}}}};
-                    if ((mode == "flight_auto" || position_hold) && flight_stage == 1) {
-                        // None of these otherwise well-formed messages may claim the first session.
+                    if (flight_stage == 1) {
+                        // Invalid input must not activate control, regardless of startup marker.
                         switch (flight_seq % 5) {
                         case 0: message.header.valid = false; break;
                         case 1: message.header.sample_mono_us -= 1000000; break;
@@ -421,9 +425,9 @@ int main(int argc, char **argv) {
                     }
                     if (flight_stage == 4) message.header.sample_mono_us = flight_at;
                     if (flight_stage == 4 && flight_seq % 2 == 0) {
-                        // A restarted gateway must not replace the bound session, even when fresh.
+                        // A different startup marker must not bypass sample freshness.
                         message.header.session_id = wrong_session;
-                        message.header.sample_mono_us = now;
+                        message.header.sample_mono_us = flight_at;
                     }
                     if (position_hold && flight_stage >= 2) {
                         if (last_input_stage != flight_stage && flight_stage != 9) {
@@ -448,7 +452,6 @@ int main(int argc, char **argv) {
                         if (flight_stage == 4 && flight_seq % 2 == 0) {
                             message.header.session_id = wrong_session;
                             message.header.valid = true;
-                            message.body["input_state"]["checked_mono_us"] = now;
                         }
                         last_input_stage = flight_stage;
                     }
@@ -479,12 +482,11 @@ int main(int argc, char **argv) {
                     (step_reached || (stopping_stage && hold_sampled && now - hold_at > 400000) ||
                      now - flight_at >= duration[flight_stage])) {
                     if (flight_stage == 1)
-                        check(text.find("Servo target") == std::string::npos, "Wrong gateway session moved robot");
+                        check(text.find("Servo target") == std::string::npos, "Invalid gateway input moved robot");
                     if (flight_stage == 2) {
                         if (mode == "flight_auto" || position_hold)
-                            check(text.find("Bound flight_gateway session=" + gateway_session) != std::string::npos &&
-                                  text.find("Bound flight_gateway session=" + wrong_session) == std::string::npos,
-                                  "Automatic binding did not choose the first valid gateway session");
+                            check(text.find("Received valid flight_gateway input") != std::string::npos,
+                                  "Valid gateway input was not received");
                         check(max_angle > .01, "Positive roll did not move physical wheel");
                         check(std::abs(reference_displacement) < 1e-8, "Positive pitch produced pull target");
                         if (position_hold) {

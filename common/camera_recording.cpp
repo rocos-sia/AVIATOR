@@ -10,7 +10,6 @@ extern "C" {
 #include <climits>
 #include <cmath>
 #include <map>
-#include <regex>
 #include <set>
 #include <stdexcept>
 
@@ -203,12 +202,6 @@ std::string validate_camera_frame(const CameraFrame& f, const CameraRecordingOpt
                       !m[key].get_ref<const std::string&>().empty() &&
                       m[key].get_ref<const std::string&>().size() <= 256,
                   key);
-        valid(
-            std::regex_match(
-                m["session_id"].get<std::string>(),
-                std::regex(
-                    "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")),
-            "invalid source session UUID");
         valid(m["encoding"] == "raw", "camera ingress requires raw frames");
         valid(m["stream"] == "rgb" || m["stream"] == "depth", "unknown camera stream");
         const bool rgb = m["stream"] == "rgb";

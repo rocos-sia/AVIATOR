@@ -2,6 +2,7 @@
 """Manual hand.command publisher. Run on the same host as inspire_hand_node."""
 
 import argparse
+import os
 import json
 import math
 import queue
@@ -57,7 +58,7 @@ def update_targets(line, targets):
 
 class Commands:
     def __init__(self):
-        self.session = str(uuid.uuid4())
+        self.session = f"run-{time.time_ns()}-{os.getpid()}"
         self.epoch = str(uuid.uuid4())
         self.publisher = "hand_manual_test"
         self.clock = socket.gethostname() + "-" + Path("/proc/sys/kernel/random/boot_id").read_text().strip()
@@ -123,7 +124,7 @@ def run(args, targets):
         sub.connect(args.state_endpoint)
         print(f"PUB {args.endpoint}; state {args.state_endpoint}", flush=True)
         print(f"session={commands.session}\nclock={commands.clock}", flush=True)
-        print("首次使用需启动控制模式手节点；重启本程序后，也需重启手节点以解除旧会话绑定。", flush=True)
+        print("首次使用需启动控制模式手节点；本程序重启会生成新 control_epoch，需重启手节点重新授权。", flush=True)
         # Allow subscriptions to propagate before sending any command.
         time.sleep(0.5)
         if args.interactive:
@@ -188,9 +189,8 @@ def run(args, targets):
                 accepted = state.get("accepted_command") or {}
                 if not isinstance(accepted, dict):
                     continue
-                ours = (accepted.get("publisher_id") == commands.publisher and
-                        accepted.get("session_id") == commands.session)
-                # Receipt alone is not an ACK: require this session and a fresh accepted sample.
+                ours = (accepted.get("publisher_id") == commands.publisher)
+                # Receipt alone is not an ACK: require this publisher and a fresh accepted sample.
                 sample = accepted.get("sample_mono_us")
                 fresh = (type(sample) is int and 0 <= time.monotonic_ns() // 1000 - sample < 100000)
                 if targets is not None and ours and fresh and state.get("command_valid") is True:

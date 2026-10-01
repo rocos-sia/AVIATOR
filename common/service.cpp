@@ -56,10 +56,7 @@ nlohmann::json service_schema(bool reply) {
     J required = J::array();
     for (auto it = p.begin(); it != p.end(); ++it)
         required.push_back(it.key());
-    for (const char* key : {"request_id", "client_session_id"})
-        p[key]["format"] = "uuid";
-    if (reply)
-        p["server_session_id"]["format"] = "uuid";
+    p["request_id"]["format"] = "uuid";
     if (!reply)
         p["gateway_observation"] = {{"type", "string"},
                                     {"enum", {"QUEUED", "NOT_SENT", "TIMEOUT_UNKNOWN"}}};
@@ -99,10 +96,7 @@ void validate_service(const nlohmann::json& m) {
                         rule.at("enum").end(),
                     "Invalid service status");
     }
-    for (const char* key : {"request_id", "client_session_id"})
-        require(uuid(m.at(key).get<std::string>()), "Invalid service UUID");
-    if (reply)
-        require(uuid(m.at("server_session_id").get<std::string>()), "Invalid server UUID");
+    require(uuid(m.at("request_id").get<std::string>()), "Invalid request UUID");
 }
 nlohmann::json decode_service(std::string_view bytes) {
     try {
@@ -172,10 +166,7 @@ bool matches_service_reply(const nlohmann::json& request, const nlohmann::json& 
                reply.at("msg_type") == "ServiceReply" &&
                request.at("request_id") == reply.at("request_id") &&
                request.at("client_id") == reply.at("client_id") &&
-               request.at("client_session_id") == reply.at("client_session_id") &&
-               request.at("target") == reply.at("server_id") &&
-               (!request.at("parameters").contains("server_session_id") ||
-                request.at("parameters").at("server_session_id") == reply.at("server_session_id"));
+               request.at("target") == reply.at("server_id");
     } catch (const std::exception&) {
         return false;
     }

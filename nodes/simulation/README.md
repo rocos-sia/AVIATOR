@@ -23,7 +23,7 @@ MuJoCo 3.4.0 已验证。相机使用 EGL OpenGL 离屏渲染，需要可用的 
 
 ## 启动
 
-默认连接与 `aviator_bus`、`aviator_monitor` 一致的总线 `5555/5556`，`publisher_id=simulation`。上层消费者应将此生产者和启动时打印的会话登记到测试授权配置。
+默认连接与 `aviator_bus`、`aviator_monitor` 一致的总线 `5555/5556`，`publisher_id=simulation`。上层消费者按生产者配置来源；启动标记使用普通文本，不用于授权匹配。
 
 ```bash
 # 终端 1：总线
@@ -50,13 +50,11 @@ build/simulation-node/bin/aviator_monitor
 
 ## 命令授权
 
-启动时显式安装本次测试 Core 的 session、control_epoch 和上游 session；不根据最先到达的消息自动授权。以下 UUID 仅供本次联调示意，实际运行时由发送方生成新会话并传入：
+启动时显式安装本次测试的 control_epoch；不根据最先到达的消息自动授权。会话 UUID 与会话匹配已取消，旧 --core-session / --origin-session 参数兼容读取但不作为授权条件。以下 epoch 仅供示意，实际由控制方授权后提供：
 
 ```bash
 build/simulation-node/bin/simulation --headless \
-  --core-session 22222222-2222-4222-8222-222222222222 \
-  --control-epoch aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa \
-  --origin-session 11111111-1111-4111-8111-111111111111
+  --control-epoch aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
 ```
 
 默认命令生产者为 `aviator_core`，上游为 `flight_gateway`，可分别用 `--core-publisher` / `--origin-publisher` 设置。输入必须使用本机 `clock_id`（hostname + `-` + `/proc/sys/kernel/random/boot_id`）与 `CLOCK_MONOTONIC` 微秒。跨主机时钟映射、可靠使能服务和在线切换授权尚未实现；更换授权需重启。
@@ -96,7 +94,7 @@ roll/pitch 分别将 `roll_input_joint` / `pitch_input_joint` 的 MJCF 下限到
 
 ## 验证
 
-`simulation_model` 检查动力学响应、关节映射、双侧完整性、限位、会话/epoch/origin/时钟校验、序号、invalid、超时保持和相机 ROI。`simulation_bus` 启动真实子进程及临时 TCP 总线，验证状态发布、命令订阅和退出。可启用 EGL 集成测试：
+`simulation_model` 检查动力学响应、关节映射、双侧完整性、限位、epoch/origin/时钟校验及文本启动标记、序号、invalid、超时保持和相机 ROI。`simulation_bus` 启动真实子进程及临时 TCP 总线，验证状态发布、命令订阅和退出。可启用 EGL 集成测试：
 
 ```bash
 cmake -S . -B build/simulation-node -DAVIATOR_SIMULATION_TEST_EGL=ON

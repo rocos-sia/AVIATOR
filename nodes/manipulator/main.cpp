@@ -44,6 +44,7 @@ struct Shared {
     DeviceState state;
     ArmFeedback feedback;
     TrajectoryWindow window;
+    std::string window_instance, accepted_instance;
     bool has_window = false, revoke = false;
     std::atomic<bool> quit{false};
     std::atomic<uint64_t> accept_after{0};
@@ -89,6 +90,7 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
     state.angle = initial.angle;
     state.displacement = initial.displacement;
     TrajectoryWindow active{};
+    std::string active_instance;
     bool have = false;
     uint64_t last_message = 0, highest_trajectory = 0;
     auto snapshot = [&] {
@@ -102,6 +104,7 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
         state.enabled = f.enabled;
         std::lock_guard<std::mutex> lock(shared.mutex);
         shared.state = state;
+        shared.accepted_instance = active_instance;
         shared.feedback = f;
     };
     auto disable = [&] {
@@ -155,6 +158,7 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
         std::string key;
         Json request;
         TrajectoryWindow incoming;
+        std::string incoming_instance;
         bool new_window = false, revoke = false;
         {
             std::lock_guard<std::mutex> lock(shared.mutex);
@@ -173,6 +177,7 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
             }
             if (shared.has_window) {
                 incoming = shared.window;
+                incoming_instance = shared.window_instance;
                 shared.has_window = false;
                 new_window = true;
             }
@@ -281,6 +286,7 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
                 have = true;
                 last_message = now;
                 state.sequence = incoming.sequence;
+                active_instance = incoming_instance;
                 device.commandDeadline(double(std::min(incoming.sample + config.timeout_us,
                                                        incoming.origin_sample + config.origin_timeout_us)) /
                                            1e6 +
@@ -473,8 +479,8 @@ int main(int argc, char **argv) {
         if (context.model && !headless && y["viewer"].as<bool>(true))
             viewer = std::make_unique<Viewer>(context.model);
 #endif
-        const std::string session = new_session_id();
-        std::string core_session, epoch;
+        const std::string session = new_instance_id();
+        std::string epoch;
         zmq::context_t zmq_context(1);
         zmq::socket_t pub(zmq_context, zmq::socket_type::pub), sub(zmq_context, zmq::socket_type::sub),
             rep(zmq_context, zmq::socket_type::rep);
@@ -511,10 +517,12 @@ int main(int argc, char **argv) {
         while (!interrupted) {
             DeviceState state;
             ArmFeedback feedback;
+            std::string accepted_instance;
             {
                 std::lock_guard<std::mutex> lock(shared.mutex);
                 state = shared.state;
                 feedback = shared.feedback;
+                accepted_instance = shared.accepted_instance;
             }
             zmq::message_t request_frame;
             if (rep.recv(request_frame, zmq::recv_flags::dontwait)) {
@@ -553,7 +561,7 @@ int main(int argc, char **argv) {
                         }
                         return true;
                     };
-                    require(uuid(client) && uuid(id), "Invalid request/session UUID");
+                    require(uuid(id), "Invalid request UUID");
                     reply = {{"msg_type", "ServiceReply"},
                              {"version", "1.0"},
                              {"request_id", id},
@@ -574,15 +582,15 @@ int main(int argc, char **argv) {
                                            {"backend", backend}};
                     else if (op == "get_result") {
                         const auto &params = req.at("parameters");
-                        require(params.size() == 4 && params.at("server_session") == session &&
+                        require(params.size() == 2u + params.count("server_session") +
+                                    params.count("original_client_session_id") &&
                                     params.at("config_id") == config.config_id,
                                 "Invalid result query context");
-                        const std::string original_id = params.at("original_request_id"),
-                                          original_session = params.at("original_client_session_id");
-                        require(uuid(original_id) && uuid(original_session),
+                        const std::string original_id = params.at("original_request_id");
+                        require(uuid(original_id),
                                 "Invalid original request identity");
                         std::lock_guard<std::mutex> lock(shared.mutex);
-                        const auto found = shared.operations.find(original_session + ":" + original_id);
+                        const auto found = shared.operations.find(original_id);
                         reply["result"] = {{"request_id", original_id},
                                            {"status", "UNKNOWN"},
                                            {"error_code", 0},
@@ -594,15 +602,19 @@ int main(int argc, char **argv) {
                         }
                     } else {
                         const auto &params = req.at("parameters");
-                        require(params.is_object() && params.size() == 2, "Unexpected service parameters");
-                        require(params.at("server_session") == session,
-                                "Stale server session; rediscover before acting");
+                        require(params.is_object() && params.size() == 1u + params.count("server_session"),
+                                "Unexpected service parameters");
                         require(params.at("config_id") == config.config_id, "Configuration mismatch");
-                        const auto key = client + ":" + id;
+                        const auto key = id;
                         std::lock_guard<std::mutex> lock(shared.mutex);
                         auto found = shared.operations.find(key);
                         if (found != shared.operations.end()) {
-                            require(found->second.request == req, "Same request_id with different content");
+                            auto previous = found->second.request, incoming = req;
+                            for (auto* value : {&previous, &incoming}) {
+                                value->erase("client_session_id");
+                                (*value)["parameters"].erase("server_session");
+                            }
+                            require(previous == incoming, "Same request_id with different content");
                         } else {
                             if (shared.operations.size() >= 1024)
                                 throw std::runtime_error(
@@ -616,7 +628,6 @@ int main(int argc, char **argv) {
                                     require(entry.second.status != "RUNNING" &&
                                                 entry.second.status != "ACCEPTED",
                                             "Operation in progress");
-                                core_session = client;
                                 epoch = new_session_id();
                                 InputPolicy policy;
                                 policy.topic = Topic::arm_command;
@@ -637,8 +648,7 @@ int main(int argc, char **argv) {
                                 operation.result = {{"control_epoch", epoch}};
                                 shared.operations.emplace(key, std::move(operation));
                             } else {
-                                require(client == core_session && !epoch.empty(),
-                                        "Unauthorized client session");
+                                require(!epoch.empty(), "Control has not been authorized");
                                 require(op == "enable" || op == "disable" || op == "stop" || op == "lock" ||
                                             op == "unlock" || op == "reset_fault",
                                         "Unknown operation");
@@ -711,6 +721,7 @@ int main(int argc, char **argv) {
                     }
                     std::lock_guard<std::mutex> lock(shared.mutex);
                     shared.window = window;
+                    shared.window_instance = m.header.session_id;
                     shared.has_window = true;
                 } catch (const std::exception &e) {
                     ++rejected;
@@ -733,7 +744,7 @@ int main(int argc, char **argv) {
                 m.body["status_mono_us"] = now;
                 m.body["config_id"] = config.config_id;
                 m.body["accepted_command"] = state.sequence ? Json{{"publisher_id", "aviator_core"},
-                                                                   {"session_id", core_session},
+                                                                   {"session_id", accepted_instance},
                                                                    {"sequence", state.sequence},
                                                                    {"control_epoch", epoch}}
                                                             : Json(nullptr);

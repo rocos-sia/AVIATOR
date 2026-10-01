@@ -15,7 +15,7 @@ import socket
 import sys
 import threading
 import time
-import uuid
+import os
 from collections import deque
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -121,7 +121,7 @@ def decode_command(topic: str, payload: bytes | str) -> dict[str, Any]:
         _positive_int(message.get(key), key)
     _identifier(message.get("clock_id"), "clock_id")
     _identifier(message.get("publisher_id"), "publisher_id")
-    _identifier(message.get("session_id"), "session_id", True)
+    _identifier(message.get("session_id"), "session_id")
     _identifier(message.get("control_epoch"), "control_epoch", True)
     if not isinstance(message.get("valid"), bool):
         raise ValueError("valid must be boolean")
@@ -131,7 +131,7 @@ def decode_command(topic: str, payload: bytes | str) -> dict[str, Any]:
     if not isinstance(origin, dict):
         raise ValueError("origin must be an object")
     _identifier(origin.get("publisher_id"), "origin.publisher_id")
-    _identifier(origin.get("session_id"), "origin.session_id", True)
+    _identifier(origin.get("session_id"), "origin.session_id")
     _positive_int(origin.get("sequence"), "origin.sequence")
     _positive_int(origin.get("sample_mono_us"), "origin.sample_mono_us")
     _identifier(origin.get("clock_id"), "origin.clock_id")
@@ -271,14 +271,14 @@ class CommandGuard:
             raise ValueError("stale/future command")
         if self.authorized and (
             command["publisher_id"] != self.publisher
-            or command["session_id"] != self.session
             or command["control_epoch"] != self.epoch
             or origin["publisher_id"] != self.origin_publisher
-            or origin["session_id"] != self.origin_session
         ):
-            raise PermissionError("publisher/session/epoch/origin mismatch")
-        if command["sequence"] <= self.last_sequence:
+            raise PermissionError("publisher/epoch/origin mismatch")
+        if command["session_id"] == self.session and command["sequence"] <= self.last_sequence:
             raise ValueError("stale command sequence")
+        if self.authorized and command["session_id"] != self.session and command["sample_mono_us"] <= self.sample_mono_us:
+            raise ValueError("regressing producer restart")
         self.authorized = True
         self.publisher = command["publisher_id"]
         self.session = command["session_id"]
@@ -330,7 +330,7 @@ class Rh56FtpNode:
         self.force = _register_setting(force, "force", 3000)
         self._settings_applied: set[str] = set()
         self.clock_id = clock_id or _clock_id()
-        self.session_id = session_id or str(uuid.uuid4())
+        self.session_id = session_id or f"run-{time.time_ns()}-{os.getpid()}"
         self.guard = CommandGuard()
         self.snapshots = {side: Snapshot() for side in SIDES}
         self.last_command: dict[str, Any] | None = None

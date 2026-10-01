@@ -122,6 +122,19 @@ int main(int argc, char** argv) {
         services.ingest(aviator::service_request_topic, reply.dump(), 1100002);
         check(services.snapshot(1100002, "clock")["rejected"] == 3, "topic/type mismatch accepted");
         monitor::State orphan;
+        monitor::State relabeled;
+        relabeled.ingest(aviator::service_request_topic, request.dump(), 1000000);
+        auto changed_labels = request;
+        changed_labels["client_session_id"] = "new-client-label";
+        changed_labels["parameters"]["server_session_id"] = "ignored-server-label";
+        relabeled.ingest(aviator::service_request_topic, changed_labels.dump(), 1000001);
+        auto changed_reply = reply;
+        changed_reply["client_session_id"] = "reply-client-label";
+        changed_reply["server_session_id"] = "reply-server-label";
+        relabeled.ingest(aviator::service_reply_topic, changed_reply.dump(), 1000002);
+        check(relabeled.snapshot(1000002, "clock")["rejected"] == 0 &&
+                  relabeled.snapshot(1000002, "clock")["services"].size() == 1,
+              "session labels split or rejected a service transaction");
         orphan.ingest(aviator::service_reply_topic, reply.dump(), 1000000);
         row = orphan.snapshot(1000000, "clock")["services"][0];
         check(row["observation"] == "REPLY_ONLY" && row["operation"].is_null(),
@@ -131,12 +144,13 @@ int main(int argc, char** argv) {
         check(row["operation"] == "start_control" && row["observed_reply_ms"].is_null(),
               "out-of-order association fabricated latency");
         auto second = request;
-        second["client_session_id"] = aviator::new_session_id();
+        second["client_session_id"] = "another-instance";
+        second["request_id"] = aviator::new_session_id();
         second["gateway_observation"] = "NOT_SENT";
         orphan.ingest(aviator::service_request_topic, second.dump(), 1020000);
         auto transactions = orphan.snapshot(1020000, "clock")["services"];
         check(transactions.size() == 2 && transactions[0]["status"] == "NOT_SENT",
-              "sessions merged/not-sent hidden");
+              "requests merged/not-sent hidden");
         for (unsigned i = 0; i < 64; ++i) {
             second["request_id"] = aviator::new_session_id();
             orphan.ingest(aviator::service_request_topic, second.dump(), 1030000 + i);

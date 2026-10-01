@@ -43,13 +43,13 @@ void model_test(const std::string& path) {
     check(state.body["arms"]["left"]["joint_position"][0].get<double>()>initial+.01,"arm physically follows target");
     check(state.body["arms"]["left"]["status"]=="ACTIVE","active arm");
     check(state.body["arms"]["left"]["tcp_pose"]["frame_id"]=="mujoco_world","pose frame");
-    for(const auto& invalid : {"range","length","epoch","session","origin","clock","mode","future"}) {
+    for(const auto& invalid : {"range","length","epoch","publisher","origin","clock","mode","future"}) {
         auto bad=m; bad.header.sequence=2;
         std::string kind=invalid;
         if(kind=="range") bad.body["arms"]["right"]["joint_position"][0]=999;
         if(kind=="length") bad.body["arms"]["right"]["joint_position"]=Json::array();
         if(kind=="epoch") bad.body["control_epoch"]=origin;
-        if(kind=="session") bad.header.session_id=origin;
+        if(kind=="publisher") bad.header.publisher_id="foreign";
         if(kind=="origin") bad.body["origin"]["sample_mono_us"]=now-100001;
         if(kind=="clock") bad.header.clock_id="wrong";
         if(kind=="mode") bad.body["mode"]="JOINT_TRAJECTORY";

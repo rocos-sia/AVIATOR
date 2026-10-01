@@ -127,12 +127,10 @@ aviator::Message command(const JoystickSample& sample, const std::string& sessio
         {"control", {{"roll", sample.roll_value}, {"pitch", sample.pitch_value}}}};
     return result;
 }
-CoreFeedback::CoreFeedback(const std::string& session, const std::string& clock) {
+CoreFeedback::CoreFeedback(const std::string&, const std::string& clock) {
     policy_.topic = aviator::Topic::flight_state;
     policy_.publisher_id = "aviator_core";
-    policy_.session_id = session;
     policy_.clock_id = clock;
-    if (!session.empty()) guard_.emplace(policy_);
 }
 bool CoreFeedback::accept(const aviator::Message& message, std::uint64_t now, std::string& error) {
     if (!valid_state_summary(message)) { error = "invalid Core system summary"; return false; }
@@ -142,6 +140,7 @@ bool CoreFeedback::accept(const aviator::Message& message, std::uint64_t now, st
     }
     if (guard_) {
         if (!guard_->accept(message, now, error)) return false;
+        policy_.session_id = message.header.session_id;
         source_authorized_ = system.value("source_authorized", false);
         return true;
     }

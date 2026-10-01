@@ -6,7 +6,7 @@
 | --- | --- |
 | `aviator_protocol` / `protocol.hpp/.cpp` | 八个主 Topic 与三个 system Topic 的精确映射；强类型公共 Header/Origin；JSON 编解码、大小/深度/重复键/类型/数值/版本检查；FlightCommand 来源与 roll/pitch 范围检查；运动命令溯源字段检查。 |
 | `aviator_transport` / `transport.hpp/.cpp` | socket 选项、订阅、两帧非阻塞收发；异常多帧有界排空；XSUB/XPUB 阻塞代理；生产与回放端点常量。 |
-| `aviator_runtime` / `runtime.hpp/.cpp` | UTC/单调时钟、Linux 启动时钟域与 UUID；显式授权会话的 InputGuard；序号、原始年龄、origin 和 epoch 检查；非实时 LatestMailbox。 |
+| `aviator_runtime` / `runtime.hpp/.cpp` | UTC/单调时钟、Linux 启动时钟域、文本启动标记与请求/epoch UUID；按发布者授权的 InputGuard；序号、原始年龄、origin 和 epoch 检查；非实时 LatestMailbox。 |
 
 依赖为 libzmq、仓库 `cppzmq-4.11.0`、nlohmann/json ≥3.10、Threads。通信层与 YAML、机器人 SDK、运动学、日志存储无依赖。
 
@@ -33,7 +33,7 @@ aviator::configure(pub);
 pub.connect(aviator::publish_endpoint);
 
 // 以下身份在进程启动时生成一次，后续每条消息复用。
-const auto session = aviator::new_session_id();
+const auto session = aviator::new_instance_id();
 const auto clock = aviator::local_clock_id();
 aviator::Message message;
 message.topic = aviator::Topic::flight_command;
@@ -63,11 +63,11 @@ if (!aviator::encode(message, payload, error)) {
 
 ## 时效与控制授权
 
-`InputGuard` 只保留一个授权来源的计数和时间，不维护无界会话表。构造时指定 Topic、publisher_id、session_id、clock_id、timeout_us；FlightCommand 还指定 source，臂手命令还指定 control_epoch 和上游来源/会话/超时。它在成功解码和业务校验之后运行，不能替代节点业务校验或网络身份认证。
+`InputGuard` 只保留一个授权来源的计数和时间，不维护无界会话表。构造时指定 Topic、publisher_id、clock_id、timeout_us；FlightCommand 还指定 source，臂手命令还指定 control_epoch 和上游来源/超时。它在成功解码和业务校验之后运行，不能替代节点业务校验或网络身份认证。
 
-同一序号、旧会话、跨时钟域、未来/过期样本、未授权 epoch 或过期 origin 均不刷新有效期限。合法的 valid=false 报告推进已处理序号并立即撤销可用性，但不更新最后有效数值。超时按 `age >= timeout` 判断。UTC 不参与 watchdog；当前只支持同一单调时钟域。
+同一启动实例内的重复序号、跨时钟域、未来/过期样本、未授权 epoch 或过期 origin 均不刷新有效期限。合法的 valid=false 报告推进已处理序号并立即撤销可用性，但不更新最后有效数值。超时按 `age >= timeout` 判断。UTC 不参与 watchdog；当前只支持同一单调时钟域。
 
-新会话和新 epoch 必须由节点的受控授权流程决定，清理 mailbox 并重建 InputGuard；不会根据新消息自动切换。InputGuard 由一个线程独占；要供算法线程消费，应在节点层发布带有效性和时间的强类型快照。
+节点会话使用 `new_instance_id()` 生成的文本启动标记，不再生成或校验会话 UUID，也不作为授权匹配条件。新启动实例通过来源、时钟、时效等检查且采样时间晚于已接受实例时，可从序号 1 重新计数；旧采样和重复消息仍拒绝。新 epoch 仍由节点受控授权流程决定；请求 ID 与 epoch 继续使用 UUID。InputGuard 由一个线程独占；要供算法线程消费，应在节点层发布带有效性和时间的强类型快照。
 
 `LatestMailbox<T>` 是互斥锁保护的单值拷贝，仅用于非实时线程，一种 Topic/授权来源一个实例。它不是伺服域的无锁队列，不能把含 JSON 的 Message 或该 mailbox 直接用于硬实时循环。RT 交接和设备本地安全检查在 manipulator 中实现。
 

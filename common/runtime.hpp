@@ -9,7 +9,8 @@ namespace aviator {
 std::uint64_t utc_us();
 std::uint64_t monotonic_us();
 std::string local_clock_id(); // Linux hostname + boot_id.
-std::string new_session_id(); // UUID from Linux random/uuid.
+std::string new_session_id(); // UUID for request IDs and control epochs only.
+std::string new_instance_id(); // Text startup marker; never an authorization credential.
 
 // Non-real-time mailbox: one instance per Topic/authorized producer. Lock and
 // copy are deliberately simple; this is NOT the RT servo handoff primitive.
@@ -35,7 +36,7 @@ private:
 struct InputPolicy {
     Topic topic = Topic::flight_command;
     std::string publisher_id;
-    std::string session_id; // Explicitly authorize a session; never auto-switch.
+    std::string session_id; // Legacy compatibility field; not checked for authorization.
     std::string clock_id;
     std::uint64_t timeout_us = 100000;
     std::uint64_t future_tolerance_us = 0;
@@ -43,13 +44,13 @@ struct InputPolicy {
     std::string control_epoch; // Required for arm/hand.command.
     std::string origin_topic = "flight.command";
     std::string origin_publisher_id;
-    std::string origin_session_id;
+    std::string origin_session_id; // Legacy compatibility field; not checked.
     std::uint64_t origin_timeout_us = 100000;
     bool allow_joystick_position_hold = false;
 };
 
 // Single-threaded, after decode AND node business validation. One guard per
-// Topic/producer. Reconstruct explicitly when authorizing a new session/epoch.
+// Topic/producer. Startup markers reset sequence tracking, not authorization.
 class InputGuard {
 public:
     explicit InputGuard(InputPolicy policy);
@@ -57,6 +58,7 @@ public:
     bool expired(std::uint64_t now_mono_us) const;
 private:
     InputPolicy policy_;
+    std::string instance_;
     std::uint64_t sequence_ = 0;
     std::uint64_t sample_ = 0;
     std::uint64_t event_sample_ = 0;

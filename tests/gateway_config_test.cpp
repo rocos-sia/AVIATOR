@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
         root["buttons"][10] = "exit_control";
         root["invert_roll"] = true;
         root["service_timeout_ms"] = 500;
-        root["core_session"] = "12345678-1234-4234-8234-123456789abc";
+        root["core_session"] = "legacy-text-marker";
         write(root);
         const auto changed = flight_gateway::load_config(file.string());
         check(changed.buttons[10] == "exit_control" && changed.invert_roll &&
@@ -67,9 +67,6 @@ int main(int argc, char** argv) {
         }
         auto bad = YAML::Clone(root);
         bad["source"] = "rs422";
-        rejected(bad);
-        bad = YAML::Clone(root);
-        bad["core_session"] = "not-a-uuid";
         rejected(bad);
         bad = YAML::Clone(root);
         bad["pitch_axis"] = 0;

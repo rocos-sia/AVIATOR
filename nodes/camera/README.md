@@ -26,41 +26,33 @@ Python RealSense + ChArUco/AprilTag 节点。`config/camera.yaml` 的 `detector.
 
 使用已安装 `pyrealsense2`、`opencv-contrib-python`、`numpy`、`pyzmq`、`PyYAML` 的 Python 环境；选择 AprilTag 时还需要 `apriltag` 包。程序直接从仓库运行，不需要 CMake 构建。
 
-先在 `config/recording.yaml` 中将 `camera.mode` 设为 `raw` 或 `compressed`，并生成一个会话 UUID。`aviator_bus` 不需要会话标识；`aviator_logger` 与 camera 节点必须使用**同一个** session，才能把业务消息与图像记录关联到同一次会话。两者若都省略 `--session`，会各自生成不同的随机 UUID（logger 在 `main.cpp`、camera 在 `main.py` 里分别调用 `new_session_id()` / `session_id()`），导致关联不上。建议生成一次、写进文件，两个节点都读它：
+先在 `config/recording.yaml` 中将 `camera.mode` 设为 `raw` 或 `compressed`。Logger 与 camera 无需共享会话 ID：camera 的检测消息和图像带相同的相机启动标记及 frame_id，Logger 将它们记录到同一批次的数据与图像文件。
 
-```bash
-cat /proc/sys/kernel/random/uuid > /tmp/aviator_session.uuid
-cat /tmp/aviator_session.uuid           # 记下备用
-```
-
-然后在三个终端分别运行（bus 不用 session）：
+在三个终端分别运行：
 
 ```bash
 # 终端 1
 ./build/bin/aviator_bus
 
-# 终端 2
-record_dir="output/$(cat /tmp/aviator_session.uuid)"
-mkdir -p "$record_dir"
-./build/bin/aviator_logger --config config/recording.yaml \
-  --output "$record_dir/data.mcap" --image-output "$record_dir/images.mcap" \
-  --session "$(cat /tmp/aviator_session.uuid)"
+# 终端 2：默认以启动时间命名，同批图像自动使用 .images.mcap 后缀
+./build/bin/aviator_logger --config config/recording.yaml
 
 # 终端 3
 ~/miniconda3/envs/apriltag_realsense/bin/python nodes/camera/main.py \
   --config config/camera.yaml --recording-config config/recording.yaml \
-  --camera-id cockpit --session "$(cat /tmp/aviator_session.uuid)"
+  --camera-id cockpit
 ```
 
-`--session` 只做标识、不做格式校验，但务必用真随机 UUID：不要照抄固定的示例值，否则多次运行会共享同一 session，记录会混到一起。输出目录必须已存在。只需检测时省略 `--recording-config`；`camera.mode: disabled` 也不创建图像发送器和深度流。`detection_subscriber.py` 可用于订阅测试；`--help` 列出采集和 ChArUco 参数覆盖项。
+节点不再生成会话 UUID，`session_id` 是启动时间和进程号组成的普通文本，仅用于追踪及序号重置，不参与授权匹配。`--session` 可选，无需手动设置或与 Logger 相同。自定义批次可给 Logger 传 `--output output/batch_001.mcap`，自动配对 `output/batch_001.images.mcap`；父目录须存在。
 
-同一次录制只生成一次 UUID，运行中不要重写会话文件。已有 bus 可直接复用，不要重复启动。
+只需检测时省略 `--recording-config`；`camera.mode: disabled` 也不创建图像发送器和深度流。`detection_subscriber.py` 可用于订阅测试；`--help` 列出采集和 ChArUco 参数覆盖项。已有 bus 可直接复用，不要重复启动。
+
 停止时先退出相机，再停止 Logger，最后按需停止 bus；Logger 正常收尾后生成最终 MCAP。
 
 | 文件 | 内容 |
 | --- | --- |
-| `output/<session>/data.mcap` | `camera.detection` 等业务 JSON；手节点运行时也包含 `hand.state` 和总线上收到的 `hand.command`。 |
-| `output/<session>/images.mcap` | 彩色图像，以及按配置启用的深度图像。 |
+| `aviator_<启动时间>.mcap` | `camera.detection` 等业务 JSON；手节点运行时也包含 `hand.state` 和总线上收到的 `hand.command`。 |
+| `aviator_<启动时间>.images.mcap` | 彩色图像，以及按配置启用的深度图像。 |
 
 当前 [recording.yaml](../../config/recording.yaml) 为 `compressed`、`h264`、`software`，
 使用 CPU 编码，无需显卡，默认只录彩色。改为 `raw` 可保存原始像素；深度由

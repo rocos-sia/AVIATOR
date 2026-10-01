@@ -168,7 +168,7 @@ void watchdog_and_guard() {
     origin.send(j); origin.clear();
     HandNodeTestAccess::watchdog(origin.node, origin.right, origin.left, 1000001);
     check(origin.r.writes.size() == 6, "watchdog ignored origin age");
-    for (const auto* key : {"publisher_id", "session_id", "control_epoch", "origin"}) {
+    for (const auto* key : {"publisher_id", "control_epoch", "origin"}) {
         Harness c; c.send(command()); c.clear(); auto changed = command(2);
         if (std::string(key) == "origin") changed["origin"]["publisher_id"] = "other";
         else if (std::string(key) == "publisher_id") changed[key] = "other";
@@ -177,6 +177,17 @@ void watchdog_and_guard() {
         check(HandNodeTestAccess::guard(c.node).last_sequence == 1, "unauthorized command committed");
     }
     Harness c; c.send(command()); c.clear();
+    {
+        Harness restarted;
+        restarted.send(command(10)); restarted.clear();
+        auto fresh = command(1, 1000001);
+        fresh["session_id"] = "restarted-core";
+        fresh["origin"]["session_id"] = "unconfigured-origin";
+        restarted.send(fresh, 1000001);
+        check(!restarted.r.writes.empty(), "fresh text startup marker rejected");
+        restarted.clear(); restarted.send(fresh, 1000001); restarted.no_writes();
+        restarted.send(command(11), 1000001); restarted.no_writes();
+    }
     c.send(command()); c.no_writes();
     auto invalid = command(2); invalid["valid"] = false; invalid["hands"] = nullptr;
     c.send(invalid);

@@ -12,12 +12,10 @@ ManagedGateway::ManagedGateway(const MotionConfig& config, const ManagedGatewayO
         options.endpoint == config.publish || options.endpoint == config.subscribe || options.endpoint == config.service)
         throw std::runtime_error("Operation service must use a distinct tcp://127.0.0.1:<port> endpoint");
     policy_.publisher_id = "flight_gateway";
-    policy_.session_id = options.session;
     policy_.clock_id = local_clock_id();
     policy_.source = "JOYSTICK";
     policy_.allow_joystick_position_hold = true;
     policy_.timeout_us = std::min<uint64_t>(100000, config.origin_timeout_us);
-    if (!options.session.empty()) input_.emplace(policy_);
     configure(sub_, {64, 64, 0});
     subscribe(sub_, "flight.command");
     sub_.connect(config.subscribe);
@@ -25,8 +23,8 @@ ManagedGateway::ManagedGateway(const MotionConfig& config, const ManagedGatewayO
     router_.set(zmq::sockopt::maxmsgsize, static_cast<int64_t>(max_payload_bytes));
     router_.set(zmq::sockopt::router_mandatory, 1);
     router_.bind(options.endpoint);
-    std::cout << "Managed Gateway ROUTER bind=" << options.endpoint << " gateway_session="
-              << (options.session.empty() ? "first-valid" : options.session) << std::endl;
+    std::cout << "Managed Gateway ROUTER bind=" << options.endpoint
+              << " source=flight_gateway (no session authorization)" << std::endl;
 }
 
 void ManagedGateway::receiveInput() {
@@ -44,7 +42,7 @@ void ManagedGateway::receiveInput() {
             if (!candidate.accept(message, monotonic_us(), error)) continue;
             policy_ = std::move(candidate_policy);
             input_ = std::move(candidate);
-            std::cout << "Bound flight_gateway session=" << policy_.session_id << std::endl;
+            std::cout << "Received valid flight_gateway input" << std::endl;
         } else if (!input_->accept(message, monotonic_us(), error)) continue;
         effective_sample_ = message.header.sample_mono_us;
         if (message.body.contains("input_state")) {
@@ -67,7 +65,7 @@ Json ManagedGateway::request(Aviator& robot, const std::string& session, const J
     const auto reply = [&](const std::string& status, const std::string& reason, uint64_t error = 0) {
         return make_service_reply(req, "aviator_core", session, status, error,
             {{"reason", reason}, {"state", robot.GetSystemState()},
-             {"expected_gateway_session", policy_.session_id}, {"expected_clock_id", policy_.clock_id},
+             {"expected_clock_id", policy_.clock_id},
              {"generation", robot.GetSystemStatus().generation}});
     };
     const auto& params = req.at("parameters");
@@ -75,23 +73,22 @@ Json ManagedGateway::request(Aviator& robot, const std::string& session, const J
     if (req.at("target") != "aviator_core") return reply("REJECTED", "WRONG_TARGET", 1);
     if (req.at("clock_id") != policy_.clock_id) return reply("REJECTED", "CLOCK_DOMAIN_MISMATCH", 1);
     if (!input_) return reply("REJECTED", "GATEWAY_NOT_BOUND", 1);
-    if (req.at("client_session_id") != policy_.session_id)
-        return reply("REJECTED", "GATEWAY_SESSION_MISMATCH", 1);
-    if (!params.contains("server_session_id")) return reply("REJECTED", "CORE_SESSION_REQUIRED", 1);
-    if (params.at("server_session_id") != session) return reply("REJECTED", "CORE_SESSION_MISMATCH", 1);
-    if (params.size() != 3 || !params.contains("source") || params.at("source") != "JOYSTICK" ||
-        !params.contains("server_session_id") || params.at("server_session_id") != session || !params.contains("button") ||
+    if (params.size() != (params.contains("server_session_id") ? 3u : 2u) ||
+        !params.contains("source") || params.at("source") != "JOYSTICK" || !params.contains("button") ||
         !params.at("button").is_number_unsigned() || params.at("button").get<uint64_t>() < 1 ||
         params.at("button").get<uint64_t>() > 11 || req.contains("gateway_observation"))
-        return reply("REJECTED", "INVALID_PARAMETERS_OR_CORE_SESSION", 1);
+        return reply("REJECTED", "INVALID_PARAMETERS", 1);
     const auto op = req.at("operation").get<std::string>();
     if (!state_operation(op)) return reply("REJECTED", "UNKNOWN_OPERATION", 1);
     const auto now = monotonic_us();
     const auto issued = req.at("issued_mono_us").get<uint64_t>();
     const auto budget = req.at("deadline_ms").get<uint64_t>();
     if (budget > 10000 || issued > now) return reply("REJECTED", "INVALID_DEADLINE", 1);
-    const auto key = policy_.session_id + "/" + req.at("request_id").get<std::string>();
-    const auto body = req.dump();
+    const auto key = req.at("client_id").get<std::string>() + "/" + req.at("request_id").get<std::string>();
+    auto identity = req;
+    identity.erase("client_session_id");
+    identity["parameters"].erase("server_session_id");
+    const auto body = identity.dump();
     if (auto it = cache_.find(key); it != cache_.end())
         return it->second.body == body ? it->second.reply : reply("REJECTED", "REQUEST_ID_CONFLICT", 1);
     if (now - issued >= budget * 1000) return reply("EXPIRED", "REQUEST_EXPIRED", 1);

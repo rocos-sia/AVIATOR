@@ -35,8 +35,8 @@ def read_proc(path):
 
 
 def session_id():
-    """与 aviator::new_session_id() 一致：读 /proc/sys/kernel/random/uuid。"""
-    return read_proc("/proc/sys/kernel/random/uuid")
+    """启动标记仅用于日志追踪和序号重置，不参与授权匹配。"""
+    return f"run-{time.time_ns()}-{os.getpid()}"
 
 
 def clock_id():
@@ -199,7 +199,7 @@ def parse_args(argv):
     p.add_argument("--bind", action="store_true",
                    help="PUB 改为 bind 而非 connect（直连测试，绕过总线）")
     p.add_argument("--camera-id", default="cockpit", help="camera_id 字段")
-    p.add_argument("--session", default="", help="与 Logger --session 相同的记录会话 UUID")
+    p.add_argument("--session", default="", help="可选启动标记（普通文本），无需与 Logger 相同")
     p.add_argument("--show", action=argparse.BooleanOptionalAction, default=None,
                    help="开启实时识别与位姿预览（默认关闭；--no-show 强制关闭）")
     p.add_argument("--print-pose", action=argparse.BooleanOptionalAction, default=None,

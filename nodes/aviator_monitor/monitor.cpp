@@ -62,7 +62,6 @@ void State::ingest_service(const std::string& topic, const std::string& payload,
     std::lock_guard<std::mutex> lock(mutex);
     auto it = std::find_if(services.begin(), services.end(), [&](const Service& s) {
         return s.client == message.at("client_id") &&
-               s.session == message.at("client_session_id") &&
                s.request_id == message.at("request_id");
     });
     if (it == services.end()) {
@@ -82,11 +81,9 @@ void State::ingest_service(const std::string& topic, const std::string& payload,
     }
     auto& s = *it;
     if (reply) {
-        if ((!s.request.is_null() && !aviator::matches_service_reply(s.request, message)) ||
-            (!s.reply.is_null() &&
-             s.reply.at("server_session_id") != message.at("server_session_id"))) {
+        if (!s.request.is_null() && !aviator::matches_service_reply(s.request, message)) {
             ++rejected;
-            error = "service reply identity/session mismatch";
+            error = "service reply identity mismatch";
             return;
         }
         ++s.reply_count;
@@ -99,9 +96,13 @@ void State::ingest_service(const std::string& topic, const std::string& payload,
     } else {
         auto original = message;
         original.erase("gateway_observation");
+        original.erase("client_session_id");
+        original["parameters"].erase("server_session_id");
         if (!s.request.is_null()) {
             auto previous = s.request;
             previous.erase("gateway_observation");
+            previous.erase("client_session_id");
+            previous["parameters"].erase("server_session_id");
             if (original != previous) {
                 ++rejected;
                 error = "service request identity/content conflict";

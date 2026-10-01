@@ -48,7 +48,7 @@ class RemoteLink final : public DataLink {
     MotionConfig config_;
     HandLink hand_;
     zmq::context_t context_{1};
-    std::string session_, server_, epoch_, backend_;
+    std::string session_, epoch_, backend_;
     std::atomic<bool> quit_{false};
     std::atomic<uint64_t> heartbeat_{0};
     mutable std::mutex mutex_;

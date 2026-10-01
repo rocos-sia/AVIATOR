@@ -74,7 +74,7 @@ void buttons() {
           "internal event exposed");
 }
 void protocol() {
-    const auto session = aviator::new_session_id();
+    const auto session = aviator::new_instance_id();
     auto req =
         aviator::make_service_request("flight_gateway", session, "aviator_core", "grasp_wheel");
     auto rep =
@@ -82,14 +82,16 @@ void protocol() {
     check(aviator::decode_service(req.dump()) == req && aviator::decode_service(rep.dump()) == rep,
           "codec");
     check(aviator::matches_service_reply(req, rep), "correlation");
-    for (const char* key : {"request_id", "client_session_id", "client_id", "server_id"}) {
+    for (const char* key : {"request_id", "client_id", "server_id"}) {
         auto bad = rep;
         bad[key] = aviator::new_session_id();
         check(!aviator::matches_service_reply(req, bad), "bad correlation");
     }
     auto pinned = req;
     pinned["parameters"]["server_session_id"] = aviator::new_session_id();
-    check(!aviator::matches_service_reply(pinned, rep), "wrong server session");
+    rep["client_session_id"] = "different-client-instance";
+    rep["server_session_id"] = "different-server-instance";
+    check(aviator::matches_service_reply(pinned, rep), "legacy session pins must be ignored");
     for (const char* key : {"request_id", "operation", "deadline_ms", "parameters"}) {
         auto bad = req;
         bad.erase(key);

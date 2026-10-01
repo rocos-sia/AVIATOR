@@ -119,12 +119,12 @@ python3 nodes/aviator_hand/hand_command.py
 ```
 
 收到“已接受”表示节点成功写入目标并确认当前会话；实际反馈是否有效另行显示。
-发布器重启后需重启手节点，解除旧 session/epoch 绑定。
+发布器重启后需重启手节点，解除旧 control_epoch 绑定（session 仅为文本启动标记，不参与授权）。
 
 若提示“2 秒未收到有效指令确认”，先检查节点启动参数：
 `--endpoint tcp://127.0.0.1:5556 --state-endpoint tcp://127.0.0.1:5555`（均为默认值）。
 旧版本端点默认值颠倒，更新后须重启节点；自定义总线时也应遵循 SUB 连输出、PUB 连输入。
-再检查节点的 `reject command` 日志（会话、时钟、命令过期或 Modbus 写入失败）。
+再检查节点的 `reject command` 日志（发布者/epoch、时钟、命令过期或 Modbus 写入失败）。
 
 
 ## Core 手反馈或 ACK 过期诊断

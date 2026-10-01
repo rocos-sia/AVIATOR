@@ -141,17 +141,21 @@ def main():
         call(request("enter_standby"), "COMPLETED")
         req = request("enter_standby")
         del req["parameters"]["server_session_id"]
-        assert call(req, "REJECTED")["result"]["reason"] == "CORE_SESSION_REQUIRED"
-        for field, value in (("client_session_id", str(uuid.uuid4())), ("clock_id", "foreign"),
+        call(req, "COMPLETED")
+        req = request("enter_standby")
+        req["client_session_id"] = "restarted-gateway"
+        req["parameters"]["server_session_id"] = "ignored-old-core"
+        call(req, "COMPLETED")
+        req["client_session_id"] = "another-text-marker"
+        del req["parameters"]["server_session_id"]
+        call(req, "COMPLETED")  # Same request ID still deduplicates across labels.
+        for field, value in (("clock_id", "foreign"),
                              ("target", "manipulator"), ("operation", "emergency"),
                              ("issued_mono_us", time.monotonic_ns() // 1000 + 10000000)):
             req = request("grasp_wheel")
             req[field] = value
             call(req, "REJECTED")
-        req = request("grasp_wheel")
-        req["parameters"]["server_session_id"] = str(uuid.uuid4())
-        call(req, "REJECTED")
-        for key, value in (("source", None), ("server_session_id", 123), ("button", "1"), ("button", 12)):
+        for key, value in (("source", None), ("button", "1"), ("button", 12)):
             req = request("grasp_wheel")
             req["parameters"][key] = value
             call(req, "REJECTED")

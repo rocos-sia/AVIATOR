@@ -51,7 +51,7 @@ aviator::Message command(const JoystickSample& sample, const std::string& sessio
 // Complete actuator/vision schemas remain the producer/Core's responsibility.
 bool valid_state_summary(const aviator::Message& message);
 
-// Empty configured session discovers the first valid same-host Core once. Never hot-switch.
+// Core feedback follows valid same-host publisher messages; legacy session pins are ignored.
 class CoreFeedback {
 public:
     CoreFeedback(const std::string& session, const std::string& clock);

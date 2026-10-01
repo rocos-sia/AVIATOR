@@ -18,8 +18,8 @@ int main(int argc, char** argv) try {
         else if (arg == "--help") {
             std::cout << "aviator_core_managed [--config system.yaml]\n"
                          "Default: Gateway buttons + flight.command; guards use device feedback and input freshness.\n"
-                         "Advanced: --console | --gateway-session UUID | --operation-service tcp://127.0.0.1:5559\n"
-                         "Gateway discovers this Core automatically when flight.yaml core_session is empty.\n"
+                         "Advanced: --console | --gateway-session <ignored> | --operation-service tcp://127.0.0.1:5559\n"
+                         "Session pinning is disabled; publisher, freshness and request checks remain.\n"
                          "Six operations through Aviator's FSM; this entry CAN operate configured devices.\n"
                          "Use aviator_core_sml for device-free tests. No safety evidence file is required.\n";
             return 0;

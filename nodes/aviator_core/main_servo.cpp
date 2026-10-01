@@ -32,8 +32,8 @@ int main(int argc, char **argv) {
             if (arg == "--config" && i + 1 < argc) config = argv[++i];
             else if (arg == "--gateway-session" && i + 1 < argc) gateway_session = argv[++i];
             else if (arg == "--help") {
-                std::cout << "aviator_core_servo [--config <system.yaml>] [--gateway-session <UUID>]\n"
-                             "Default: bind the first valid flight_gateway session; never auto-switch.\n"
+                std::cout << "aviator_core_servo [--config <system.yaml>] [--gateway-session <ignored>]\n"
+                             "Session pinning is disabled; publisher, freshness and sequence checks remain.\n"
                              "Enable, approach and lock, then follow flight_gateway JOYSTICK input.\n"
                              "roll -> +/-0.87266 rad; pitch [-1,0,1] -> [-0.170,-0.085,0] m; v=1.\n"
                              "Start bus, manipulator and flight_gateway first. Ctrl+C stops and disables.\n";
@@ -43,13 +43,11 @@ int main(int argc, char **argv) {
         const auto settings = aviator::loadMotionConfig(config);
         aviator::InputPolicy policy;
         policy.publisher_id = "flight_gateway";
-        policy.session_id = gateway_session;
         policy.clock_id = aviator::local_clock_id();
         policy.source = "JOYSTICK";
         policy.allow_joystick_position_hold = true;
         policy.timeout_us = settings.origin_timeout_us;
         std::optional<aviator::InputGuard> input;
-        if (!gateway_session.empty()) input.emplace(policy);
         auto link = std::make_unique<aviator::RemoteLink>(settings);
         auto *connection = link.get();
         aviator::Aviator robot(std::move(link), nullptr, nullptr, settings.robot.string());
@@ -99,8 +97,7 @@ int main(int argc, char **argv) {
             uint64_t next_servo = 0, next_print = 0;
             bool was_fresh = false;
             std::string last_state, input_error;
-            std::cout << "Waiting for flight.command | gateway_session="
-                      << (gateway_session.empty() ? "auto (first valid message)" : gateway_session) << std::endl;
+            std::cout << "Waiting for flight.command from flight_gateway (no session authorization)" << std::endl;
             while (!interrupted) {
                 connection->heartbeat();
                 // 原始事件时间保持不变；POSITION_HOLD 显式使用设备检查时间判定时效。
@@ -113,15 +110,14 @@ int main(int argc, char **argv) {
                     if (received != aviator::ReceiveResult::received ||
                         !aviator::decode(wire.topic, wire.payload, message, error)) continue;
                     if (!input) {
-                        // 只有通过来源、时钟、有效性和时效检查的首条消息才能绑定会话。
+                        // 首条消息仍需通过来源、时钟、有效性和时效检查。
                         policy.session_id = message.header.session_id;
                         aviator::InputGuard candidate(policy);
                         if (!candidate.accept(message, aviator::monotonic_us(), error)) continue;
                         input = std::move(candidate);
-                        std::cout << "Bound flight_gateway session=" << policy.session_id << std::endl;
+                        std::cout << "Received valid flight_gateway input" << std::endl;
                     } else if (!input->accept(message, aviator::monotonic_us(), error)) {
-                        if (message.header.publisher_id == policy.publisher_id &&
-                            message.header.session_id == policy.session_id)
+                        if (message.header.publisher_id == policy.publisher_id)
                             input_error = error;
                         continue;
                     }

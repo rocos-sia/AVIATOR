@@ -60,10 +60,13 @@ void unit() {
     check(r["joint_position"] == s["execution"]["target"], "used first point instead of cursor");
     check(r["joint_velocity"] == std::vector<double>(14, .1) && r["joint_acceleration"] == std::vector<double>(14, .2), "derivatives/order");
     check(r["sample_mono_us"] == 1010000 && r["source_state"]["sample_mono_us"] == 999000, "execution/measurement times conflated");
+    auto relabeled = s;
+    relabeled["accepted_command"]["session_id"] = "different-text-marker";
+    check(correlate(c, relabeled)["valid"], "session label blocked target recording");
     r = correlate(command(false), s);
     check(r["valid"] && !r["derivatives_available"] && r["joint_acceleration"].is_null(), "ordinary derivatives fabricated");
     check(std::abs(r["joint_position"][0].get<double>() - .0123) < 1e-12, "ordinary odd tick interpolation");
-    for (const char* field : {"session_id", "control_epoch"}) {
+    for (const char* field : {"control_epoch"}) {
         auto bad = s; bad["accepted_command"][field] = new_session_id();
         check(correlate(c, bad)["reason"] == "accepted_window_not_cached", "cross session/epoch match");
     }

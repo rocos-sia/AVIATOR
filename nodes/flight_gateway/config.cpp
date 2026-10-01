@@ -2,7 +2,6 @@
 #include "service.hpp"
 #include <filesystem>
 #include <linux/input.h>
-#include <regex>
 #include <set>
 #include <stdexcept>
 #include <unistd.h>
@@ -84,11 +83,6 @@ Config load_config(const std::string& path) {
         require(c.publish != c.subscribe && c.publish != c.service && c.subscribe != c.service,
                 "endpoints must differ");
         c.core_session = string(root["core_session"]);
-        require(c.core_session.empty() ||
-                    std::regex_match(c.core_session,
-                                     std::regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-"
-                                                "9a-fA-F]{4}-[0-9a-fA-F]{12}")),
-                "invalid core_session UUID");
         c.lock_file = string(root["lock_file"]);
         if (c.lock_file.empty())
             c.lock_file = "/tmp/flight_gateway-" + std::to_string(getuid()) + ".lock";

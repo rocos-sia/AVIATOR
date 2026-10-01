@@ -33,7 +33,7 @@ cmake --build build/communication --parallel
 | `invert_roll` / `invert_pitch` | `false`；反转对应轴。 |
 | `input_timeout_ms` | `100`，范围 1–100；设备检查结果有效期。 |
 | `service_timeout_ms` | `100`，范围 1–10000；服务请求等待期限。 |
-| `core_session` | 空字符串默认自动绑定首个有效 Core 状态的会话，无需手填 UUID；填写非空 UUID 则固定绑定。 |
+| `core_session` | 旧配置兼容字段，已忽略；接收合法 Core 发布者的新鲜反馈，不再固定会话。 |
 | `lock_file` | 空字符串自动使用 `/tmp/flight_gateway-<uid>.lock`，否则填写绝对路径。 |
 | `buttons` | 恰好 11 项，依次对应按钮 1–11；`none` 禁用该按钮。 |
 
@@ -81,9 +81,9 @@ Core 必须显式启用此策略（aviator_core_servo 已启用）：检查来�
 
 ## FlightState 反馈
 
-默认 `core_session: ""`，自动绑定第一条通过校验的 `flight.state`：要求 publisher_id=aviator_core、相同 clock_id、有效 system 摘要、valid=true、合法序号和 100 ms 内采样。打印 `Bound aviator_core session=...` 后，按钮请求自动携带该 Core 会话。不写回 YAML。
+Gateway 接收通过发布者、时钟、序号和时效检查的 Core 反馈；旧 `core_session` 配置已忽略。节点启动标记保留用于记录与序号重置，不要求 UUID 或人工配对。
 
-非空 core_session 保留手动固定绑定能力。自动/手动模式绑定后均不自动切换：Core 重启后重启 Gateway 重新识别，不把旧请求迁移到新会话。首次识别前，或尚未收到 Core 的 source_authorized=true 确认时，点击按钮显示 NOT_SENT，不排队补执行；看到 service_ready=1 后重新点击。反馈过期时 service_ready=0，暂停发送新按钮请求。收到无效/过期/陌生会话消息不会建立新绑定，原会话静默后反馈显示 STALE，并打印最近一次拒收原因；没有拒收记录时提示检查 Core/总线发布。STALE 表示 100 ms 内没有通过校验的 Core 状态，不等同于机器人已进入 SAFE。
+节点启动时生成普通文本标记；Core 重启后可接收其新鲜反馈，无需同步会话 ID。请求仍需新鲜 Core 状态及 source_authorized 确认。
 
 Managed Core 的 flight.state.valid 表示设备状态及 Core 拥有线程更新新鲜，业务故障看 system.state；机械臂实时数据是否可用看 freshness.arm.valid。Rokae 未使能时也能识别 Core，不伪造 RT 采样。此处只消费系统摘要，不宣称完成双臂、双手、视觉业务 Schema 校验；USB 摇杆暂不向设备回传或发送震动，后续 RS422 回传使用独立 ICD。
 
@@ -106,12 +106,12 @@ ctest --test-dir build/communication --output-on-failure
 
 EV_KEY 按下沿在完整 SYN_REPORT 后触发一次；松开、自动重复、启动时已按住、超过 100 ms 的旧输入、SYN_DROPPED 不产生请求。连续轴值仍以 50 Hz 发布；反馈支持 INITIALIZING/READY/HOMING/RELEASING 状态；启动准备完成是 READY，按钮 1 回 home 后才是 STANDBY。
 
-服务采用 DEALER → ROUTER，单帧 `ServiceRequest/1.0`，target=`aviator_core`、client_id=`flight_gateway`；parameters 为 `{"source":"JOYSTICK","button":1}`，绑定 Core 后自动携带 `server_session_id` 并校验回包会话。这是第 14 节信封的摇杆测试入口，不伪造 RS422 时间戳/连接 ID。`aviator_core_managed`（默认 Gateway 模式） 已实现对应服务端、白名单、期限和状态机守卫；本网关不自行改变机器人状态。Managed Core 仍要求请求中的 server_session_id 匹配，Gateway 自动识别后填入该字段。
+服务采用 DEALER → ROUTER，单帧 `ServiceRequest/1.0`，target=`aviator_core`、client_id=`flight_gateway`，parameters 为 `{"source":"JOYSTICK","button":1}`。不再发送或校验 server_session_id；回包按 request_id、client_id 和 server_id 关联。Managed Core 保留发布者白名单、请求期限、去重和状态机守卫。
 
 最多保留 11 项未决请求，收发均非阻塞；无已连接服务时输出 NOT_SENT，不缓存到未来连接；已入 ZMQ 队列只代表 QUEUED，超时输出 UNKNOWN，不自动重试。每次新的物理点击是新请求；超时后需核对实际状态，不靠反复点击猜测是否执行。响应核对请求/客户端/目标身份，晚到及不匹配回包只记录，不当成本次成功。
 
 Gateway 将请求副本发布至 `record.service.request`，完整响应发布至 `record.service.reply`；请求副本增加仅记录用的 `gateway_observation=QUEUED|NOT_SENT|TIMEOUT_UNKNOWN`，其余字段与原请求相同，超时记录沿用原 request_id。这些副本不用于执行。先启动 Bus 和 Logger 再测试；PUB/SUB 可能丢记录，没有持久化 ACK/补传。
 
-Managed 真机入口及启动顺序见 [Core README](../aviator_core/README.md#managed-core摇杆按钮与连续目标驱动真机)：先启动 Bus、手、Manipulator 和 Managed Core（不需要安全证据文件），启动本网关即可自动识别 Core 会话。只有 CONTROL 状态使用连续轴值。重启 Core 后重启 Gateway 即可重新自动识别；Gateway 单独重启时，运行中的 Core 不自动换绑其新会话，因此通常一起重启两者。
+Managed 真机入口及启动顺序见 [Core README](../aviator_core/README.md#managed-core摇杆按钮与连续目标驱动真机)。只有 CONTROL 状态使用连续轴值。Gateway/Core 可接收对方重启后的新鲜反馈，无需复制或固定会话；故障恢复仍受状态机和控制 epoch 约束。
 
 可用 `ctest --test-dir build/communication -R '^service$' --output-on-failure` 验证模拟 ROUTER 应答、按钮事件和 MCAP 记录；`tests/managed_gateway_process_test.py` 用隔离 MuJoCo 验证真实 Managed 服务端和状态流程。未连接真实摇杆进行按钮标号验证。

@@ -1,0 +1,41 @@
+{
+  "detection_frames": 28873,
+  "image_frames": 29143,
+  "detection_without_image": 1,
+  "image_without_detection": 271,
+  "detection_without_image_examples": [
+    4648
+  ],
+  "image_without_detection_examples": [
+    33521,
+    33522,
+    33523,
+    33524,
+    33525,
+    33526,
+    33527,
+    33528,
+    33529,
+    33530,
+    33531,
+    33532,
+    33533,
+    33534,
+    33535,
+    33536,
+    33537,
+    33538,
+    33539,
+    33540,
+    33541,
+    33542,
+    33543,
+    33544,
+    33545,
+    33546,
+    33547,
+    33548,
+    33549,
+    33550
+  ]
+}

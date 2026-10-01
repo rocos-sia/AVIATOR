@@ -155,7 +155,10 @@ std::string read_proc(const char* path) {
     return line;
 }
 
-std::string new_session_id() { return read_proc("/proc/sys/kernel/random/uuid"); }
+std::string new_instance_id() {
+    return "run-" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) +
+           "-" + std::to_string(getpid());
+}
 
 std::string local_clock_id() {
     char host[256]{};
@@ -256,13 +259,13 @@ bool decode_hand_command(std::string_view topic, std::string_view payload,
         cmd.sample_mono_us = positive_integer(j, "sample_mono_us");
         cmd.clock_id = identifier(j, "clock_id");
         cmd.publisher_id = identifier(j, "publisher_id");
-        cmd.session_id = identifier(j, "session_id", true);
+        cmd.session_id = identifier(j, "session_id");
         cmd.valid = j.at("valid").get<bool>();
         cmd.control_epoch = identifier(j, "control_epoch", true);
         cmd.mode = identifier(j, "mode");
         const auto& origin = j.at("origin");
         cmd.origin.publisher_id = identifier(origin, "publisher_id");
-        cmd.origin.session_id = identifier(origin, "session_id", true);
+        cmd.origin.session_id = identifier(origin, "session_id");
         cmd.origin.sequence = positive_integer(origin, "sequence");
         cmd.origin.sample_mono_us = positive_integer(origin, "sample_mono_us");
         cmd.origin.clock_id = identifier(origin, "clock_id");
@@ -329,13 +332,14 @@ struct Guard {
             why = "stale/future source or origin, or clock domain mismatch";
             return Verdict::reject_stale;
         }
-        if (authorized && (cmd.publisher_id != publisher || cmd.session_id != session ||
-            cmd.control_epoch != epoch || cmd.origin.publisher_id != origin_publisher ||
-            cmd.origin.session_id != origin_session)) {
-            why = "publisher/session/epoch/origin mismatch";
+        if (authorized && (cmd.publisher_id != publisher ||
+            cmd.control_epoch != epoch || cmd.origin.publisher_id != origin_publisher)) {
+            why = "publisher/epoch/origin mismatch";
             return Verdict::reject_unauthorized;
         }
-        if (cmd.sequence == 0 || cmd.sequence > kMaxJsonInteger || cmd.sequence <= last_sequence) {
+        if (cmd.sequence == 0 || cmd.sequence > kMaxJsonInteger ||
+            (cmd.session_id == session && cmd.sequence <= last_sequence) ||
+            (authorized && cmd.session_id != session && cmd.sample_mono_us <= sample_mono)) {
             why = "stale or invalid sequence";
             return Verdict::reject_old;
         }
@@ -369,7 +373,7 @@ public:
           feedback_left_(cfg_.left_id, cfg_.feedback_rate_hz, cfg_.response_timeout_us) {}
 
     int run() {
-        session_id_ = new_session_id();
+        session_id_ = new_instance_id();
         clock_id_ = local_clock_id();
 
         // --- CAN (one interface per hand) ---

@@ -217,8 +217,8 @@ int main(int argc, char** argv) {
         vision.config["sources"]["camera.detection"] = {
             {"publisher_id", "camera"}, {"session_id", "11111111-1111-4111-8111-111111111111"}};
         monitor::validate_config(vision.config);
-        check(vision.overview(1010000, "clock")["yoke_observation"]["measurement_state"] == "VALID",
-              "explicit source session not selected");
+        check(vision.overview(1010000, "clock")["yoke_observation"]["measurement_state"] == "SOURCE_CONFLICT",
+              "legacy session pin hid a source conflict");
         // Camera-derived motion works without monitor geometry calibration and
         // takes precedence over legacy pose/model transforms when configured.
         auto wheel_detection = detection(-20, 10);

@@ -1,5 +1,7 @@
 # AVIATOR ZMQ 协议格式说明
 
+当前实现（2026-10-02）：节点 `session_id` / `client_session_id` / `server_session_id` 为普通文本启动标记，不再生成会话 UUID，也不用于授权、回包关联或来源固定。旧配置的会话绑定参数兼容但忽略；下文旧版方案中涉及会话匹配的要求以此为准。标记仍用于日志追踪和重启后的序号重置。请求 `request_id` 和 `control_epoch` 继续使用 UUID，发布者、序号、时钟、时效和控制权限检查保留。
+
 文档编号：AVIATOR ICD ZMQ 001
 
 文档版本：0.2（接口设计草案）
@@ -126,7 +128,7 @@ PUB/SUB 无持久历史，也不提供业务执行确认。连续目标周期性
 | `sample_mono_us` | uint53，µs | 原始采样或输入接纳时刻，Linux CLOCK_MONOTONIC 微秒。 |
 | `clock_id` | string，非空 | 主机与启动标识，同一主机本次启动的进程共享同一时钟域标识。 |
 | `publisher_id` | string，非空 | 配置登记的稳定生产者标识。JSON 声明不是身份认证凭据。 |
-| `session_id` | string，UUID | 每次进程启动生成新 UUID；不得重启后复用旧会话。 |
+| `session_id` | string，非空 | 每次进程启动生成普通文本标记（时间/进程号）；用于记录与序号重置，不校验 UUID 格式，不作为会话授权条件。 |
 | `valid` | boolean | 业务数据是否有效；false 不能作为有效控制输入，也不刷新有效数据 watchdog。 |
 | `source` | string，FlightCommand 必填 | 见第 5 节；其他消息不得依赖此字段判断飞控来源。 |
 | `config_id` | string，可选，补充拟定 | 设备映射、关节顺序、标定和坐标配置的版本或哈希；存在时须与已加载配置一致。 |
@@ -157,7 +159,7 @@ UUID 拟统一采用小写带连字符文本。一般标识字符串拟限制为
 | 字段 | 类型 | 含义 |
 | --- | --- | --- |
 | `origin.publisher_id` | string | Core 采用的输入消息生产者。 |
-| `origin.session_id` | UUID string | 输入会话。 |
+| `origin.session_id` | string | 输入启动标记，仅追踪，不参与授权匹配。 |
 | `origin.sequence` | uint53，≥1 | 输入消息序号。 |
 | `origin.sample_mono_us` | uint53 | 原始输入采样时刻，µs。 |
 | `origin.clock_id` | string | 输入时钟域。 |
