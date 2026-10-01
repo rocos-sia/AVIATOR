@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -95,6 +96,134 @@ class NodeTests(unittest.TestCase):
                                    session_id="33333333-3333-4333-8333-333333333333")
         node.clock_now = 1000000
         return node, links
+
+    def drive_closing(self, node, *, duration_ms=5100, target=None, position=None, feedback=None):
+        target = target or [0] * 6
+        start = node.clock_now
+        for elapsed_ms in range(0, duration_ms + 1, 20):
+            node.clock_now = start + elapsed_ms * 1000
+            if elapsed_ms % 60 == 0:
+                for side in module.SIDES:
+                    previous = node.snapshots[side]
+                    available = feedback is None or feedback(elapsed_ms)
+                    values = position(elapsed_ms, side) if position else [400] * 6
+                    data = FakeLink().read_state()
+                    data["angle"] = module.canonical_to_rh(values)
+                    node.snapshots[side] = replace(
+                        previous, data=data if available else previous.data,
+                        sample_mono_us=node.clock_now if available else previous.sample_mono_us,
+                        error="" if available else "read failed",
+                        errors=previous.errors + int(not available),
+                        reads=previous.reads + int(available))
+            msg = command(node, sequence=node.guard.last_sequence + 1)
+            for side in module.SIDES:
+                msg["hands"][side]["drive_position_normalized"] = list(target)
+            node.handle_command("hand.command", json.dumps(msg), now=node.clock_now)
+
+    def test_closing_hold_only_affects_five_bending_channels_and_keeps_ack_fresh(self):
+        node, links = self.make_node()
+        self.drive_closing(node, duration_ms=4980)
+        self.assertEqual(links["left"].writes[-1], [0] * 6)
+        # Continue fresh commands and feedback until the full window is covered.
+        self.drive_closing(node, duration_ms=120)
+        self.assertEqual(links["left"].writes[-1], [400] * 5 + [0])
+        self.assertEqual(node.guard.last_sequence, node.command_accepted)
+        self.assertEqual(node.guard.sample_mono_us, node.clock_now)
+        self.assertTrue(node.command_valid)
+        state = node.make_state(now=node.clock_now)
+        for side in module.SIDES:
+            hand = state["hands"][side]
+            self.assertEqual(hand["requested_drive_position_normalized"], [0] * 6)
+            self.assertEqual(hand["commanded_drive_position_normalized"], [0] + [.4] * 5)
+            self.assertEqual(hand["closing_hold_active"], [False] + [True] * 5)
+            self.assertEqual(hand["drive_position_normalized"], [.4] * 6)
+        # A new position reading must not make a latched target drift.
+        self.drive_closing(node, duration_ms=60, position=lambda _ms, _side: [450] * 6)
+        self.assertEqual(links["left"].writes[-1], [400] * 5 + [0])
+
+    def test_opening_and_new_targets_release_hold_immediately(self):
+        node, links = self.make_node()
+        self.drive_closing(node)
+        self.drive_closing(node, duration_ms=0, target=[1] * 6)
+        self.assertEqual(links["left"].writes[-1], [1000] * 6)
+        self.assertFalse(any(c.held_raw is not None for c in node.closing_holds["left"]))
+        # A new, tighter target starts a new observation window too.
+        self.drive_closing(node, target=[.2] * 6)
+        self.assertEqual(links["left"].writes[-1], [400] * 5 + [200])
+        self.drive_closing(node, duration_ms=0, target=[.1] * 6)
+        self.assertEqual(links["left"].writes[-1], [100] * 6)
+
+    def test_moving_fingers_continue_while_stalled_fingers_hold_independently(self):
+        node, links = self.make_node()
+        self.drive_closing(node, position=lambda ms, side: (
+            [400, 400, 700 - ms // 20, 400, 400, 400] if side == "left" else [400] * 6))
+        self.assertEqual(links["left"].writes[-1], [400, 400, 400, 0, 400, 0])
+        self.assertEqual(links["right"].writes[-1], [400] * 5 + [0])
+
+    def test_motion_window_uses_range_not_only_start_end_displacement(self):
+        node, links = self.make_node()
+        self.drive_closing(node, position=lambda ms, _side: [400 if ms < 2000 or ms > 3000 else 500] * 6)
+        self.assertEqual(links["left"].writes[-1], [0] * 6)
+
+    def test_reached_targets_and_opening_never_trigger_hold(self):
+        for target in ([.4] * 6, [1] * 6):
+            with self.subTest(target=target):
+                node, links = self.make_node()
+                self.drive_closing(node, target=target)
+                self.assertEqual(links["left"].writes[-1], module.normalized_to_raw(target))
+                self.assertFalse(any(c.held_raw is not None for c in node.closing_holds["left"]))
+
+    def test_failed_feedback_resets_stall_window_and_missing_samples_cannot_trigger_hold(self):
+        node, links = self.make_node()
+        self.drive_closing(node, feedback=lambda ms: ms != 3000)
+        self.assertEqual(links["left"].writes[-1], [0] * 6)
+        self.drive_closing(node, duration_ms=3000)
+        self.assertEqual(links["left"].writes[-1], [400] * 5 + [0])
+        # Repeating the same snapshot cannot substitute for five seconds of measurements.
+        node, links = self.make_node()
+        self.drive_closing(node, duration_ms=0)
+        start = node.clock_now
+        for ms in range(20, 5120, 20):
+            node.clock_now = start + ms * 1000
+            msg = command(node, sequence=node.guard.last_sequence + 1)
+            for side in module.SIDES:
+                msg["hands"][side]["drive_position_normalized"] = [0] * 6
+            node.handle_command("hand.command", json.dumps(msg), now=node.clock_now)
+        self.assertEqual(links["left"].writes[-1], [0] * 6)
+
+    def test_failed_write_does_not_commit_new_hold_and_watchdog_clears_hold(self):
+        node, links = self.make_node()
+        self.drive_closing(node, duration_ms=4980)
+        node.clock_now += 60000
+        links["left"].fail_writes = True
+        with patch("sys.stderr", io.StringIO()), self.assertRaises(RuntimeError):
+            self.drive_closing(node, duration_ms=0)
+        self.assertIsNone(node.closing_holds["left"][1].held_raw)
+        links["left"].fail_writes = False
+        self.drive_closing(node, duration_ms=60)
+        self.assertIsNotNone(node.closing_holds["left"][1].held_raw)
+        with patch("sys.stderr", io.StringIO()):
+            node.supervise(now=node.clock_now + node.command_timeout_us)
+        self.assertEqual(links["left"].writes[-1], [1000] * 6)
+        self.assertFalse(any(c.held_raw is not None for c in node.closing_holds["left"]))
+
+    def test_command_gap_and_changed_target_do_not_accumulate_old_stall_time(self):
+        node, links = self.make_node()
+        self.drive_closing(node, duration_ms=4980)
+        node.clock_now += node.command_timeout_us
+        self.drive_closing(node, duration_ms=120)
+        self.assertEqual(links["left"].writes[-1], [0] * 6)
+        self.drive_closing(node, duration_ms=4980, target=[.1] * 6)
+        self.assertEqual(links["left"].writes[-1], [100] * 6)
+
+    def test_grasp_mode_also_holds_bending_channels(self):
+        node, links = self.make_node()
+        self.drive_closing(node)
+        msg = command(node, sequence=node.guard.last_sequence + 1)
+        msg["mode"] = "GRASP_SETPOINT"
+        msg["hands"] = {side: {"grasp": {"closure": 1}} for side in module.SIDES}
+        node.handle_command("hand.command", json.dumps(msg), now=node.clock_now)
+        self.assertEqual(links["left"].writes[-1], [400] * 5 + [0])
 
     def test_reorder_and_command_write(self):
         node, links = self.make_node()
@@ -186,6 +315,22 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(state["hands"]["right"]["temperature"], [35] * 6)
         self.assertNotIn("touch", json.dumps(state).lower())
 
+    def test_state_capture_cannot_mix_new_measurement_with_older_envelope_time(self):
+        node, _ = self.make_node()
+        node.read_states(now=node.clock_now)
+        old = node.snapshots["left"]
+
+        def concurrently_finish_read():
+            data = dict(old.data, angle=[800] * 6)
+            node.snapshots["left"] = replace(old, data=data, sample_mono_us=node.clock_now + 1)
+            return node.clock_now
+
+        with patch.object(module, "monotonic_us", side_effect=concurrently_finish_read):
+            state = node.make_state()
+        self.assertTrue(state["valid"])
+        self.assertEqual(state["hands"]["left"]["drive_position_raw"], [60, 50, 40, 30, 20, 10])
+        self.assertEqual(state["hands"]["left"]["sample_mono_us"], state["sample_mono_us"])
+
     def test_grasp_setpoint_maps_to_opening_counts(self):
         node, links = self.make_node()
         msg = command(node)
@@ -218,6 +363,22 @@ class NodeTests(unittest.TestCase):
         _node, subscribe_endpoint, publish_endpoint, _hz = run.call_args.args
         self.assertEqual(subscribe_endpoint, "tcp://127.0.0.1:5556")
         self.assertEqual(publish_endpoint, "tcp://127.0.0.1:5555")
+        self.assertAlmostEqual(_hz, 1000 / 60)
+
+    def test_hold_and_feedback_cli_validation(self):
+        for option, value in (("--closing-hold-ms", "0"), ("--closing-motion-raw", "-1"),
+                              ("--closing-motion-raw", "1000"), ("--state-hz", "nan"),
+                              ("--state-hz", "0"), ("--state-hz", "101")):
+            with self.subTest(option=option, value=value), patch.object(module, "load_handlink") as load, \
+                    patch("sys.stderr"), self.assertRaises(SystemExit):
+                module.main([option, value])
+            load.assert_not_called()
+        with patch.object(module, "load_handlink", return_value=("fake", 6000, FakeLink)), \
+                patch.object(module, "run_node", return_value=0) as run:
+            module.main(["--closing-hold-ms", "6000", "--closing-motion-raw", "5", "--state-hz", "20"])
+        self.assertEqual(run.call_args.args[0].closing_hold_us, 6000000)
+        self.assertEqual(run.call_args.args[0].closing_motion_raw, 5)
+        self.assertEqual(run.call_args.args[3], 20)
 
     @staticmethod
     def diagnostic_records(output):
@@ -340,8 +501,8 @@ class NodeTests(unittest.TestCase):
 
     def test_poll_timing_distinguishes_wait_overrun_from_slow_previous_cycle(self):
         for finish, next_start, expected_gap, expected_idle, expected_lag in (
-                (1010000, 1610000, 610, 600, 500),
-                (1600000, 1700000, 700, 100, 0)):
+                (1010000, 1610000, 610, 600, 510),
+                (1600000, 1600000, 600, 0, 0)):
             node, _links = self.make_node()
             output = io.StringIO()
             with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=next_start):
@@ -365,11 +526,11 @@ class NodeTests(unittest.TestCase):
             details = node.reader_diagnostics(1720000)
         self.assertEqual(output.getvalue(), "")
         self.assertEqual(details["phase"], "waiting")
-        self.assertEqual(details["current_wait_overrun_ms"], 500)
+        self.assertEqual(details["current_wait_overrun_ms"], 510)
         self.assertEqual(details["cycle_finish_age_ms"], 600)
-        self.assertEqual(details["max_wait_overrun_ms"], 0)
+        self.assertEqual(details["max_wait_overrun_ms"], 10)
 
-    def test_timestamp_offset_identifies_fast_reads_with_old_shared_sample(self):
+    def test_each_hand_uses_own_read_start_after_delayed_first_read(self):
         node, links = self.make_node()
         clock = [1000000]
         calls = [0]
@@ -377,7 +538,7 @@ class NodeTests(unittest.TestCase):
 
         def mono():
             calls[0] += 1
-            if calls[0] == 2:  # Delayed after the shared sample stamp, before the first read.
+            if calls[0] == 1:  # Delayed before the first hand begins its read.
                 clock[0] += 510000
             return clock[0]
 
@@ -397,18 +558,58 @@ class NodeTests(unittest.TestCase):
             node.read_states()
             state = node.make_state(now=clock[0])
             node.report_diagnostics(state, now=clock[0])
-        self.assertFalse(state["valid"])
+        self.assertTrue(state["valid"])
         records = self.diagnostic_records(output)
-        self.assertEqual(sum(r["event"] == "feedback_sample_timestamp_offset" for r in records), 2)
-        health = next(r for r in records if r["event"] == "health")
-        for side, duration, offset, finish_age in (("left", 4, 514, 6), ("right", 6, 520, 0)):
-            hand = health["hands"][side]
-            self.assertEqual(hand["read_duration_ms"], duration)
-            self.assertEqual(hand["sample_timestamp_offset_ms"], offset)
-            self.assertEqual(hand["last_success_finish_age_ms"], finish_age)
-            self.assertEqual(hand["feedback_age_ms"], 520)
-            self.assertEqual(hand["sample_mono_us"], 1000000)
-            self.assertEqual(hand["last_success_finished_us"], 1000000 + offset * 1000)
+        self.assertEqual(records, [])
+        for side, duration, stamp, age in (("left", 4, 1510000, 10), ("right", 6, 1514000, 6)):
+            hand = state["hands"][side]
+            self.assertEqual(node.snapshots[side].read_duration_ms, duration)
+            self.assertEqual(node.snapshots[side].sample_timestamp_offset_ms, duration)
+            self.assertEqual(hand["feedback_age_ms"], age)
+            self.assertEqual(hand["sample_mono_us"], stamp)
+
+    def test_slow_first_hand_does_not_expire_new_second_hand_sample(self):
+        node, links = self.make_node()
+        clock = [1000000]
+        read_left = links["left"].read_state
+
+        def slow_left():
+            clock[0] += 510000
+            return read_left()
+
+        with patch("sys.stderr", io.StringIO()), \
+                patch.object(module, "monotonic_us", side_effect=lambda: clock[0]), \
+                patch.object(links["left"], "read_state", side_effect=slow_left):
+            node.read_states()
+        state = node.make_state(now=clock[0])
+        self.assertFalse(state["hands"]["left"]["valid"])
+        self.assertTrue(state["hands"]["right"]["valid"])
+        self.assertEqual(state["hands"]["right"]["feedback_age_ms"], 0)
+
+    def test_feedback_loop_subtracts_read_time_and_skips_wait_after_overrun(self):
+        node, _ = self.make_node()
+        clock = [1000000]
+        starts, waits = [], []
+        durations = iter([24000, 90000, 12000])
+
+        class Stop:
+            def is_set(self):
+                return len(waits) == 3
+
+            def wait(self, seconds):
+                waits.append(seconds)
+                clock[0] += round(seconds * 1000000)
+
+        def read():
+            starts.append(clock[0])
+            clock[0] += next(durations)
+
+        with patch("sys.stderr", io.StringIO()), \
+                patch.object(module, "monotonic_us", side_effect=lambda: clock[0]), \
+                patch.object(node, "read_states", side_effect=read):
+            module.feedback_read_loop(node, Stop(), 60000)
+        self.assertEqual(starts, [1000000, 1060000, 1150000])
+        self.assertEqual(waits, [.036, 0, .048])
 
     def test_diagnostic_interval_cli_validation(self):
         with patch.object(module, "load_handlink", return_value=("fake", 6000, FakeLink)), \
