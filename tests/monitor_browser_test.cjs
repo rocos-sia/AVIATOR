@@ -44,19 +44,30 @@ async function main() {
       const v=window.testViewer;
       return v.linkAxes.length===Object.keys(v.robot.links).length &&
         v.jointAxes.length===Object.values(v.robot.joints).filter(j=>j.jointType!=='fixed').length &&
-        v.linkAxes.every(({helper,target})=>helper.visible && helper.matrix.equals(target.matrixWorld));
+        v.linkAxes.every(({helper})=>!helper.visible) &&
+        v.jointAxes.every(({helper})=>!helper.visible) && v.grid.visible &&
+        v.materials.every(({material})=>material.opacity===1 && !material.transparent && material.depthWrite);
     }));
     assert(await page.locator('#viewport-gizmo').isVisible());
+    assert.strictEqual(await page.locator('#grid-toggle').getAttribute('aria-pressed'),'true');
+    assert.strictEqual(await page.locator('#axes-toggle').getAttribute('aria-pressed'),'false');
+    assert.strictEqual(await page.locator('#joint-axes-toggle').getAttribute('aria-pressed'),'false');
+    assert.strictEqual(await page.locator('#cockpit-opacity').inputValue(),'1');
+    assert.strictEqual(await page.locator('#robot-opacity').inputValue(),'100');
+    await page.locator('#grid-toggle').click();
+    assert.strictEqual(await page.locator('#grid-toggle').getAttribute('aria-pressed'),'false');
+    await page.locator('#grid-toggle').click();
     await page.locator('#joint-axes-toggle').click();
     assert.strictEqual(await page.locator('#joint-axes-toggle').getAttribute('aria-pressed'),'true');
     await page.locator('#axes-toggle').click();
-    assert.strictEqual(await page.locator('#axes-toggle').getAttribute('aria-pressed'),'false');
+    assert.strictEqual(await page.locator('#axes-toggle').getAttribute('aria-pressed'),'true');
     await page.locator('#robot-opacity').fill('50');
     assert(await page.evaluate(()=>{
       const v=window.testViewer;
-      return v.linkAxes.every(({helper})=>!helper.visible) && v.jointAxes.every(({helper})=>helper.visible) &&
+      return v.linkAxes.every(({helper})=>helper.visible) && v.jointAxes.every(({helper})=>helper.visible) &&
+        v.linkAxes.every(({helper,target})=>helper.matrix.equals(target.matrixWorld)) &&
         v.materials.filter(m=>m.kind.startsWith('arms.') || m.kind.startsWith('hands.')).every(m=>m.material.opacity===.5) &&
-        v.materials.filter(m=>m.kind==='aircraft').every(m=>m.material.opacity===.1);
+        v.materials.filter(m=>m.kind==='aircraft').every(m=>m.material.opacity===1);
     }));
     for (const opacity of [0,.5,1]) {
       await page.locator('#cockpit-opacity').fill(String(opacity));
@@ -68,7 +79,7 @@ async function main() {
         }) && materials.filter(m=>m.kind.startsWith('arms.') || m.kind.startsWith('hands.')).every(m=>m.material.opacity===.5);
       },opacity));
     }
-    await page.locator('#cockpit-opacity').fill('0.1');
+    await page.locator('#cockpit-opacity').fill('1');
     await page.locator('#viewport-gizmo').click({position:{x:70,y:50}});
     await page.locator('#reset-view').click();
     await page.locator('#robot-opacity').fill('100');
@@ -81,12 +92,13 @@ async function main() {
       .every(m=>m.material.opacity===0)));
     await page.locator('#robot-opacity').fill('100');
     await page.locator('#joint-axes-toggle').click();
+    await page.locator('#axes-toggle').click();
     await page.locator('#reload-model').click();
     await page.waitForFunction(()=>document.getElementById('model-loading').hidden);
     assert(await page.evaluate(()=>{
       const v=window.testViewer;
       return v.linkAxes.every(({helper})=>!helper.visible) && v.jointAxes.every(({helper})=>!helper.visible) &&
-        v.scene.children.filter(o=>o.type==='AxesHelper').length===v.linkAxes.length;
+        v.grid.visible && v.scene.children.filter(o=>o.type==='AxesHelper').length===v.linkAxes.length;
     }));
     await page.screenshot({path:path.join(directory,'overview.png')});
     await page.locator('#publisher-lights button').filter({hasText:'Camera'}).click();
