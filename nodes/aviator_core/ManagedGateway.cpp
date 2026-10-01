@@ -145,7 +145,7 @@ void ManagedGateway::drive(Aviator& robot) {
     const auto now = monotonic_us();
     if (robot.GetSystemState() != "CONTROL" || !fresh() || effective_sample_ <= forwarded_ || now < next_servo_)
         return;
-    if (robot.ServoWheel(roll_ * 0.87266, std::min(pitch_, 0.0) * 0.170, 1.0, effective_sample_)) {
+    if (robot.ServoWheel(roll_ * -0.87266, std::min(pitch_, 0.0) * 0.170, 1.0, effective_sample_)) {
         forwarded_ = effective_sample_;
         next_servo_ = now + 20000;
     }
