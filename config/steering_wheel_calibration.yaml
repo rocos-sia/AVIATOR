@@ -1,0 +1,32 @@
+# 由 tools/steering_wheel_calibration/calibrate.py 写入。
+# pose 使用 T_camera_tag：AprilTag 目标坐标系到相机坐标系，位置单位 m。
+steering_wheel_calibration:
+  schema_version: 1
+  status: uncalibrated
+  source:
+    topic: camera.detection
+    camera_id: cockpit
+    tag_id: 0
+    frame_id: camera_color_optical_frame
+    pose_convention: T_camera_tag = target_to_camera
+    position_unit: m
+    samples_per_pose: 20
+    sample_interval_ms: 20
+    average_method:
+      translation: componentwise_arithmetic_mean
+      orientation: markley_quaternion_mean
+  zero:
+    theta_rad: 0.0
+    translation_along_axis_m: 0.0
+    pose: null
+  second:
+    pose: null
+  motion:
+    axis_frame: camera_color_optical_frame
+    axis_direction: null
+    axis_point_m: null
+    rotation_between_samples_rad: null
+    translation_vector_between_samples_m: null
+    translation_along_axis_between_samples_m: null
+    translation_perpendicular_between_samples_m: null
+    translation_perpendicular_norm_m: null
