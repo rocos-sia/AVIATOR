@@ -42,6 +42,15 @@ python3 nodes/rh56ftp_hand/rh56ftp_node.py \
 节点为每只手建立独立的控制和状态读取连接；状态轮询不会阻塞 ZMQ 命令看门狗。
 `--modbus-timeout` 默认 `0.2` 秒，用于限制单次 Modbus 请求等待时间。
 
+默认状态读取和发布周期为 **60 ms**（`--state-hz` 默认 `1000/60`，约 16.67 Hz）。
+读取完成后只等待本轮 60 ms 周期剩余的时间，读取超出周期时直接开始下一轮，不补发积压轮次。
+每侧反馈使用该侧 Modbus 读取开始时的单调时间，数据和时间戳一起更新；另一侧读取变慢
+不会使刚读到的本侧反馈带上整轮的旧时间戳。单侧读取本身超时仍会使该侧反馈过期。
+命令批次处理最多占用约 10 ms（当前一次写入完成后让出），避免积压命令长期阻塞状态发布。
+60 ms 是目标更新周期，不是实时调度保证，也不是过期阈值：节点 `--feedback-timeout-ms`
+与 Core 的 `core_hand.feedback_timeout_ms` 仍默认 **500 ms**。
+启动命令若显式带有 `--state-hz 10`，应去掉该参数以使用新默认值。
+
 控制模式启动时，在写入全张开安全姿态之前，节点向所有已连接手的六路寄存器
 写入速度设定和力阈值，**两者默认均为 500**。可用 `--speed`（整数 `0..1000`）
 和 `--force`（整数 `0..3000`）调整，参数统一应用于左右手的全部六路：
@@ -56,6 +65,42 @@ python3 nodes/rh56ftp_hand/rh56ftp_node.py \
 退出沿用这组设定，不随每条角度命令重复写入；写角度失败后的下一次尝试会重新配置
 该手。速度或力阈值配置失败时不写入新的角度目标，并在后续控制或安全姿态回落时重试。
 节点不调用保存 Flash；重启节点会重新写入参数。
+
+## 握紧停滞后保持当前位置
+
+五个弯曲通道（拇指弯曲、食指、中指、无名指、小指）独立观察握紧停滞，
+拇指侧摆不参与。`NORMALIZED_POSITION` 和 `GRASP_SETPOINT` 转换后的目标都适用。
+当一个通道满足以下条件时，底层把该通道的实际下发目标固定为触发时的反馈位置：
+
+- 上位机持续发送有效命令，该通道的目标刻度连续至少 5 秒不变；序号和时间戳变化不重置窗口。
+- 目标比当前实际位置低超过 10 个刻度，即仍要求继续握紧而且没有到位。
+- 至少覆盖完整 5 秒的有效反馈样本中，位置最大值减最小值不超过 10 个刻度。
+
+例如目标为 `0.0`、实际位置停在 `0.42`，满足条件后持续下发 `0.42`；
+上位机仍发同一目标时保持值不随反馈抖动变化。其他仍在运动的手指继续执行原目标。
+运动停滞不代表已验证接触或达到力阈值，本判断不依赖力值。
+
+该通道目标改变（包括张开）会立即解除保持并重新观察，张开不受停滞逻辑限制。
+读取失败、反馈过期或采样间隔达到反馈超时阈值会重新累计观察窗口；重复旧样本不能触发保持。
+已经锁定的保持值在暂时缺少反馈时仍保持，新的目标会解除它。
+命令中断达到命令超时、`valid=false`、安全姿态或重新连接会清除保持。
+无法写入的新目标不会推进指令 ACK 或提交新的保持状态。
+
+可用 `--closing-hold-ms` 调整观察窗口（默认 `5000`，必须为正数），
+`--closing-motion-raw` 调整运动范围及目标残差容差（默认 `10`，范围 `0..999`）。
+10 个寄存器刻度对应归一化位置 `0.01`，不是关节角度单位。
+
+`hand.state.hands.{side}` 新增以下字段（六路均使用 AVIATOR 顺序）：
+
+| 字段 | 含义 |
+|---|---|
+| `requested_drive_position_normalized` | 上位机最近成功接受的原始位置目标。 |
+| `commanded_drive_position_normalized` | 底层实际成功下发的目标，包含保持后的替换值。 |
+| `closing_hold_active` | 六路保持标志；拇指侧摆恒为 `false`。 |
+| `closing_hold_position_normalized` | 六路固定保持位置；未保持为 `null`。 |
+
+实际位置反馈仍来自设备，不用保持目标替换反馈值。相同目标的有效新命令仍正常更新 ACK，
+Core 不需要为了保持而停止发送命令。
 
 如果由 `aviator_core` 接管控制，把 `config/system.yaml` 中 `core_hand.publisher_id`
 改成 `rh56ftp_hand`（或用 `--publisher-id` 设成与其一致），并保证 Core 与本节点使用同一
@@ -101,9 +146,9 @@ python3 nodes/aviator_hand/hand_command.py
   此字段确定是操作系统调度问题。
 - 各侧 `read_started_us/read_finished_us/last_success_finished_us`、`last_success_finish_age_ms`、
   `read_start_gap_ms/read_idle_gap_ms/current_read_idle_ms`：观察每只手最近一次读请求与更新空档。
-- `sample_mono_us/sample_timestamp_offset_ms`：当前反馈采样时间与读取完成时间的差值。若
-  `feedback_age_ms > 500` 而 `last_success_finish_age_ms` 很小、`sample_timestamp_offset_ms` 很大，
-  说明刚完成的读取使用了较旧的巡读开始时间戳；若两种年龄都很大，说明更新确实中断。
+- `sample_mono_us/sample_timestamp_offset_ms`：该侧读取开始时间与读取完成时间的差值。
+  若 `feedback_age_ms > 500` 而 `last_success_finish_age_ms` 很小、`sample_timestamp_offset_ms`
+  很大，说明该侧刚完成一次很慢的读取；若两种年龄都很大，说明更新确实中断。
 - `ack_command_age_ms`：最后成功写入命令的**原始采样时间**距现在的年龄；Core 只接纳年龄
   小于 100 ms 的命令 ACK。`ack_write_age_ms` 是距写入完成的年龄，两者差距大说明写入耗时
   或命令排队造成延迟。节点无法观察 Core 是否收到了该 ACK。
@@ -117,4 +162,4 @@ python3 nodes/aviator_hand/hand_command.py
 `feedback_poll_gap`、`feedback_sample_timestamp_offset`、`feedback_reader_failed`、
 `command_processing_slow`、`command_batch_slow`、`command_watchdog_expired`、`safe_pose_failed`
 会打印相关侧、阶段、耗时或故障原因。日志字段 `mono_us` 与同机 Core 的单调时间戳可对照。
-这些改动只增加诊断，不改变命令、反馈超时和安全姿态控制。
+诊断不会改变命令、反馈超时和安全姿态控制。默认反馈周期及握紧保持行为见上文。

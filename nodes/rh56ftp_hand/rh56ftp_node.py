@@ -16,7 +16,8 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ SIDES = ("left", "right")
 DEFAULT_SAFE_POSE = (1.0,) * 6
 DEFAULT_SPEED = 500
 DEFAULT_FORCE = 500
+DEFAULT_STATE_HZ = 1000.0 / 60.0
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
 
@@ -235,6 +237,17 @@ class Snapshot:
 
 
 @dataclass
+class ClosingHold:
+    requested_raw: int | None = None
+    target_since_us: int = 0
+    last_command_us: int = 0
+    last_sample_us: int = 0
+    feedback_errors: int = 0
+    samples: deque[tuple[int, int]] = field(default_factory=deque)
+    held_raw: int | None = None
+
+
+@dataclass
 class CommandGuard:
     authorized: bool = False
     publisher: str = ""
@@ -292,13 +305,18 @@ class Rh56FtpNode:
                  feedback_only: bool = False, clock_id: str | None = None,
                  session_id: str | None = None, read_links: dict[str, Any] | None = None,
                  speed: int = DEFAULT_SPEED, force: int = DEFAULT_FORCE,
-                 diagnostic_interval_s: float = 1.0):
+                 diagnostic_interval_s: float = 1.0,
+                 closing_hold_ms: int = 5000, closing_motion_raw: int = 10):
         if set(links) != set(SIDES) or not any(links.values()):
             raise ValueError("at least one left/right RH56FTP link is required")
         if command_timeout_ms <= 0 or feedback_timeout_ms <= 0:
             raise ValueError("timeouts must be positive")
         if not math.isfinite(diagnostic_interval_s) or diagnostic_interval_s < 0:
             raise ValueError("diagnostic_interval_s must be finite and nonnegative")
+        if isinstance(closing_hold_ms, bool) or not isinstance(closing_hold_ms, int) or closing_hold_ms <= 0:
+            raise ValueError("closing_hold_ms must be a positive integer")
+        if isinstance(closing_motion_raw, bool) or not isinstance(closing_motion_raw, int) or not 0 <= closing_motion_raw < 1000:
+            raise ValueError("closing_motion_raw must be an integer in [0,999]")
         _identifier(publisher_id, "publisher_id")
         self.links = links
         self.read_links = read_links or links
@@ -317,6 +335,10 @@ class Rh56FtpNode:
         self.snapshots = {side: Snapshot() for side in SIDES}
         self.last_command: dict[str, Any] | None = None
         self.last_targets: dict[str, list[float]] = {side: [] for side in SIDES}
+        self.requested_targets: dict[str, list[float]] = {side: [] for side in SIDES}
+        self.closing_hold_us = closing_hold_ms * 1000
+        self.closing_motion_raw = closing_motion_raw
+        self.closing_holds = {side: [ClosingHold() for _ in range(6)] for side in SIDES}
         self.command_valid = False
         self.state_sequence = 0
         self._safe_applied = False
@@ -342,6 +364,7 @@ class Rh56FtpNode:
 
     def connect(self) -> None:
         self._settings_applied.clear()
+        self._reset_closing_holds()
         seen: set[int] = set()
         entries = list(self.links.items()) + list(self.read_links.items())
         for side, link in entries:
@@ -396,7 +419,7 @@ class Rh56FtpNode:
         self.reader_timing = {
             **timing, "phase": "waiting", "cycle_finished_us": now,
             "cycle_duration_ms": age_ms(now, timing.get("cycle_started_us")),
-            "next_poll_due_us": now + period_us,
+            "next_poll_due_us": max(timing["cycle_started_us"] + period_us, now),
         }
 
     def reader_diagnostics(self, now: int) -> dict[str, Any]:
@@ -410,8 +433,7 @@ class Rh56FtpNode:
         }
 
     def read_states(self, now: int | None = None) -> None:
-        cycle_started = monotonic_us()
-        now = cycle_started if now is None else now
+        sample_override = now
         for side, link in self.read_links.items():
             if link is None:
                 continue
@@ -434,12 +456,14 @@ class Rh56FtpNode:
                     for value in data[key]:
                         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                             raise ValueError(f"RH56FTP state field {key} contains a non-finite value")
-                snapshot.data = data
-                snapshot.sample_mono_us = now
-                snapshot.last_success_finished_us = finished
-                snapshot.sample_timestamp_offset_ms = age_ms(finished, cycle_started) or 0
-                snapshot.error = ""
-                snapshot.reads += 1
+                # Publish data and its timestamp together. Use this hand's read
+                # start (conservative for angle-first reads), not a shared stamp
+                # taken before the other hand or a delayed reader thread.
+                snapshot = replace(snapshot, data=data,
+                                   sample_mono_us=started if sample_override is None else sample_override,
+                                   last_success_finished_us=finished,
+                                   sample_timestamp_offset_ms=age_ms(finished, started) or 0,
+                                   error="", reads=snapshot.reads + 1)
             except Exception as exc:
                 finished = finished or monotonic_us()
                 snapshot.error = str(exc)
@@ -451,6 +475,7 @@ class Rh56FtpNode:
                 snapshot.read_finished_us = finished or monotonic_us()
                 snapshot.read_duration_ms = age_ms(snapshot.read_finished_us, snapshot.read_started_us) or 0
                 snapshot.read_in_progress = False
+                self.snapshots[side] = snapshot
                 if snapshot.sample_timestamp_offset_ms >= self.feedback_timeout_us / 2000 and not snapshot.error:
                     self.diag.emit("feedback_sample_timestamp_offset", key=f"sample_offset:{side}", side=side,
                                    sample_mono_us=snapshot.sample_mono_us,
@@ -508,11 +533,71 @@ class Rh56FtpNode:
         self.last_write_error = ""
 
     def _safe_pose(self) -> None:
+        self._reset_closing_holds()
         raw = normalized_to_raw(list(DEFAULT_SAFE_POSE))
         self._write_targets({side: raw for side in SIDES})
+        self.last_targets = {side: [value / 1000.0 for value in raw] for side in SIDES}
+        self.requested_targets = {side: [] for side in SIDES}
         self.command_valid = False
         self._safe_applied = True
         self._safe_required = False
+
+    def _reset_closing_holds(self) -> None:
+        self.closing_holds = {side: [ClosingHold() for _ in range(6)] for side in SIDES}
+
+    def _closing_targets(self, requested: dict[str, list[int]], now: int
+                         ) -> tuple[dict[str, list[int]], dict[str, list[ClosingHold]]]:
+        effective = {side: list(values) for side, values in requested.items()}
+        pending = {}
+        for side in SIDES:
+            snapshot = self.snapshots[side]
+            measured = self._canonical_state(snapshot.data) if snapshot.data is not None else None
+            actual = measured["drive_position_raw"] if measured and measured["drive_position_normalized"] else None
+            fresh = snapshot.fresh(now, self.feedback_timeout_us) and not snapshot.error and actual is not None
+            channels = [ClosingHold()]  # Thumb rotation is never constrained.
+            for index in range(1, 6):
+                target = requested[side][index]
+                previous = self.closing_holds[side][index]
+                channel = replace(previous, samples=deque(previous.samples))
+                if (channel.requested_raw != target or now < channel.last_command_us or
+                        now - channel.last_command_us >= self.command_timeout_us):
+                    channel = ClosingHold(requested_raw=target, target_since_us=now,
+                                          feedback_errors=snapshot.errors)
+                channel.last_command_us = now
+                # Keep the frozen target for this same request, including when
+                # feedback is temporarily unavailable. Never chase live position.
+                if channel.held_raw is not None:
+                    effective[side][index] = channel.held_raw
+                elif not fresh:
+                    channel.samples.clear()
+                    channel.last_sample_us = 0
+                else:
+                    stamp = snapshot.sample_mono_us
+                    position = actual[index]
+                    if (snapshot.errors != channel.feedback_errors or
+                            stamp < channel.last_sample_us or
+                            (channel.last_sample_us and stamp - channel.last_sample_us >= self.feedback_timeout_us)):
+                        channel.samples.clear()
+                    channel.feedback_errors = snapshot.errors
+                    if position - target <= self.closing_motion_raw:
+                        # Opening, already at target, or within the residual tolerance.
+                        channel.samples.clear()
+                    elif stamp >= channel.target_since_us and stamp != channel.last_sample_us:
+                        channel.samples.append((stamp, position))
+                        cutoff = stamp - self.closing_hold_us
+                        # Retain one sample at/before the window boundary, so
+                        # sparse polling cannot claim a full five-second window.
+                        while len(channel.samples) > 1 and channel.samples[1][0] <= cutoff:
+                            channel.samples.popleft()
+                        if stamp - channel.samples[0][0] >= self.closing_hold_us:
+                            positions = [value for _, value in channel.samples]
+                            if max(positions) - min(positions) <= self.closing_motion_raw:
+                                channel.held_raw = position
+                                effective[side][index] = position
+                    channel.last_sample_us = stamp
+                channels.append(channel)
+            pending[side] = channels
+        return effective, pending
 
     def command_context(self, now: int, command: dict[str, Any] | None = None) -> dict[str, Any]:
         context = {
@@ -573,7 +658,12 @@ class Rh56FtpNode:
                 else:
                     values = [1.0 - command["hands"][side]["grasp"]["closure"]] * 6
                 raw_by_side[side] = normalized_to_raw(values)
+            requested = raw_by_side
+            raw_by_side, pending_holds = self._closing_targets(requested, now)
             self._write_targets(raw_by_side)
+            # Failed writes must not acknowledge or latch a new held position.
+            self.closing_holds = pending_holds
+            self.requested_targets = {side: [value / 1000.0 for value in requested[side]] for side in SIDES}
             self.last_targets = {
                 side: [value / 1000.0 for value in raw_by_side[side]] for side in SIDES
             }
@@ -583,6 +673,7 @@ class Rh56FtpNode:
         else:
             self._safe_pose()
             self.last_targets = {side: [] for side in SIDES}
+            self.requested_targets = {side: [] for side in SIDES}
         self.guard = candidate
         self.last_command = command
 
@@ -619,13 +710,16 @@ class Rh56FtpNode:
         }
 
     def make_state(self, now: int | None = None) -> dict[str, Any]:
+        # Capture published measurements before stamping the envelope, so a
+        # concurrent read cannot look like a sample from the future.
+        snapshots = dict(self.snapshots)
         now = monotonic_us() if now is None else now
         self.state_sequence += 1
         hands: dict[str, dict[str, Any]] = {}
         configured_fresh = []
         for side in SIDES:
             link = self.links[side]
-            snapshot = self.snapshots[side]
+            snapshot = snapshots[side]
             fresh = link is not None and snapshot.fresh(now, self.feedback_timeout_us)
             if fresh:
                 measured = self._canonical_state(snapshot.data or {})
@@ -705,6 +799,11 @@ class Rh56FtpNode:
                     "feedback_last_error": snapshot.error,
                 }
             hands[side] = hand
+            hand["requested_drive_position_normalized"] = self.requested_targets[side]
+            hand["closing_hold_active"] = [channel.held_raw is not None for channel in self.closing_holds[side]]
+            hand["closing_hold_position_normalized"] = [
+                channel.held_raw / 1000.0 if channel.held_raw is not None else None
+                for channel in self.closing_holds[side]]
         accepted = None
         if self.guard.authorized:
             accepted = {
@@ -767,6 +866,8 @@ class Rh56FtpNode:
                 "current_read_idle_ms": age_ms(now, snapshot.read_finished_us) if not snapshot.read_in_progress else None,
                 "reads": snapshot.reads, "errors": snapshot.errors, "last_error": snapshot.error,
                 "actual": hand["drive_position_normalized"], "target": self.last_targets[side],
+                "requested_target": self.requested_targets[side],
+                "closing_hold_active": hand["closing_hold_active"],
                 "angle_raw": hand["angle_raw"], "error_codes": hand["error_codes"],
             }
             # A first sample still in flight is normal during reader startup.
@@ -804,6 +905,21 @@ def monotonic_us() -> int:
     return time.monotonic_ns() // 1000
 
 
+def feedback_read_loop(node: Rh56FtpNode, reader_stop: threading.Event, period_us: int) -> None:
+    try:
+        while not reader_stop.is_set():
+            node.reader_poll_started(period_us)
+            node.read_states()
+            node.reader_poll_finished(period_us)
+            remaining_us = node.reader_timing["next_poll_due_us"] - monotonic_us()
+            reader_stop.wait(max(0, remaining_us) / 1000000.0)
+    except Exception as exc:
+        node.diag.emit("feedback_reader_failed", reason=f"{type(exc).__name__}: {exc}",
+                       reader=node.reader_diagnostics(monotonic_us()))
+    finally:
+        node.reader_timing = {**node.reader_timing, "phase": "stopped"}
+
+
 def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: float) -> int:
     try:
         import zmq
@@ -829,24 +945,9 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
 
     old_int = signal.signal(signal.SIGINT, stop)
     old_term = signal.signal(signal.SIGTERM, stop)
-    period = 1.0 / state_hz
-    next_state = time.monotonic()
+    period_us = round(1000000.0 / state_hz)
+    next_state_us = monotonic_us()
     reader_stop = threading.Event()
-
-    def read_loop() -> None:
-        period = 1.0 / state_hz
-        period_us = round(period * 1000000)
-        try:
-            while not reader_stop.is_set():
-                node.reader_poll_started(period_us)
-                node.read_states()
-                node.reader_poll_finished(period_us)
-                reader_stop.wait(period)
-        except Exception as exc:
-            node.diag.emit("feedback_reader_failed", reason=f"{type(exc).__name__}: {exc}",
-                           reader=node.reader_diagnostics(monotonic_us()))
-        finally:
-            node.reader_timing = {**node.reader_timing, "phase": "stopped"}
 
     reader: threading.Thread | None = None
     try:
@@ -856,14 +957,18 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
                 node._safe_pose()
             except Exception as exc:
                 node.diag.emit("startup_safe_pose_failed", reason=f"{type(exc).__name__}: {exc}")
-        reader = threading.Thread(target=read_loop, name="rh56ftp-state", daemon=True)
+        reader = threading.Thread(target=feedback_read_loop, args=(node, reader_stop, period_us),
+                                  name="rh56ftp-state", daemon=True)
         node.reader_thread = reader
         reader.start()
         while not stopped:
-            now_wall = time.monotonic()
             batch_started = monotonic_us()
             batch_count = 0
             for _ in range(32):
+                # A command backlog must not postpone feedback publication for
+                # up to 32 serial Modbus writes. Finish the current write, then yield.
+                if monotonic_us() - batch_started >= min(10000, period_us // 2):
+                    break
                 if not sub.poll(0):
                     break
                 frames = sub.recv_multipart()
@@ -882,7 +987,7 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
                 node.diag.emit("command_batch_slow", count=batch_count, duration_ms=batch_duration,
                                **node.command_context(monotonic_us()))
             node.supervise()
-            if now_wall >= next_state:
+            if monotonic_us() >= next_state_us:
                 state = node.make_state()
                 payload = json.dumps(state, allow_nan=False, separators=(",", ":")).encode()
                 try:
@@ -899,7 +1004,9 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
                     node.state_dropped += 1
                     node.diag.emit("state_publish_dropped", dropped=node.state_dropped)
                 node.report_diagnostics(state)
-                next_state = now_wall + period
+                next_state_us += period_us
+                if next_state_us <= monotonic_us():
+                    next_state_us = monotonic_us() + period_us
             time.sleep(0.001)
     finally:
         reader_stop.set()
@@ -928,7 +1035,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--right-port", type=int, default=None)
     parser.add_argument("--left-port", type=int, default=None)
     parser.add_argument("--publisher-id", default="rh56ftp_hand")
-    parser.add_argument("--state-hz", type=float, default=10.0)
+    parser.add_argument("--state-hz", type=float, default=DEFAULT_STATE_HZ,
+                        help="状态读取和发布频率（默认 1000/60 Hz，即 60 ms 周期）")
     parser.add_argument("--command-timeout-ms", type=int, default=100)
     parser.add_argument("--feedback-timeout-ms", type=int, default=500)
     parser.add_argument("--modbus-timeout", type=float, default=0.2,
@@ -937,12 +1045,20 @@ def main(argv: list[str] | None = None) -> int:
                         help="所有已连接手的六路速度设定，0..1000（默认 500）")
     parser.add_argument("--force", type=int, default=DEFAULT_FORCE,
                         help="所有已连接手的六路力阈值设定，0..3000（默认 500）")
+    parser.add_argument("--closing-hold-ms", type=int, default=5000,
+                        help="五个弯曲通道握紧目标不变且运动很小的观察窗口（默认 5000 ms）")
+    parser.add_argument("--closing-motion-raw", type=int, default=10,
+                        help="握紧停滞窗口内允许的最大位置范围及目标残差容差（默认 10，范围 0..999）")
     parser.add_argument("--diagnostic-interval-s", type=float, default=1.0,
                         help="异常详情汇总间隔秒数（默认 1；0 只保留异常事件；正常运行不打印）")
     parser.add_argument("--feedback-only", action="store_true")
     args = parser.parse_args(argv)
     if not math.isfinite(args.modbus_timeout) or args.modbus_timeout <= 0:
         parser.error("--modbus-timeout 必须为正数")
+    if not math.isfinite(args.state_hz) or not 0 < args.state_hz <= 100:
+        parser.error("--state-hz 必须在 (0,100]")
+    if args.closing_hold_ms <= 0 or not 0 <= args.closing_motion_raw < 1000:
+        parser.error("--closing-hold-ms 必须为正数，--closing-motion-raw 必须在 [0,999]")
     if not 0 <= args.speed <= 1000:
         parser.error("--speed 必须为 0..1000 的整数")
     if not 0 <= args.force <= 3000:
@@ -968,7 +1084,8 @@ def main(argv: list[str] | None = None) -> int:
                        command_timeout_ms=args.command_timeout_ms,
                        feedback_timeout_ms=args.feedback_timeout_ms,
                        feedback_only=args.feedback_only, speed=args.speed, force=args.force,
-                       diagnostic_interval_s=args.diagnostic_interval_s)
+                       diagnostic_interval_s=args.diagnostic_interval_s,
+                       closing_hold_ms=args.closing_hold_ms, closing_motion_raw=args.closing_motion_raw)
     return run_node(node, args.endpoint, args.state_endpoint, args.state_hz)
 
 
