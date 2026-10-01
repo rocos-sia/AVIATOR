@@ -222,7 +222,8 @@ void yoke(Json& g, const Json& b, const Json& c, const std::string& camera_id) {
             {"camera_id", at(b, "camera_id")},
             {"frame_id", at(b, "frame_id")},
             {"pose_mapping", "CAMERA_STEERING_WHEEL"},
-            {"model_joints", {{"roll_input_joint", theta}, {"pitch_input_joint", -travel - .085}}}};
+            {"model_joints", {{"roll_input_joint", -theta.get<double>()},
+                              {"pitch_input_joint", -travel - .085}}}};
         return;
     }
     // Legacy raw poses still need the configured camera's geometry. Calibrated

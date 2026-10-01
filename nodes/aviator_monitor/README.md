@@ -66,7 +66,7 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 优先读取 `camera.detection.steering_wheel`，无需另配 Monitor 的 `yoke_calibration`：
 
-- `roll_input_joint = theta_rad`（rad）。
+- `roll_input_joint = -theta_rad`（rad），模型关节正方向与相机角度正方向相反。
 - `pitch_input_joint = -translation_along_axis_m - 0.085`（m），将 `[-0.085, 0.085]` 映射到 `[0, -0.170]`；零位对应 `-0.085`。
 - 概览的物理行程仍为 `(translation_along_axis_m + 0.085) × 1000` mm（0～170 mm），百分比为 `translation_along_axis_m / 0.085 × 100`，与飞控指令刻度一致。
 

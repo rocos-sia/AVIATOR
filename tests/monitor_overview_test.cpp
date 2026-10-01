@@ -239,7 +239,7 @@ int main(int argc, char** argv) {
                 const auto& current = observed["current"];
                 check(observed["measurement_state"] == "VALID" &&
                           observed["calibration_id"] == "camera-test" &&
-                          current["model_joints"]["roll_input_joint"] == .25 &&
+                          current["model_joints"]["roll_input_joint"] == -.25 &&
                           std::abs(current["model_joints"]["pitch_input_joint"].get<double>() -
                                    expected_pitch) < 1e-9 &&
                           std::abs(current["pitch_mm"].get<double>() - (travel + .085) * 1000) < 1e-9 &&
@@ -264,7 +264,7 @@ int main(int argc, char** argv) {
                 auto observed = live_camera.overview(1010000, clock)["yoke_observation"];
                 check(observed["measurement_state"] == "VALID" &&
                           observed["fresh_for_ms"] == 190 &&
-                          observed["current"]["model_joints"]["roll_input_joint"] == 1.2 &&
+                          observed["current"]["model_joints"]["roll_input_joint"] == -1.2 &&
                           std::abs(observed["current"]["model_joints"]["pitch_input_joint"].get<double>() + .205) < 1e-9,
                       "valid received camera motion blocked by display diagnostics");
                 incoming["steering_wheel"]["theta_rad"] = -1.3;
@@ -273,7 +273,7 @@ int main(int argc, char** argv) {
                          "11111111-1111-4111-8111-111111111111", 2), 1190000);
                 observed = live_camera.overview(1200000, clock)["yoke_observation"];
                 check(observed["measurement_state"] == "VALID" &&
-                          observed["current"]["model_joints"]["roll_input_joint"] == -1.3,
+                          observed["current"]["model_joints"]["roll_input_joint"] == 1.3,
                       "subsequent valid detection did not refresh camera pose");
                 check(live_camera.overview(1390000, clock)["yoke_observation"]["current"].is_null(),
                       "camera display did not expire after reception stopped");

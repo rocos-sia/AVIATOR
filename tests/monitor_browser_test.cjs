@@ -50,7 +50,7 @@ async function main() {
         return v.isLive(g) && g.current?.pose_mapping==='CAMERA_STEERING_WHEEL' &&
           !v.invalidGroups.has('yoke_observation') &&
           Math.abs(v.robot.joints.pitch_input_joint.angle-expected)<1e-5 &&
-          Math.abs(v.robot.joints.roll_input_joint.angle+.3)<1e-5;
+          Math.abs(v.robot.joints.roll_input_joint.angle-.3)<1e-5;
       },expected);
     }
     // Valid camera motion must reach the real URDF joints despite an axis
@@ -61,7 +61,7 @@ async function main() {
       const v=window.testViewer,g=v.data.yoke_observation;
       return v.isLive(g) && !v.invalidGroups.has('yoke_observation') &&
         Math.abs(v.robot.joints.pitch_input_joint.angle+.205)<1e-5 &&
-        Math.abs(v.robot.joints.roll_input_joint.angle-1.2)<1e-5 &&
+        Math.abs(v.robot.joints.roll_input_joint.angle+1.2)<1e-5 &&
         !document.getElementById('model-state').textContent.includes('驾驶盘：');
     });
     fs.writeFileSync(controlPath,JSON.stringify({wheel_valid:false}));
