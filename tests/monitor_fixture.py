@@ -65,12 +65,16 @@ try:
         right = dict(side, joint_position=[-.5,-.8,.6,1,-.3,-.4,-.2])
         side['joint_position'] = [.5,.8,-.6,1,.3,.4,.2]
         send('arm.state','ArmState','manipulator',dict(arms=dict(left=side,right=right)),sample)
+        positions = control.get('hand_positions', [.1,.2,.3,.4,.5,.6])
         hand = dict(valid=True,status='READY',feedback_available=True,enabled=False,error_code=0,
-                    sample_mono_us=sample,feedback_age_ms=0,drive_position_raw=[500]*6,
-                    drive_position_normalized=[.5]*6,commanded_drive_position_normalized=[.8]*6,
+                    sample_mono_us=sample,feedback_age_ms=0,drive_position_raw=[round(p*1000) for p in positions],
+                    drive_position_normalized=positions,commanded_drive_position_normalized=[.8]*6,
+                    joint_position=None,joint_velocity=None,
                     grasp_verified=False,sample_time_basis='host_read_request')
         if sequence % 5 == 0:
-            send('hand.state','HandState','inspire_hand',dict(hands=dict(left=hand,right=hand)),sample)
+            right_hand = dict(hand, valid=not control.get('right_hand_invalid', False))
+            send('hand.state','HandState','inspire_hand',dict(hands=dict(left=hand,right=right_hand)),sample,
+                 valid=right_hand['valid'])
         if not control.get('camera_stale'):
             angle = math.radians(17)
             pose = dict(position=dict(x=0,y=0,z=(73.1-85)/1000),

@@ -158,6 +158,25 @@ export class Viewer {
     return {'arms.left':this.data?.arms.left,'arms.right':this.data?.arms.right,
       'hands.left':this.data?.hands.left,'hands.right':this.data?.hands.right,'yoke_observation':this.data?.yoke_observation};
   }
+  modelJoints(kind,g) {
+    const current=g?.current;
+    if (!kind.startsWith('hands.') || current?.pose_mapping!=='URDF_LIMITS') return current?.model_joints;
+    const positions=current.drive_position_normalized;
+    if (!Array.isArray(positions) || positions.length!==6 ||
+        positions.some(p=>!Number.isFinite(p) || p<0 || p>1)) return null;
+    const side=kind.split('.')[1],values={};
+    const channels=['thumb_1','thumb_2','index_1','middle_1','ring_1','little_1'];
+    for (const [i,channel] of channels.entries()) {
+      const name=`${side}_${channel}_joint`,joint=this.robot?.joints[name];
+      if (!joint || joint.mimicJoint || joint.jointType!=='revolute' ||
+          !Number.isFinite(joint.limit.lower) || !Number.isFinite(joint.limit.upper) ||
+          joint.limit.upper<=joint.limit.lower) return null;
+      // ANGLE_ACT is an opening fraction: 0 closed, 1 open. The URDF's
+      // zero/lower limit is open; increasing angles close the fingers.
+      values[name]=joint.limit.lower+(1-positions[i])*(joint.limit.upper-joint.limit.lower);
+    }
+    return values;
+  }
   apply() {
     if (!this.robot || !this.data) return;
     const notes=[]; this.invalidGroups.clear();
@@ -166,7 +185,10 @@ export class Viewer {
       const old=this.sources.get(kind);
       if (old && source && old.key!==source) for (const name of old.joints) this.robot.joints[name]?.setJointValue(0);
       if (!this.isLive(g) || !g.current) { const state=g?.measurement_state === 'VALID' ? 'STALE' : g?.measurement_state ?? 'UNAVAILABLE'; notes.push(`${groupLabels[kind]}：${stateLabels[state] ?? state} · ${old ? '旧姿态' : '参考姿态'}`); continue; }
-      const values=g.current.model_joints;
+      const values=this.modelJoints(kind,g);
+      if (!values && g.current.pose_mapping==='URDF_LIMITS') {
+        this.invalidGroups.add(kind); notes.push(`${groupLabels[kind]}：关节映射/限位不匹配`); continue;
+      }
       if (!values || !Object.keys(values).length) { notes.push(`${groupLabels[kind]}：姿态未标定`); continue; }
       let valid=true;
       for (const [name,q] of Object.entries(values)) {
@@ -187,10 +209,12 @@ export class Viewer {
   }
   style() {
     const groups=this.groups();
+    const validGroups=new Set(Object.entries(groups).filter(([kind,group])=>
+      !this.invalidGroups.has(kind) && this.isLive(group) && group?.current &&
+      Object.keys(this.modelJoints(kind,group) ?? {}).length>0).map(([kind])=>kind));
     for(const {material,kind,color} of this.materials) {
       if (kind==='aircraft') { material.opacity=Number($('cockpit-opacity').value); material.transparent=material.opacity<1; material.depthWrite=!material.transparent; continue; }
-      const group=groups[kind],valid=!this.invalidGroups.has(kind) && this.isLive(group) && group?.current && Object.keys(group.current.model_joints ?? {}).length>0;
-      material.color.copy(valid ? color : new THREE.Color('#999999'));
+      material.color.copy(validGroups.has(kind) ? color : new THREE.Color('#999999'));
       const opacity=kind==='yoke_observation' ? Number($('cockpit-opacity').value) : Number($('robot-opacity').value)/100;
       material.opacity=opacity; material.transparent=material.opacity<1; material.depthWrite=!material.transparent;
     }

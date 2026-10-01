@@ -370,7 +370,8 @@ Json State::overview(std::uint64_t now, const std::string& clock) {
                             {"error_code", at(b, "error_code")},
                             {"grasp_verified", at(b, "grasp_verified")},
                             {"sample_time_basis", at(b, "sample_time_basis")},
-                            {"pose_state", calibration.is_null() ? "UNCALIBRATED" : "ESTIMATED"},
+                            {"pose_state", "ESTIMATED"},
+                            {"pose_mapping", calibration.is_null() ? "URDF_LIMITS" : "CALIBRATED"},
                             {"model_joints", joints}};
                     }
                 } else if (valid(g)) {

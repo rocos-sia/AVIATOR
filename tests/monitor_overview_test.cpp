@@ -97,6 +97,9 @@ int main(int argc, char** argv) {
                      {"feedback_available", true},
                      {"sample_mono_us", 900000},
                      {"feedback_age_ms", 100},
+                     {"joint_position", nullptr},
+                     {"joint_velocity", nullptr},
+                     {"commanded_drive_position_normalized", {.9, .9, .9, .9, .9, .9}},
                      {"drive_position_raw", {100, 200, 300, 400, 500, 600}},
                      {"drive_position_normalized", {.1, .2, .3, .4, .5, .6}}};
         Json invalid = hand;
@@ -105,10 +108,27 @@ int main(int argc, char** argv) {
                1000000, false);
         o = state.overview(1090000, "clock");
         check(o["hands"]["left"]["measurement_state"] == "VALID", "10Hz hand marked stale");
-        check(o["hands"]["left"]["current"]["pose_state"] == "UNCALIBRATED", "fake hand radians");
+        const auto& hand_pose = o["hands"]["left"]["current"];
+        check(hand_pose["pose_state"] == "ESTIMATED" &&
+                  hand_pose["pose_mapping"] == "URDF_LIMITS" &&
+                  hand_pose["drive_position_normalized"] == hand["drive_position_normalized"] &&
+                  hand_pose["model_joints"].empty(),
+              "default hand pose must map actual feedback using loaded URDF limits");
         check(o["hands"]["right"]["current"].is_null(), "invalid hand current");
         check(state.overview(1200000, "clock")["hands"]["left"]["current"].is_null(),
               "outer new stamp hides old hand sample");
+        for (const auto& bad : {Json::array(), Json{0, 0, 0, 0, 0, 1.1},
+                               Json{0, 0, 0, 0, 0, nullptr}, Json{.9, .9, .9, .9, .9, .9}}) {
+            monitor::State bad_feedback;
+            auto broken = hand;
+            broken["drive_position_normalized"] = bad;
+            ingest(bad_feedback, aviator::Topic::hand_state,
+                   {{"hands", {{"left", broken}, {"right", hand}}}});
+            const auto hands = bad_feedback.overview(1090000, "clock")["hands"];
+            check(hands["left"]["current"].is_null() &&
+                      hands["right"]["current"]["pose_mapping"] == "URDF_LIMITS",
+                  "invalid feedback must not animate hand or mask healthy side");
+        }
         monitor::State held;
         Json hold = {{"source", "JOYSTICK"},
                      {"control", {{"roll", .35}, {"pitch", -.12}}},
@@ -137,6 +157,7 @@ int main(int argc, char** argv) {
         monitor::validate_config(state.config);
         auto mapped_hand = state.overview(1090000, "clock")["hands"]["left"];
         check(mapped_hand["current"]["pose_state"] == "ESTIMATED" &&
+                  mapped_hand["current"]["pose_mapping"] == "CALIBRATED" &&
                   std::abs(
                       mapped_hand["current"]["model_joints"]["left_thumb_1_joint"].get<double>() -
                       .45) < 1e-9,

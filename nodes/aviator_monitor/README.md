@@ -28,7 +28,7 @@ cmake --build build/communication --target aviator_monitor --parallel
 - 顶部显示唯一有效 `flight.state` 的运行状态、来源和当前/历史错误；来源冲突、跨时钟或过期时显示未知。
 - 发布灯显示 Flight Gateway、Core、Manipulator、Inspire Hand、Camera 的消息接收新鲜度；Logger/Bus 缺少独立状态源时显示未观测。Camera 搜索目标期间发布灯仍可以绿色，检测结果单独判定。
 - 完整 URDF 使用本地 Three.js + URDFLoader 加载。左右机械臂按七个实际关节反馈联动；手部实际六通道驱动条独立显示。
-- 手部未标定时，三维手部为灰色参考姿态，明确提示“姿态未标定”。提供标定曲线后显示实际驱动反馈推算的姿态；目标回显不充当测量。
+- 手部默认将六通道实际归一化驱动反馈映射到所加载 URDF 的关节行程，更新三维手部；提供标定曲线时优先使用曲线。显示为驱动反馈估算姿态，目标回显不充当测量。
 - 相机位姿经几何标定求解驾驶盘 roll/pitch。未配置标定时不进行猜测换算，实测为 `—`，RGB 仍可使用。
 - 飞控指令显示百分比、物理等价值与二维指令/视觉实测对照。指令刻度 ±100%，对照图 ±110%，反馈允许 roll ±52°、pitch −5～175 mm，映射仍为 ±50°/0～170 mm 对应 ±100%。
 - 过期部件保留灰色旧姿态，当前数值及图形标记取消；HTTP 断连时保留内容明确属于旧快照。每部分的时效在浏览器本地继续推进。
@@ -83,9 +83,11 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 ### 灵巧手标定
 
-默认 `hand_calibration=null`。非空时含 `id`、`left`、`right`；每侧为六项，按实际驱动通道顺序排列（拇指旋转、拇指、食指、中指、无名指、小指）。每项含 `joint` 和 `knots`，knots 为 `[归一化驱动位置, URDF弧度]` 列表，驱动值严格递增并覆盖 0～1，采用分段线性插值。
+当前 [手节点消息格式](../aviator_hand/README.md#实际位置读取与发布) 的 `hands.{side}.joint_position` 为 null，实际位置使用 `drive_position_normalized[6]`（0～1），并与 `drive_position_raw[6]`（0～1000）校验一致性。`commanded_drive_position_normalized` 仅为指令回显，不驱动模型。
 
-左右侧各六个独立关节是 thumb_1、thumb_2、index_1、middle_1、ring_1、little_1；具体通道映射由实测确定，不仅按名字猜测。mimic 从属关节由 loader 更新。输出明确属于估算姿态，当前软件 enabled 与 grasp_verified=false 不表示握持已验证。
+默认 `hand_calibration=null` 时，六通道按拇指旋转、拇指弯曲、食指、中指、无名指、小指，分别映射到 `{left,right}_thumb_1_joint`、`thumb_2_joint`、`index_1_joint`、`middle_1_joint`、`ring_1_joint`、`little_1_joint`。浏览器读取当前 URDF 各关节的 `lower/upper`，按 `q = lower + (1 - position) * (upper - lower)` 换算弧度：驱动值 1 为张开（下限），0 为闭合（上限）。mimic 从属关节由 loader 联动。概览 `pose_mapping=URDF_LIMITS` 表示此默认行程估算，不代表硬件角度标定。
+
+提供非空 `hand_calibration` 时优先使用标定曲线（`pose_mapping=CALIBRATED`）。配置含 `id`、`left`、`right`；每侧为六项，按上述实际驱动通道顺序排列。每项含 `joint` 和 `knots`，knots 为 `[归一化驱动位置, URDF弧度]` 列表，驱动值严格递增并覆盖 0～1，采用分段线性插值。两种映射的 `pose_state` 均为 `ESTIMATED`；过期或无效反馈保留灰色旧姿态。当前软件 enabled 与 grasp_verified=false 不表示握持已验证。
 
 ## 系统消息与 REQ/REP
 

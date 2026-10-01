@@ -40,6 +40,39 @@ async function main() {
       Viewer.prototype.updateHelpers=function(){window.testViewer=this;return update.call(this);};
     });
     await page.waitForFunction(()=>window.testViewer?.robot);
+    // Exercise the real HandState -> overview -> URDF path, including the
+    // endpoints, distinct channels, and recursively coupled mimic joints.
+    async function handPose(positions,sides=['left','right']) {
+      await page.waitForFunction(({positions,sides})=>{
+        const v=window.testViewer,channels=['thumb_1','thumb_2','index_1','middle_1','ring_1','little_1'];
+        return sides.every(side=>{
+          const group=v.data.hands[side];
+          return group.current?.pose_mapping==='URDF_LIMITS' && v.isLive(group) &&
+            channels.every((channel,i)=>{
+              const j=v.robot.joints[`${side}_${channel}_joint`];
+              return Math.abs(j.angle-(j.limit.lower+(1-positions[i])*(j.limit.upper-j.limit.lower)))<1e-5;
+            }) && Object.values(v.robot.joints).filter(j=>j.name.startsWith(`${side}_`) && j.mimicJoint).every(j=>{
+              const expected=v.robot.joints[j.mimicJoint].angle*j.multiplier+j.offset;
+              return Math.abs(j.angle-Math.min(j.limit.upper,Math.max(j.limit.lower,expected)))<1e-5;
+            }) && !v.invalidGroups.has(`hands.${side}`);
+        });
+      },{positions,sides});
+    }
+    await handPose([.1,.2,.3,.4,.5,.6]);
+    for (const position of [0,1,.5]) {
+      fs.writeFileSync(controlPath,JSON.stringify({hand_positions:Array(6).fill(position)}));
+      await handPose(Array(6).fill(position));
+    }
+    fs.writeFileSync(controlPath,JSON.stringify({hand_positions:Array(6).fill(0),right_hand_invalid:true}));
+    await handPose(Array(6).fill(0),['left']);
+    assert(await page.evaluate(()=>{
+      const v=window.testViewer;
+      return v.data.hands.right.current===null &&
+        Math.abs(v.robot.joints.right_index_1_joint.angle-v.robot.joints.right_index_1_joint.limit.upper*.5)<1e-5 &&
+        v.materials.filter(m=>m.kind==='hands.right').every(m=>m.material.color.getHexString()==='999999');
+    }));
+    fs.writeFileSync(controlPath,'{}');
+    await handPose([.1,.2,.3,.4,.5,.6]);
     assert(await page.evaluate(()=>{
       const v=window.testViewer;
       return v.linkAxes.length===Object.keys(v.robot.links).length &&
