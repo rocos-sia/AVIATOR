@@ -84,16 +84,20 @@ def output_result(result: dict[str, Any], data: dict[str, Any], as_json: bool) -
                                      [float(value) for value in measured_axis]),
         "axis_error_deg": axis_error_deg,
         "axis_consistent": result.get("axis_consistent"),
+        "axis_match": result.get("axis_consistent"),
     }
     if as_json:
         print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), flush=True)
     else:
         translation = payload["translation_vector_m"]
         measured = payload["axis_direction_measured"]
+        stored = payload["axis_direction_stored"]
         if payload["axis_error_deg"] is None:
-            axis_check = "axis_match=unknown (insufficient motion)"
+            axis_check = (f"axis_stored=[{stored[0]:.4f},{stored[1]:.4f},{stored[2]:.4f}] "
+                          "axis_measured=unknown axis_match=unknown (insufficient motion)")
         else:
-            axis_check = (f"axis_measured=[{measured[0]:.4f},{measured[1]:.4f},{measured[2]:.4f}] "
+            axis_check = (f"axis_stored=[{stored[0]:.4f},{stored[1]:.4f},{stored[2]:.4f}] "
+                          f"axis_measured=[{measured[0]:.4f},{measured[1]:.4f},{measured[2]:.4f}] "
                           f"axis_error={payload['axis_error_deg']:.3f} deg "
                           f"axis_match={str(payload['axis_consistent']).lower()}")
         print(f"frame={payload['frame_id']} seq={payload['sequence']} "
@@ -106,9 +110,10 @@ def output_result(result: dict[str, Any], data: dict[str, Any], as_json: bool) -
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    if args.timeout_ms <= 0 or args.max_msgs < 0 or args.axis_tolerance_deg < 0:
+    if (args.timeout_ms <= 0 or args.max_msgs < 0 or
+            not math.isfinite(args.axis_tolerance_deg) or args.axis_tolerance_deg < 0):
         raise SystemExit("--timeout-ms 必须为正数，--max-msgs 不能为负数，"
-                         "--axis-tolerance-deg 不能为负数")
+                         "--axis-tolerance-deg 必须为有限非负数")
     calibration, zero, axis = load_calibration(args.config)
     try:
         import zmq

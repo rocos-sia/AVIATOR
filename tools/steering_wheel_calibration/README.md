@@ -51,7 +51,8 @@ python3 tools/steering_wheel_calibration/calibrate.py \
 
 标定完成后持续接收检测结果并打印相对零位的角度、完整三维平移和沿轴平移。每帧还会从
 当前测试点与零位的相对变换重新估计轴向量，与 YAML 中存储的 `motion.axis_direction`
-比较，并输出夹角及 `axis_match`（默认允许误差 5°，可用 `--axis-tolerance-deg` 调整）：
+比较，并输出夹角及 `axis_match`（JSON 中同时提供 `axis_consistent`，默认允许误差 5°，
+可用 `--axis-tolerance-deg` 调整）：
 
 ```bash
 python3 tools/steering_wheel_calibration/validate.py \
