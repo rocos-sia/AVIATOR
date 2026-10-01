@@ -83,17 +83,21 @@ Json group(const Stream* s, bool conflict, std::uint64_t now, const std::string&
             effective_sample = checked;
     }
     const auto received = now >= s->received_us ? now - s->received_us : limit;
+    // Camera display follows received detections. Producer clocks and capture
+    // latency must not freeze a valid observation while messages keep arriving.
+    const bool receive_based = s->message.topic == aviator::Topic::camera_detection;
     g["receive_age_ms"] = received / 1000.0;
     g["receive_state"] = received < limit ? "FRESH" : "STALE";
-    if (h.clock_id != clock) {
+    if (!receive_based && h.clock_id != clock) {
         g["measurement_state"] = "CLOCK_UNKNOWN";
         g["reason"] = "clock_domain_mismatch";
-    } else if (effective_sample > now) {
+    } else if (!receive_based && effective_sample > now) {
         g["measurement_state"] = "FUTURE";
         g["reason"] = "future_sample";
     } else {
-        const auto age = now - effective_sample;
-        g["sample_age_ms"] = (now - h.sample_mono_us) / 1000.0;
+        const auto age = receive_based ? received : now - effective_sample;
+        if (h.clock_id == clock && h.sample_mono_us <= now)
+            g["sample_age_ms"] = (now - h.sample_mono_us) / 1000.0;
         g["effective_age_ms"] = age / 1000.0;
         if (received >= limit || (respect_valid && age >= limit)) {
             g["measurement_state"] = "STALE";
@@ -196,14 +200,6 @@ bool camera_pose(const Json& j, Pose& result) {
     return true;
 }
 void yoke(Json& g, const Json& b, const Json& c, const std::string& camera_id) {
-    if (at(b, "camera_id") != camera_id) {
-        invalidate(g, "INVALID", "camera_identity_mismatch");
-        return;
-    }
-    if (at(b, "status") != "TRACKING") {
-        invalidate(g, "INVALID", "target_not_tracking");
-        return;
-    }
     // New camera publishers already resolve motion against their calibration.
     // Never fall back to raw pose when a supplied observation is invalid.
     if (b.contains("steering_wheel")) {
@@ -215,16 +211,8 @@ void yoke(Json& g, const Json& b, const Json& c, const std::string& camera_id) {
             invalidate(g, "INVALID", "invalid_steering_wheel");
             return;
         }
-        if (at(wheel, "axis_match") == false) {
-            invalidate(g, "INVALID", "steering_wheel_axis_mismatch");
-            return;
-        }
         const double roll = theta.get<double>() * 180 / pi;
         const double travel = translation.get<double>();
-        if (std::abs(roll) > 52 + 1e-6 || travel < -.085 || travel > .085) {
-            invalidate(g, "INVALID", "physical_feedback_out_of_range");
-            return;
-        }
         g["current"] = {
             {"roll_deg", roll},
             {"pitch_mm", (travel + .085) * 1000},
@@ -234,7 +222,17 @@ void yoke(Json& g, const Json& b, const Json& c, const std::string& camera_id) {
             {"camera_id", at(b, "camera_id")},
             {"frame_id", at(b, "frame_id")},
             {"pose_mapping", "CAMERA_STEERING_WHEEL"},
-            {"model_joints", {{"roll_input_joint", theta}, {"pitch_input_joint", travel - .085}}}};
+            {"model_joints", {{"roll_input_joint", theta}, {"pitch_input_joint", -travel - .085}}}};
+        return;
+    }
+    // Legacy raw poses still need the configured camera's geometry. Calibrated
+    // steering_wheel observations above are independent of RGB preview settings.
+    if (at(b, "camera_id") != camera_id) {
+        invalidate(g, "INVALID", "camera_identity_mismatch");
+        return;
+    }
+    if (at(b, "status") != "TRACKING") {
+        invalidate(g, "INVALID", "target_not_tracking");
         return;
     }
     if (c.is_null()) {

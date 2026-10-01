@@ -43,7 +43,7 @@ async function main() {
     await page.waitForFunction(()=>window.testViewer?.robot);
     // Verify camera-derived roll and the full negative pitch stroke in the real
     // URDF loader, including the endpoint outside the original 165 mm limit.
-    for (const [travel,expected] of [[-.085,-.170],[0,-.085],[.085,0]]) {
+    for (const [travel,expected] of [[-.085,0],[0,-.085],[.085,-.170]]) {
       fs.writeFileSync(controlPath,JSON.stringify({wheel_translation:travel,wheel_roll:-.3}));
       await page.waitForFunction(expected=>{
         const v=window.testViewer,g=v.data.yoke_observation;
@@ -53,20 +53,32 @@ async function main() {
           Math.abs(v.robot.joints.roll_input_joint.angle+.3)<1e-5;
       },expected);
     }
+    // Valid camera motion must reach the real URDF joints despite an axis
+    // warning, nominal limit overshoot, old capture time, or another preview ID.
+    fs.writeFileSync(controlPath,JSON.stringify({wheel_translation:.12,wheel_roll:1.2,
+      wheel_axis_match:false,camera_id:'different-from-preview',camera_sample_delay_us:1000000}));
+    await page.waitForFunction(()=>{
+      const v=window.testViewer,g=v.data.yoke_observation;
+      return v.isLive(g) && !v.invalidGroups.has('yoke_observation') &&
+        Math.abs(v.robot.joints.pitch_input_joint.angle+.205)<1e-5 &&
+        Math.abs(v.robot.joints.roll_input_joint.angle-1.2)<1e-5 &&
+        !document.getElementById('model-state').textContent.includes('驾驶盘：');
+    });
     fs.writeFileSync(controlPath,JSON.stringify({wheel_valid:false}));
     await page.waitForFunction(()=>window.testViewer.data.yoke_observation.measurement_state==='INVALID');
-    assert(await page.evaluate(()=>Math.abs(window.testViewer.robot.joints.pitch_input_joint.angle)<1e-5));
+    assert(await page.evaluate(()=>Math.abs(window.testViewer.robot.joints.pitch_input_joint.angle+.205)<1e-5));
     fs.writeFileSync(controlPath,JSON.stringify({legacy_camera:true}));
     await page.waitForFunction(()=>{
       const v=window.testViewer;
       return v.data.yoke_observation.current &&
         !v.data.yoke_observation.current.pose_mapping &&
+        !v.robot.joints.pitch_input_joint.ignoreLimits && !v.robot.joints.roll_input_joint.ignoreLimits &&
         Math.abs(v.robot.joints.pitch_input_joint.angle+.0731)<1e-5;
     });
     fs.writeFileSync(controlPath,'{}');
     await page.waitForFunction(()=>window.testViewer.data.yoke_observation.current?.pose_mapping==='CAMERA_STEERING_WHEEL');
     await page.screenshot({path:path.join(directory,'camera-wheel.png')});
-    console.log('Camera wheel checks passed: roll, pitch endpoints/midpoint, invalid feedback, legacy fallback.');
+    console.log('Camera wheel checks passed: roll, pitch endpoints/midpoint, axis warning, limit overshoot, receive freshness, invalid feedback, legacy fallback.');
     // Exercise the real HandState -> overview -> URDF path, including the
     // endpoints, distinct channels, and recursively coupled mimic joints.
     async function handPose(positions,sides=['left','right']) {

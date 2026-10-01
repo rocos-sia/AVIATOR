@@ -58,19 +58,19 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 [monitor.json](../../config/monitor.json) 控制概览的发布者筛选、各 Topic 时效、预览身份、关节映射和标定。`sources` 中空字符串可用于观察任意发布者，但仍会报告多源冲突；也可将某个来源配置为 `{ "publisher_id": "aviator_core", "session_id": "实际会话 UUID" }`，显式固定会话。仓库配置的 `sources["hand.state"]` 为当前 Modbus TCP 后端的 `rh56ftp_hand`；使用 `aviator_hand` CAN 后端时改为其 `node.publisher_id`（默认 `inspire_hand`）。配置修改后需重启 Monitor。若消息页已有 `hand.state`，概览却显示“尚无样本”，先检查该筛选值是否与消息的 `publisher_id` 一致。
 
-默认时效：flight 100 ms，arm 50 ms，hand.state 300 ms，hand.command 100 ms，camera 200 ms，RGB 500 ms；其他流 2 s。左右臂/手还检查侧级采样时间和反馈年龄。原始 `sample_mono_us` 在匹配本机 clock_id 时才计算年龄，未知不伪造为零。JOYSTICK POSITION_HOLD 使用 checked_mono_us 判断显示有效期，同时保留原始采样年龄。
+默认时效：flight 100 ms，arm 50 ms，hand.state 300 ms，hand.command 100 ms，camera 200 ms，RGB 500 ms；其他流 2 s。左右臂/手还检查侧级采样时间和反馈年龄。原始 `sample_mono_us` 在匹配本机 clock_id 时才计算年龄，未知不伪造为零。驾驶盘显示以本地接收 `camera.detection` 的时间判断时效，不因采样延迟或相机时钟域不同拒绝有效检测；停止接收达到 camera 超时后显示过期。JOYSTICK POSITION_HOLD 使用 checked_mono_us 判断显示有效期，同时保留原始采样年龄。
 
-左右机械臂默认按 J1～J7 对应 `AR5-5_07L/R-W4C4A2_joint_1..7`；`arm_joints.left/right` 每项含 `name`、`sign`（±1）、`offset_rad`。实施部署前核实硬件方向和零偏。模型关节不存在、mimic 被直接赋值或值超出显示限位时停止该组的三维更新并提示，不静默裁剪。
+左右机械臂默认按 J1～J7 对应 `AR5-5_07L/R-W4C4A2_joint_1..7`；`arm_joints.left/right` 每项含 `name`、`sign`（±1）、`offset_rad`。实施部署前核实硬件方向和零偏。模型关节不存在、mimic 被直接赋值或值超出显示限位时停止该组的三维更新并提示，不静默裁剪；相机已标定方向盘观测不受名义显示限位约束，见下文。
 
 ### 驾驶盘标定
 
 优先读取 `camera.detection.steering_wheel`，无需另配 Monitor 的 `yoke_calibration`：
 
 - `roll_input_joint = theta_rad`（rad）。
-- `pitch_input_joint = translation_along_axis_m - 0.085`（m），将 `[-0.085, 0.085]` 映射到 `[-0.170, 0]`；零位对应 `-0.085`。
+- `pitch_input_joint = -translation_along_axis_m - 0.085`（m），将 `[-0.085, 0.085]` 映射到 `[0, -0.170]`；零位对应 `-0.085`。
 - 概览的物理行程仍为 `(translation_along_axis_m + 0.085) × 1000` mm（0～170 mm），百分比为 `translation_along_axis_m / 0.085 × 100`，与飞控指令刻度一致。
 
-显示使用相机提供的 `calibration_id`；检查相机身份、消息有效性/时效、TRACKING 状态及 `steering_wheel.valid`。非数值、roll 超出 ±52°、平移超出 ±0.085 m 或 `axis_match=false` 时停止更新，保留灰色旧姿态；`axis_match=null` 允许零位附近观测。字段存在但无效时不回退到原始 pose。浏览器将此路径的 pitch 显示限位设为 `[-0.170, 0]`，覆盖 URDF 的 `[-0.165, 0]`，不修改模型文件。
+显示使用相机提供的 `calibration_id`。收到消息 `valid=true`、`steering_wheel.valid=true` 且角度和轴向位移为有限数值时更新方向盘位姿，以本地接收时间判断是否断流。相机已完成标定，此路径不再用 `axis_match`、TRACKING 状态、`preview.camera_id` 或名义角度/位移范围二次否决观测。浏览器直接显示实测关节值，允许超出 URDF 名义限位，不裁剪、不修改模型文件。消息或方向盘观测无效、数值缺失或非有限、接收超时时停止更新并保留灰色旧姿态；`steering_wheel` 字段存在但无效时不回退到原始 pose。
 
 默认 `yoke_calibration=null`。只有不含 `steering_wheel` 的旧消息使用下列几何标定路径；配置非空对象时必须提供全部字段：
 

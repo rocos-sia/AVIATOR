@@ -1,6 +1,7 @@
 #include "assets.hpp"
 #include "monitor.hpp"
 #include "preview.hpp"
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -226,7 +227,9 @@ int main(int argc, char** argv) {
                                              {"axis_match", nullptr},
                                              {"calibration_id", "camera-test"}};
         for (bool legacy : {false, true}) {
-            for (double travel : {-.085, 0., .085}) {
+            for (const auto& [travel, expected_pitch] :
+                 std::array<std::array<double, 2>, 5>{{{-.1, .015}, {-.085, 0.},
+                                                       {0., -.085}, {.085, -.170}, {.1, -.185}}}) {
                 monitor::State direct;
                 if (legacy)
                     direct.config["yoke_calibration"] = calibration();
@@ -238,7 +241,7 @@ int main(int argc, char** argv) {
                           observed["calibration_id"] == "camera-test" &&
                           current["model_joints"]["roll_input_joint"] == .25 &&
                           std::abs(current["model_joints"]["pitch_input_joint"].get<double>() -
-                                   (travel - .085)) < 1e-9 &&
+                                   expected_pitch) < 1e-9 &&
                           std::abs(current["pitch_mm"].get<double>() - (travel + .085) * 1000) < 1e-9 &&
                           std::abs(current["pitch_percent"].get<double>() - travel / .085 * 100) < 1e-9 &&
                           current["pose_mapping"] == "CAMERA_STEERING_WHEEL",
@@ -247,11 +250,42 @@ int main(int argc, char** argv) {
                       "stale camera wheel drives model");
             }
         }
+        // Trust valid camera motion despite diagnostic axis/range warnings,
+        // preview identity, capture latency, or a different producer clock.
+        for (const auto sample : {500000u, 1000000u, 2000000u}) {
+            for (const auto* clock : {"clock", "other-clock"}) {
+                monitor::State live_camera;
+                auto incoming = wheel_detection;
+                incoming["camera_id"] = "different-from-preview";
+                incoming["status"] = "SEARCHING";
+                incoming["steering_wheel"].update(
+                    {{"theta_rad", 1.2}, {"translation_along_axis_m", .12}, {"axis_match", false}});
+                ingest(live_camera, aviator::Topic::camera_detection, incoming, sample);
+                auto observed = live_camera.overview(1010000, clock)["yoke_observation"];
+                check(observed["measurement_state"] == "VALID" &&
+                          observed["fresh_for_ms"] == 190 &&
+                          observed["current"]["model_joints"]["roll_input_joint"] == 1.2 &&
+                          std::abs(observed["current"]["model_joints"]["pitch_input_joint"].get<double>() + .205) < 1e-9,
+                      "valid received camera motion blocked by display diagnostics");
+                incoming["steering_wheel"]["theta_rad"] = -1.3;
+                live_camera.ingest("camera.detection",
+                    wire(aviator::Topic::camera_detection, incoming, sample, true, "camera",
+                         "11111111-1111-4111-8111-111111111111", 2), 1190000);
+                observed = live_camera.overview(1200000, clock)["yoke_observation"];
+                check(observed["measurement_state"] == "VALID" &&
+                          observed["current"]["model_joints"]["roll_input_joint"] == -1.3,
+                      "subsequent valid detection did not refresh camera pose");
+                check(live_camera.overview(1390000, clock)["yoke_observation"]["current"].is_null(),
+                      "camera display did not expire after reception stopped");
+            }
+        }
+        monitor::State invalid_detection;
+        ingest(invalid_detection, aviator::Topic::camera_detection, wheel_detection, 1000000, false);
+        check(invalid_detection.overview(1010000, "clock")["yoke_observation"]["current"].is_null(),
+              "invalid detection drove camera pose");
         for (const Json& patch : {
                  Json{{"valid", false}}, Json{{"theta_rad", nullptr}},
-                 Json{{"translation_along_axis_m", "0"}}, Json{{"axis_match", false}},
-                 Json{{"translation_along_axis_m", -.086}},
-                 Json{{"translation_along_axis_m", .086}}, Json{{"theta_rad", 1.}}}) {
+                 Json{{"translation_along_axis_m", "0"}}}) {
             monitor::State bad_wheel;
             bad_wheel.config["yoke_calibration"] = calibration();
             auto bad_detection = wheel_detection;
