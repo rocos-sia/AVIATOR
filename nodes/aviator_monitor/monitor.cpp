@@ -5,14 +5,6 @@
 namespace monitor {
 using Json = nlohmann::json;
 namespace {
-std::uint64_t timeout(aviator::Topic topic) {
-    using aviator::Topic;
-    if (topic == Topic::arm_command || topic == Topic::arm_state ||
-        topic == Topic::hand_command || topic == Topic::hand_state) return 50000;
-    if (topic == Topic::flight_command || topic == Topic::flight_state) return 100000;
-    if (topic == Topic::camera_command || topic == Topic::camera_detection) return 200000;
-    return 2000000;
-}
 Json field(const Json& body, const char* path) {
     try {
         const auto& value = body.at(Json::json_pointer(path));
@@ -135,18 +127,28 @@ void State::ingest_service(const std::string& topic, const std::string& payload,
     }
     s.received_us = now;
 }
+std::uint64_t State::timeout_us(aviator::Topic topic) const {
+    const auto name = std::string(aviator::topic_name(topic));
+    const auto& values = config.at("timeouts_ms");
+    return values.contains(name) ? static_cast<std::uint64_t>(values.at(name).get<double>() * 1000) : 2000000;
+}
 Json State::snapshot(std::uint64_t now, const std::string& clock) {
     std::lock_guard<std::mutex> lock(mutex);
     Json rows = Json::array();
     for (const auto& s : streams) {
         const auto& h = s.message.header;
         const auto& body = s.message.body;
-        const auto limit = timeout(s.message.topic);
+        const auto limit = timeout_us(s.message.topic);
         const bool same_clock = h.clock_id == clock;
+        std::uint64_t effective_sample = h.sample_mono_us;
+        if (s.message.topic == aviator::Topic::flight_command && body.contains("input_state")) {
+            std::uint64_t checked = 0; bool connected = false; std::string reason;
+            if (aviator::read_position_hold(s.message, checked, connected, reason) && connected) effective_sample = checked;
+        }
         std::string status = "FRESH";
         if (!same_clock) status = "CLOCK_UNKNOWN";
-        else if (h.sample_mono_us > now) status = "FUTURE";
-        else if (now - s.received_us >= limit || now - h.sample_mono_us >= limit) status = "STALE";
+        else if (effective_sample > now) status = "FUTURE";
+        else if (now - s.received_us >= limit || now - effective_sample >= limit) status = "STALE";
         else if (!h.valid) status = "INVALID";
         if (s.message.topic == aviator::Topic::system_event) status = "EVENT";
         if (status == "FRESH" && (s.message.topic == aviator::Topic::arm_command ||

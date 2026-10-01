@@ -28,9 +28,15 @@ target_link_libraries(aviator_gateway_config_test PRIVATE aviator_service yaml-c
 add_test(NAME gateway_config COMMAND aviator_gateway_config_test ${PROJECT_SOURCE_DIR}/config/flight.yaml)
 set_tests_properties(gateway_config PROPERTIES TIMEOUT 5)
 
-aviator_add_test_executable(aviator_monitor_test monitor_test.cpp ../nodes/aviator_monitor/monitor.cpp)
+aviator_add_test_executable(aviator_monitor_test monitor_test.cpp)
 target_include_directories(aviator_monitor_test PRIVATE ../nodes/aviator_monitor)
-target_link_libraries(aviator_monitor_test PRIVATE aviator_service aviator_runtime aviator_transport)
+target_link_libraries(aviator_monitor_test PRIVATE aviator_monitor_state)
+aviator_add_test_executable(aviator_monitor_overview_test monitor_overview_test.cpp)
+target_link_libraries(aviator_monitor_overview_test PRIVATE aviator_monitor_state)
+add_test(NAME monitor_overview COMMAND aviator_monitor_overview_test
+  ${PROJECT_SOURCE_DIR}/tests/fixtures/monitor_preview.jpg
+  ${PROJECT_SOURCE_DIR}/nodes/aviator_monitor/web ${PROJECT_SOURCE_DIR}/models)
+set_tests_properties(monitor_overview PROPERTIES TIMEOUT 5)
 add_test(NAME monitor_state COMMAND aviator_monitor_test)
 add_test(NAME monitor_help COMMAND aviator_monitor --help)
 set_tests_properties(monitor_state monitor_help PROPERTIES TIMEOUT 5)

@@ -1,93 +1,138 @@
-# aviator_monitor（Web UI）
+# aviator_monitor（双 Tab Web UI）
 
-只读系统监控：C++17 节点订阅 ZMQ，总线消息保存在有界缓存；浏览器通过本地 HTTP 查看。无 Qt、Node.js 或外部前端依赖，HTML/CSS/JavaScript 在构建时嵌入可执行文件。
+只读系统监测：C++17 节点订阅 ZMQ，浏览器通过本地 HTTP 查看。页面包含“直观监测”和“系统消息”两个 Tab，视觉依据 [双 Tab 设计方案](../../docs/AVIATOR_Monitor双Tab界面设计方案.md)。没有控制发布接口，不发送 REQ/REP 操作。
 
 ## 构建与启动
 
 ```bash
 cmake -S . -B build/communication -DAVIATOR_COMMUNICATION_ONLY=ON
-cmake --build build/communication --parallel
-
-# 在另一个终端运行总线和需要观测的节点。
-./build/communication/bin/aviator_bus
-
-# 启动监控，浏览器访问 http://127.0.0.1:8081
+cmake --build build/communication --target aviator_monitor --parallel
 ./build/communication/bin/aviator_monitor
 ```
 
+浏览器打开 `http://127.0.0.1:8081/`。先启动 Bus 和需要观测的节点，或使用 `--subscribe` 连接隔离测试/回放总线。HTTP 固定监听本机回环地址；SIGINT/SIGTERM 正常退出。
+
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `--port` | `8081` | 本地 Web 服务端口，1—65535。 |
-| `--subscribe` | `tcp://127.0.0.1:5556` | Bus XPUB 订阅出口；仅支持 TCP。 |
-| `--help` / `-h` | — | 查看用法。 |
+| `--port` | `8081` | 本地 HTTP 端口。 |
+| `--subscribe` | `tcp://127.0.0.1:5556` | Bus XPUB 出口或回放总线。 |
+| `--config` | 源码或安装目录的 `monitor.json` | 监测专用 JSON 配置；部分字段覆盖默认值。 |
+| `--model-root` | 源码或安装目录的 `models/` | 包含 `urdf/aviator.urdf` 和 `meshes/` 的目录。 |
+| `--preview` | 配置中的 `tcp://127.0.0.1:5561` | 独立 Camera JPEG PUB 地址；`off` 禁用订阅。 |
+| `--help` | — | 显示帮助。 |
 
-回放观测示例：
+源码构建默认读取 [config/monitor.json](../../config/monitor.json)；安装后优先使用可执行文件相邻的 `../share/aviator/monitor/` 资源。模型与前端文件通过精确资源清单提供，不开放任意文件读取。
+
+## 直观监测
+
+- 顶部显示唯一有效 `flight.state` 的运行状态、来源和当前/历史错误；来源冲突、跨时钟或过期时显示未知。
+- 发布灯显示 Flight Gateway、Core、Manipulator、Inspire Hand、Camera 的消息接收新鲜度；Logger/Bus 缺少独立状态源时显示未观测。Camera 搜索目标期间发布灯仍可以绿色，检测结果单独判定。
+- 完整 URDF 使用本地 Three.js + URDFLoader 加载。左右机械臂按七个实际关节反馈联动；手部实际六通道驱动条独立显示。
+- 手部未标定时，三维手部为灰色参考姿态，明确提示“姿态未标定”。提供标定曲线后显示实际驱动反馈推算的姿态；目标回显不充当测量。
+- 相机位姿经几何标定求解驾驶盘 roll/pitch。未配置标定时不进行猜测换算，实测为 `—`，RGB 仍可使用。
+- 飞控指令显示百分比、物理等价值与二维指令/视觉实测对照。指令刻度 ±100%，对照图 ±110%，反馈允许 roll ±52°、pitch −5～175 mm，映射仍为 ±50°/0～170 mm 对应 ±100%。
+- 过期部件保留灰色旧姿态，当前数值及图形标记取消；HTTP 断连时保留内容明确属于旧快照。每部分的时效在浏览器本地继续推进。
+
+模型允许旋转、平移、缩放、复位、网格/坐标轴及驾驶舱透明度调整，不能拖动机器人产生指令。源会话变化会重置相应显示插值，存在多个近期候选来源时停止该部件更新。
+
+## 独立 RGB 预览
+
+Camera 的 [preview 配置](../../config/camera.yaml) 默认启用独立 `tcp://127.0.0.1:5561` PUB，640×360 上限、15 fps、JPEG 质量 80；等比缩放，保留完整视野。现有相机命令即可启动预览：
 
 ```bash
-./build/communication/bin/aviator_monitor --port 8082 --subscribe tcp://127.0.0.1:6556
+python nodes/camera/main.py --config config/camera.yaml
+# Camera 与 Monitor 同时覆盖预览地址时保持一致。
+python nodes/camera/main.py --preview-endpoint tcp://127.0.0.1:6561
+./build/communication/bin/aviator_monitor --preview tcp://127.0.0.1:6561
 ```
 
-HTTP 固定绑定 127.0.0.1，不开放控制发布端口。SIGINT/SIGTERM 正常退出。无需总线先在线，ZMQ 可以等待连接；网页“监控服务在线”仅代表 HTTP 可用，不等同于总线或设备健康。
+需使用相机既有 Python 环境（OpenCV、NumPy、pyzmq、PyYAML、RealSense SDK 及所选检测器）。`--preview-endpoint off` 关闭 Camera 输出；Monitor 的 `--preview off` 关闭接收。
 
-## 页面内容
+预览由 Camera 独立工作线程缩放/编码，待编码队列只留最新帧；与 Logger `5557` PUSH/PULL 录制链路独立，不分流录制帧，不另起相机进程。原始相机采集和检测配置不变。
 
-- 整机运行状态、控制来源、当前/历史错误码；仅在恰好一个新鲜 FlightState 来源时显示，否则标记无有效反馈或来源冲突。
-- arm、hand、camera 聚合子状态的当前年龄与过期标记，避免顶层新时间掩盖旧设备反馈。
-- 各 Topic、生产者、会话、接收频率、原始样本年龄、距最近接收时间、完整序号、序号缺口和重复/乱序计数。
-- REQ / REP 状态指令面板：按客户端、客户端会话及 request_id 关联请求/响应，显示操作、目标、网关记录、应答状态、错误码及记录数。
-- 点击数据行查看完整原始 JSON，包括关节、TCP、视觉和诊断字段。双臂双手数据当前通过 JSON 明细查看，不提供机器人三维显示或曲线。
-- 显示最近接收异常、拒绝计数和缓存淘汰计数。system.event 保留每个来源的最后事件，不是事件历史或持久化日志。
+传输为三个 ZMQ 帧：`camera.rgb.<camera_id>`、元数据 JSON、JPEG 字节。元数据包含 version=1、encoding=jpeg、publisher_id、session_id、camera_id、clock_id、sequence、frame_id、sample_mono_us、width/height 及预览缩放信息。图像与检测保留同一 camera/session/frame 身份；当前界面显示干净 RGB，不绘制没有逐帧几何证据的检测框。
 
-页面每 100 ms 请求一次快照，同一浏览器不叠加未完成请求。断开 HTTP 后清除当前状态和数据表，已显示 JSON 明确标记为旧快照。消息文本通过 textContent 显示，不作为 HTML 执行。
+Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最多保留 4 帧/8 MiB，单帧最大 2 MiB。图像 URL 对应不可变 token，淘汰后返回 404。浏览器最多一条未完成图像拉取链路，切换到消息页或后台时暂停图像拉取和三维渲染。
 
-## 时效与统计
+## 配置与标定
 
-| 标记 | 含义 |
+[monitor.json](../../config/monitor.json) 控制概览的发布者筛选、各 Topic 时效、预览身份、关节映射和标定。`sources` 中空字符串可用于观察任意发布者，但仍会报告多源冲突；也可将某个来源配置为 `{ "publisher_id": "aviator_core", "session_id": "实际会话 UUID" }`，显式固定会话。默认匹配项目中的实际发布者，旧 Manipulator 的手状态占位不覆盖 Inspire Hand 反馈。
+
+默认时效：flight 100 ms，arm 50 ms，hand.state 300 ms，hand.command 100 ms，camera 200 ms，RGB 500 ms；其他流 2 s。左右臂/手还检查侧级采样时间和反馈年龄。原始 `sample_mono_us` 在匹配本机 clock_id 时才计算年龄，未知不伪造为零。JOYSTICK POSITION_HOLD 使用 checked_mono_us 判断显示有效期，同时保留原始采样年龄。
+
+左右机械臂默认按 J1～J7 对应 `AR5-5_07L/R-W4C4A2_joint_1..7`；`arm_joints.left/right` 每项含 `name`、`sign`（±1）、`offset_rad`。实施部署前核实硬件方向和零偏。模型关节不存在、mimic 被直接赋值或值超出显示限位时停止该组的三维更新并提示，不静默裁剪。
+
+### 驾驶盘标定
+
+默认 `yoke_calibration=null`。配置非空对象时必须提供全部字段：
+
+| 字段 | 要求 |
 | --- | --- |
-| FRESH | 公共头部 valid=true，原始采样与接收间隔在监测阈值内。 |
-| STALE | 原始采样或最后接收已超时。 |
-| INVALID | 尚未超时，但生产者标记 valid=false。 |
-| STALE_ORIGIN | 臂/手命令自身新鲜，但上游 origin 已超时。 |
-| CLOCK_UNKNOWN | 采样/来源时钟域不同，不能直接计算单向年龄。 |
-| FUTURE | 同时钟域采样时刻异常未来。 |
-| EVENT | 最后一次 system.event，不赋予持续健康含义。 |
+| `id` | 经验证的标定版本。 |
+| `aircraft_camera` | 相机坐标系到机体的变换。 |
+| `tag_yoke` | 驾驶盘坐标系到标签的变换。 |
+| `aircraft_yoke_zero` | 零位驾驶盘到机体的变换。 |
+| 三个变换的 `position_m` / `quaternion_xyzw` | 3 元平移米值、4 元单位四元数 `[qx,qy,qz,qw]`。 |
+| `roll_axis` / `pitch_axis` | 零位驾驶盘坐标系中的单位运动轴。pitch 轴随 roll 旋转。 |
+| `pitch_zero_mm` | 零位的物理俯仰位移。 |
+| `min_confidence` | 检测启发式阈值，0～1，不当作概率。 |
+| `max_rotation_residual_deg` / `max_translation_residual_mm` | 机构拟合残差上限，正值。 |
+| `model` | `roll_sign`、`roll_offset_rad`、`pitch_sign`、`pitch_offset_m`，用于物理量到显示模型的变换。 |
 
-监测阈值：flight.* 为 100 ms，arm.*、hand.* 为 50 ms，camera.* 为 200 ms，system 状态/诊断为 2 s。camera.command 和 system.* 阈值只是本监控显示约定；不替代业务节点的运行配置。错误码及 valid 均保留生产者含义，FRESH 不代表硬件可用、动作成功或控制已授权，也不表示完整业务 Schema 已验证。
+检测的 camera_id 必须与 preview.camera_id 相同，避免把另一相机的位姿套用本标定。使用 `T_aircraft_camera × T_camera_tag × T_tag_yoke`，相对零位分解转动和移动；拒绝无效四元数、低置信度、过大拟合残差和超出物理容许范围的样本。显示限位仅在已配置驾驶盘标定时扩展到其对应的 ±52°、−5～175 mm；原始 URDF 文件不修改。当前 URDF 的 pitch −0.165～0 m 与 ICD 的物理行程不同，必须实测确认符号和零偏。
 
-采样年龄只在本机 clock_id 匹配时计算。FlightState 子组当前年龄=发送时 age_ms+聚合快照已经过去的时间；跨时钟域或未知年龄不伪造为 0。
+### 灵巧手标定
 
-频率采用最近 2 秒接纳消息数除以 2，启动前两秒逐渐增长。这是监控端接收速率，不能据此证明源端精确发布率。重复/乱序计数不会刷新最新快照或有效期；缺口统计不包含首次订阅前丢失的数据。每个 `(Topic, publisher_id, session_id)` 独立统计，新会话新增一行，旧会话自然过期。
+默认 `hand_calibration=null`。非空时含 `id`、`left`、`right`；每侧为六项，按实际驱动通道顺序排列（拇指旋转、拇指、食指、中指、无名指、小指）。每项含 `joint` 和 `knots`，knots 为 `[归一化驱动位置, URDF弧度]` 列表，驱动值严格递增并覆盖 0～1，采用分段线性插值。
 
-## 实现与接口
+左右侧各六个独立关节是 thumb_1、thumb_2、index_1、middle_1、ring_1、little_1；具体通道映射由实测确定，不仅按名字猜测。mimic 从属关节由 loader 更新。输出明确属于估算姿态，当前软件 enabled 与 grasp_verified=false 不表示握持已验证。
 
-- `main.cpp`：独立 SUB 线程、单线程非阻塞 HTTP 服务、退出处理。
-- `monitor.hpp/.cpp`：公共协议校验、状态缓存及统计，不发送控制数据。
-- `index.html`：原生浏览器界面，无 npm 构建步骤。
-- `GET /` 或 `/index.html`：页面。
-- `GET /api/state`：连续流 `streams`、服务事务 `services` 及拒绝/淘汰统计。
-- `GET /api/message?id=N`：指定数据流的最新原始 JSON，或服务事务的 request/reply 与原始字节字符串；ID 来自摘要，不是 Topic ID。
+## 系统消息与 REQ/REP
 
-最多缓存 64 条数据流，满时淘汰最久未更新者；每流只留一个消息及最多 512 个接收时刻。接收端每轮最多 128 条消息或 5 ms。HTTP 最多 8 个同时连接、请求头最多 4096 字节、整个请求最长 2 s；慢浏览器不阻塞 SUB 接收。服务事务另保留最多 64 项，每项保存请求、最新响应及接收计数，按最后接收时间淘汰；不提供持久历史查询。HTTP 不提供修改接口、长连接或账户系统。
+保留 Topic、发布者、会话、原始样本年龄、接收频率、最新接收间隔、完整序号、缺口和重复/乱序计数。两秒接收窗口在启动阶段逐渐增长，不表示源端精确频率。搜索与状态过滤只影响显示。
 
-## 测试
+服务事务继续订阅 `record.service.request/reply` 副本，不连接 Core 5559 执行操作。按客户端、客户端会话和 request_id 关联，网关 QUEUED/NOT_SENT/TIMEOUT_UNKNOWN 与 Core ACCEPTED/COMPLETED/REJECTED 分列。保留 REPLY_ONLY、晚到响应、已知应答不被超时覆盖等行为。
+
+当前 Core 长动作仅即时返回 ACCEPTED，界面不会根据后续 flight.state 自动推断某笔请求已完成。副本可能丢失，超时不能证明未执行，副本次数不是动作执行次数；观测应答间隔也不是设备执行耗时。
+
+“暂停显示”冻结表格快照，后台继续接收，全局连接/失效状态仍更新。详情安全使用 textContent 展示，可复制；暂停期间未缓存的行详情需要恢复后查看。缓存淘汰和监控服务会话变更会使选中记录失效。
+
+## 实现与 HTTP 接口
+
+| 文件 | 职责 |
+| --- | --- |
+| main.cpp | 总线与图像独立 SUB、只读 HTTP、资源定位和退出。 |
+| monitor.cpp / monitor.hpp | 原有有界流缓存、统计和服务事务关联。 |
+| overview.cpp / config.cpp | 类型化概览、侧级时效、来源筛选、单位与标定映射。 |
+| preview.cpp | JPEG 身份、尺寸、时效与有界帧缓存。 |
+| assets.cpp | URDF/mesh 精确资源清单与原有 Cessna 路径别名。 |
+| index.html / web/ | 双 Tab、布局、浏览器生命周期和 Three.js 视口。 |
+
+只支持 GET：`/`、`/api/state`、`/api/message?id=N`、`/api/overview`、`/api/model-manifest`、`/api/camera/latest`、`/api/camera/frame/{token}`，以及清单中的 `/assets/` 和 `/models/` 文件。概览 schema_version=1，包含 Monitor 会话/快照版本，每部分保留独立来源、当前值、状态、年龄及剩余有效时间。
+
+概览最多 50 Hz，以满足 50 ms 机械臂显示时效；消息表摘要 10 Hz；RGB 最高 15 Hz；三维目标约 30 fps，受部署硬件影响。每条轮询链路不重叠请求；本地时效持续推进，按请求耗时保守扣减有效期。视口/数值不等待图像加载。
+
+流与服务事务各最多 64 项；每流保留最新消息及最多 512 个接收时刻。HTTP 最多 8 个同时连接，请求头 4096 字节，整个请求 2 s；慢客户端不阻塞 SUB。
+
+前端依赖固定为 Three.js 0.186.1、URDFLoader 0.13.1。提交的 vendor.js 可离线运行，普通 CMake 构建与运行无需 Node.js/CDN。修改依赖时使用 Node ≥18，在 `web/` 中执行 `npm ci --ignore-scripts && npm run build:vendor`；许可见 [THIRD_PARTY_NOTICES.md](web/THIRD_PARTY_NOTICES.md)。
+
+## 验证
 
 ```bash
-ctest --test-dir build/communication --output-on-failure
+cmake --build build/communication --target aviator_monitor_test aviator_monitor_overview_test --parallel
+ctest --test-dir build/communication -R '^monitor_' --output-on-failure
+python nodes/camera/test_preview.py
+python nodes/camera/test_camera.py
 ```
 
-`monitor_state` 验证时效、跨时钟域、缺口、重复及缓存界限；`monitor_http` 使用真实 TCP 发布者和 HTTP 子进程验证数据、原始消息接口、慢连接、断流和退出（仅测试阶段需要 Python3 标准库）；`monitor_help` 验证入口。另已使用无头 Chrome 实际渲染实时状态页面。运行节点没有 Python 依赖。
+使用相机 Python 环境执行后两项，均无需真实相机。概览测试覆盖物理换算、标定缺失、范围、左右侧独立时效、跨时钟、多源、JPEG 缓存和路径白名单；原有缓存/服务及 HTTP/TCP 测试继续保留。
 
-启动成功后，终端会提示 `请在浏览器打开：http://127.0.0.1:8081/`；使用 `--port` 时显示实际配置端口。
+可选真实浏览器验证（测试环境安装 playwright-core，运行节点不依赖它）：
 
-## REQ / REP 观测语义
+```bash
+AVIATOR_PLAYWRIGHT=/absolute/path/to/node_modules/playwright-core \
+AVIATOR_TEST_PYTHON=/absolute/path/to/camera/python \
+node tests/monitor_browser_test.cjs
+```
 
-Monitor 继续只连接总线订阅端口，接收 Gateway 发布的 `record.service.request` / `record.service.reply` 副本，不接入 Core 的 5559 服务端口，也不发送操作。无需新增启动参数；启动 Bus、Monitor 和 flight_gateway 后即可观察。
-
-- `QUEUED` / `NOT_SENT` / `TIMEOUT_UNKNOWN` 是网关记录；`WAITING` 表示尚未观察到匹配响应。只在请求 clock_id 与本机一致时按原 issued_mono_us/deadline_ms 推算等待超时，不用重复记录延长期限。
-- `ACCEPTED`、`COMPLETED`、`REJECTED` 等保留 Core 原应答含义；受理不等于动作完成。已知响应不会被之后收到的网关超时记录覆盖，两列同时显示原观察和应答。
-- `REPLY_ONLY` 表示请求副本缺失，操作显示未知；请求晚到可重新关联，但不据倒置的接收时间计算耗时。响应必须匹配请求客户端、目标和已配置的服务端会话；同请求身份不同内容会计入拒绝。
-- 请求/响应记录次数包括重复副本，不代表动作执行次数；最新响应依据同一服务端会话中的响应 timestamp 选取，旧副本不覆盖新结果。
-- “观测应答间隔”仅为 Monitor 接收请求和当前响应副本的本地时间差，可能包含发布、总线与调度延迟，不能当作物理执行耗时。历史结果不以 FRESH 标识持续设备健康。
-- PUB/SUB 可能丢记录；未收到响应不能证明 Core 未执行。点击事务查看 request、reply、request_raw、reply_raw。终端页面仅使用 textContent 展示内容。
-
-测试补充覆盖服务等待/超时、跨时钟、孤立响应及乱序关联、来源会话隔离、冲突/旧响应和有界缓存；HTTP 测试验证真实服务记录订阅及事务详情接口。
+该测试使用独立临时端口和 TEST ONLY 标定，加载仓库真实 URDF，检查 RGB、消息详情、暂停、相机单独过期、恢复及 HTTP 卡顿，并把实际运行截图保存到临时目录。它不连接生产总线或真实设备，也不作为硬件标定证据。

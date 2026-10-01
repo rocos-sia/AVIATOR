@@ -133,3 +133,11 @@ AprilTag 的 `use_distortion: false` 沿用参考示例的零畸变假设；若�
 Logger 根据 [recording.yaml](../../config/recording.yaml) 选择原始保存或 H.264/H.265 彩色有损编码与 Zstd 深度无损编码；详见 [Logger 说明](../aviator_logger/README.md)。`queued-to-zmq` 只是生产者成功提交到 ZMQ，不保证已写盘。生产者、网络和 Logger 队列都可能丢帧，结束后应检查双方计数及 MCAP `camera_recording` 元数据。
 
 采集和检测目前共用主循环，不能保证读取每个 30 Hz 传感器样本；D436 实机吞吐、压缩码率和长时间运行仍需验收。
+
+## Monitor 独立 RGB 预览
+
+`config/camera.yaml` 的 `preview` 默认启用本机 `tcp://127.0.0.1:5561` JPEG PUB。预览缩放上限 640×360、15 fps、质量 80，工作线程只保留最新待编码帧。启动现有相机节点后，双 Tab Monitor 可直接订阅该通道；不需要开启 Logger 录制。
+
+`--preview-endpoint tcp://127.0.0.1:6561` 可覆盖地址，`--preview-endpoint off` 禁用。Monitor 对应使用相同 `--preview` 地址。ZMQ 消息为 topic `camera.rgb.<camera_id>`、元数据 JSON、JPEG 三帧，frame_id/session/采样时间与检测共享身份。预览与 Logger 5557 PUSH/PULL 完全独立，不分流录制数据，不占用第二个相机进程。
+
+无硬件验证：在相机 Python 环境运行 `python nodes/camera/test_preview.py`，检查 JPEG 解码、帧身份、最新帧覆盖及线程退出。详细接口和标定配置见 [Monitor README](../aviator_monitor/README.md)。

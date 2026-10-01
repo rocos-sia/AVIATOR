@@ -1,0 +1,157 @@
+import {THREE, URDFLoader, OrbitControls} from './vendor.js';
+const $ = id => document.getElementById(id);
+function kindFor(name) {
+  if (name.startsWith('AR5-5_07L')) return 'arms.left';
+  if (name.startsWith('AR5-5_07R')) return 'arms.right';
+  if (name.startsWith('left_') || name === 'l_base_link') return 'hands.left';
+  if (name.startsWith('right_') || name === 'r_base_link') return 'hands.right';
+  if (name === 'steering_wheel') return 'yoke_observation';
+  return 'aircraft';
+}
+const groupLabels={'arms.left':'左机械臂','arms.right':'右机械臂','hands.left':'左灵巧手','hands.right':'右灵巧手','yoke_observation':'驾驶盘'};
+const stateLabels={STALE:'数据过期',UNAVAILABLE:'等待反馈',INVALID:'反馈无效',UNCALIBRATED:'未标定',SOURCE_CONFLICT:'来源冲突',CLOCK_UNKNOWN:'时钟域未知',FUTURE:'采样时间异常'};
+export class Viewer {
+  constructor(container) {
+    this.container=container; this.data=null; this.isLive=()=>false; this.robot=null;
+    this.generation=0; this.invalidGroups=new Set(); this.visible=false; this.frame=0; this.lastFrame=0; this.materials=[]; this.sources=new Map();
+    this.scene=new THREE.Scene(); this.scene.background=new THREE.Color('#505050');
+    this.camera=new THREE.PerspectiveCamera(42,1,.01,100);
+    this.camera.up.set(0,0,1); this.camera.position.set(1.7,-2.2,1.3);
+    this.renderer=new THREE.WebGLRenderer({antialias:true});
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+    this.renderer.outputColorSpace=THREE.SRGBColorSpace;
+    container.append(this.renderer.domElement);
+    this.controls=new OrbitControls(this.camera,this.renderer.domElement);
+    this.controls.enableDamping=true; this.controls.target.set(0,0,.5);
+    this.scene.add(new THREE.HemisphereLight(0xffffff,0x777777,2));
+    const key=new THREE.DirectionalLight(0xffffff,3); key.position.set(2,-3,5); this.scene.add(key);
+    this.grid=new THREE.GridHelper(6,30,0xaaaaaa,0x777777); this.grid.rotation.x=Math.PI/2; this.scene.add(this.grid);
+    this.axes=new THREE.AxesHelper(.35); this.axes.position.set(-.8,-.8,.01); this.scene.add(this.axes);
+    this.resizeObserver=new ResizeObserver(() => this.resize()); this.resizeObserver.observe(container);
+    $('fit-model').onclick=()=>this.fit(); $('reset-view').onclick=()=>this.fit();
+    $('grid-toggle').onclick=()=>{this.grid.visible=!this.grid.visible; $('grid-toggle').setAttribute('aria-pressed',String(this.grid.visible));};
+    $('axes-toggle').onclick=()=>{this.axes.visible=!this.axes.visible; $('axes-toggle').setAttribute('aria-pressed',String(this.axes.visible));};
+    $('cockpit-opacity').oninput=()=>this.style(); $('reload-model').onclick=()=>this.load();
+    this.load();
+  }
+  resize() {
+    const width=this.container.clientWidth,height=this.container.clientHeight;
+    if (!width || !height) return;
+    this.camera.aspect=width/height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width,height,false);
+  }
+  note(message,failed=false) {
+    $('model-loading').textContent=message; $('model-loading').classList.toggle('failed',failed);
+    $('model-loading').hidden=!message;
+  }
+  disposeRobot(robot) {
+    robot?.traverse(object=>{if(object.isMesh){object.geometry?.dispose(); const materials=Array.isArray(object.material)?object.material:[object.material]; materials.forEach(m=>m.dispose());}});
+  }
+  async load() {
+    const generation=++this.generation; this.note('正在加载模型结构…'); this.loaded=false;
+    if (this.robot) { this.scene.remove(this.robot); this.disposeRobot(this.robot); this.robot=null; }
+    this.sources.clear(); this.materials=[];
+    try {
+      const r=await fetch('/api/model-manifest'); if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const manifest=await r.json(); if (generation !== this.generation) return;
+      if (manifest.resource_errors.length) throw new Error(`缺失资源：${manifest.resource_errors.join(', ')}`);
+      const manager=new THREE.LoadingManager(); const failures=[];
+      manager.setURLModifier(url=> {
+        const path=new URL(url,location.href).pathname;
+        return manifest.aliases[path] ?? url;
+      });
+      let robot=null;
+      manager.onProgress=(url,done,total)=>{if(generation===this.generation) this.note(`网格加载 ${done} / ${total}`);};
+      manager.onError=url=>failures.push(url);
+      manager.onLoad=()=>{
+        if (generation !== this.generation) { this.disposeRobot(robot); return; }
+        if (failures.length) { this.disposeRobot(robot); this.note(`模型资源失败：${failures.join(', ')}`,true); return; }
+        this.robot=robot;
+        if (!robot) { this.note('模型结构未完成',true); return; }
+        for (const [name,limits] of Object.entries(manifest.yoke_display_limits ?? {})) {
+          if (robot.joints[name]) Object.assign(robot.joints[name].limit,limits);
+        }
+        robot.traverse(object=>{
+          if (!object.isMesh) return;
+          let link=object; while(link.parent && !link.isURDFLink) link=link.parent;
+          const kind=kindFor(link.name);
+          const existing=Array.isArray(object.material)?object.material:[object.material];
+          const cloned=existing.map(original=>{
+            const material=original.clone(); material.side=THREE.DoubleSide;
+            this.materials.push({material,kind,color:material.color.clone()}); return material;
+          });
+          object.material=Array.isArray(object.material)?cloned:cloned[0];
+        });
+        this.scene.add(robot); this.loaded=true; this.apply(); this.fit(); this.note(''); this.style();
+      };
+      const loader=new URDFLoader(manager); loader.parseVisual=true; loader.parseCollision=false;
+      loader.load(manifest.model_url, result=>{robot=result; this.note('结构已解析，正在加载网格…');}, undefined,error=>{if(generation===this.generation) this.note(`模型加载失败：${error.message}`,true);});
+    } catch(error) { if (generation===this.generation) this.note(`模型加载失败：${error.message}`,true); }
+  }
+  fit() {
+    if (!this.robot) return;
+    this.robot.updateMatrixWorld(true);
+    const box=new THREE.Box3();
+    for (const name of ['AR5-5_07L-W4C4A2_base','AR5-5_07R-W4C4A2_base','steering_wheel']) {
+      const link=this.robot.links[name]; if(link) box.union(new THREE.Box3().setFromObject(link));
+    }
+    if (box.isEmpty()) box.setFromObject(this.robot);
+    const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
+    const distance=Math.max(size.x,size.y,size.z,.4)/(2*Math.tan(THREE.MathUtils.degToRad(this.camera.fov/2)))*1.35/Math.min(this.camera.aspect,1);
+    this.controls.target.copy(center); this.camera.position.copy(center).add(new THREE.Vector3(1,-1.6,.9).normalize().multiplyScalar(distance));
+    this.camera.far=Math.max(100,distance*10); this.camera.updateProjectionMatrix(); this.controls.update();
+  }
+  setVisible(visible) {
+    if (this.visible===visible) return;
+    this.visible=visible;
+    if (visible) { this.resize(); this.animate(); }
+    else { cancelAnimationFrame(this.frame); this.frame=0; }
+  }
+  setData(data,isLive) { this.data=data; this.isLive=isLive; }
+  clearSamples() { this.sources.clear(); if(this.robot) for(const joint of Object.values(this.robot.joints)) if(!joint.mimicJoint) joint.setJointValue(0); }
+  groups() {
+    return {'arms.left':this.data?.arms.left,'arms.right':this.data?.arms.right,
+      'hands.left':this.data?.hands.left,'hands.right':this.data?.hands.right,'yoke_observation':this.data?.yoke_observation};
+  }
+  apply() {
+    if (!this.robot || !this.data) return;
+    const notes=[]; this.invalidGroups.clear();
+    for (const [kind,g] of Object.entries(this.groups())) {
+      const source=g?.source ? `${g.source.publisher_id}/${g.source.session_id}` : null;
+      const old=this.sources.get(kind);
+      if (old && source && old.key!==source) for (const name of old.joints) this.robot.joints[name]?.setJointValue(0);
+      if (!this.isLive(g) || !g.current) { const state=g?.measurement_state === 'VALID' ? 'STALE' : g?.measurement_state ?? 'UNAVAILABLE'; notes.push(`${groupLabels[kind]}：${stateLabels[state] ?? state} · ${old ? '旧姿态' : '参考姿态'}`); continue; }
+      const values=g.current.model_joints;
+      if (!values || !Object.keys(values).length) { notes.push(`${groupLabels[kind]}：姿态未标定`); continue; }
+      let valid=true;
+      for (const [name,q] of Object.entries(values)) {
+        const joint=this.robot.joints[name];
+        if (!joint || joint.mimicJoint || !Number.isFinite(q) || Math.abs(q)>20 ||
+          (joint.jointType!=='continuous' && (q<joint.limit.lower-1e-5 || q>joint.limit.upper+1e-5))) valid=false;
+      }
+      if (!valid) { this.invalidGroups.add(kind); notes.push(`${groupLabels[kind]}：关节映射/限位不匹配`); continue; }
+      this.sources.set(kind,{key:source,joints:Object.keys(values)});
+      // Only interpolate between received targets; no extrapolation.
+      for (const [name,q] of Object.entries(values)) {
+        const joint=this.robot.joints[name]; const current=joint.angle;
+        joint.setJointValue(old?.key===source ? current+(q-current)*.45 : q);
+      }
+    }
+    const labels=$('model-state'); labels.replaceChildren(...notes.map(note=>{const span=document.createElement('span');span.textContent=note;return span;}));
+    this.style();
+  }
+  style() {
+    const groups=this.groups();
+    for(const {material,kind,color} of this.materials) {
+      if (kind==='aircraft') { material.transparent=true; material.opacity=Number($('cockpit-opacity').value); material.depthWrite=false; continue; }
+      const group=groups[kind],valid=!this.invalidGroups.has(kind) && this.isLive(group) && group?.current && Object.keys(group.current.model_joints ?? {}).length>0;
+      material.color.copy(valid ? color : new THREE.Color('#999999'));
+      material.transparent=!valid; material.opacity=valid?1:.35; material.depthWrite=!!valid;
+    }
+  }
+  animate() {
+    if (!this.visible) return;
+    this.frame=requestAnimationFrame(()=>this.animate());
+    const now=performance.now(); if(now-this.lastFrame<30) return;
+    this.lastFrame=now; this.apply(); this.controls.update(); this.renderer.render(this.scene,this.camera);
+  }
+}

@@ -1,81 +1,18 @@
 <!doctype html>
-<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AVIATOR 状态监控</title>
-<style>
-:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#101820;color:#e0e9ef}body{margin:0;padding:28px;max-width:1500px;margin:auto}header{display:flex;justify-content:space-between;align-items:center}h1{font-size:24px;margin:0}small,.muted{color:#9bacb9}#connection{padding:8px 14px;border-radius:20px;background:#293c49}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0}.card{background:#1b2935;padding:18px;border:1px solid #304350;border-radius:10px}.card strong{display:block;margin-top:8px;font-size:22px}.panel{background:#182530;border:1px solid #304350;border-radius:10px;padding:18px;margin-top:18px}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;white-space:nowrap;font-size:13px}th{text-align:left;color:#9bacb9;font-weight:500}td,th{padding:10px;border-bottom:1px solid #2b3c49}tbody tr{cursor:pointer}tbody tr:hover,tbody tr.selected{background:#263e50}.FRESH{color:#7ae2b5}.STALE,.INVALID,.FUTURE,.STALE_ORIGIN{color:#ffab99}.CLOCK_UNKNOWN{color:#f7d67a}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:450px;overflow:auto;font-size:12px}h2{font-size:16px;margin-top:0}#notice{color:#ffbe92;min-height:22px}#freshness{margin-top:12px;color:#b8c9d5}a{color:#93c9ff}@media(max-width:750px){body{padding:14px}.cards{grid-template-columns:1fr 1fr}header{display:block}}
-.COMPLETED{color:#7ae2b5}.ACCEPTED,.RUNNING,.WAITING{color:#93c9ff}.TIMEOUT_UNKNOWN,.UNKNOWN,.NOT_SENT{color:#f7d67a}.REJECTED,.FAILED,.CANCELLED,.EXPIRED{color:#ffab99}
-</style>
-<header><div><h1>AVIATOR <span class="muted">/ 系统监控</span></h1><small>只读观测 · 2 秒接收频率窗口 · 每 100 ms 刷新</small></div><span id="connection">等待监控服务</span></header>
-<div class="cards"><div class="card">整机状态<strong id="system">等待数据</strong></div><div class="card">控制来源<strong id="source">—</strong></div><div class="card">当前 / 历史错误<strong id="errors">—</strong></div><div class="card">有效 / 已观测数据流<strong id="streams">0 / 0</strong></div></div>
-<div id="notice"></div><div id="freshness">尚无 FlightState 聚合反馈</div>
-<section class="panel"><h2>总线数据流 <small id="counts"></small></h2><div class="scroll"><table><thead><tr><th>Topic / 生产者</th><th>会话</th><th>数据状态</th><th>Hz</th><th>样本年龄 ms</th><th>接收间隔 ms</th><th>序号</th><th>缺口 / 重复乱序</th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted">点击任意行查看完整消息。FRESH 仅表示头部有效且新鲜，不代表执行器已就绪或具备控制授权。</p></section>
-<section class="panel"><h2>REQ / REP 状态指令 <small id="service-counts">尚无请求/响应记录</small></h2><div class="scroll"><table><thead><tr><th>操作 / 目标</th><th>客户端 / 会话</th><th>request_id</th><th>网关记录</th><th>应答 / 等待状态</th><th>错误码</th><th>接收间隔 ms</th><th>REQ / REP 记录数</th><th>观测应答间隔 ms</th></tr></thead><tbody id="service-rows"></tbody></table></div><p class="muted">只读订阅 record.service.request / reply，保留最近 64 项事务。QUEUED 仅表示入队，ACCEPTED 仅表示受理；TIMEOUT_UNKNOWN 表示结果未知，不能据此判断未执行。REPLY_ONLY 表示请求记录未观测到。记录副本可能丢失；观测间隔不是执行耗时。点击查看完整请求和响应。</p></section>
-<section class="panel"><h2 id="detail-title">消息详情</h2><pre id="detail">选择数据流或 REQ / REP 事务，查看完整消息。</pre></section>
-<script>
-let selected=null, busy=false, detailRequest=0;
-const streamRows=new Map(), serviceRows=new Map();
-const el=id=>document.getElementById(id), text=(id,value)=>el(id).textContent=value??'—';
-const num=v=>typeof v==='number'?v.toFixed(1):'—';
-async function get(path){const r=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(2500)});if(!r.ok)throw Error('HTTP '+r.status);return r.json()}
-async function showDetail(row){
- const request=++detailRequest;
- text('detail-title',row.topic+' / '+row.publisher+' · '+row.status);
- try{const detail=await get('/api/message?id='+row.id);
- if(selected===row.id&&request===detailRequest)text('detail',JSON.stringify(detail,null,2));
- }catch(error){if(selected===row.id&&request===detailRequest)text('detail','消息详情加载失败：'+error.message);}
-}
-function renderRows(rows){
- const body=el('rows'), ids=new Set(rows.map(row=>row.id));
- for(const [id,tr] of streamRows)if(!ids.has(id)){tr.remove();streamRows.delete(id)}
- rows.forEach((row,index)=>{
- let tr=streamRows.get(row.id);
- if(!tr){tr=document.createElement('tr');tr.tabIndex=0;
- for(let i=0;i<8;i++)tr.append(document.createElement('td'));
- const select=()=>{selected=tr.stream.id;
- for(const [id,node] of [...streamRows,...serviceRows])node.classList.toggle('selected',id===selected);
- text('detail','正在加载消息…');showDetail(tr.stream);};
- tr.onclick=select;tr.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select()}};
- streamRows.set(row.id,tr);}
- tr.stream=row;tr.classList.toggle('selected',row.id===selected);
- const cells=[row.topic+' / '+row.publisher,row.session.slice(0,8),row.status,num(row.hz),num(row.age_ms),num(row.receive_age_ms),row.sequence,row.gaps+' / '+row.duplicates];
- cells.forEach((value,i)=>{const td=tr.children[i];if(td.textContent!==String(value))td.textContent=value;if(i===2)td.className=row.status;if(i===1)td.title=row.session});
- // Keep live rows attached across polls: replacing them between pointer-down
- // and pointer-up loses the browser click and keyboard focus.
- if(body.children[index]!==tr)body.insertBefore(tr,body.children[index]??null);
- });
-}
-function renderServices(rows){
- const body=el('service-rows'), ids=new Set(rows.map(row=>row.id));
- for(const [id,tr] of serviceRows)if(!ids.has(id)){tr.remove();serviceRows.delete(id)}
- rows.forEach((row,index)=>{
- let tr=serviceRows.get(row.id);
- if(!tr){tr=document.createElement('tr');tr.tabIndex=0;
- for(let i=0;i<9;i++)tr.append(document.createElement('td'));
- const select=()=>{selected=tr.stream.id;
- for(const [id,node] of [...streamRows,...serviceRows])node.classList.toggle('selected',id===selected);
- text('detail','正在加载请求与响应…');showDetail(tr.stream);};
- tr.onclick=select;tr.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select()}};
- serviceRows.set(row.id,tr);}
- tr.stream={...row,topic:'REQ / REP '+(row.operation??'操作未知'),publisher:row.client};
- tr.classList.toggle('selected',row.id===selected);
- const cells=[(row.operation??'请求缺失')+' / '+row.target,row.client+' / '+row.session.slice(0,8),row.request_id.slice(0,8),row.observation,row.status,row.error_code??'—',num(row.receive_age_ms),row.request_count+' / '+row.reply_count,num(row.observed_reply_ms)];
- cells.forEach((value,i)=>{const td=tr.children[i];td.textContent=value;if(i===4)td.className=row.status;if(i===2)td.title=row.request_id;if(i===1)td.title=row.session});
- if(body.children[index]!==tr)body.insertBefore(tr,body.children[index]??null);
- });
-}
-async function refresh(){if(busy)return;busy=true;try{
- const data=await get('/api/state'), rows=data.streams;
- text('connection','监控服务在线');text('streams',rows.filter(x=>x.status==='FRESH').length+' / '+rows.length);
- text('counts',`拒绝 ${data.rejected} · 缓存淘汰 ${data.evicted}`);
- const live=rows.filter(x=>x.topic==='flight.state'&&x.status==='FRESH');
- const flight=live.length===1?live[0]:null;
- text('system',live.length>1?'来源冲突':flight?.summary.state??'无有效整机反馈');
- text('source',flight?.summary.source);text('errors',flight?`${flight.summary.error??'—'} / ${flight.summary.last_error??'—'}`:'—');
- text('freshness',flight?['arm','hand','camera'].map(k=>`${k}: ${flight.summary[k]?.valid===true&&typeof flight.summary[k]?.age_ms==='number'&&flight.summary[k].age_ms<(k==='camera'?200:50)?'新鲜':'过期/无效/未知'}，当前年龄 ${num(flight.summary[k]?.age_ms)} ms`).join(' · '):'FlightState 尚未收到、已失效、时钟域未知或存在多个新鲜来源');
- text('notice',live.length>1?'检测到多个新鲜 FlightState 来源，请核对部署。':data.error?`最近接收异常：${data.error}`:'');
- renderRows(rows);renderServices(data.services);
- text('service-counts',`已观测 ${data.services.length} 项 · 缓存淘汰 ${data.service_evicted}`);
- if(selected!==null){const row=rows.find(x=>x.id===selected)??serviceRows.get(selected)?.stream;if(!row){selected=null;++detailRequest;text('detail-title','消息详情');text('detail','该数据流或事务已被缓存淘汰')}else await showDetail(row);}
- }catch(error){text('connection','监控服务不可用');text('system','状态未知');text('source','—');text('errors','—');text('streams','—');text('freshness','连接已中断，页面保留值不可用于判断当前状态');text('notice',error.message);el('rows').replaceChildren();streamRows.clear();el('service-rows').replaceChildren();serviceRows.clear();text('service-counts','连接中断');++detailRequest;text('detail-title','消息详情（旧快照）');}finally{busy=false}}
-refresh();setInterval(refresh,100);
-</script></html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AVIATOR Monitor</title><link rel="stylesheet" href="/assets/style.css"></head>
+<body>
+<header><h1>AVIATOR <span>Monitor</span></h1><nav role="tablist" aria-label="监测页面"><button id="tab-overview" role="tab" aria-selected="true" aria-controls="overview">直观监测</button><button id="tab-messages" role="tab" aria-selected="false" aria-controls="messages" tabindex="-1">系统消息</button></nav><div class="header-meta"><span>只读监测</span><span id="connection" class="badge">等待监控服务</span></div></header>
+<div class="status-strip"><span>整机 <strong id="system">等待反馈</strong></span><span>来源 <strong id="source">—</strong></span><span>当前 / 历史错误 <strong id="errors">—</strong></span><span id="notice">状态由实际消息判定</span></div>
+<main id="overview" role="tabpanel" aria-labelledby="tab-overview" class="overview">
+<aside class="left-column"><section class="panel"><div class="panel-head"><h2>消息发布</h2><span class="muted">接收观测</span></div><div id="publisher-lights" class="panel-body"></div><p class="footnote">仅表示消息发布新鲜度</p></section>
+<section class="panel devices"><div class="panel-head"><h2>机械臂与灵巧手</h2></div><div id="devices" class="panel-body"></div></section></aside>
+<div class="center-column"><section class="panel model-panel"><div class="panel-head"><h2>三维视图 <span class="muted">机器人与驾驶盘</span></h2><div class="tools"><button id="fit-model">适配模型</button><button id="reset-view">复位视角</button><button id="grid-toggle" aria-pressed="true">网格</button><button id="axes-toggle" aria-pressed="true">坐标轴</button><button id="reload-model">重载模型</button></div></div><div id="viewport"><div id="model-loading" class="model-note">正在加载模型资源…</div><div id="model-state" class="model-labels"></div><div class="viewport-hint">左键旋转 · 右键平移 · 滚轮缩放</div></div><div class="model-footer"><label>驾驶舱透明度 <input id="cockpit-opacity" type="range" min="0" max="1" step="0.05" value="0.1" aria-label="驾驶舱透明度"></label><span class="muted">姿态来自实际反馈</span></div></section>
+<section class="panel"><div class="panel-head"><h2>驾驶盘实测</h2><span id="yoke-state" class="badge">等待反馈</span></div><div class="measurements"><div><label>ROLL 滚转角</label><strong id="actual-roll">—</strong><span id="actual-roll-percent" class="measured">—</span></div><div><label>PITCH 俯仰位移</label><strong id="actual-pitch">—</strong><span id="actual-pitch-percent" class="measured">—</span></div></div><p id="yoke-meta" class="footnote">未接入已标定的驾驶盘观测</p></section></div>
+<aside class="right-column"><section class="panel camera-panel"><div class="panel-head"><h2>摄像头 RGB <span id="camera-name" class="muted">cockpit</span></h2><button id="camera-expand">放大</button></div><div class="camera-frame" id="camera-frame"><img id="camera-image" alt="cockpit 摄像头实时 RGB 预览" hidden><div id="camera-overlay">等待首帧</div></div><p id="camera-meta" class="footnote">独立预览通道 · 检测时效单独判定</p></section>
+<section class="panel command-panel"><div class="panel-head"><h2>飞控指令 <span class="muted">只读</span></h2><span id="command-source" class="muted">—</span></div><div class="measurements"><div><label>ROLL 滚转</label><strong id="command-roll">—</strong><meter id="roll-meter" min="-100" max="100" value="0" aria-label="滚转指令百分比"></meter><span>−100% <span class="scale-right">+100%</span></span><small id="command-roll-physical">—</small></div><div><label>PITCH 俯仰</label><strong id="command-pitch">—</strong><meter id="pitch-meter" min="-100" max="100" value="0" aria-label="俯仰指令百分比"></meter><span>−100% <span class="scale-right">+100%</span></span><small id="command-pitch-physical">—</small></div></div><div class="command-plot"><svg id="command-plot" viewBox="0 0 270 255" role="img" aria-label="滚转俯仰指令与视觉实测位置对照"><rect x="30" y="15" width="220" height="220" fill="#2d2d2d" stroke="#929292"/><rect x="40" y="25" width="200" height="200" fill="none" stroke="#666" stroke-dasharray="3 3"/><path d="M140 15V235 M30 125H250" stroke="#777"/><text x="140" y="251" text-anchor="middle">ROLL ±110%</text><text x="32" y="11">PITCH ±110%</text><text x="144" y="140">0</text><circle id="measured-marker" cx="140" cy="125" r="6" fill="#67D6A0" hidden/><path id="command-marker" d="M0 -7L7 0L0 7L-7 0Z" fill="#008CFF" hidden/></svg><div class="plot-legend"><span class="command">◆ 观测指令</span><span class="measured">● 视觉实测</span><p>位置对照<br>未对齐样本不计算跟踪误差</p></div></div><p id="command-meta" class="footnote">消息有效不代表执行到位</p></section></aside>
+</main>
+<main id="messages" role="tabpanel" aria-labelledby="tab-messages" hidden><div class="filter-bar"><input id="message-filter" type="search" placeholder="筛选 Topic / 节点 / 会话 / 请求" aria-label="筛选消息"><select id="status-filter" aria-label="筛选数据状态"><option value="">全部状态</option><option>FRESH</option><option>STALE</option><option>INVALID</option><option>CLOCK_UNKNOWN</option><option>FUTURE</option><option>STALE_ORIGIN</option><option>EVENT</option><option>ACCEPTED</option><option>COMPLETED</option><option>REJECTED</option><option>WAITING</option><option>TIMEOUT_UNKNOWN</option></select><button id="pause-display" aria-pressed="false">暂停显示</button><span id="pause-note" class="muted"></span></div><div class="message-layout"><div class="message-tables"><section class="panel"><div class="panel-head"><h2>总线数据流</h2><span id="counts" class="muted"></span></div><div class="table-scroll"><table><thead><tr><th>Topic / 发布者</th><th>会话</th><th>状态</th><th>接收 Hz</th><th>样本年龄 ms</th><th>最近接收 ms</th><th>序号</th><th>缺口 / 重复乱序</th></tr></thead><tbody id="rows"></tbody></table></div><p class="footnote">接收频率不等于源端发布率 · FRESH 不表示设备已就绪</p></section><section class="panel"><div class="panel-head"><h2>REQ / REP 状态指令</h2><span id="service-counts" class="muted"></span></div><div class="table-scroll"><table><thead><tr><th>操作 / 目标</th><th>客户端 / 会话</th><th>request_id</th><th>网关记录</th><th>Core 应答</th><th>关联 / 等待</th><th>错误码</th><th>REQ / REP 记录数</th><th>观测应答间隔 ms</th></tr></thead><tbody id="service-rows"></tbody></table></div><p class="footnote">ACCEPTED 仅表示受理 · TIMEOUT_UNKNOWN 结果未知 · 最多 64 项缓存，非持久历史</p></section><p id="diagnostics" class="footnote"></p></div><section class="panel detail-panel"><div class="panel-head"><h2 id="detail-title">消息详情 · 只读</h2><button id="copy-detail">复制</button></div><pre id="detail">选择数据流或 REQ / REP 事务查看原始消息</pre></section></div></main>
+<dialog id="camera-dialog"><div class="panel-head"><h2>摄像头 RGB · 只读</h2><button id="camera-close">关闭</button></div><img id="camera-large" alt="放大的摄像头预览"><p id="camera-large-state" class="footnote"></p></dialog>
+<script type="module" src="/assets/app.js"></script>
+</body></html>

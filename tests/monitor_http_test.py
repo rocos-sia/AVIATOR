@@ -49,10 +49,18 @@ try:
     children.append(web)
     until(lambda: fetch('/'))
     assert json.loads(fetch('/api/state'))['streams'] == []
-    assert b'AVIATOR' in fetch('/') and b'textContent' in fetch('/')
+    assert b'AVIATOR' in fetch('/') and b'textContent' in fetch('/assets/app.js')
+    assert len(json.loads(fetch('/api/overview'))['publishers']) == 7
+    manifest = json.loads(fetch('/api/model-manifest'))
+    assert manifest['resource_errors'] == []
+    assert b'<robot' in fetch(manifest['model_url'])
+    assert b'export' in fetch('/assets/vendor.js')
+    assert json.loads(fetch('/api/camera/latest'))['state'] in ['WAITING', 'UNCONFIGURED']
     assert b'REQ / REP' in fetch('/') and b'service-rows' in fetch('/')
     for path, method, expected in [('/bad', 'GET', 404), ('/api/state', 'POST', 405),
-                                   ('/api/message?id=no', 'GET', 400)]:
+                                   ('/api/message?id=no', 'GET', 400),
+                                   ('/models/../config/flight.yaml', 'GET', 404),
+                                   ('/api/camera/frame/missing', 'GET', 404)]:
         try:
             fetch(path, method)
             raise AssertionError('request should fail')
@@ -69,6 +77,7 @@ try:
     detail = json.loads(fetch('/api/message?id=' + str(row['id'])))
     assert detail['system']['state'] == 'CONTROL'
     assert row['summary']['source'] == 'JOYSTICK'
+    assert json.loads(fetch('/api/overview'))['system']['current']['state'] == 'CONTROL'
     def service():
         rows = json.loads(fetch('/api/state'))['services']
         return rows and rows[0]['status'] == 'ACCEPTED' and rows[0]

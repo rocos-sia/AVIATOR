@@ -1,0 +1,8 @@
+{
+  "name": "aviator-monitor-web",
+  "private": true,
+  "type": "module",
+  "scripts": {"build:vendor": "esbuild vendor-entry.js --bundle --format=esm --minify --legal-comments=eof --outfile=vendor.js"},
+  "dependencies": {"three": "0.186.1", "urdf-loader": "0.13.1"},
+  "devDependencies": {"esbuild": "0.28.2"}
+}

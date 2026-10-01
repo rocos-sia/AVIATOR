@@ -33,3 +33,12 @@ charuco:
   marker_length: 0.015      # 标记边长，米
   dictionary: "DICT_4X4_50" # cv2.aruco 预定义字典名
   min_corners: 6            # solvePnP 所需最少角点
+
+# 与 Logger 5557 PUSH/PULL 完全独立；由 monitor 通过 SUB 读取。
+preview:
+  enabled: true
+  endpoint: tcp://127.0.0.1:5561
+  width: 640
+  height: 360
+  fps: 15
+  jpeg_quality: 80

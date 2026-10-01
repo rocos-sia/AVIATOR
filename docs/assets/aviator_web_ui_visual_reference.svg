@@ -1,0 +1,199 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1100" viewBox="0 0 1600 1100" role="img" aria-labelledby="title desc">
+<title id="title">AVIATOR Web UI 视觉设计参考</title>
+<desc id="desc">1600乘900深色三维工作台示意，顶部胶囊工具条、两侧四个面板，底部附色板。机器人线条及数值为占位示例。</desc>
+<defs><filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity=".18"/></filter><clipPath id="scene"><rect width="1600" height="900"/></clipPath></defs>
+<g font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif">
+<rect x="0" y="0" width="1600" height="900" rx="0" fill="#505050"/>
+<g clip-path="url(#scene)" stroke="#FFFFFF" stroke-opacity=".12" fill="none">
+<path d="M 800 280 L -1000 900"/>
+<path d="M 800 280 L -840 900"/>
+<path d="M 800 280 L -680 900"/>
+<path d="M 800 280 L -520 900"/>
+<path d="M 800 280 L -360 900"/>
+<path d="M 800 280 L -200 900"/>
+<path d="M 800 280 L -40 900"/>
+<path d="M 800 280 L 120 900"/>
+<path d="M 800 280 L 280 900"/>
+<path d="M 800 280 L 440 900"/>
+<path d="M 800 280 L 600 900"/>
+<path d="M 800 280 L 760 900"/>
+<path d="M 800 280 L 920 900"/>
+<path d="M 800 280 L 1080 900"/>
+<path d="M 800 280 L 1240 900"/>
+<path d="M 800 280 L 1400 900"/>
+<path d="M 800 280 L 1560 900"/>
+<path d="M 800 280 L 1720 900"/>
+<path d="M 800 280 L 1880 900"/>
+<path d="M 800 280 L 2040 900"/>
+<path d="M 800 280 L 2200 900"/>
+<path d="M 800 280 L 2360 900"/>
+<path d="M 800 280 L 2520 900"/>
+<path d="M 800 280 L 2680 900"/>
+<path d="M 0 304 H 1600"/>
+<path d="M 0 336 H 1600"/>
+<path d="M 0 377 H 1600"/>
+<path d="M 0 430 H 1600"/>
+<path d="M 0 498 H 1600"/>
+<path d="M 0 586 H 1600"/>
+<path d="M 0 700 H 1600"/>
+<path d="M 0 846 H 1600"/>
+</g>
+<text x="800" y="151" font-size="16" fill="#E0E0E0" font-weight="600" text-anchor="middle">模型视口</text>
+<text x="800" y="178" font-size="12" fill="#E0E0E0" font-weight="400" text-anchor="middle">构图中心位于两侧面板之间</text>
+<g stroke-linecap="round" stroke-linejoin="round" fill="none">
+<path d="M 736 673 L 708 493 L 601 416 L 549 507 L 644 554 M 864 673 L 892 493 L 999 416 L 1051 507 L 956 554" stroke="#C8C8C8" stroke-width="24"/>
+<path d="M 644 554 L 729 512 M 956 554 L 871 512" stroke="#79BBFF" stroke-width="12"/>
+<path d="M 724 670 L 876 670 L 896 704 L 704 704 Z" stroke="#C8C8C8" stroke-width="8"/>
+<ellipse cx="800" cy="515" rx="86" ry="49" stroke="#F2F2F2" stroke-width="8"/>
+<path d="M 717 515 H 883 M 800 515 V 560" stroke="#F2F2F2" stroke-width="6"/>
+<circle cx="708" cy="493" r="15" fill="#505050" stroke="#F2F2F2" stroke-width="3"/>
+<circle cx="601" cy="416" r="15" fill="#505050" stroke="#F2F2F2" stroke-width="3"/>
+<circle cx="549" cy="507" r="15" fill="#505050" stroke="#F2F2F2" stroke-width="3"/>
+<circle cx="892" cy="493" r="15" fill="#505050" stroke="#F2F2F2" stroke-width="3"/>
+<circle cx="999" cy="416" r="15" fill="#505050" stroke="#F2F2F2" stroke-width="3"/>
+<circle cx="1051" cy="507" r="15" fill="#505050" stroke="#F2F2F2" stroke-width="3"/>
+</g>
+<rect x="695" y="739" width="210" height="30" rx="15" fill="#333333"/>
+<text x="800" y="759" font-size="12" fill="#C8C8C8" font-weight="400" text-anchor="middle">示意轮廓 · 非实时模型</text>
+<g transform="translate(90 0)">
+<rect x="260" y="20" width="900" height="44" rx="22" fill="#333333"/>
+<text x="282" y="48" font-size="14" fill="#F2F2F2" font-weight="600" text-anchor="start">AVIATOR</text>
+<rect x="372" y="26" width="52" height="32" rx="16" fill="#006BCC" stroke="#008CFF"/>
+<text x="398.0" y="47" font-size="13" fill="#FFFFFF" font-weight="500" text-anchor="middle">视觉</text>
+<rect x="430" y="26" width="52" height="32" rx="16" fill="#333333" stroke="#929292"/>
+<text x="456.0" y="47" font-size="13" fill="#F2F2F2" font-weight="500" text-anchor="middle">碰撞</text>
+<rect x="488" y="26" width="68" height="32" rx="16" fill="#333333" stroke="#929292"/>
+<text x="522.0" y="47" font-size="13" fill="#F2F2F2" font-weight="500" text-anchor="middle">坐标轴</text>
+<rect x="562" y="26" width="52" height="32" rx="16" fill="#006BCC" stroke="#008CFF"/>
+<text x="588.0" y="47" font-size="13" fill="#FFFFFF" font-weight="500" text-anchor="middle">阴影</text>
+<rect x="620" y="26" width="52" height="32" rx="16" fill="#006BCC" stroke="#008CFF"/>
+<text x="646.0" y="47" font-size="13" fill="#FFFFFF" font-weight="500" text-anchor="middle">网格</text>
+<line x1="683" y1="32" x2="683" y2="52" stroke="#777777" stroke-width="1"/>
+<rect x="700" y="26" width="52" height="32" rx="16" fill="#006BCC" stroke="#008CFF"/>
+<text x="726.0" y="47" font-size="13" fill="#FFFFFF" font-weight="500" text-anchor="middle">文件</text>
+<rect x="758" y="26" width="52" height="32" rx="16" fill="#006BCC" stroke="#008CFF"/>
+<text x="784.0" y="47" font-size="13" fill="#FFFFFF" font-weight="500" text-anchor="middle">关节</text>
+<rect x="816" y="26" width="52" height="32" rx="16" fill="#006BCC" stroke="#008CFF"/>
+<text x="842.0" y="47" font-size="13" fill="#FFFFFF" font-weight="500" text-anchor="middle">结构</text>
+<rect x="874" y="26" width="52" height="32" rx="16" fill="#006BCC" stroke="#008CFF"/>
+<text x="900.0" y="47" font-size="13" fill="#FFFFFF" font-weight="500" text-anchor="middle">详情</text>
+<line x1="937" y1="32" x2="937" y2="52" stroke="#777777" stroke-width="1"/>
+<rect x="954" y="26" width="80" height="32" rx="16" fill="#333333" stroke="#929292"/>
+<text x="994.0" y="47" font-size="13" fill="#F2F2F2" font-weight="500" text-anchor="middle">视角 +Z</text>
+<rect x="1040" y="26" width="52" height="32" rx="16" fill="#333333" stroke="#929292"/>
+<text x="1066.0" y="47" font-size="13" fill="#F2F2F2" font-weight="500" text-anchor="middle">更多</text>
+<rect x="1098" y="26" width="52" height="32" rx="16" fill="#333333" stroke="#929292"/>
+<text x="1124.0" y="47" font-size="13" fill="#F2F2F2" font-weight="500" text-anchor="middle">帮助</text>
+</g>
+<rect x="19" y="86" width="320" height="280" rx="16" fill="#000" opacity=".14"/>
+<rect x="16" y="80" width="320" height="280" rx="16" fill="#333333"/>
+<line x1="16" y1="128" x2="336" y2="128" stroke="#4A4A4A" stroke-width="1"/>
+<text x="32" y="110" font-size="14" fill="#F2F2F2" font-weight="600" text-anchor="start">文件</text>
+<text x="288" y="110" font-size="16" fill="#C8C8C8" font-weight="400" text-anchor="start">□</text>
+<text x="314" y="110" font-size="18" fill="#C8C8C8" font-weight="400" text-anchor="start">×</text>
+<text x="32" y="154" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start">模型资源</text>
+<rect x="32" y="173" width="288" height="40" rx="8" fill="#263F55"/>
+<rect x="32" y="181" width="2" height="24" rx="0" fill="#008CFF"/>
+<text x="48" y="198" font-size="14" fill="#F2F2F2" font-weight="400" text-anchor="start">aviator.xml</text>
+<text x="302" y="198" font-size="12" fill="#79BBFF" font-weight="400" text-anchor="end">MJCF</text>
+<text x="32" y="242" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start">模型文件只用于本地查看</text>
+<rect x="32" y="276" width="112" height="32" rx="16" fill="#006BCC" stroke="#008CFF"/>
+<text x="88.0" y="297" font-size="13" fill="#FFFFFF" font-weight="500" text-anchor="middle">加载文件</text>
+<rect x="156" y="276" width="124" height="32" rx="16" fill="#333333" stroke="#929292"/>
+<text x="218.0" y="297" font-size="13" fill="#F2F2F2" font-weight="500" text-anchor="middle">加载文件夹</text>
+<rect x="19" y="382" width="320" height="508" rx="16" fill="#000" opacity=".14"/>
+<rect x="16" y="376" width="320" height="508" rx="16" fill="#333333"/>
+<line x1="16" y1="424" x2="336" y2="424" stroke="#4A4A4A" stroke-width="1"/>
+<text x="32" y="406" font-size="14" fill="#F2F2F2" font-weight="600" text-anchor="start">关节反馈</text>
+<text x="288" y="406" font-size="16" fill="#C8C8C8" font-weight="400" text-anchor="start">□</text>
+<text x="314" y="406" font-size="18" fill="#C8C8C8" font-weight="400" text-anchor="start">×</text>
+<text x="32" y="450" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start">只读 · 示例数值 · rad</text>
+<text x="32" y="488" font-size="14" fill="#F2F2F2" font-weight="400" text-anchor="start">左臂 J1</text>
+<text x="312" y="488" font-size="14" fill="#C8C8C8" font-weight="400" text-anchor="end" font-family="monospace">+0.218</text>
+<rect x="32" y="500" width="280" height="4" rx="2" fill="#4A4A4A"/>
+<rect x="32" y="500" width="90" height="4" rx="2" fill="#008CFF"/>
+<text x="32" y="541" font-size="14" fill="#F2F2F2" font-weight="400" text-anchor="start">左臂 J2</text>
+<text x="312" y="541" font-size="14" fill="#C8C8C8" font-weight="400" text-anchor="end" font-family="monospace">−0.340</text>
+<rect x="32" y="553" width="280" height="4" rx="2" fill="#4A4A4A"/>
+<rect x="32" y="553" width="111" height="4" rx="2" fill="#008CFF"/>
+<text x="32" y="594" font-size="14" fill="#F2F2F2" font-weight="400" text-anchor="start">左臂 J3</text>
+<text x="312" y="594" font-size="14" fill="#C8C8C8" font-weight="400" text-anchor="end" font-family="monospace">+0.125</text>
+<rect x="32" y="606" width="280" height="4" rx="2" fill="#4A4A4A"/>
+<rect x="32" y="606" width="132" height="4" rx="2" fill="#008CFF"/>
+<text x="32" y="647" font-size="14" fill="#F2F2F2" font-weight="400" text-anchor="start">右臂 J1</text>
+<text x="312" y="647" font-size="14" fill="#C8C8C8" font-weight="400" text-anchor="end" font-family="monospace">−0.218</text>
+<rect x="32" y="659" width="280" height="4" rx="2" fill="#4A4A4A"/>
+<rect x="32" y="659" width="153" height="4" rx="2" fill="#008CFF"/>
+<text x="32" y="700" font-size="14" fill="#F2F2F2" font-weight="400" text-anchor="start">右臂 J2</text>
+<text x="312" y="700" font-size="14" fill="#C8C8C8" font-weight="400" text-anchor="end" font-family="monospace">+0.340</text>
+<rect x="32" y="712" width="280" height="4" rx="2" fill="#4A4A4A"/>
+<rect x="32" y="712" width="174" height="4" rx="2" fill="#008CFF"/>
+<text x="32" y="753" font-size="14" fill="#F2F2F2" font-weight="400" text-anchor="start">右臂 J3</text>
+<text x="312" y="753" font-size="14" fill="#C8C8C8" font-weight="400" text-anchor="end" font-family="monospace">−0.125</text>
+<rect x="32" y="765" width="280" height="4" rx="2" fill="#4A4A4A"/>
+<rect x="32" y="765" width="195" height="4" rx="2" fill="#008CFF"/>
+<text x="32" y="858" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start">— 表示未知，不用 0 替代缺失反馈</text>
+<rect x="1267" y="86" width="320" height="280" rx="16" fill="#000" opacity=".14"/>
+<rect x="1264" y="80" width="320" height="280" rx="16" fill="#333333"/>
+<line x1="1264" y1="128" x2="1584" y2="128" stroke="#4A4A4A" stroke-width="1"/>
+<text x="1280" y="110" font-size="14" fill="#F2F2F2" font-weight="600" text-anchor="start">结构</text>
+<text x="1536" y="110" font-size="16" fill="#C8C8C8" font-weight="400" text-anchor="start">□</text>
+<text x="1562" y="110" font-size="18" fill="#C8C8C8" font-weight="400" text-anchor="start">×</text>
+<text x="1280" y="154" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start">对象名称与层级</text>
+<text x="1290" y="192" font-size="13" fill="#C8C8C8" font-weight="400" text-anchor="start">▾ aviator</text>
+<text x="1306" y="224" font-size="13" fill="#C8C8C8" font-weight="400" text-anchor="start">▾ base_link</text>
+<rect x="1276" y="234" width="296" height="30" rx="6" fill="#263F55"/>
+<rect x="1276" y="238" width="2" height="22" rx="0" fill="#008CFF"/>
+<text x="1322" y="256" font-size="13" fill="#F2F2F2" font-weight="400" text-anchor="start">left_arm</text>
+<text x="1322" y="288" font-size="13" fill="#C8C8C8" font-weight="400" text-anchor="start">right_arm</text>
+<text x="1322" y="320" font-size="13" fill="#C8C8C8" font-weight="400" text-anchor="start">yoke</text>
+<rect x="1267" y="382" width="320" height="508" rx="16" fill="#000" opacity=".14"/>
+<rect x="1264" y="376" width="320" height="508" rx="16" fill="#333333"/>
+<line x1="1264" y1="424" x2="1584" y2="424" stroke="#4A4A4A" stroke-width="1"/>
+<text x="1280" y="406" font-size="14" fill="#F2F2F2" font-weight="600" text-anchor="start">消息详情</text>
+<text x="1536" y="406" font-size="16" fill="#C8C8C8" font-weight="400" text-anchor="start">□</text>
+<text x="1562" y="406" font-size="18" fill="#C8C8C8" font-weight="400" text-anchor="start">×</text>
+<text x="1280" y="450" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start">只读 · 示例快照</text>
+<rect x="1280" y="467" width="86" height="26" rx="6" fill="#263E32"/>
+<text x="1323" y="485" font-size="12" fill="#67D6A0" font-weight="400" text-anchor="middle">● 新鲜</text>
+<rect x="1374" y="467" width="92" height="26" rx="6" fill="#493E29"/>
+<text x="1420" y="485" font-size="12" fill="#F5C66B" font-weight="400" text-anchor="middle">示例数据</text>
+<rect x="1276" y="509" width="296" height="346" rx="8" fill="#2D2D2D"/>
+<text x="1290" y="539" font-size="13" fill="#C8C8C8" font-weight="400" text-anchor="start" font-family="monospace">{</text>
+<text x="1290" y="564" font-size="13" fill="#79BBFF" font-weight="400" text-anchor="start" font-family="monospace">  &quot;source&quot;: &quot;FLIGHT&quot;,</text>
+<text x="1290" y="589" font-size="13" fill="#F5C66B" font-weight="400" text-anchor="start" font-family="monospace">  &quot;roll&quot;: 0.350,</text>
+<text x="1290" y="614" font-size="13" fill="#F5C66B" font-weight="400" text-anchor="start" font-family="monospace">  &quot;pitch&quot;: -0.120,</text>
+<text x="1290" y="639" font-size="13" fill="#67D6A0" font-weight="400" text-anchor="start" font-family="monospace">  &quot;mode&quot;: &quot;READ_ONLY&quot;</text>
+<text x="1290" y="664" font-size="13" fill="#C8C8C8" font-weight="400" text-anchor="start" font-family="monospace">}</text>
+<text x="1290" y="831" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start">仅作排版示意</text>
+<rect x="530" y="852" width="540" height="32" rx="16" fill="#333333"/>
+<text x="800" y="873" font-size="12" fill="#C8C8C8" font-weight="400" text-anchor="middle">左键旋转  ·  右键平移  ·  滚轮缩放  ·  操作帮助</text>
+<rect x="0" y="900" width="1600" height="200" rx="0" fill="#292929"/>
+<text x="24" y="938" font-size="18" fill="#F2F2F2" font-weight="600" text-anchor="start">AVIATOR  /  视觉基线</text>
+<text x="1576" y="938" font-size="13" fill="#C8C8C8" font-weight="400" text-anchor="end">画布 1600 × 900 · 面板 320px · 圆角 16px · 间距 16px</text>
+<rect x="24" y="959" width="180" height="42" rx="8" fill="#505050"/>
+<text x="24" y="1025" font-size="13" fill="#F2F2F2" font-weight="400" text-anchor="start">画布</text>
+<text x="24" y="1047" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start" font-family="monospace">#505050</text>
+<rect x="220" y="959" width="180" height="42" rx="8" fill="#333333"/>
+<text x="220" y="1025" font-size="13" fill="#F2F2F2" font-weight="400" text-anchor="start">面板</text>
+<text x="220" y="1047" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start" font-family="monospace">#333333</text>
+<rect x="416" y="959" width="180" height="42" rx="8" fill="#3D3D3D"/>
+<text x="416" y="1025" font-size="13" fill="#F2F2F2" font-weight="400" text-anchor="start">浮起层</text>
+<text x="416" y="1047" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start" font-family="monospace">#3D3D3D</text>
+<rect x="612" y="959" width="180" height="42" rx="8" fill="#006BCC"/>
+<text x="612" y="1025" font-size="13" fill="#F2F2F2" font-weight="400" text-anchor="start">主操作</text>
+<text x="612" y="1047" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start" font-family="monospace">#006BCC</text>
+<rect x="808" y="959" width="180" height="42" rx="8" fill="#008CFF"/>
+<text x="808" y="1025" font-size="13" fill="#F2F2F2" font-weight="400" text-anchor="start">强调</text>
+<text x="808" y="1047" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start" font-family="monospace">#008CFF</text>
+<rect x="1004" y="959" width="180" height="42" rx="8" fill="#67D6A0"/>
+<text x="1004" y="1025" font-size="13" fill="#F2F2F2" font-weight="400" text-anchor="start">正常</text>
+<text x="1004" y="1047" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start" font-family="monospace">#67D6A0</text>
+<rect x="1200" y="959" width="180" height="42" rx="8" fill="#F5C66B"/>
+<text x="1200" y="1025" font-size="13" fill="#F2F2F2" font-weight="400" text-anchor="start">注意</text>
+<text x="1200" y="1047" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start" font-family="monospace">#F5C66B</text>
+<rect x="1396" y="959" width="180" height="42" rx="8" fill="#FF8E86"/>
+<text x="1396" y="1025" font-size="13" fill="#F2F2F2" font-weight="400" text-anchor="start">故障</text>
+<text x="1396" y="1047" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start" font-family="monospace">#FF8E86</text>
+<text x="24" y="1082" font-size="12" fill="#A8A8A8" font-weight="400" text-anchor="start">静态视觉示意：非实际页面截图，机器人轮廓和数据不代表运行状态。</text>
+</g></svg>

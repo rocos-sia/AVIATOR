@@ -16,6 +16,7 @@ import pyrealsense2 as rs
 import yaml
 import zmq
 from detectors import create_detector
+from preview_client import PreviewClient
 from recording_client import RecordingClient
 from visualization import CameraVisualization, visualization_options
 
@@ -187,6 +188,7 @@ def make_record_frame(camera_id, session, clock, config_id, frame_id, sample_mon
 def parse_args(argv):
     p = argparse.ArgumentParser(description="RealSense ChArUco/AprilTag 姿态 -> camera.detection 发布")
     p.add_argument("--config", default=DEFAULT_CONFIG, help="YAML 配置文件路径")
+    p.add_argument("--preview-endpoint", help="覆盖独立 JPEG PUB 地址；off 关闭预览")
     p.add_argument("--recording-config", help="Logger recording.yaml；省略则不发送图像记录")
     p.add_argument("--endpoint", default="tcp://127.0.0.1:5555",
                    help="PUB 连接端点（AVIATOR publish_endpoint）")
@@ -218,6 +220,15 @@ def main(argv):
     camera, detector_kind, detector_settings, visual_settings = load_config(args.config)
     visual = CameraVisualization(**visualization_options(visual_settings, args))
     visual.check_available()
+    with open(args.config, "r", encoding="utf-8") as file:
+        preview_settings = (yaml.safe_load(file) or {}).get("preview", {})
+    preview_settings = dict(preview_settings)
+    if args.preview_endpoint is not None:
+        preview_settings["enabled"] = args.preview_endpoint != "off"
+        if args.preview_endpoint != "off":
+            preview_settings["endpoint"] = args.preview_endpoint
+    # Start only after hardware initialization succeeds.
+    preview = PreviewClient(preview_settings, args.camera_id, start=False)
     recorder = RecordingClient(args.recording_config, args.camera_id)
 
     # 采集格式（CLI 覆盖 YAML；必填键缺失即报错，不写死回退值）
@@ -315,7 +326,10 @@ def main(argv):
             pub.bind(args.endpoint)
         else:
             pub.connect(args.endpoint)
+        preview.start()
     except BaseException:
+        preview.close()
+        recorder.close()
         if pub is not None:
             pub.close()
         if context is not None:
@@ -332,6 +346,7 @@ def main(argv):
           f"recording={'enabled' if recorder.enabled else 'disabled'} "
           f"record_depth={recorder.record_depth}")
 
+    print(f"aviator_camera: RGB preview={preview.endpoint if preview.enabled else 'disabled'}")
     warmup_until = monotonic_us() + int(warmup_s * 1e6)
     sequence = 0
     frame_id = 0
@@ -366,6 +381,9 @@ def main(argv):
                         pixels, calibration[stream], depth_scale)
                     recorder.submit(metadata, data)
 
+            if sample_mono_us >= warmup_until:
+                preview.submit(image, session_id=session, clock_id=clock, frame_id=frame_id,
+                               sample_mono_us=sample_mono_us)
             detection = detector.detect(image)
 
             if sample_mono_us >= warmup_until:
@@ -386,6 +404,7 @@ def main(argv):
     finally:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         try:
+            preview.close()
             recorder.close()
         finally:
             pipeline.stop()

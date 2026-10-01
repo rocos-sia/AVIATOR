@@ -1,5 +1,7 @@
 #pragma once
+#include "config.hpp"
 #include "protocol.hpp"
+#include "runtime.hpp"
 #include <deque>
 #include <mutex>
 #include <vector>
@@ -24,6 +26,9 @@ struct Service {
 };
 // One bounded cache, shared by the SUB thread and HTTP thread. No control output.
 struct State {
+    Json config = default_config();
+    std::string session_id = aviator::new_session_id();
+    std::uint64_t snapshot_revision = 0;
     std::mutex mutex;
     std::vector<Stream> streams;
     std::vector<Service> services;
@@ -34,6 +39,8 @@ struct State {
     void ingest(const std::string& topic, const std::string& payload, std::uint64_t now);
     nlohmann::json snapshot(std::uint64_t now, const std::string& clock);
     std::string detail(unsigned id);
+    Json overview(std::uint64_t now, const std::string& clock);
+    std::uint64_t timeout_us(aviator::Topic topic) const;
     void ingest_service(const std::string& topic, const std::string& payload, std::uint64_t now);
     void reject(const std::string& reason);
 };
