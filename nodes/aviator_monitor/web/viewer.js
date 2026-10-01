@@ -160,7 +160,9 @@ export class Viewer {
   }
   modelJoints(kind,g) {
     const current=g?.current;
-    if (!kind.startsWith('hands.') || current?.pose_mapping!=='URDF_LIMITS') return current?.model_joints;
+    if (!kind.startsWith('hands.') || !current || Object.keys(current.model_joints ?? {}).length) return current?.model_joints;
+    // Older monitor processes expose the same measured drive feedback but no
+    // pose_mapping field. An empty model_joints still needs the URDF mapping.
     const positions=current.drive_position_normalized;
     if (!Array.isArray(positions) || positions.length!==6 ||
         positions.some(p=>!Number.isFinite(p) || p<0 || p>1)) return null;
@@ -186,7 +188,7 @@ export class Viewer {
       if (old && source && old.key!==source) for (const name of old.joints) this.robot.joints[name]?.setJointValue(0);
       if (!this.isLive(g) || !g.current) { const state=g?.measurement_state === 'VALID' ? 'STALE' : g?.measurement_state ?? 'UNAVAILABLE'; notes.push(`${groupLabels[kind]}：${stateLabels[state] ?? state} · ${old ? '旧姿态' : '参考姿态'}`); continue; }
       const values=this.modelJoints(kind,g);
-      if (!values && g.current.pose_mapping==='URDF_LIMITS') {
+      if (!values && kind.startsWith('hands.')) {
         this.invalidGroups.add(kind); notes.push(`${groupLabels[kind]}：关节映射/限位不匹配`); continue;
       }
       if (!values || !Object.keys(values).length) { notes.push(`${groupLabels[kind]}：姿态未标定`); continue; }

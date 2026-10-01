@@ -47,7 +47,7 @@ async function main() {
         const v=window.testViewer,channels=['thumb_1','thumb_2','index_1','middle_1','ring_1','little_1'];
         return sides.every(side=>{
           const group=v.data.hands[side];
-          return group.current?.pose_mapping==='URDF_LIMITS' && v.isLive(group) &&
+          return group.current && v.isLive(group) &&
             channels.every((channel,i)=>{
               const j=v.robot.joints[`${side}_${channel}_joint`];
               return Math.abs(j.angle-(j.limit.lower+(1-positions[i])*(j.limit.upper-j.limit.lower)))<1e-5;
@@ -71,6 +71,22 @@ async function main() {
         Math.abs(v.robot.joints.right_index_1_joint.angle-v.robot.joints.right_index_1_joint.limit.upper*.5)<1e-5 &&
         v.materials.filter(m=>m.kind==='hands.right').every(m=>m.material.color.getHexString()==='999999');
     }));
+    fs.writeFileSync(controlPath,'{}');
+    await handPose([.1,.2,.3,.4,.5,.6]);
+    // A running older backend has valid feedback but no pose_mapping marker.
+    // Refreshing the frontend must still animate it using the loaded URDF.
+    await page.route('**/api/overview',async route=>{
+      const response=await route.fetch(),overview=await response.json();
+      for (const side of ['left','right']) {
+        const current=overview.hands[side].current;
+        if (current) { delete current.pose_mapping; current.pose_state='UNCALIBRATED'; }
+      }
+      await route.fulfill({response,json:overview});
+    });
+    fs.writeFileSync(controlPath,JSON.stringify({hand_positions:Array(6).fill(.75)}));
+    await handPose(Array(6).fill(.75));
+    assert(await page.evaluate(()=>window.testViewer.data.hands.left.current.pose_mapping===undefined));
+    await page.unroute('**/api/overview');
     fs.writeFileSync(controlPath,'{}');
     await handPose([.1,.2,.3,.4,.5,.6]);
     assert(await page.evaluate(()=>{
