@@ -2,11 +2,11 @@
 
 文档编号：AVIATOR ICD ZMQ 001
 
-文档版本：0.1（接口设计草案）
+文档版本：0.2（接口设计草案）
 
-日期：2026年9月26日
+日期：2026年10月2日
 
-依据：[AVIATOR 机器人驾驶飞机控制系统软件架构设计方案 v1.1](AVIATOR机器人驾驶飞机控制系统软件架构设计方案.md)
+依据：[AVIATOR 机器人驾驶飞机控制系统软件架构设计方案 v1.3](AVIATOR机器人驾驶飞机控制系统软件架构设计方案.md)
 
 ## 1. 范围与约定级别
 
@@ -20,7 +20,7 @@
 | 补充拟定 | 为使协议可以实现而补充的具体字段、枚举、格式和边界规则，需在 ICD 评审后冻结。本文中的“必填”对采用本草案的实现生效，不表示原架构已冻结该字段。 |
 | 待冻结 | 依赖硬件、标定、控制算法或部署参数，本文不假设实际设备数值。 |
 
-当前 `common/`、`schemas/` 和节点目录尚未提供协议实现；配置文件也仅为占位。本文是实现输入，不是已运行协议的描述。JSON 示例中的 `version:"1.0"` 表示拟定的首个线上协议版本，与本文文档版本不同；冻结前不能据此宣称 v1.0 已发布。
+当前 `common/` 已提供公共编解码和传输实现，部分节点已实现本文协议能力；尚未实现或仍待冻结的能力在对应章节明确标注。JSON 示例中的 `version:"1.0"` 是当前线上消息版本，与本文文档版本不同。
 
 第 2—4 节以架构基线为主；第 5—12 节逐项说明主 Topic；第 13—16 节为扩展、服务、记录和回放；第 17—18 节给出接收检查与冻结清单。未在架构中明确的具体字段结构均属于补充拟定。
 
@@ -29,7 +29,8 @@
 以架构第 15 章的最终目录与进程划分为准：
 
 - `flight_gateway` 根据配置接入 RS422 或 USB 摇杆；`source` 区分输入来源，不另设 `joystick_gateway` 进程。
-- `manipulator` 同时发布 `arm.state`、`hand.state`，消费对应命令；Arm/Hand Controller 是其内部逻辑模块。
+- `manipulator` 发布 `arm.state` 并消费 `arm.command`，负责双臂设备接入与本地执行；当前还以 100 Hz 发布始终 `valid=false` 的兼容 `hand.state` 占位消息，不表示真实手反馈。
+- `aviator_hand` 消费 `hand.command`、发布 `hand.state`，通过 SocketCAN 独立接入双手；默认 `publisher_id=inspire_hand`。
 - `camera` 负责图像采集与检测。
 - `aviator_core` 是连续设备目标的唯一业务生产者和控制源仲裁者。
 
@@ -96,8 +97,8 @@ PUB/SUB 无持久历史，也不提供业务执行确认。连续目标周期性
 | `flight.state` / `FlightState` | aviator_core | flight_gateway | 50 Hz / 20 ms | 60 / 100 ms |
 | `arm.command` / `ArmCommand` | aviator_core | manipulator | 100 Hz / 10 ms | 30 / 50 ms |
 | `arm.state` / `ArmState` | manipulator | aviator_core | 100 Hz / 10 ms | 30 / 50 ms |
-| `hand.command` / `HandCommand` | aviator_core | manipulator | 100 Hz / 10 ms | 30 / 50 ms |
-| `hand.state` / `HandState` | manipulator | aviator_core | 100 Hz / 10 ms | 30 / 50 ms |
+| `hand.command` / `HandCommand` | aviator_core | aviator_hand | 50 Hz / 20 ms | 命令 watchdog 100 ms |
+| `hand.state` / `HandState` | aviator_hand；manipulator 仅兼容 invalid 占位 | aviator_core | 有效反馈 10 Hz / 100 ms；占位 100 Hz / 10 ms | 设备反馈有效期 300 ms |
 | `camera.command` / `CameraCommand` | aviator_core | camera | 30 Hz / 约 33.3 ms | 架构未定义；部署配置冻结 |
 | `camera.detection` / `CameraDetection` | camera | aviator_core | 30 Hz / 约 33.3 ms | 100 / 200 ms |
 | `system.state` / `SystemState` | 各节点，仅报告自身 | 观测工具 | 1—10 Hz | 按节点健康策略配置 |
@@ -145,7 +146,7 @@ UUID 拟统一采用小写带连字符文本。一般标识字符串拟限制为
 
 计算前先检查未来时间和范围，避免无符号下溢。未来容差、告警与超时阈值从统一配置读取；超时边界补充拟定为 `age >= timeout`。跨 `clock_id` 不能直接相减，须使用已经验证的时钟映射及误差预算；未配置映射的控制输入拒绝用于执行。UTC 时间用于关联日志，不用于 watchdog。
 
-网关重发同一设备样本、Manipulator 重发旧反馈、Camera 重发同一检测时，允许增加消息 `sequence`，但必须保留原始 `sample_mono_us`。Core 的设备命令头部记录此次目标生成/接纳时刻，同时保留 `origin`；FlightState 头部表示本次聚合时刻，同时保留各分组 `freshness`。发送线程重复发送旧计算结果不能改写其采样时刻。
+网关重发同一设备样本、Manipulator 重发旧反馈、Camera 重发同一检测时，允许增加消息 `sequence`，但必须保留原始 `sample_mono_us`。Core 的设备命令头部记录此次目标生成/接纳时刻，同时保留 `origin`；FlightState 头部表示本次聚合时刻，同时保留各分组 `freshness`。当前 `aviator_hand` 是明确例外：`hand.state` 顶层 `sample_mono_us` 是状态生成时刻，每侧 `hands.{side}.sample_mono_us` 才是反馈快照最早读请求时间，消费者必须使用每侧时间或 `feedback_age_ms` 判断反馈年龄。其他发送线程重复发送旧计算结果不能改写其采样时刻。
 
 同一已接纳会话内，`sequence <= 已处理序号` 的消息按重复/乱序丢弃。应区分“结构和身份合法的已处理序号”与“有效控制数据”：`valid=false` 可推进已处理序号并立即标记输入失效，但不覆盖最后有效数值、不刷新有效期限。格式错误、未授权等消息不能推进授权序列状态。不要在多个会话之间按最大序号竞争；旧会话退役后不重新接纳。
 
@@ -181,7 +182,7 @@ UUID 拟统一采用小写带连字符文本。一般标识字符串拟限制为
 
 状态类消息：失效后可保留最后测量值供显示，并将对应 `valid=false`；从未获得测量时，本文补充允许该组测量数组或 pose 整体为 `null`，但不允许有效状态出现 `null`，也不允许数组中混入 null。设备子状态、`freshness` 或父级 valid 明确限定可用性。视觉检测无效时 roll/pitch 必须为 null。
 
-命令类消息：`valid=true` 时所选模式的所有目标必填且非空；`valid=false` 时业务结构仍完整，可保留最后目标，但绝不可执行。无初始目标时可以停止发布，由未就绪状态和 watchdog 阻止执行，不构造伪造零目标。
+命令类消息：`valid=true` 时所选模式的所有目标必填且非空。一般 `valid=false` 消息仍保持业务结构完整并绝不可执行；当前 `hand.command` 的已认证失效通知允许省略 `hands`，见第 8 节。无初始目标时可以停止发布，由未就绪状态和 watchdog 阻止执行，不构造伪造零目标。
 
 ## 5. flight.command — FlightCommand
 
@@ -346,25 +347,24 @@ Frame0：`arm.state`。
 
 ## 8. hand.command — HandCommand
 
-### 8.1 字段（补充拟定）
+### 8.1 当前字段与模式
 
-架构规定双手连续关节或抓握设定值，且不能将归一化驱动刻度标为 rad。本文用显式模式区分：
+当前 `aviator_hand` 只接受配置声明支持的 `NORMALIZED_POSITION` 和 `GRASP_SETPOINT`。六路顺序固定为 `[拇指旋转, 拇指, 食指, 中指, 无名指, 小指]`；驱动刻度 1000 表示张开、0 表示闭合，不是 rad。
 
 | 字段 | 类型 | 规则 |
 | --- | --- | --- |
-| `mode` | enum string | `JOINT_POSITION / NORMALIZED_POSITION / GRASP_SETPOINT`，仅允许配置声明支持的模式。 |
-| `origin` | object | 第 4.4 节。 |
-| `control_epoch` | UUID string | 第 4.5 节。 |
-| `hands.left`、`hands.right` | object | 双手完整目标，任一侧非法整条拒绝。 |
-| `hands.{side}.joint_position` | number[] | JOINT_POSITION 必填，rad，匹配关节配置。 |
-| `hands.{side}.drive_position_normalized` | number[] | NORMALIZED_POSITION 必填，`[0,1]`，匹配驱动通道配置。 |
-| `hands.{side}.grasp` | object | GRASP_SETPOINT 必填。 |
-| `hands.{side}.grasp.profile_id` | string | 已加载的抓握映射配置；不得触发临时标定或加载任意动作脚本。 |
-| `hands.{side}.grasp.closure` | number | `[0,1]`，0/1 分别对应配置中的张开/闭合端点；不是抓握力。 |
+| `mode` | enum string | 当前为 `NORMALIZED_POSITION / GRASP_SETPOINT`。 |
+| `origin` | object | 第 4.4 节；其时钟域必须与手节点一致。 |
+| `control_epoch` | UUID string | 当前授权代次。 |
+| `hands.left`、`hands.right` | object | `valid=true` 时双手完整目标必填，任一侧非法时整条拒绝。 |
+| `hands.{side}.drive_position_normalized` | number[6] | NORMALIZED_POSITION 必填，每项 `[0,1]`；`raw[i]=round(value×1000)`。 |
+| `hands.{side}.grasp.closure` | number | GRASP_SETPOINT 必填，`[0,1]`；`raw[i]=round((1-closure)×1000)`。 |
 
-三类目标互斥；不能把缺失目标理解为“保持”。抓握设定值是可覆盖的连续期望，抓握验证、使能和整机 GRASPING 状态转换另行管理。双手异构需要混合模式时，另行冻结兼容设计；本草案一个消息使用一个 mode。
+两种目标互斥且均无插值。当前 GRASP_SETPOINT 不携带 `profile_id`，同一 closure 映射到该侧全部六路。有效命令必须先完整校验双手，再进行任何 CAN 写入；CAN 写入不是双手原子事务。首条成功下发的命令绑定 publisher、session、epoch 及 origin 身份，后续身份变化、非递增序号、时钟不匹配或超过默认 100 ms 的消息/origin 均拒绝。
 
-### 8.2 完整 Frame1 示例
+新鲜且身份匹配的 `valid=false` 命令用于立即请求 `safe_pose`，仍须带公共头、`control_epoch`、`mode` 和 `origin`，但允许省略 `hands`。停止发布时同一 100 ms watchdog 触发安全姿态；安全写入成功只表示已提交到 SocketCAN，不证明实体手已到位。
+
+### 8.2 完整有效 Frame1 示例
 
 Frame0：`hand.command`。
 
@@ -375,59 +375,100 @@ Frame0：`hand.command`。
   "clock_id": "hostA-boot1", "publisher_id": "aviator_core",
   "session_id": "22222222-2222-4222-8222-222222222222", "valid": true,
   "control_epoch": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-  "mode": "JOINT_POSITION",
+  "mode": "NORMALIZED_POSITION",
   "origin": {
     "publisher_id": "flight_gateway",
     "session_id": "11111111-1111-4111-8111-111111111111",
     "sequence": 182736, "sample_mono_us": 12345678000, "clock_id": "hostA-boot1"
   },
   "hands": {
-    "left": {"joint_position": [0.12, 0.35, 0.42, 0.31, 0.26, 0.18]},
-    "right": {"joint_position": [0.12, 0.35, 0.42, 0.31, 0.26, 0.18]}
+    "left": {"drive_position_normalized": [1, 1, 1, 1, 1, 1]},
+    "right": {"drive_position_normalized": [1, 1, 0.8, 1, 1, 1]}
   }
 }
 ```
 
 ## 9. hand.state — HandState
 
-### 9.1 字段
+### 9.1 顶层字段
+
+`aviator_hand` 默认以 10 Hz 发布状态，反馈采集目标频率也是每侧完整六路 10 Hz。顶层公共 `sample_mono_us` 是本次状态生成时刻，不是设备反馈采样时刻。Manipulator 仍以 100 Hz 发布旧形状兼容占位：顶层始终 `valid=false`，每侧只有 OFFLINE、null 关节量等基础字段；Core 未启用真实手链路时可将其用于显示未知状态，但不得将其解释为本节定义的有效实际反馈。
 
 | 字段 | 类型 | 规则 |
 | --- | --- | --- |
-| `hands.left`、`hands.right` | object | 双手完整状态。 |
-| `hands.{side}.valid/status/enabled/error_code` | 同 ArmState | 补充拟定；测量有效不等于具备执行条件。 |
-| `hands.{side}.sample_mono_us` | uint53 或 null | 补充拟定；每侧原始采样时间，null 表示从未采集。 |
-| `hands.{side}.joint_position` | number[] 或 null | 可提供角度反馈时为 rad；不具备角度能力时为 null。 |
-| `hands.{side}.joint_velocity` | number[] 或 null | 可提供角速度反馈时为 rad/s；能力缺失时为 null。 |
-| `hands.{side}.drive_position_normalized` | number[]，条件必填 | 仅有归一化驱动位置反馈时必填，`[0,1]`；补充拟定。 |
-| `hands.{side}.grasp_verified` | boolean，可选 | 经独立判据验证抓握完成；不能用 closure 达到目标直接替代验证。 |
-| `accepted_command` | object 或 null，可选 | 同 ArmState，用于手命令引用。 |
+| `valid` | boolean | 左右手反馈均在默认 300 ms 有效期内；与命令是否有效无关。 |
+| `command_valid` | boolean | 最近命令仍满足接收、消息采样和 origin 三项 100 ms watchdog。 |
+| `feedback_only` | boolean | true 表示只读模式，节点忽略命令且不发送速度、力、位置或退出安全姿态写入。 |
+| `hands.left`、`hands.right` | object | 双手完整反馈与诊断状态。 |
+| `accepted_command` | object | 最近通过校验并提交的命令引用；启动后尚无命令时各字符串为空、sequence/sample 为 0。 |
+| `accepted_command.publisher_id/session_id` | string | 最近命令发布者和会话。 |
+| `accepted_command.sequence/sample_mono_us` | uint53 | 最近命令序号和命令头部采样时间；用于接收确认，不表示物理到位。 |
 
-顶层 valid 和双侧采样时刻合成规则同 ArmState。角度或速度能力缺失必须在配置和记录清单登记，不得用零值填补；归一化反馈可以在设备声明的能力下有效，但需要角度/角速度的上层控制模式仍判定该反馈能力不足。FlightState 保留相同的能力与空值语义。
+### 9.2 每侧字段
 
-### 9.2 完整 Frame1 示例
+| 字段 | 类型 | 规则 |
+| --- | --- | --- |
+| `valid` / `feedback_available` | boolean | 该侧已形成完整六路快照、没有当前 I/O 失败且反馈年龄小于 300 ms。 |
+| `status` | enum string | `OFFLINE` 从未获得完整反馈；`STALE` 反馈过期或 I/O 失效；反馈新鲜时按命令状态为 `READY` 或 `ACTIVE`。 |
+| `enabled` | boolean | 当前等于软件 `command_valid`，不是设备硬件使能反馈。 |
+| `error_code` | uint53 | 当前固定为 0；尚未采集硬件错误寄存器，不能据此断言硬件无故障。 |
+| `position_source` | string | 当前固定为 `angle_act_register`。 |
+| `sample_mono_us` | uint53 或 null | 本次完整快照最早 CAN 读请求的主机单调时间；从未收到完整快照时为 null。 |
+| `sample_time_basis` | string | 当前固定为 `host_read_request`，不是设备硬件采样时间。 |
+| `feedback_age_ms` | number 或 null | 状态生成时刻减去每侧快照时间；从未有快照或时间不可比较时为 null。 |
+| `drive_position_raw` | integer[6] 或 null | ANGLE_ACT 最近完整快照，逐项 `[0,1000]`；过期时保留最后值，从未收到时为 null。 |
+| `drive_position_normalized` | number[6] 或空数组 | raw 除以 1000；从未收到完整快照时为 `[]`。 |
+| `commanded_drive_position_normalized` | number[] | 上次成功下发目标的归一化回显；无目标时为空数组。 |
+| `joint_position/joint_velocity` | null | 当前没有驱动刻度到 rad/rad/s 的标定，不用零值或驱动刻度冒充关节量。 |
+| `grasp_verified` | boolean | 当前固定为 false；命令接纳或 closure 到达不能替代独立抓握验证。 |
+| `feedback_samples` | uint53 | 本会话完成的六路快照数。 |
+| `feedback_timeouts` | uint53 | 单寄存器响应超时计数。 |
+| `feedback_io_errors` | uint53 | CAN 读请求或接收异常计数。 |
+| `feedback_last_error` | string | 最近 I/O 错误文本；成功形成新快照后清空。 |
+
+每侧最多保留一个未完成读请求，六路全部收齐后才原子替换快照，不混合不同轮次。CAN 没有事务序号，无法完全区分跨轮次延迟的同寄存器响应。Core 判断 hand 状态时同时检查顶层状态接收年龄、每侧 `sample_mono_us`、`valid` 和确认字段。
+
+### 9.3 完整 Frame1 示例
 
 Frame0：`hand.state`。
 
 ```json
 {
   "msg_type": "HandState", "version": "1.0", "sequence": 20466,
-  "timestamp": 1790121600002000, "sample_mono_us": 12345675000,
-  "clock_id": "hostA-boot1", "publisher_id": "manipulator",
+  "timestamp": 1790121600002000, "sample_mono_us": 12345680000,
+  "clock_id": "hostA-boot1", "publisher_id": "inspire_hand",
   "session_id": "33333333-3333-4333-8333-333333333333", "valid": true,
+  "command_valid": true, "feedback_only": false,
   "hands": {
     "left": {
       "valid": true, "status": "ACTIVE", "enabled": true, "error_code": 0,
-      "sample_mono_us": 12345675000,
-      "joint_position": [0.12, 0.35, 0.42, 0.31, 0.26, 0.18],
-      "joint_velocity": [0, 0.01, 0.02, 0.01, 0, 0], "grasp_verified": true
+      "feedback_available": true, "position_source": "angle_act_register",
+      "sample_mono_us": 12345675000, "sample_time_basis": "host_read_request",
+      "feedback_age_ms": 5,
+      "drive_position_raw": [1000, 1000, 1000, 1000, 1000, 1000],
+      "drive_position_normalized": [1, 1, 1, 1, 1, 1],
+      "commanded_drive_position_normalized": [1, 1, 1, 1, 1, 1],
+      "joint_position": null, "joint_velocity": null, "grasp_verified": false,
+      "feedback_samples": 100, "feedback_timeouts": 0,
+      "feedback_io_errors": 0, "feedback_last_error": ""
     },
     "right": {
       "valid": true, "status": "ACTIVE", "enabled": true, "error_code": 0,
-      "sample_mono_us": 12345675000,
-      "joint_position": [0.12, 0.35, 0.42, 0.31, 0.26, 0.18],
-      "joint_velocity": [0, 0.01, 0.02, 0.01, 0, 0], "grasp_verified": true
+      "feedback_available": true, "position_source": "angle_act_register",
+      "sample_mono_us": 12345675000, "sample_time_basis": "host_read_request",
+      "feedback_age_ms": 5,
+      "drive_position_raw": [1000, 1000, 800, 1000, 1000, 1000],
+      "drive_position_normalized": [1, 1, 0.8, 1, 1, 1],
+      "commanded_drive_position_normalized": [1, 1, 0.8, 1, 1, 1],
+      "joint_position": null, "joint_velocity": null, "grasp_verified": false,
+      "feedback_samples": 100, "feedback_timeouts": 0,
+      "feedback_io_errors": 0, "feedback_last_error": ""
     }
+  },
+  "accepted_command": {
+    "publisher_id": "aviator_core",
+    "session_id": "22222222-2222-4222-8222-222222222222",
+    "sequence": 20466, "sample_mono_us": 12345679000
   }
 }
 ```
@@ -443,7 +484,8 @@ Frame0：`hand.state`。
 | `system.current_error_code` | uint53 | 当前最高优先级阻断错误，无错误为 0。 |
 | `system.last_error_code` | uint53 | 最近一次错误，恢复后不自动清零，无历史错误为 0。 |
 | `arms.{side}.joint_position/joint_velocity/tcp_pose` | 同 ArmState 测量字段 | 必须保留双臂；设备状态字段可选附带。 |
-| `hands.{side}.joint_position/joint_velocity` | 同 HandState 测量字段 | 必须保留双手；归一化反馈字段按能力条件附带。 |
+| `hands.{side}` | 同 HandState 每侧字段 | 当前直接保留 `aviator_hand` 的归一化驱动反馈、null 关节量、状态和诊断字段。 |
+| `hand_control` | object，可选 | Core 启用真实手连接时附带 `enabled/error/target_version`，表示 Core 手控制链路状态，不替代设备反馈。 |
 | `vision.status` | enum string | 同 CameraDetection。 |
 | `vision.confidence` | number | `[0,1]`。 |
 | `vision.yoke` | object | detected、roll、pitch，同 CameraDetection。 |
@@ -454,7 +496,7 @@ Frame0：`hand.state`。
 | `freshness.{group}.publisher_id/session_id/clock_id` | string，可选 | 补充拟定；建议附带以消除跨会话歧义。 |
 | `freshness.{group}.sample_mono_us` | uint53，可选 | 补充拟定；直接复核该组年龄。 |
 
-顶层时间是聚合时间；顶层 valid 按当前模式所必需的反馈、输入和条件计算。视觉可选的模式允许 `freshness.camera.valid=false` 而顶层仍有效；依赖视觉的模式不允许。臂手组年龄按较旧侧样本保守计算，同时检查两侧状态。子组过期时保留最后值用于显示，但其 freshness.valid=false。
+顶层时间是聚合时间；顶层 valid 按当前模式所必需的反馈、输入和条件计算。视觉可选的模式允许 `freshness.camera.valid=false` 而顶层仍有效；依赖视觉的模式不允许。臂组年龄按较旧侧样本保守计算。启用真实手链路时，手组 `freshness.age_ms` 使用 hand.state 顶层生成时间计算，同时以每侧 `valid/sample_mono_us` 检查实际反馈年龄；因此组 age_ms 不能替代每侧 `feedback_age_ms`。Core 还以独立配置的状态接收期限检查整个 hand 链路，当前默认 500 ms；它不能延长设备侧 300 ms 有效反馈。未启用真实手链路时，Core 可聚合 Manipulator 的 invalid 占位，`freshness.hand` 保持无效。子组过期时保留最后值用于显示，但其 freshness.valid=false。
 
 消费者收到 FlightState 后必须考虑传输和本地驻留时间，不能永久使用发送时的 `age_ms`。同机可用 `age_ms + (now_mono_us - 头部 sample_mono_us)/1000` 估计当前子状态年龄，或直接用子组采样时间；跨时钟域须有映射。
 
@@ -494,21 +536,36 @@ Frame0：`flight.state`。在聚合时刻 `12345680000` µs，臂、手、视觉
   },
   "hands": {
     "left": {
-      "joint_position": [0.12, 0.35, 0.42, 0.31, 0.26, 0.18],
-      "joint_velocity": [0, 0.01, 0.02, 0.01, 0, 0]
+      "valid": true, "status": "ACTIVE", "enabled": true, "error_code": 0,
+      "feedback_available": true, "position_source": "angle_act_register",
+      "sample_mono_us": 12345675000, "sample_time_basis": "host_read_request",
+      "feedback_age_ms": 5, "drive_position_raw": [1000, 1000, 1000, 1000, 1000, 1000],
+      "drive_position_normalized": [1, 1, 1, 1, 1, 1],
+      "commanded_drive_position_normalized": [1, 1, 1, 1, 1, 1],
+      "joint_position": null, "joint_velocity": null, "grasp_verified": false,
+      "feedback_samples": 100, "feedback_timeouts": 0,
+      "feedback_io_errors": 0, "feedback_last_error": ""
     },
     "right": {
-      "joint_position": [0.12, 0.35, 0.42, 0.31, 0.26, 0.18],
-      "joint_velocity": [0, 0.01, 0.02, 0.01, 0, 0]
+      "valid": true, "status": "ACTIVE", "enabled": true, "error_code": 0,
+      "feedback_available": true, "position_source": "angle_act_register",
+      "sample_mono_us": 12345675000, "sample_time_basis": "host_read_request",
+      "feedback_age_ms": 5, "drive_position_raw": [1000, 1000, 800, 1000, 1000, 1000],
+      "drive_position_normalized": [1, 1, 0.8, 1, 1, 1],
+      "commanded_drive_position_normalized": [1, 1, 0.8, 1, 1, 1],
+      "joint_position": null, "joint_velocity": null, "grasp_verified": false,
+      "feedback_samples": 100, "feedback_timeouts": 0,
+      "feedback_io_errors": 0, "feedback_last_error": ""
     }
   },
+  "hand_control": {"enabled": true, "error": "", "target_version": 3},
   "vision": {
     "status": "TRACKING", "confidence": 0.96,
     "yoke": {"detected": true, "roll": 0.32, "pitch": -0.15}
   },
   "freshness": {
     "arm": {"valid": true, "age_ms": 4, "sequence": 20470},
-    "hand": {"valid": true, "age_ms": 5, "sequence": 20466},
+    "hand": {"valid": true, "age_ms": 0, "sequence": 20466},
     "camera": {"valid": true, "age_ms": 21, "sequence": 6141}
   }
 }
@@ -1013,11 +1070,11 @@ RT 执行侧再次检查本地命令年龄、origin、授权和本地安全约�
 
 联调至少覆盖：八个 Topic 的完整消息编解码；两帧/多帧异常与精确 Topic 匹配；缺字段、重复键、空值、未知版本/模式、数组长度错误；重复/乱序/旧会话；旧样本换新 sequence；Core 新目标携带过期 origin；UTC 跳变和 clock_id 不匹配；失效视觉不回中；双侧反馈不同步；Bus/Core 重启不自动使能；服务超时重试不重复执行；记录超限/缺口可见；回放端点、授权和时钟隔离。
 
-本文仅新增文档。Schema、编解码器、运行节点及上述联调检查需在实现阶段落地；本次文档示例的语法检查不能替代协议实现与设备验证。
+公共编解码器及部分运行节点已经实现；尚未落地的 Schema 和能力仍需按清单实施。文档示例的语法检查不能替代协议实现、SocketCAN 通信或实体设备验证。
 
-## 19. 双臂节点迁移采用的协议能力
+## 19. 双臂与手节点迁移采用的协议能力
 
-本节记录 `nodes/aviator_core` / `nodes/manipulator` 当前采用的具体能力。前文“尚未实现”的历史说明不能替代当前代码；common 已实现公共编解码、来源/会话/时效校验，完整系统的所有可选业务模式并未全部实现。
+本节记录 `nodes/aviator_core`、`nodes/manipulator` 和 `nodes/aviator_hand` 当前采用的具体能力。前文“尚未实现”的历史说明不能替代当前代码；common 已实现公共编解码、来源/会话/时效校验，完整系统的所有可选业务模式并未全部实现。
 
 ### 19.1 本地任务与配置
 
@@ -1053,7 +1110,7 @@ Managed 入口的 Rokae 待机就绪判据使用 arm.state 的 `status_mono_us`�
 
 ### 19.4 当前范围
 
-保留原示例已废除的判据：不按 TCP 偏差、关节跟踪偏差、grasp.ready 或抓握丢失阻断执行。软件锁定不等于独立抓握验证。缺失手部与视觉测量为 null/invalid，不阻止当前仅双臂的本地开环任务；它们不能伪装成有效测量。
+保留原示例已废除的判据：不按 TCP 偏差、关节跟踪偏差、grasp.ready 或抓握丢失阻断执行。软件锁定不等于独立抓握验证。独立 `aviator_hand` 已提供双手归一化驱动位置反馈，但关节角、关节速度和抓握验证仍为 null/false；缺失视觉测量不阻止当前本地开环任务，也不能伪装成有效测量。
 
 `aviator_core` 与 `aviator_core_servo` 为直接调用 Aviator 功能函数的本地任务入口，不经整机业务状态机；`aviator_core_sml` 只做离线状态机测试，不发布/订阅 ZMQ。`aviator_core_managed` 调用 Aviator 的六个状态机操作，导出真实整机状态并控制既有设备接口；它保留本地终端操作，并默认接入摇杆六操作 ZMQ 服务与 flight.command（`--console` 切换为终端目标测试）；RS422 路径仍未实现。Gateway 的 core_session 默认留空，从首个合法、新鲜、有效的 flight.state 自动绑定 Core 会话，请求自动携带 server_session_id；绑定后不自动跨会话切换，Core 重启需重启 Gateway 重新识别。此本地测试入口不依赖安全证据文件，守卫使用设备反馈、Gateway 时效和本地策略，软件急停仅在当前进程锁存。Managed 服务默认 ROUTER bind 5559，强制匹配 Gateway/Core 会话、同机时钟、1–10000 ms 请求期限及六操作白名单，拒绝记录副本；本次 Core 会话最多保存 1024 条原始应答去重，不淘汰执行身份。长动作即时返回 ACCEPTED，最终状态看 flight.state，尚无 get_result/异步最终应答。parameters 恰好为 source=JOYSTICK、button=1..11、server_session_id；不使用第 14.5 节尚未实现的 RS422 参数。默认绑定第一条有效输入的 Gateway 会话，也可显式指定 --gateway-session。仅 CONTROL 调用大写 ServoWheel，POSITION_HOLD 使用通过校验的设备检查时间放行目标，检查时间必须属于本次操控；输入丢失走整机 SAFE 保护，不自动恢复操控。`aviator_core_servo`：默认自动绑定第一条通过来源、时钟、有效性和时效检查的 flight_gateway 消息的 session，也可用 --gateway-session 手动指定。接收 source=JOYSTICK 的 flight.command，按 `roll * 0.87266` rad、`min(pitch, 0) * 0.170` m 映射并调用 ServoWheel(v=1)。入口显式启用 JOYSTICK POSITION_HOLD，按第 5.1 节检查设备检查时间、消息接收时效、有效位和序号；普通输入仍检查原始采样时效。失效后停止更新目标，由 Servo 超时减速，同一会话恢复有效数据后可恢复跟随。自动绑定只进行一次，网关重启后必须重启 Core 重新绑定，不在失效后自动切换会话。flight.state.control_source 在有效跟随时为 JOYSTICK，否则为 NONE。设备轨迹仍使用 Core 的 local.task 来源，尚未把网关原始 origin 贯穿到 Manipulator，不能将此入口解释为完整飞控授权链路。具体启动命令和超时边界见 Core README。
 

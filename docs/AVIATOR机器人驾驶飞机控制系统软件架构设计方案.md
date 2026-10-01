@@ -1,12 +1,12 @@
 # AVIATOR 机器人驾驶飞机控制系统软件架构设计方案
 
-文档编号  AVIATOR SAD 001    版本  1.2    日期  2026年10月1日
+文档编号  AVIATOR SAD 001    版本  1.3    日期  2026年10月2日
 
 ### 架构决策
 
 系统统一采用 C++17 开发，使用 CMake 维护工程、依赖、构建、测试与安装；系统采用多进程与 ZMQ 统一消息总线。独立 aviator_bus 进程通过 XSUB → zmq::proxy() → XPUB 转发全部连续控制和状态消息。各业务进程通过统一 Topic 与 JSON 协议通信，统一使用 TCP，默认绑定本机回环地址。
 
-AVIATOR Core 负责输入源仲裁、整机状态机、运动目标生成与 FlightState 聚合；Manipulator 统一负责双臂双手的设备接入及本地安全执行。实时伺服闭环与 ZMQ 非实时通信域隔离。Monitor、Logger、Plotter 和 Replay 均采用 C++ 实现。当前 aviator_logger 将总线消息记录到数据 MCAP；相机采集进程将无损 PNG 直接记录到独立的图像 MCAP。两份文件共享记录会话 ID，Replay 从 MCAP 提供复现能力。其他原始设备及伺服周期数据的归档仍属后续升级项。
+AVIATOR Core 负责输入源仲裁、整机状态机、运动目标生成与 FlightState 聚合；Manipulator 负责双臂设备接入及本地安全执行；独立 aviator_hand 进程通过 SocketCAN 接入双手、执行手命令并发布实际驱动位置反馈。实时伺服闭环与 ZMQ 非实时通信域隔离。Monitor、Logger、Plotter 和 Replay 均采用 C++ 实现。当前 aviator_logger 将总线消息记录到数据 MCAP；相机采集进程将无损 PNG 直接记录到独立的图像 MCAP。两份文件共享记录会话 ID，Replay 从 MCAP 提供复现能力。其他原始设备及伺服周期数据的归档仍属后续升级项。
 
 ### 适用范围
 
@@ -14,7 +14,7 @@ AVIATOR Core 负责输入源仲裁、整机状态机、运动目标生成与 Fli
 
 ### 设计基线与评审项
 
-已确定的架构基线包括 C++17、CMake、MCAP 全量数据记录、统一总线、八个主要 Topic、50/100/30 Hz 通信频率、Multipart 两帧格式、JSON、latest-value、sequence、timestamp、watchdog 以及实时隔离。本文补充的超时阈值、队列深度、资源预算与验收数值均为台架初始建议，不代表实测结果或已批准的飞行参数。
+已确定的架构基线包括 C++17、CMake、MCAP 全量数据记录、统一总线、八个主要 Topic、按节点能力配置的 10/30/50/100 Hz 通信频率、Multipart 两帧格式、JSON、latest-value、sequence、timestamp、watchdog 以及实时隔离。本文补充的超时阈值、队列深度、资源预算与验收数值均为台架初始建议，不代表实测结果或已批准的飞行参数。
 
 ### 章节导航
 
@@ -38,7 +38,8 @@ USB摇杆 ─USB─── Joystick Gateway ├─ PUB / SUB ─┐
 AVIATOR Core ───────────────────┤            │
                                             ▼
 Manipulator  ───────────────────┤    aviator_bus 独立进程
-Camera  ───────────────────────┘    XSUB → proxy → XPUB
+AVIATOR Hand ───────────────────┤    XSUB → proxy → XPUB
+Camera  ───────────────────────┘
                                             │
                         ┌───────────────────┘
                         ▼
@@ -47,6 +48,7 @@ Camera  ───────────────────────┘
               受限 TCP 监控出口（可选）
 
 Manipulator 内部：非实时通信 → 有界快照 → 实时伺服 → 设备
+AVIATOR Hand：ZMQ 命令/状态 ↔ SocketCAN 双手，命令与反馈有效性独立
 相机采集 → 有界图像副本队列 → CameraPacket :5557 → aviator_logger → MCAP
 总线消息 → aviator_logger → 同一 MCAP；设备/伺服原始采集通道待实现
 Replay：读取 MCAP，默认连接隔离回放总线，不接入运行中的执行器
@@ -73,7 +75,8 @@ Replay：读取 MCAP，默认连接隔离回放总线，不接入运行中的执
 | aviator_bus | PUB 接入 → SUB 分发 | 仅转发消息与订阅，不解析业务、不进行控制仲裁。 |
 | flight_gateway | 双路 RS422（或 USB 摇杆） ↔ flight.*；Core 操作服务 | 每路环形缓冲解帧、共享主备仲裁、输入归一化、周期指令幂等处理及 65B 状态回传；USB 用于台架模拟，两个输入模式互斥。 |
 | aviator_core | 飞控和设备状态flight.command ↔ 设备命令、flight.state | 唯一业务仲裁者；状态机、规划、联合安全判定和整机状态聚合。 |
-| manipulator | arm.command ↔ arm.state；hand.command ↔ hand.state| 管理双臂与双手，目标校验、实时插值、设备约束与本地安全。 |
+| manipulator | arm.command ↔ arm.state；兼容 invalid hand.state 占位 | 管理双臂，负责目标校验、实时插值、设备约束与本地安全；100 Hz 手占位始终 valid=false，不代表真实手反馈。 |
+| aviator_hand | hand.command ↔ hand.state；SocketCAN ↔ 双手 | 校验双手完整目标、执行归一化驱动/抓握设定值、命令 watchdog、安全姿态和实际驱动位置采集。 |
 | camera | camera.command → camera.detection | 图像采集、方向盘检测、置信度与观测时间输出。 |
 | aviator_monitor | 订阅所需 Topic | 整机仪表、频率、数据年龄、告警和连接状态。 |
 | aviator_logger | 全量总线 Topic → 数据 MCAP | 独立 C++ 数据记录节点；当前只记录收到的总线 JSON。 |
@@ -118,21 +121,24 @@ PUB/SUB 不提供持久历史或执行确认，新订阅者可能错过启动阶
 | flight.state<br>FlightState | 50 / 20 ms | Core | Flight Gateway；测试端 |
 | arm.command<br>ArmCommand | 100 / 10 ms | Core | Arm Controller |
 | arm.state<br>ArmState | 100 / 10 ms | Arm Controller | Core |
-| hand.command<br>HandCommand | 100 / 10 ms | Core | Hand Controller |
-| hand.state<br>HandState | 100 / 10 ms | Hand Controller | Core |
+| hand.command<br>HandCommand | 50 / 20 ms | Core | aviator_hand |
+| hand.state<br>HandState | 有效反馈 10 / 100 ms；兼容占位 100 / 10 ms | aviator_hand；Manipulator 仅发布 invalid 占位 | Core |
 | camera.command<br>CameraCommand | 30 / 33.3 ms | Core | Camera Detector |
 | camera.detection<br>CameraDetection | 30 / 33.3 ms | Camera Detector | Core |
 
 ### 消息内容约定
 
-flight.command 表示归一化 roll/pitch 连续目标（RS422 速度限幅需扩展强类型字段和 Schema 后接入，不可丢弃）；arm.command 表示双臂位置或轨迹段目标；hand.command 表示双手连续关节或抓握设定值；camera.command 表示可重复覆盖的检测目标、ROI 与跟踪期望。内部复位、标定、上电、模式切换等动作通过独立服务处理。外部 RS422 周期帧同时携带状态/抓握指令，Gateway 在解帧与主备仲裁后将其分流至操作适配器，避免 latest-value 覆盖动作或每 20 ms 重复派发。
+flight.command 表示归一化 roll/pitch 连续目标（RS422 速度限幅需扩展强类型字段和 Schema 后接入，不可丢弃）；arm.command 表示双臂位置或轨迹段目标；当前 hand.command 表示双手六路归一化驱动位置或统一 closure 抓握设定值；camera.command 表示可重复覆盖的检测目标、ROI 与跟踪期望。内部复位、标定、上电、模式切换等动作通过独立服务处理。外部 RS422 周期帧同时携带状态/抓握指令，Gateway 在解帧与主备仲裁后将其分流至操作适配器，避免 latest-value 覆盖动作或每 20 ms 重复派发。
 
-arm.state、hand.state 包含设备状态与测量快照；camera.detection 包含观测有效性、置信度和方向盘状态；flight.state 是整机对外反馈，不是内部状态的无差别拼接。
+arm.state 包含双臂设备状态与测量快照；aviator_hand 的 hand.state 包含双手实际驱动刻度、归一化位置、命令接纳状态、反馈时效与诊断计数，当前不提供关节角/速度或硬件使能/故障寄存器。Manipulator 另发始终 invalid 的旧形状手占位，仅供未启用真实手链路时表达 OFFLINE/null。camera.detection 包含观测有效性、置信度和方向盘状态；flight.state 是整机对外反馈，不是内部状态的无差别拼接。
 
 | 链路 | 告警 / 超时初始值 | 超时处理 |
 | --- | --- | --- |
 | flight.command | 60 / 100 ms | Core 撤销飞控目标有效性并触发安全策略。 |
-| arm 与 hand 命令或反馈 | 30 / 50 ms | 对应本地 watchdog 或 Core 判定不可继续控制。 |
+| arm 命令或反馈 | 30 / 50 ms | Manipulator 本地 watchdog 或 Core 判定不可继续控制。 |
+| hand.command | 默认 100 ms | aviator_hand 同时检查接收、消息采样和 origin 年龄，超时发送配置的 safe_pose。 |
+| hand.state 反馈 | 默认 300 ms | 每侧按反馈快照时间独立失效；Core 不把顶层状态生成时间当作设备采样时间。 |
+| Core 手状态链路 | 默认 500 ms | 约束状态接收和命令确认驻留；不能延长设备侧 300 ms 的反馈有效性。 |
 | camera.detection | 100 / 200 ms | 视觉失效；是否退出操控由当前模式的视觉依赖决定。 |
 | flight.state | 60 / 100 ms | 网关报告机器人状态失效，不以旧状态冒充在线。 |
 
@@ -155,7 +161,7 @@ arm.state、hand.state 包含设备状态与测量快照；camera.detection 包�
 
 为兼容通用 JSON 工具，整数约束为 0 至 2^53−1；超过范围前创建新会话，禁止静默溢出。timestamp 名称保留此前接口约定，单位固定为 μs。UTC 时钟校正不影响 watchdog；同机用 sample_mono_us 检查数据年龄，再用本地接收单调时间检查消息是否持续到达。
 
-网关重发同一外部样本时可递增消息 sequence，但必须保留原始 sample_mono_us；设备状态同理。RS422 没有发送时间戳，sample_mono_us 只能记录该逻辑帧首次完整接收时的本机单调时间，不是飞控采样时间；A/B 迟到副本不能续期，驱动缓存中的驻留时间需另行约束。Core 派生的运动目标还须携带 origin（输入发布者、会话、序号与采样时间），防止 Core 持续发送旧输入而掩盖上游失效。
+网关重发同一外部样本时可递增消息 sequence，但必须保留原始 sample_mono_us；设备状态同理。当前 hand.state 是特定例外：顶层 sample_mono_us 表示状态生成时间，每侧 hands.{side}.sample_mono_us 才表示反馈快照最早读请求时间。RS422 没有发送时间戳，sample_mono_us 只能记录该逻辑帧首次完整接收时的本机单调时间，不是飞控采样时间；A/B 迟到副本不能续期，驱动缓存中的驻留时间需另行约束。Core 派生的运动目标还须携带 origin（输入发布者、会话、序号与采样时间），防止 Core 持续发送旧输入而掩盖上游失效。
 
 ### 校验与演进规则
 
@@ -254,7 +260,8 @@ FlightState 由 Core 以 50 Hz 发布，保留 system、arms、hands、vision �
 | system | state、current_error_code、last_error_code | 建议同时提供 control_source；错误码为十进制整数。 |
 | arms.left / right | joint_position[]、joint_velocity[]、tcp_pose | 两组数组长度相同并匹配机械臂配置。 |
 | tcp_pose | frame_id、position{x,y,z}、orientation{qx,qy,qz,qw} | 参考系与外参版本明确，四元数归一化。 |
-| hands.left / right | joint_position[]、joint_velocity[] | 有效关节数量与顺序由对应硬件配置定义。 |
+| hands.left / right | 启用真实手时同 HandState 每侧完整字段；否则为 Manipulator invalid 占位 | 真实手路径直接聚合 aviator_hand 实际驱动反馈；关键字段为 valid、status、sample_mono_us、drive_position_normalized[6]，未标定的 joint_position/joint_velocity 为 null。六路顺序为拇指旋转、拇指、食指、中指、无名指、小指。 |
+| hand_control | enabled、error、target_version（启用真实手时） | Core 手控制链路状态；不替代设备反馈或物理抓握验证。 |
 | vision | status、confidence、yoke | confidence∈[0,1]；与原始图像采样时间关联。 |
 | vision.yoke | detected、roll、pitch | 归一化方向盘状态；反馈允许 roll∈[−1.04,1.04]、pitch∈[−18/17,18/17]；无有效检测时位置为 null。 |
 | freshness | arm、hand、camera 的 valid、age_ms、sequence | 建议纳入 v1 基线，避免顶层新时间掩盖旧子状态。 |
@@ -271,7 +278,7 @@ current_error_code 表示当前最高优先级阻断错误，无当前错误为 
 
 ### 数据一致性
 
-Core 在同一聚合周期读取各 Topic 快照并记录各自序号和年龄；50/100/30 Hz 数据并非同时采样。重复的视觉帧不伪装成新观测。任何子数据失效时保留最后值用于显示但将对应 valid=false，顶层 valid 按当前模式所需数据计算；零值不能代表未知。需要严格同步的算法应使用独立时间对齐模块及明确插值规则。
+Core 在同一聚合周期读取各 Topic 快照并记录各自序号和年龄；10/30/50/100 Hz 数据并非同时采样。重复的视觉帧不伪装成新观测。任何子数据失效时保留最后值用于显示但将对应 valid=false，顶层 valid 按当前模式所需数据计算；零值不能代表未知。手反馈年龄按每侧 sample_mono_us 和 Core 本地接收年龄检查，不由 10 Hz 状态消息的新顶层时间续期。需要严格同步的算法应使用独立时间对齐模块及明确插值规则。
 
 ## 08 FlightState 完整 JSON 示例
 
@@ -308,16 +315,31 @@ Core 在同一聚合周期读取各 Topic 快照并记录各自序号和年龄�
     }
   },
   "hands": {
-    "left": {"joint_position":[0.12,0.35,0.42,0.31,0.26,0.18],
-             "joint_velocity":[0,0.01,0.02,0.01,0,0]},
-    "right":{"joint_position":[0.12,0.35,0.42,0.31,0.26,0.18],
-             "joint_velocity":[0,0.01,0.02,0.01,0,0]}
+      "left":{"valid":true,"status":"ACTIVE","enabled":true,"error_code":0,
+        "feedback_available":true,"position_source":"angle_act_register",
+        "sample_mono_us":12345675000,"sample_time_basis":"host_read_request",
+            "feedback_age_ms":5,"drive_position_raw":[1000,1000,1000,1000,1000,1000],
+            "drive_position_normalized":[1,1,1,1,1,1],
+            "commanded_drive_position_normalized":[1,1,1,1,1,1],
+        "joint_position":null,"joint_velocity":null,"grasp_verified":false,
+        "feedback_samples":100,"feedback_timeouts":0,
+        "feedback_io_errors":0,"feedback_last_error":""},
+      "right":{"valid":true,"status":"ACTIVE","enabled":true,"error_code":0,
+         "feedback_available":true,"position_source":"angle_act_register",
+         "sample_mono_us":12345675000,"sample_time_basis":"host_read_request",
+             "feedback_age_ms":5,"drive_position_raw":[1000,1000,800,1000,1000,1000],
+             "drive_position_normalized":[1,1,0.8,1,1,1],
+             "commanded_drive_position_normalized":[1,1,0.8,1,1,1],
+         "joint_position":null,"joint_velocity":null,"grasp_verified":false,
+         "feedback_samples":100,"feedback_timeouts":0,
+         "feedback_io_errors":0,"feedback_last_error":""}
   },
+    "hand_control":{"enabled":true,"error":"","target_version":3},
   "vision":{"status":"TRACKING","confidence":0.96,
             "yoke":{"detected":true,"roll":0.32,"pitch":-0.15}},
   "freshness": {
     "arm":{"valid":true,"age_ms":4,"sequence":20470},
-    "hand":{"valid":true,"age_ms":5,"sequence":20466},
+    "hand":{"valid":true,"age_ms":0,"sequence":20466},
     "camera":{"valid":true,"age_ms":21,"sequence":6141}
   }
 }
@@ -331,7 +353,7 @@ Core 在同一聚合周期读取各 Topic 快照并记录各自序号和年龄�
 | --- | --- | --- |
 | Core | SUB 接收；100 Hz 算法调度；PUB 发送 | 接收解析后写 typed mailbox；调度按最新有效快照生成目标；50/30 Hz 任务使用独立绝对截止时刻。 |
 | Arm Controller | SUB 通信；实时伺服；100 Hz 状态发送 | 伺服频率按驱动要求，典型 1 kHz；通信与 RT 之间仅传有界强类型快照。 |
-| Hand Controller | 通信；设备控制；100 Hz 状态发送 | 设备更新频率服从硬件能力，不把发布 100 Hz 等同于硬件真实反馈 100 Hz。 |
+| aviator_hand | 单线程有界轮询 ZMQ 与双路 SocketCAN；10 Hz 状态发送 | 50 Hz 命令由 Core 周期覆盖；每侧按 10 Hz 目标频率依次读取六个 ANGLE_ACT 寄存器，完整快照才替换，命令 watchdog 独立运行。 |
 | Camera Detector | 采集；推理；命令与结果通信 | 最新图像优先；推理有界队列；携带图像采集时间而非仅推理完成时间。 |
 | Flight Gateway | 一个有界非阻塞事件循环，拥有两路串口、解析器、仲裁器和 ZMQ socket | 轮询两路 RX/TX、定时发布与服务响应；先检查安全期限，再限额处理数据；记录写盘独立，见 9.2～9.4。 |
 | 观测工具 | SUB；UI 或磁盘工作线程 | 阻塞 I/O 与业务处理分离，队列有界，慢端不占用控制线程。 |
@@ -354,7 +376,7 @@ ZMQ PUB、SUB、XSUB、XPUB socket 均由一个固定线程创建、使用并关
 
 实时线程中禁止 JSON 编解码、ZMQ 调用、动态内存分配、磁盘日志和无界锁等待。进入实时循环前完成内存预分配、必要的锁页和预热；根据实测设置线程级 SCHED_FIFO 与 CPU 亲和性，避免把整个含通信线程的进程盲目提升为实时调度。
 
-100 Hz 目标由本地插值器在伺服周期执行，不允许直接阶跃至远端目标。RT 独立检查本地命令年龄和上游 origin 年龄，即使通信线程卡住也能触发安全状态。若没有新有效目标，执行已验证的有界安全动作，不能无限保持旧速度或持续推进旧轨迹。
+双臂 100 Hz 目标由本地插值器在伺服周期执行，不允许直接阶跃至远端目标。aviator_hand 当前将 50 Hz 归一化目标直接映射为六路 0～1000 驱动刻度，不进行轨迹插值，并独立检查命令、origin 与接收年龄。若没有新有效目标，各执行器执行已验证的有界安全动作，不能无限保持旧速度或持续推进旧轨迹。
 
 记录实际周期、执行耗时、唤醒延迟和 deadline miss。1 kHz 只是目标配置，是否满足最坏情况时间约束必须在目标硬件、驱动与最大干扰负载下验证。
 
@@ -553,13 +575,13 @@ aviator_logger 是独立部署的基础节点，统一使用 MCAP 作为机器�
 
 #### 全量记录范围
 
-“全部机器人数据”指本次配置启用的全部设备与软件数据源，在采集源原始频率下记录每个样本，禁止默认降采样或 latest-value 覆盖。建立 recording_manifest，列明每个数据源的生产者、Schema、单位、采样率、时钟域、启用状态及预计带宽；新增数据源必须同步注册采集与验收项。未安装或硬件不提供的数据显式标记 unavailable，不能将 100 Hz 聚合反馈当作全部原始反馈。
+“全部机器人数据”指本次配置启用的全部设备与软件数据源，在采集源原始频率下记录每个样本，禁止默认降采样或 latest-value 覆盖。建立 recording_manifest，列明每个数据源的生产者、Schema、单位、采样率、时钟域、启用状态及预计带宽；新增数据源必须同步注册采集与验收项。未安装或硬件不提供的数据显式标记 unavailable，不能将总线周期聚合反馈当作全部原始反馈。
 
 | 数据类别 | 必须记录的内容 | 采集路径 |
 | --- | --- | --- |
 | 控制与状态 | 八个主 Topic、system.state、system.diagnostic、system.event 及全部已注册扩展 Topic | Logger 订阅本地总线全部 Topic，逐条保存收到的消息。 |
 | 设备原始输入输出 | RS422 收发字节及校验结果、USB 原始报告、驱动实际提供的关节位置/速度/力矩/电流/温度/故障、传感器数据 | 设备适配层在解析或聚合前后提供带方向和样本标识的记录副本。 |
-| 实时控制数据 | 每伺服周期的输入目标、插值目标、实际下发量、反馈、限幅/安全判定、周期耗时和 deadline miss | RT 写预分配有界 SPSC 环形队列，非实时采集线程取出并传输；不只记录 100 Hz 状态。 |
+| 实时控制数据 | 每伺服周期的输入目标、插值目标、实际下发量、反馈、限幅/安全判定、周期耗时和 deadline miss | RT 写预分配有界 SPSC 环形队列，非实时采集线程取出并传输；不只记录总线降采样状态。 |
 | 视觉与媒体 | 已启用图像记录时的采集帧、相机参数、帧号、采样时间、检测结果及其关联帧号；已配置的深度/点云 | 相机采集侧向有界队列提交原始 RGB8/Z16 副本，经独立 5557 入口交给 Logger；检测结果仍走控制总线。 |
 | 服务与事件 | 可靠服务完整请求、响应、执行结果、授权变化、状态转换、故障与恢复 | 服务两端通过记录适配器采集；system.event 摘要不能替代完整服务记录。 |
 | 运行上下文 | 构建哈希、依赖清单、协议 Schema、设备清单、配置、标定、坐标变换及其版本、时钟同步状态 | 会话开始保存快照，运行中变更保存新版本及生效时间；剔除密码、密钥等凭据。 |
@@ -627,15 +649,15 @@ Replay 与 Plotter 通过共用 MCAP Reader 按 Topic、时间和源会话读取
 | flight.state | 4 | 50 | 200 |
 | arm.command | 1.5 | 100 | 150 |
 | arm.state | 2 | 100 | 200 |
-| hand.command | 1 | 100 | 100 |
-| hand.state | 1.5 | 100 | 150 |
+| hand.command | 1 | 50 | 50 |
+| hand.state | 1.5 | 10 | 15 |
 | camera.command | 0.5 | 30 | 15 |
 | camera.detection | 1 | 30 | 30 |
-| 合计 | — | 560 | 875 |
+| 合计 | — | 420 | 690 |
 
-总线输入约 0.875 MB/s，即 7 Mbit/s；若每条消息平均有 4 个接收者，输出约 3.5 MB/s。Bus 入站与出站逻辑数据总量约 4.375 MB/s，不等于内存复制量或实际网卡流量。远端全量订阅约需 7 Mbit/s 纯业务带宽，应另留协议与突发裕量。
+总线输入约 0.690 MB/s，即 5.52 Mbit/s；若每条消息平均有 4 个接收者，输出约 2.76 MB/s。Bus 入站与出站逻辑数据总量约 3.45 MB/s，不等于内存复制量或实际网卡流量。远端全量订阅约需 5.52 Mbit/s 纯业务带宽，应另留协议与突发裕量。
 
-Logger 原始有效负载约 3.15 GB/小时、25.2 GB/8小时；按 1.5 倍包装与索引预算为 4.73 GB/小时、37.8 GB/8小时。压缩收益需实测，不预先抵扣容量。上述数字仅覆盖八个主 Topic，不代表全量记录容量。相机原图、点云和伺服数据通过独立记录通道写入 MCAP。
+Logger 原始有效负载约 2.484 GB/小时、19.872 GB/8小时；按 1.5 倍包装与索引预算为 3.726 GB/小时、29.808 GB/8小时。压缩收益需实测，不预先抵扣容量。上述数字仅覆盖八个主 Topic，不代表全量记录容量。相机原图、点云和伺服数据通过独立记录通道写入 MCAP。
 
 全量原始速率按 R_total = R_topics + Σ(采样率 × 样本字节数) + R_events 估算。例如单路 1920×1080、RGB8、30 Hz 原图约 186.624 MB/s，即 671.85 GB/小时；若伺服每周期样本 2 kB、1 kHz，再增加 2 MB/s、7.2 GB/小时。相机数量、像素格式、实际驱动采样率和信封开销必须纳入预算。默认保留原始像素或无损编码，有损视频不作为原图的等价替代。磁盘持续写入初始按实测峰值至少 1.5 倍预留，容量按试验时长加分卷/索引与保留余量计算，压缩率不得预先假定。
 
@@ -781,7 +803,8 @@ aviator/
 │   ├── aviator_bus/               # XSUB → proxy → XPUB，仅转发
 │   ├── flight_gateway/            # RS422 或 USB 摇杆，通过配置选择
 │   ├── aviator_core/              # 仲裁、状态机、规划与状态聚合
-│   ├── manipulator/               # 双臂双手共用 API，各自频率调度
+│   ├── manipulator/               # 双臂设备接入、轨迹执行与状态
+│   ├── aviator_hand/              # 双手 SocketCAN、命令保护与实际位置反馈
 │   ├── camera/                    # 图像采集与检测
 │   ├── aviator_logger/            # 全量数据接入、MCAP 写盘与分卷
 │   ├── aviator_monitor/           # 状态监测
@@ -790,6 +813,7 @@ aviator/
 ├── config/
 │   ├── system.yaml               # 运行模式、输入源、端点、频率与超时
 │   ├── robot.yaml                # 臂手设备、关节、限位与标定
+│   ├── inspire_hand.yaml          # 双手 CAN、驱动参数、端点、频率与超时
 │   ├── camera.yaml               # 相机与检测参数
 │   └── recording.yaml            # 全量数据清单、队列、MCAP 与磁盘配置
 ├── schemas/                      # 消息 Schema 与记录信封定义
@@ -800,7 +824,7 @@ aviator/
 
 图中 `protocol.hpp / .cpp` 等表示同名头文件与源文件。每个节点初期只需 `CMakeLists.txt`、`main.cpp` 及少量职责明确的 `.hpp/.cpp`；代码规模增长后再拆子目录。构建产物位于 `build/`，MCAP 数据写入配置指定的运行目录，均不纳入源码管理。
 
-flight_gateway 内规划保留 RS422 与 USB 两种输入适配，配置选择其中一种，不再单设 joystick_gateway。RS422 新增节点私有模块：`serial_port`（非阻塞收发与配置）、`byte_ring`（有界字节与接收时间存储）、`rs422_codec`（14/65B 固定布局与校验）、`dual_link`（共享仲裁与短窗副本比较）、`flight_intent`（意图幂等及 Core 服务分流）。这些是目标模块名，不代表已有文件；先复用现有 `gateway`、`common/service` 和 `InputGuard`，不新建进程或通用通信框架。manipulator 内保留 arm 与 hand 各自的目标缓存、更新周期和状态发布，共用设备 API 与生命周期管理；继续使用 arm.*、hand.* Topic，不再单设 arm_controller 与 hand_controller。camera 统一使用第02章名称。
+flight_gateway 内规划保留 RS422 与 USB 两种输入适配，配置选择其中一种，不再单设 joystick_gateway。RS422 新增节点私有模块：`serial_port`（非阻塞收发与配置）、`byte_ring`（有界字节与接收时间存储）、`rs422_codec`（14/65B 固定布局与校验）、`dual_link`（共享仲裁与短窗副本比较）、`flight_intent`（意图幂等及 Core 服务分流）。这些是目标模块名，不代表已有文件；先复用现有 `gateway`、`common/service` 和 `InputGuard`，不新建进程或通用通信框架。manipulator 保留 arm.* 目标缓存、实时执行和状态发布；aviator_hand 独立处理 hand.* Topic、SocketCAN 双手和本地安全姿态。camera 统一使用第02章名称。
 
 Logger 是正式运行节点；Monitor、Plotter 和 Replay 也统一放入 nodes，避免 apps、nodes、tools 三套目录。暂不增加独立的 topic_echo、topic_hz、command_sender、启动脚本或多层公共库目录；确有需求时再新增。部署服务名称与节点名称对应，统一由 systemd 管理启停。
 
@@ -820,7 +844,7 @@ Logger 是正式运行节点；Monitor、Plotter 和 Replay 也统一放入 node
 | libzmq + cppzmq | ZMQ 通信实现与 C++ 接口。 | aviator_bus 及 common/transport，实现前述 TCP 消息总线与独立记录通道。 |
 | MCAP C++ | 机器人全量数据文件的写入、读取与索引。 | common/recording，供 aviator_logger、aviator_replay 与 aviator_plotter 使用，见第10章。 |
 | Protobuf、Zstd / LZ4 | 二进制记录信封编码与 MCAP Chunk 压缩。 | common/recording；压缩库仅链接实际启用项，控制总线仍使用 JSON。 |
-| 设备与相机 SDK | 设备接入、命令执行及原始数据采集。 | 分别封装在 manipulator、camera、flight_gateway 内，按部署硬件启用。 |
+| 设备与相机 SDK | 设备接入、命令执行及原始数据采集。 | 分别封装在 manipulator、aviator_hand、camera、flight_gateway 内，按部署硬件启用。 |
 
 spdlog 负责面向开发与运维的文本日志，MCAP 负责带时间戳的全量机器人数据，两者独立配置。异步日志仍有入队、格式化与内存开销，不能视为硬实时安全接口：伺服线程只写预分配诊断队列，由非实时线程调用 spdlog。日志队列设置容量和溢出策略，实时相关路径不得等待文本日志落盘；必要事件同时进入 MCAP 记录链路，不能以文本打印替代数据记录。
 
@@ -849,7 +873,7 @@ CMake 统一维护安装规则、配置/Schema/服务文件和 CPack 发布包�
 
 ### 依赖方向
 
-nodes 中各节点负责组装，按需依赖 common 的库，不互相链接节点实现。aviator_core 内的控制算法只依赖强类型协议对象、时钟与安全接口，不依赖 JSON、ZMQ 或设备 SDK；节点内的设备适配代码不反向调用 Core 状态机。transport 负责完整消息收发，protocol 负责协议与编解码，recording 负责 MCAP 存储。manipulator 的实时执行路径只使用强类型数据和 runtime 的有界结构，通信、编解码与记录在非实时路径执行。
+nodes 中各节点负责组装，按需依赖 common 的库，不互相链接节点实现。aviator_core 内的控制算法只依赖强类型协议对象、时钟与安全接口，不依赖 JSON、ZMQ 或设备 SDK；节点内的设备适配代码不反向调用 Core 状态机。transport 负责完整消息收发，protocol 负责协议与编解码，recording 负责 MCAP 存储。manipulator 的双臂实时执行路径只使用强类型数据和 runtime 的有界结构；aviator_hand 独占其 SocketCAN 与 ZMQ socket，按有界轮询执行命令保护和反馈采集。
 
 ### 公共接口约定
 
@@ -864,7 +888,7 @@ Clock 提供 UTC 与 monotonic 时间，Replay 可注入虚拟时间；LatestMai
 | P0 接口冻结 | ICD 剩余 TBD、状态机、配置、硬件映射和安全策略 | 在 14/65B、115200/8N1 基线上冻结字节序、缩放、双路计数/主备语义、无效反馈、坐标及超时预算。 |
 | P1 总线与仿真 | Bus、协议库、模拟生产者、Monitor、Logger | C++/CMake 干净构建通过；八 Topic 写入 MCAP 并可读回；启动丢帧、重连、队列限制符合预期。 |
 | P2 摇杆台架 | Joystick、Core、双臂双手接入与本地 watchdog | 拔出、源冲突、旧数据和 Core 停止均进入规定安全状态。 |
-| P3 真飞控与视觉 | RS422 双向编解码、环形解析器、双路仲裁、既有 Core 服务的 ICD 扩展、原始记录、Camera 与 FlightState | 完成下述 RS422 专项故障注入及 50/100/30 Hz 实测；所需原始设备、伺服与图像记录覆盖清单核对完成。 |
+| P3 真飞控与视觉 | RS422 双向编解码、环形解析器、双路仲裁、既有 Core 服务的 ICD 扩展、原始记录、Camera 与 FlightState | 完成下述 RS422 专项故障注入及 10/30/50/100 Hz 实测；所需原始设备、伺服与图像记录覆盖清单核对完成。 |
 | P4 回放与部署 | Replay、systemd、发布包和运维手册 | MCAP 隔离回放、分卷、索引、崩溃恢复、慢盘、磁盘满与远程干扰测试通过。 |
 | P5 可靠服务与优化 | 通用服务扩展与按实测优化（P3 飞控必需服务不延后） | 重试去重、结果未知对账及重新授权验证完成。 |
 
@@ -970,6 +994,6 @@ RS422 两字节字节序/符号/缩放、TBD 反馈与无效值、状态/抓握�
 
 aviator_core 与 manipulator 已按第 15 章职责拆分；原示例的流程、规划和 Demo 在 Core，设备与本地执行在 Manipulator，连续数据经过 aviator_bus。细化协议见 ZMQ 文档第 19 节。
 
-本次交付范围是原示例的本地开环双臂任务。按当前需求不启用 TCP/关节跟踪偏差及抓握验证准入，软件锁定不能解释为实际抓握已验证；这是当前任务模式相对完整系统 CONTROL 准入的明确差异。缺失手部和视觉能力诚实报告无效。设备故障、命令/反馈时效、指令连续性和规划检查独立保留。
+本次交付范围包括原示例的本地开环双臂任务及独立 aviator_hand 的双手开合与实际驱动位置反馈。按当前需求不启用 TCP/关节跟踪偏差及抓握验证准入，软件锁定和手命令接纳都不能解释为实际抓握已验证；这是当前任务模式相对完整系统 CONTROL 准入的明确差异。手关节角/速度、硬件故障寄存器和视觉能力诚实报告为缺失或未验证。设备故障、命令/反馈时效、指令连续性和规划检查独立保留。
 
-100 Hz 窗口传输与 1 ms 本地执行分离，双臂使用共同执行游标；它不提供硬件同步或未经实测的硬实时承诺。全量记录、飞控标定映射、真实手部驱动、视觉闭环等后续阶段仍需独立实现与验收。
+100 Hz 窗口传输与 1 ms 本地执行分离，双臂使用共同执行游标；它不提供硬件同步或未经实测的硬实时承诺。aviator_hand 以 50 Hz 接收目标、10 Hz 发布状态，当前 Core 接入已通过模拟通信测试，实体手开合仍需专项验收。全量记录、飞控标定映射和视觉闭环等后续阶段仍需独立实现与验收。
