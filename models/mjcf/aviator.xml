@@ -661,12 +661,12 @@
         </body>
       </body>
     </body>
-    <body name="aviator_wall_left" pos="-0.800308395631 0.269737213437 -0.0180945147262" zaxis="-0.00114220604093 0.999026716432 0.0440943899029">
+    <!-- <body name="aviator_wall_left" pos="-0.800308395631 0.269737213437 -0.0180945147262" zaxis="-0.00114220604093 0.999026716432 0.0440943899029">
       <geom type="box" size="0.3 0.3 0.015" rgba="0.3 0.3 0.35 0.4" contype="1" conaffinity="7" group="0" mass="0" />
     </body>
     <body name="aviator_wall_right" pos="-0.799691604369 -0.269737213437 -0.0419054852738" zaxis="-0.00114220604093 0.999026716432 0.0440943899029">
       <geom type="box" size="0.3 0.3 0.015" rgba="0.3 0.3 0.35 0.4" contype="1" conaffinity="7" group="0" mass="0" />
-    </body>
+    </body> -->
   </worldbody>
   <equality>
     <weld name="left_grasp" site1="left_tcp" site2="left_handle" active="false" solref="0.005 1" solimp="0.95 0.99 0.001" />
