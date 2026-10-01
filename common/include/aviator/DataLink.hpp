@@ -13,6 +13,10 @@ enum class Side { Left = 0, Right = 1 };
 enum class GraspCommand { Lock, Unlock, ResetFault };
 enum class GraspResult { Ok, NotAligned, NotEnabled, Fault };
 
+struct MotionCancelled : std::runtime_error {
+    MotionCancelled() : std::runtime_error("Core motion authorization revoked") {}
+};
+
 // 抓取状态
 struct GraspState {
     bool open_loop = false; // true: wheel pose/latch state are software references, not feedback

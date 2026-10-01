@@ -63,7 +63,7 @@ int main() {
                       "2 ms interpolation changed linear trajectory");
         auto stream = w;
         stream.streaming = true;
-        stream.count = 51;
+        stream.count = servo_window_points;
         stream.first = 1;
         stream.total = 101;
         for (size_t k = 0; k < stream.count; ++k)
@@ -74,14 +74,23 @@ int main() {
             }
         auto sm = m;
         sm.body = encodeWindow(stream, session, epoch);
+        sm.body["config_id"] = std::string(64, 'a');
         check(encode(sm, payload, error), error.c_str());
+        check(payload.size() > 65536 && payload.size() <= max_payload_bytes,
+              "Full precision Servo window must exercise the enlarged wire budget");
+        std::cout << "81-point dual-arm payload: " << payload.size() << " bytes\n";
         Message wire;
         check(decode("arm.command", payload, wire, error), error.c_str());
         const auto restored = decodeWindow(wire, lo, hi, speed);
-        check(restored.streaming && restored.count == 51 && restored.first == 1, "Servo tick grid");
+        check(restored.streaming && restored.count == servo_window_points && restored.first == 1, "Servo tick grid");
         for (size_t k = 0; k < stream.count; ++k)
             check(restored.frames[k].q == stream.frames[k].q && restored.frames[k].dq == stream.frames[k].dq &&
                   restored.frames[k].ddq == stream.frames[k].ddq, "Servo samples changed in transport");
+        for (auto message : {decoded, wire}) {
+            auto& points = message.body["arms"]["left"]["points"];
+            points.push_back(points.back());
+            rejected([&] { decodeWindow(message, lo, hi, speed); });
+        }
         // Servo is allowed past the application dynamic caps; positions and finite values remain checked.
         auto fast = stream;
         for (size_t k = 0; k < fast.count; ++k) {

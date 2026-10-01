@@ -9,7 +9,7 @@
 namespace aviator {
 
 constexpr std::uint64_t max_json_integer = 9007199254740991ULL;
-constexpr std::size_t max_payload_bytes = 65536;
+constexpr std::size_t max_payload_bytes = 131072;
 constexpr std::size_t max_topic_bytes = 128;
 
 enum class Topic {

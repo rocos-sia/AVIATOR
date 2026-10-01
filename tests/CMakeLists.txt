@@ -100,6 +100,10 @@ if(TARGET aviator_core_servo AND TARGET manipulator AND AVIATOR_BUILD_MUJOCO)
     $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core>
     ${PROJECT_SOURCE_DIR} watchdog)
   set_tests_properties(control_nodes_watchdog PROPERTIES TIMEOUT 190 ENVIRONMENT "LD_BIND_NOW=1")
+  add_test(NAME control_nodes_servo_window COMMAND aviator_control_nodes_test
+    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core>
+    ${PROJECT_SOURCE_DIR} servo_window)
+  set_tests_properties(control_nodes_servo_window PROPERTIES TIMEOUT 30 ENVIRONMENT "LD_BIND_NOW=1")
   if(Python3_Interpreter_FOUND)
     execute_process(COMMAND ${Python3_EXECUTABLE} -c "import zmq, yaml"
       RESULT_VARIABLE FSM_PYTHON_DEPS OUTPUT_QUIET ERROR_QUIET)

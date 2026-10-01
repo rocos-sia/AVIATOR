@@ -11,13 +11,15 @@
 
 启动保持未使能。Core 先通过可靠服务读取本次 server_session 和关节保持目标，再显式授权/使能。重启更换会话，旧请求不能对新进程生效；重连不自动使能。初次使能后的当前位置保持允许最多 1 s 的命令接入窗口，进入目标流后使用配置的 50 ms watchdog。没有指令时不会自动向 Home 运动。
 
+显式 `stop` 从上一条关节指令本地减速并保持使能，制动期间持续更新反馈；完成后清除首次命令等待计时，不因静止保位超过 1 s 再次报错。下一段已授权轨迹会重新启用 50 ms watchdog；首次 `enable` 的 1 s 接入期限仍保留。
+
 设备指令采用双臂整体快照。2 ms 间隔的轨迹点在本地展开为 1 ms 位置点；两个 SDK 回调均取走上一条指令后才推进下一点，延迟不跳点追赶。执行进度反馈用于更新窗口，不能解释为两台控制器硬件同步，也不表示实际位置到位。
 
 SDK 回调有独立命令截止时间，通信或执行线程停顿不能无限维持授权。执行线程在正常取消时从最后下发指令减速；命令失效、反馈失效或执行异常锁存错误并停止双臂。停止路径检查关节限位；设备故障不能完成减速时转为停止 SDK 控制。现场仍需验证实际时序和物理停止效果。
 
-发布 arm.state（100 Hz）、hand.state（100 Hz）。ArmState 包含每侧原始采样时间、实际关节角/速度、TCP、已接纳命令和执行游标。Rokae TCP 使用各自 left_base/right_base，MuJoCo 使用 aircraft；四元数均为 qx/qy/qz/qw。SDK 适配分别设置工具的 trans/rpy 与实时齐次矩阵，保留控制器原有标定负载。真机 TCP/安装标定一致性需要现场验证。
+订阅 `arm.command`，发布 `arm.state`（100 Hz）；不订阅 `hand.command`，不发布 `hand.state`，手部命令与反馈由独立手节点负责。ArmState 包含每侧原始采样时间、实际关节角/速度、TCP、已接纳命令和执行游标。Rokae TCP 使用各自 left_base/right_base，MuJoCo 使用 aircraft；四元数均为 qx/qy/qz/qw。SDK 适配分别设置工具的 trans/rpy 与实时齐次矩阵，保留控制器原有标定负载。真机 TCP/安装标定一致性需要现场验证。
 
-当前硬件只有双臂反馈：hand.state 明确 OFFLINE/valid=false，关节测量为 null，grasp_verified=false。lock/unlock 是软件阶段；MuJoCo 额外切换把手 weld 以模拟物理连接，不做 TCP 对齐判断。wheel_reference 为指令参考，只有 MuJoCo 提供独立 wheel_measurement，不能把软件参考冒充真机传感器。
+lock/unlock 是软件阶段；MuJoCo 额外切换把手 weld 以模拟物理连接，不做 TCP 对齐判断。wheel_reference 为指令参考，只有 MuJoCo 提供独立 wheel_measurement，不能把软件参考冒充真机传感器。
 
 可靠服务包括 describe、authorize、enable、disable、stop、lock、unlock、reset_fault、get_result。单帧 REQ/REP，长操作先返回 ACCEPTED，客户端使用同一请求身份查询已有状态。服务缓存有界，不重复执行同 ID 请求；同 ID 改内容被拒绝。请求绑定 server_session，服务重启后旧请求必须对账，不能自动重放。接口约束见 [协议文档](../../docs/AVIATOR_ZMQ协议格式说明.md)。
 

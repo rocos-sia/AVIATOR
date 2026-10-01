@@ -1,5 +1,13 @@
 # 通信测试
 
+`motion_protocol` 覆盖 81 点 Servo 双臂 q/dq/ddq 完整报文（超过旧 64 KiB 限制）、
+128 KiB 报文预算、超出窗口上限的拒绝，以及普通轨迹原有 32 点/63 样本限制。
+`control_nodes_servo_window` 使用独立端口和 MuJoCo，验证 42 ms 补窗间隔后的连续恢复、
+显式 stop 后超过 1 s 的使能保位、从停止目标重启，以及持续断流仍触发 50 ms watchdog。
+`managed_gateway_process_test.py` 验证运动期间输入失效后进入 SAFE、稳定保位、无自动恢复，
+以及显式释放回到 STANDBY；任意中途 ERROR 都会失败。`core_hand_process_test.py` 的 revoke
+场景还检查没有运动任务时撤销授权也会请求本地 stop。
+
 `grasp_tools`（完整机器人构建）验证不同左右工具变换、直接抓握目标、70/40 mm 独立触发与
 平滑闭合终点、真实 Pinocchio FK/IK、旧共享配置兼容、缺失/混合配置拒绝、碰撞模型加载与
 MuJoCo TCP；无需连接真机。`control_nodes_grasp` 运行真实总线和 MuJoCo，覆盖使能、从 home

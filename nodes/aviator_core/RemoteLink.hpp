@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <thread>
 #include <deque>
+#include <future>
 namespace aviator {
 // Owns non-RT bus IO. Planning consumes feedback snapshots; it never accesses an SDK.
 class RemoteLink final : public DataLink {
@@ -14,7 +15,7 @@ class RemoteLink final : public DataLink {
     void report(const std::string &state, const std::string &source = "NONE");
     void reportSystem(const Json&); // Immutable owner-thread FSM export, separate from executor phase.
     DeviceState snapshot(bool& fresh, bool* status_fresh = nullptr) const;
-    void allowMotion(bool); // Revokes queued ordinary output on protective cancellation.
+    void allowMotion(bool); // Revoke queued output and asynchronously request device-local stop.
     const std::string& backend() const { return backend_; }
     const std::string& session() const { return session_; }
     double getJointPosition(Side, int) const override;
@@ -52,6 +53,8 @@ class RemoteLink final : public DataLink {
     std::atomic<uint64_t> heartbeat_{0};
     mutable std::mutex mutex_;
     std::mutex service_mutex_;
+    std::mutex stop_mutex_;
+    std::future<void> protective_stop_;
     std::condition_variable changed_;
     DeviceState state_;
     Json arm_body_ = Json::object(), hand_body_ = Json::object();

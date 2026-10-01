@@ -620,6 +620,10 @@ class Aviator::Impl {
             std::string next_state = "LOCKED";
             try {
                 runServo();
+            } catch (const MotionCancelled& error) {
+                setMotionError(error.what());
+                if (stopSafely()) setMotionError("");
+                else next_state = "FAULT";
             } catch (const std::exception &error) {
                 setMotionError(error.what());
                 // Stop and stale commands hold in the current impedance mode. Other failures latch FAULT.

@@ -102,6 +102,110 @@ void write(const fs::path &p, const YAML::Node &y) {
     std::ofstream f(p);
     f << y;
 }
+void servoWindowTest(zmq::context_t& ctx, zmq::socket_t& sub, const MotionConfig& config) {
+    check(config.timeout_us == 50000, "Regression requires unchanged 50 ms watchdog");
+    const auto client = new_session_id();
+    const auto info = callService(ctx, config, serviceRequest(client, "describe", Json::object()));
+    const Json params = {{"server_session", info.at("server_session")}, {"config_id", config.config_id}};
+    const std::string epoch = callService(ctx, config, serviceRequest(client, "authorize", params)).at("control_epoch");
+    zmq::socket_t pub(ctx, zmq::socket_type::pub);
+    configure(pub);
+    pub.connect(config.publish);
+    usleep(200000); // Establish PUB/SUB before enable starts its first-command deadline.
+    auto initial = callService(ctx, config, serviceRequest(client, "enable", params)).at("target").get<Joints>();
+    ReceiveState receiver;
+    uint64_t cursor = 0, sequence = 0, last_sample = 0, accepted = 0, trajectory_id = 1;
+    Json state;
+    auto read = [&](bool allow_fault = false) {
+        WireMessage wire;
+        std::string error;
+        while (receive(sub, receiver, wire, error) == ReceiveResult::received) {
+            if (wire.topic != "arm.state") continue;
+            Message m;
+            check(decode(wire.topic, wire.payload, m, error), error);
+            if (m.topic != Topic::arm_state) continue;
+            state = m.body;
+            cursor = state["execution"]["tick"];
+            if (!state["accepted_command"].is_null()) accepted = state["accepted_command"]["sequence"];
+            if (!allow_fault) check(!state["execution"]["fault"].get<bool>(), state["execution"]["error"]);
+        }
+    };
+    auto publish = [&] {
+        TrajectoryWindow w;
+        w.streaming = true;
+        w.id = trajectory_id;
+        // Match Core's four history ticks; cursor also carries real feedback/bus delay.
+        w.first = cursor > 4 ? cursor - 4 : 0;
+        w.count = servo_window_points;
+        w.total = 10000;
+        w.sequence = ++sequence;
+        w.sample = w.origin_sample = w.start = monotonic_us();
+        last_sample = w.sample;
+        for (size_t k = 0; k < w.count; ++k)
+            for (size_t j = 0; j < 14; ++j) {
+                const double t = (w.first + k) * .001, jerk = .01234567891234567;
+                w.frames[k].q[j] = initial[j] + jerk * t * t * t / 6;
+                w.frames[k].dq[j] = jerk * t * t / 2;
+                w.frames[k].ddq[j] = jerk * t;
+            }
+        auto m = motionMessage(Topic::arm_command, "aviator_core", client, sequence);
+        m.header.sample_mono_us = w.sample;
+        m.body = encodeWindow(w, client, epoch);
+        m.body["config_id"] = config.config_id;
+        publishMessage(pub, m); // Full precision q/dq/ddq travels through the actual bus.
+    };
+    for (int i = 0; i < 20; ++i) {
+        read(); publish(); usleep(10000);
+    }
+    read();
+    check(cursor > 50, "Servo did not advance");
+    const auto before = cursor;
+    publish();
+    while (monotonic_us() - last_sample < 42000) { read(); usleep(500); }
+    read();
+    check(accepted == sequence && cursor > before + 25, "Gap did not exercise continued buffered execution");
+    publish();
+    for (int i = 0; i < 10; ++i) { usleep(10000); read(); publish(); }
+    check(cursor > before + 100, "Servo failed to resume continuously after 42 ms gap");
+    initial = callService(ctx, config, serviceRequest(client, "stop", params)).at("target").get<Joints>();
+    const auto stopped_at = monotonic_us();
+    while (monotonic_us() - stopped_at < 1200000) {
+        read();
+        if (monotonic_us() - stopped_at > 100000) {
+            check(state["execution"]["trajectory_id"] == 0 && !state["execution"]["stopping"].get<bool>(),
+                  "Explicit stop did not retire the trajectory");
+            check(state["execution"]["target"].get<Joints>() == initial, "Stopped hold target changed");
+            check(state["arms"]["left"]["enabled"].get<bool>() && state["arms"]["right"]["enabled"].get<bool>(),
+                  "Explicit stop unexpectedly disabled arms");
+        }
+        usleep(1000);
+    }
+    ++trajectory_id;
+    for (int i = 0; i < 10; ++i) { read(); publish(); usleep(10000); }
+    read();
+    check(cursor > 50, "New trajectory did not restart from local hold");
+    publish();
+    const auto final_sequence = sequence;
+    const auto until = last_sample + 1000000;
+    while (monotonic_us() < until) {
+        read(true);
+        if (!state.is_null() && state["execution"]["fault"].get<bool>()) {
+            const std::string error = state["execution"]["error"];
+            check(accepted == final_sequence, "Last window did not reach executor");
+            check(error.find("Local command watchdog expired") != std::string::npos, error);
+            const auto age_at = error.find("sample_age_us=");
+            check(age_at != std::string::npos, "Missing watchdog age");
+            const auto age = std::stoull(error.substr(age_at + 14));
+            check(age >= 50000 && age < 70000, "Watchdog trigger moved outside 50..70 ms");
+            if (state["arms"]["left"]["enabled"].get<bool>() ||
+                state["arms"]["right"]["enabled"].get<bool>()) continue;
+            std::cout << "PASS Servo window: 81 points via bus, 42 ms gap/resume, explicit stop/hold/restart, watchdog age=" << age << " us\n";
+            return;
+        }
+        usleep(1000);
+    }
+    throw std::runtime_error("Persistent stream loss did not trip watchdog");
+}
 int main(int argc, char **argv) {
     fs::path directory;
     try {
@@ -151,6 +255,10 @@ int main(int argc, char **argv) {
         subscribe(sub, "arm.state");
         subscribe(sub, "arm.command");
         sub.connect(output);
+        if (mode == "servo_window") {
+            servoWindowTest(ctx, sub, loadMotionConfig(directory / "system.yaml"));
+            return 0;
+        }
         if (mode == "service") {
             const auto config = loadMotionConfig(directory / "system.yaml");
             const auto client = new_session_id();
@@ -271,11 +379,12 @@ int main(int argc, char **argv) {
                 }
                 if (mode == "watchdog" && killed && fault) {
                     check(monotonic_us() - killed_at < 1500000, "Watchdog did not stop within test budget");
-                    check(!body["arms"]["left"]["enabled"].get<bool>() &&
-                              !body["arms"]["right"]["enabled"].get<bool>(),
-                          "Fault did not disable both arms");
-                    std::cout << "Core loss: fault latched and both arms disabled\n";
-                    return 0;
+                    // Fault is visible during braking, before disable completes.
+                    if (!body["arms"]["left"]["enabled"].get<bool>() &&
+                        !body["arms"]["right"]["enabled"].get<bool>()) {
+                        std::cout << "Core loss: fault latched and both arms disabled\n";
+                        return 0;
+                    }
                 }
                 if (mode != "watchdog")
                     check(!fault, body["execution"]["error"].get<std::string>());

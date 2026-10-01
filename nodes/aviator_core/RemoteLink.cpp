@@ -32,6 +32,7 @@ RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), sess
     }
 }
 RemoteLink::~RemoteLink() {
+    if (protective_stop_.valid()) protective_stop_.wait();
     quit_ = true;
     hand_.stop();
     if (thread_.joinable()) thread_.join();
@@ -56,6 +57,9 @@ DeviceState RemoteLink::snapshot(bool& fresh, bool* status_fresh) const {
     if (status_fresh) *status_fresh = received_ && status_sample_ && now >= received_ && now >= status_sample_ &&
         now - received_ < config_.timeout_us && now - status_sample_ < config_.timeout_us && error_.empty();
     auto result = state_;
+    if (protective_stop_.valid() && protective_stop_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        result.stopping = true;
+    if (!error_.empty()) { result.fault = true; result.error = error_; }
     if (hand_.enabled()) {
         const auto reason = hand_.fault();
         if (!reason.empty()) { result.fault = true; result.error = reason; }
@@ -64,9 +68,25 @@ DeviceState RemoteLink::snapshot(bool& fresh, bool* status_fresh) const {
 }
 void RemoteLink::allowMotion(bool allowed) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (allowed && protective_stop_.valid() &&
+        protective_stop_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        throw std::runtime_error("Device protective stop is still pending");
+    const bool stop = !allowed && motion_allowed_ && enabled_;
     motion_allowed_ = allowed;
     hand_.allow(allowed);
     if (!allowed) { publishing_ = false; changed_.notify_all(); }
+    if (stop) {
+        // Keep owner heartbeats and feedback IO alive while the device decelerates.
+        // This also covers an idle executor, which has no motion loop to observe cancel.
+        protective_stop_ = std::async(std::launch::async, [this] {
+            try { stopTrajectory(); }
+            catch (const std::exception& e) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                error_ = std::string("Device protective stop failed: ") + e.what();
+                changed_.notify_all();
+            }
+        });
+    }
 }
 Json RemoteLink::operation(const std::string &op) {
     std::lock_guard<std::mutex> lock(service_mutex_);
@@ -207,7 +227,8 @@ void RemoteLink::setJointPositions(const Joints &) {
 }
 void RemoteLink::beginStream(const std::vector<JointFrame> &frames) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!motion_allowed_ || !enabled_ || state_.fault || !error_.empty() || !hand_.fault().empty() || frames.size() < 61 || frames.size() > 251)
+    if (!motion_allowed_) throw MotionCancelled();
+    if (!enabled_ || state_.fault || !error_.empty() || !hand_.fault().empty() || frames.size() < 61 || frames.size() > 251)
         throw std::runtime_error("Servo requires a healthy device and 60..250 ms prefill");
     for (size_t j = 0; j < 14; ++j)
         if (std::abs(frames.front().q[j] - state_.target[j]) > 1e-7)
@@ -222,7 +243,8 @@ void RemoteLink::beginStream(const std::vector<JointFrame> &frames) {
 }
 void RemoteLink::appendStream(const std::vector<JointFrame> &frames) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!motion_allowed_ || !streaming_ || stream_finished_ || state_.fault || !error_.empty() || !hand_.fault().empty())
+    if (!motion_allowed_) throw MotionCancelled();
+    if (!streaming_ || stream_finished_ || state_.fault || !error_.empty() || !hand_.fault().empty())
         throw std::runtime_error("Servo stream unavailable: " + error_ + state_.error);
     if (frames.size() < 2 || stream_.size() + frames.size() > 251)
         throw std::runtime_error("Servo queue exceeds 250 ms budget");
@@ -239,6 +261,7 @@ void RemoteLink::appendStream(const std::vector<JointFrame> &frames) {
 size_t RemoteLink::streamAhead() const {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto now = monotonic_us();
+    if (!motion_allowed_) throw MotionCancelled();
     if (!streaming_ || state_.fault || !error_.empty() || !hand_.fault().empty() || !feedback_valid_ ||
         now - received_ >= config_.timeout_us || now - sample_ >= config_.timeout_us)
         throw std::runtime_error("Servo feedback unavailable: receive_age_us=" + std::to_string(now - received_) +
@@ -249,12 +272,15 @@ size_t RemoteLink::streamAhead() const {
 }
 void RemoteLink::finishStream() {
     std::unique_lock<std::mutex> lock(mutex_);
+    if (!motion_allowed_) throw MotionCancelled();
+    if (!streaming_ || stream_.empty()) throw std::runtime_error("Servo stream unavailable");
     for (size_t j = 0; j < 14; ++j)
         if (std::abs(stream_.back().dq[j]) > 1e-8 || std::abs(stream_.back().ddq[j]) > 1e-8)
             throw std::runtime_error("Cannot finish Servo before planned rest");
     stream_finished_ = true;
     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while (state_.id != trajectory_id_ || state_.cursor < stream_first_ + stream_.size() - 1) {
+        if (!motion_allowed_) throw MotionCancelled();
         if (state_.fault || !error_.empty() || !hand_.fault().empty())
             throw std::runtime_error("Servo drain failed: " + error_ + state_.error + hand_.fault());
         if (std::chrono::steady_clock::now() > until) throw std::runtime_error("Servo drain timeout");
@@ -318,6 +344,8 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
     }
 }
 void RemoteLink::stopTrajectory() {
+    // Cancellation may also be observed by a trajectory/Servo worker.
+    std::lock_guard<std::mutex> stop_lock(stop_mutex_);
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!enabled_)
@@ -450,7 +478,8 @@ void RemoteLink::io() {
                         w.id = trajectory_id_;
                         w.first = stream_first_;
                         w.total = stream_first_ + stream_.size() - 1;
-                        w.count = std::min<size_t>(51, stream_.size());
+                        // 80 ms span leaves room for history/feedback lag before the 50 ms watchdog.
+                        w.count = std::min<size_t>(servo_window_points, stream_.size());
                         for (size_t k = 0; k < w.count; ++k) w.frames[k] = stream_[k];
                         w.sequence = ++command_seq;
                         w.origin_sample = heartbeat_;

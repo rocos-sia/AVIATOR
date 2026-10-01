@@ -212,6 +212,8 @@ core_hand:
                 assert close_seen and not unlock_seen
                 assert time.monotonic() - command_times[-1] > .25, 'hand target kept alive after fault/revocation'
                 assert time.monotonic() - last_arm > .25, 'arm windows continued after fault/revocation'
+                if mode == 'revoke':
+                    assert operations.count('stop') == 1, 'idle revocation did not request device-local stop'
             else:
                 assert 'enable' not in operations and 'lock' not in operations, operations
             print(mode + ': ' + output.strip(), flush=True)

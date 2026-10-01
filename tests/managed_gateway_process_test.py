@@ -92,6 +92,7 @@ def main():
             if sub.poll(50):
                 last = json.loads(sub.recv_multipart()[1])
                 core_session = last["session_id"]
+                assert last["system"]["state"] != "ERROR", last["system"]
                 if predicate(last):
                     return last
             assert process.poll() is None, "Managed Core exited; inspect logs"
@@ -197,12 +198,26 @@ def main():
         call(request("grasp_wheel"), "ACCEPTED")
         state("FOLLOWING", 120)
         call(request("start_control"), "COMPLETED")
-        state("CONTROL")
+        control_start = state("CONTROL")["wheel_reference"]["angle"]
+        flight_target = (.3, -.1)
+        wait_for(lambda m: m["system"]["state"] == "CONTROL" and
+                 abs(m["wheel_reference"]["angle"] - control_start) > .005 and
+                 max(abs(v) for side in ("left", "right")
+                     for v in m["arms"][side]["joint_velocity"]) > .1, 10)
         checking.clear()  # Keep increasing message sequence but freeze the device evidence.
-        wait_for(lambda m: m["system"]["state"] in ("SAFE", "ERROR"), 5)
+        state("SAFE", 5)
+        stopped_state = wait_for(lambda m: m["system"]["state"] == "SAFE" and
+                                m["system"].get("settled"), 5)
+        # Stay beyond the old one-second enable/stop deadline. Inspect every update,
+        # including after fresh input returns: SAFE must hold without auto-resume.
         checking.set()
-        time.sleep(.2)
-        wait_for(lambda m: m["system"]["state"] in ("SAFE", "ERROR"), 3)
+        deadline = time.monotonic() + 1.5
+        while time.monotonic() < deadline:
+            message = wait_for(lambda m: True, 1)
+            assert message["system"]["state"] == "SAFE", message["system"]
+            assert message["system"]["settled"], message["system"]
+            assert message["wheel_reference"] == stopped_state["wheel_reference"]
+            assert all(message["arms"][side]["enabled"] for side in ("left", "right"))
         call(request("start_control"), "REJECTED")
         # Sixth request reaches the FSM, with the existing recovery guard result left authoritative.
         req = request("reset_error")
@@ -211,7 +226,9 @@ def main():
         response = dealer.recv_json()
         assert response["request_id"] == req["request_id"]
         assert response["status"] in ("COMPLETED", "REJECTED"), response
-        print("PASS: stale device checks trip protection; fresh input does not auto-resume", flush=True)
+        call(request("leave_wheel"), "ACCEPTED")
+        state("STANDBY", 120)
+        print("PASS: moving SAFE stop, stable enabled hold beyond 1 s, no auto-resume, explicit release", flush=True)
     finally:
         stopped.set()
         publisher.join()

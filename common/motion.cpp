@@ -219,7 +219,7 @@ TrajectoryWindow decodeWindow(const Message &m, const Joints &lo, const Joints &
             "Trajectory range exceeds budget or tick grid");
     for (int side = 0; side < 2; ++side) {
         const auto &points = b.at("arms").at(side ? "right" : "left").at("points");
-        require(points.is_array() && points.size() >= 2 && points.size() <= (w.streaming ? 51 : 32),
+        require(points.is_array() && points.size() >= 2 && points.size() <= (w.streaming ? servo_window_points : 32),
                 "Invalid trajectory point count");
         if (!side)
             w.count = stride * (points.size() - 1) + 1;

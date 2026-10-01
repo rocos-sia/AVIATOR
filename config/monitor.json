@@ -4,7 +4,7 @@
     "flight.command": "flight_gateway",
     "flight.state": "aviator_core",
     "arm.state": "manipulator",
-    "hand.state": "inspire_hand",
+    "hand.state": "rh56ftp_hand",
     "camera.detection": "camera"
   },
   "timeouts_ms": {

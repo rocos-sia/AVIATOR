@@ -122,6 +122,7 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
     auto stop = [&] {
         // Local bounded deceleration from the last command; never jump to measured q.
         state.stopping = true;
+        snapshot();
         double duration = 0;
         for (double v : velocity)
             duration = std::max(duration, std::abs(v) / braking);
@@ -137,6 +138,7 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
             }
             device.setJointPositions(next);
             state.target = next;
+            if (k % 5 == 0) snapshot(); // Keep feedback/fault status fresh throughout local braking.
         }
         device.waitTick();
         velocity = {};
@@ -144,6 +146,9 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
         state.id = state.cursor = 0;
         state.stopping = false;
         device.commandDeadline(0);
+        // Explicit stop has reached a local hold. Only enable arms the first-command
+        // deadline; the next accepted window re-arms the normal command watchdog.
+        last_message = 0;
     };
     uint64_t last_snapshot = 0;
     while (!shared.quit) {
@@ -323,7 +328,7 @@ void executor(Shared &shared, DataLink &device, const MotionConfig &config, cons
                 else
                     device.waitTick();
                 if ((state.enabled[0] || state.enabled[1]) && last_message && now - last_message > 1000000)
-                    throw std::runtime_error("No command after enable/stop");
+                    throw std::runtime_error("No command after enable");
             }
             if (now - last_snapshot >= 5000) {
                 snapshot();
@@ -500,7 +505,7 @@ int main(int argc, char **argv) {
         std::signal(SIGTERM, signalHandler);
         ReceiveState receive_state;
         std::unique_ptr<InputGuard> guard;
-        uint64_t seq = 0, hand_seq = 0, next = 0, rejected = 0;
+        uint64_t seq = 0, next = 0, rejected = 0;
         std::cout << "READY manipulator backend=" << backend << " session=" << session
                   << " service=" << config.service << std::endl;
         while (!interrupted) {
@@ -733,17 +738,6 @@ int main(int argc, char **argv) {
                                                                    {"control_epoch", epoch}}
                                                             : Json(nullptr);
                 publishMessage(pub, m);
-                auto hand = motionMessage(Topic::hand_state, "manipulator", session, ++hand_seq, false);
-                for (auto side : {"left", "right"})
-                    hand.body["hands"][side] = {{"valid", false},
-                                                {"status", "OFFLINE"},
-                                                {"enabled", false},
-                                                {"error_code", 0},
-                                                {"sample_mono_us", nullptr},
-                                                {"joint_position", nullptr},
-                                                {"joint_velocity", nullptr},
-                                                {"grasp_verified", false}};
-                publishMessage(pub, hand);
             }
 #ifdef AVIATOR_HAVE_GLFW
             static uint64_t draw_at = 0;
