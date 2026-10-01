@@ -1,4 +1,5 @@
 import json
+import io
 import importlib.util
 import multiprocessing
 import subprocess
@@ -217,6 +218,207 @@ class NodeTests(unittest.TestCase):
         _node, subscribe_endpoint, publish_endpoint, _hz = run.call_args.args
         self.assertEqual(subscribe_endpoint, "tcp://127.0.0.1:5556")
         self.assertEqual(publish_endpoint, "tcp://127.0.0.1:5555")
+
+    @staticmethod
+    def diagnostic_records(output):
+        return [json.loads(line.split("rh56ftp_hand: ", 1)[1])
+                for line in output.getvalue().splitlines() if line.startswith("rh56ftp_hand: {")]
+
+    def test_feedback_diagnostics_identify_stale_side_and_recovery(self):
+        node, links = self.make_node()
+        output = io.StringIO()
+        with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=node.clock_now):
+            node.read_states(now=node.clock_now)
+            with patch.object(links["left"], "read_state", side_effect=RuntimeError("left TCP timeout")):
+                node.read_states(now=node.clock_now + node.feedback_timeout_us)
+            state = node.make_state(now=node.clock_now + node.feedback_timeout_us)
+            node.report_diagnostics(state, now=node.clock_now + node.feedback_timeout_us)
+            node.read_states(now=node.clock_now + node.feedback_timeout_us + 1)
+        records = self.diagnostic_records(output)
+        failure = next(r for r in records if r["event"] == "feedback_read_failed")
+        self.assertEqual(failure["side"], "left")
+        self.assertIn("left TCP timeout", failure["reason"])
+        health = next(r for r in records if r["event"] == "health")
+        self.assertFalse(health["state_valid"])
+        self.assertFalse(health["hands"]["left"]["valid"])
+        self.assertEqual(health["hands"]["left"]["invalid_reason"], "feedback_timestamp_expired_or_future")
+        self.assertEqual(health["hands"]["left"]["feedback_age_ms"], 500)
+        self.assertTrue(health["hands"]["right"]["valid"])
+        self.assertEqual(node.snapshots["left"].error, "")
+        self.assertFalse(any(r["event"] == "feedback_read_recovered" for r in records))
+
+    def test_failed_write_diagnostic_preserves_previous_ack(self):
+        node, links = self.make_node()
+        output = io.StringIO()
+        with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=node.clock_now):
+            node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
+            links["right"].fail_writes = True
+            with self.assertRaisesRegex(RuntimeError, "write failed"):
+                node.handle_command("hand.command", json.dumps(command(node, sequence=2)), now=node.clock_now)
+            node.read_states(now=node.clock_now)
+            node.report_diagnostics(node.make_state(now=node.clock_now), now=node.clock_now)
+        records = self.diagnostic_records(output)
+        failure = next(r for r in records if r["event"] == "modbus_write_failed")
+        self.assertEqual((failure["side"], failure["phase"]), ("right", "angle"))
+        rejection = next(r for r in records if r["event"] == "reject command")
+        self.assertEqual((rejection["sequence"], rejection["accepted_sequence"]), (2, 1))
+        health = next(r for r in records if r["event"] == "health")
+        self.assertEqual((health["received"], health["accepted"], health["rejected"]), (2, 1, 1))
+        self.assertEqual(health["hands"]["right"]["write"]["errors"], 1)
+        self.assertEqual(node.guard.last_sequence, 1)
+
+    def test_slow_write_diagnostic_shows_ack_command_age(self):
+        node, links = self.make_node()
+        clock = [node.clock_now]
+        output = io.StringIO()
+        write = links["left"].write_angle_set
+
+        def slow_write(values):
+            clock[0] += 60000
+            write(values)
+
+        with patch("sys.stderr", output), patch.object(module, "monotonic_us", side_effect=lambda: clock[0]), \
+                patch.object(links["left"], "write_angle_set", side_effect=slow_write):
+            node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
+            node.read_states(now=clock[0])
+            node.report_diagnostics(node.make_state(now=clock[0]), now=clock[0])
+        records = self.diagnostic_records(output)
+        slow = next(r for r in records if r["event"] == "modbus_write_slow")
+        self.assertEqual((slow["side"], slow["phase"], slow["duration_ms"]), ("left", "angle", 60))
+        health = next(r for r in records if r["event"] == "health")
+        self.assertEqual(health["ack_command_age_ms"], 60)
+        self.assertEqual(health["ack_write_age_ms"], 0)
+
+    def test_repeated_diagnostics_are_throttled_with_suppressed_count(self):
+        log = module.DiagnosticLog()
+        output = io.StringIO()
+        with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=1000000):
+            for _ in range(3):
+                log.emit("feedback_read_failed", side="left", reason="timeout")
+        with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=2000000):
+            log.emit("feedback_read_failed", side="left", reason="timeout")
+        records = self.diagnostic_records(output)
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[-1]["suppressed"], 2)
+
+    def test_normal_operation_and_recovery_are_silent(self):
+        node, links = self.make_node()
+        output = io.StringIO()
+        with patch("sys.stderr", output), patch("sys.stdout", output), \
+                patch.object(module, "monotonic_us", return_value=node.clock_now):
+            node.connect()
+            node._safe_pose()
+            node.read_states(now=node.clock_now)
+            node.report_diagnostics(node.make_state(now=node.clock_now), now=node.clock_now)
+            node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
+            node.report_diagnostics(node.make_state(now=node.clock_now), now=node.clock_now + 2000000)
+            node._safe_pose()
+            node.close()
+        self.assertEqual(output.getvalue(), "")
+        with patch.object(links["left"], "read_state", side_effect=RuntimeError("read failed")), \
+                patch("sys.stderr", io.StringIO()):
+            node.read_states(now=node.clock_now)
+        output = io.StringIO()
+        with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=node.clock_now):
+            node.read_states(now=node.clock_now)
+            node.report_diagnostics(node.make_state(now=node.clock_now), now=node.clock_now)
+        self.assertEqual(output.getvalue(), "")
+
+    def test_initial_feedback_wait_is_silent_until_timeout(self):
+        node, _links = self.make_node()
+        output = io.StringIO()
+        with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=node.clock_now):
+            node.report_diagnostics(node.make_state(now=node.clock_now), now=node.clock_now)
+            pending = node.clock_now + node.feedback_timeout_us - 1
+            node.report_diagnostics(node.make_state(now=pending), now=pending)
+            self.assertEqual(output.getvalue(), "")
+            expired = pending + 1
+            node.report_diagnostics(node.make_state(now=expired), now=expired)
+        records = self.diagnostic_records(output)
+        self.assertTrue(any(r["event"] == "feedback_status_changed" for r in records))
+        self.assertTrue(any(r["event"] == "health" for r in records))
+
+    def test_poll_timing_distinguishes_wait_overrun_from_slow_previous_cycle(self):
+        for finish, next_start, expected_gap, expected_idle, expected_lag in (
+                (1010000, 1610000, 610, 600, 500),
+                (1600000, 1700000, 700, 100, 0)):
+            node, _links = self.make_node()
+            output = io.StringIO()
+            with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=next_start):
+                node.reader_poll_started(100000, now=1000000)
+                node.reader_poll_finished(100000, now=finish)
+                node.reader_poll_started(100000, now=next_start)
+            event = next(r for r in self.diagnostic_records(output) if r["event"] == "feedback_poll_gap")
+            self.assertEqual(event["start_gap_ms"], expected_gap)
+            self.assertEqual(event["idle_gap_ms"], expected_idle)
+            self.assertEqual(event["wait_overrun_ms"], expected_lag)
+            self.assertEqual(event["cycle_duration_ms"], (finish - 1000000) / 1000)
+
+    def test_normal_poll_timing_is_silent_and_exposes_current_wait(self):
+        node, _links = self.make_node()
+        output = io.StringIO()
+        with patch("sys.stderr", output):
+            node.reader_poll_started(100000, now=1000000)
+            node.reader_poll_finished(100000, now=1010000)
+            node.reader_poll_started(100000, now=1110000)
+            node.reader_poll_finished(100000, now=1120000)
+            details = node.reader_diagnostics(1720000)
+        self.assertEqual(output.getvalue(), "")
+        self.assertEqual(details["phase"], "waiting")
+        self.assertEqual(details["current_wait_overrun_ms"], 500)
+        self.assertEqual(details["cycle_finish_age_ms"], 600)
+        self.assertEqual(details["max_wait_overrun_ms"], 0)
+
+    def test_timestamp_offset_identifies_fast_reads_with_old_shared_sample(self):
+        node, links = self.make_node()
+        clock = [1000000]
+        calls = [0]
+        output = io.StringIO()
+
+        def mono():
+            calls[0] += 1
+            if calls[0] == 2:  # Delayed after the shared sample stamp, before the first read.
+                clock[0] += 510000
+            return clock[0]
+
+        read_left, read_right = links["left"].read_state, links["right"].read_state
+
+        def left():
+            clock[0] += 4000
+            return read_left()
+
+        def right():
+            clock[0] += 6000
+            return read_right()
+
+        with patch("sys.stderr", output), patch.object(module, "monotonic_us", side_effect=mono), \
+                patch.object(links["left"], "read_state", side_effect=left), \
+                patch.object(links["right"], "read_state", side_effect=right):
+            node.read_states()
+            state = node.make_state(now=clock[0])
+            node.report_diagnostics(state, now=clock[0])
+        self.assertFalse(state["valid"])
+        records = self.diagnostic_records(output)
+        self.assertEqual(sum(r["event"] == "feedback_sample_timestamp_offset" for r in records), 2)
+        health = next(r for r in records if r["event"] == "health")
+        for side, duration, offset, finish_age in (("left", 4, 514, 6), ("right", 6, 520, 0)):
+            hand = health["hands"][side]
+            self.assertEqual(hand["read_duration_ms"], duration)
+            self.assertEqual(hand["sample_timestamp_offset_ms"], offset)
+            self.assertEqual(hand["last_success_finish_age_ms"], finish_age)
+            self.assertEqual(hand["feedback_age_ms"], 520)
+            self.assertEqual(hand["sample_mono_us"], 1000000)
+            self.assertEqual(hand["last_success_finished_us"], 1000000 + offset * 1000)
+
+    def test_diagnostic_interval_cli_validation(self):
+        with patch.object(module, "load_handlink", return_value=("fake", 6000, FakeLink)), \
+                patch.object(module, "run_node", return_value=0) as run:
+            module.main(["--diagnostic-interval-s", "0"])
+        self.assertEqual(run.call_args.args[0].diagnostic_interval_us, 0)
+        for value in ("-1", "nan", "inf"):
+            with patch.object(module, "load_handlink") as load, patch("sys.stderr"), self.assertRaises(SystemExit):
+                module.main(["--diagnostic-interval-s", value])
+            load.assert_not_called()
 
     @unittest.skipUnless(importlib.util.find_spec("zmq"), "pyzmq required for private bus integration")
     def test_manual_publisher_ack_through_private_bus(self):

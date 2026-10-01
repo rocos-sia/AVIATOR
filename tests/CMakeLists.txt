@@ -92,6 +92,10 @@ if(TARGET aviator_core_servo AND TARGET manipulator AND AVIATOR_BUILD_MUJOCO)
       ${PROJECT_SOURCE_DIR} ${mode})
     set_tests_properties(control_nodes_${mode} PROPERTIES TIMEOUT 190 ENVIRONMENT "LD_BIND_NOW=1")
   endforeach()
+  add_test(NAME control_nodes_grasp COMMAND aviator_control_nodes_test
+    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core>
+    ${PROJECT_SOURCE_DIR} grasp)
+  set_tests_properties(control_nodes_grasp PROPERTIES TIMEOUT 190 ENVIRONMENT "LD_BIND_NOW=1")
   add_test(NAME control_nodes_watchdog COMMAND aviator_control_nodes_test
     $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core>
     ${PROJECT_SOURCE_DIR} watchdog)

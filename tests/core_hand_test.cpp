@@ -2,6 +2,7 @@
 #include "HandLink.hpp"
 #include <fstream>
 #include <iostream>
+#include <cmath>
 using namespace aviator;
 void check(bool v, const char* reason) { if (!v) throw std::runtime_error(reason); }
 int main(int argc, char** argv) {
@@ -90,6 +91,38 @@ int main(int argc, char** argv) {
                 check(release.fault(deadline).empty() && release.command(deadline, deadline, session).has_value(),
                       "completed open target should continue publishing after deadline");
             }
+        }
+        // An approach may last longer than the ordinary completion timeout;
+        // intermediate ACKs keep it healthy but cannot acknowledge its endpoint.
+        {
+            auto moving = create(); moving.beginApproach(now);
+            uint64_t sequence = 0;
+            Message partial;
+            for (uint64_t dt = 0; dt <= 800000; dt += 20000) {
+                const auto t = now + dt;
+                moving.approachProgress({double(dt)/1000000, double(dt)/2000000}, t);
+                partial = *moving.command(t, t, session);
+                const double left = partial.body["hands"]["left"]["drive_position_normalized"][0];
+                const double right = partial.body["hands"]["right"]["drive_position_normalized"][0];
+                check(std::abs(left - (1 - .1*double(dt)/1000000)) < 1e-12, "left interpolation");
+                check(std::abs(right - (1 - .7*double(dt)/2000000)) < 1e-12, "right interpolation");
+                moving.receive(feedback(partial, t + 1, ++sequence), t + 1, session);
+                check(!moving.complete(t + 1) && moving.fault(t + 1).empty(), "partial trajectory completed/timed out");
+            }
+            const auto end = now + 820000;
+            moving.approachProgress({1,1}, end);
+            check(!moving.complete(end), "partial ACK completed endpoint");
+            auto final = *moving.command(end, end, session);
+            moving.receive(feedback(partial, end + 1, ++sequence), end + 1, session);
+            check(!moving.complete(end + 1), "old ACK completed endpoint");
+            auto invalid = feedback(final, end + 2, ++sequence);
+            invalid.body["accepted_command"]["sequence"] = 999999;
+            moving.receive(invalid, end + 2, session);
+            check(!moving.complete(end + 2), "unrecognized ACK completed endpoint");
+            moving.receive(feedback(final, end + 3, ++sequence), end + 3, session);
+            check(moving.complete(end + 3), "endpoint ACK rejected");
+            moving.revoke();
+            check(!moving.command(end + 20000, end + 20000, session), "revoked approach kept closing");
         }
         h.revoke(); check(!h.command(now + 50000, now + 50000, session), "revoked hand still publishing");
         auto expired = create(); expired.request(true, now);

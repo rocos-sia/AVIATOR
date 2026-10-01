@@ -35,7 +35,7 @@ python3 nodes/rh56ftp_hand/rh56ftp_node.py \
 
 节点默认从总线输出 `tcp://127.0.0.1:5556` 订阅 `hand.command`（`--endpoint`），
 向总线输入 `tcp://127.0.0.1:5555` 发布 `hand.state`（`--state-endpoint`）。
-手动发布器的方向相反：向 5555 发布命令，从 5556 订阅状态。启动日志会显示节点连接方向。
+手动发布器的方向相反：向 5555 发布命令，从 5556 订阅状态。正常启动不打印连接信息。
 单机模式下 `hands.left.valid=false`，
 因此 Core 的双手闭合流程需要同时接入 `--left-host`。
 
@@ -76,7 +76,45 @@ python3 nodes/aviator_hand/hand_command.py
 收到“已接受”表示节点成功写入目标并确认当前会话；实际反馈是否有效另行显示。
 发布器重启后需重启手节点，解除旧 session/epoch 绑定。
 
-若提示“2 秒未收到有效指令确认”，先检查节点启动日志应显示
-`SUB hand.command=tcp://127.0.0.1:5556; PUB hand.state=tcp://127.0.0.1:5555`。
+若提示“2 秒未收到有效指令确认”，先检查节点启动参数：
+`--endpoint tcp://127.0.0.1:5556 --state-endpoint tcp://127.0.0.1:5555`（均为默认值）。
 旧版本端点默认值颠倒，更新后须重启节点；自定义总线时也应遵循 SUB 连输出、PUB 连输入。
 再检查节点的 `reject command` 日志（会话、时钟、命令过期或 Modbus 写入失败）。
+
+
+## Core 手反馈或 ACK 过期诊断
+
+重启节点后只在异常时打印。正常连接、正常命令、正常反馈、恢复和安全姿态执行成功均不打印。
+异常事件立即打印；持续异常期间默认每秒补充一条 JSON `health` 详情汇总，正常时不输出汇总。
+同一异常每秒最多打印一次，`suppressed` 表示期间省略的重复次数。
+`--diagnostic-interval-s 0` 关闭异常详情汇总，仍保留异常事件日志。将原启动命令末尾加上 `2>&1 | tee rh56ftp-hand.log` 可保留日志。
+
+重点查看：
+
+- `hands.left/right.valid`、`feedback_age_ms`、`invalid_reason`、`last_error`：确定是哪侧反馈失效及原因。
+- `read_duration_ms`、`read_in_progress_ms`、`write.duration_ms`：区分读取卡住和写入变慢。
+- `reader.phase/thread_alive`、`cycle_start_age_ms/cycle_finish_age_ms`：观察读取线程是否存活、
+  正在读取还是等待，以及上轮开始/完成距现在多久。
+- `reader.start_gap_ms/idle_gap_ms/wait_overrun_ms`：分别为两轮开始之间的间隔、上轮完成到
+  本轮开始的空档，以及超出原定等待截止时间的延迟；同时记录最大值。`current_wait_overrun_ms`
+  在巡读尚未恢复时也能显示等待超期。它可能包含 OS 调度、Python GIL 或其他停顿，不能单凭
+  此字段确定是操作系统调度问题。
+- 各侧 `read_started_us/read_finished_us/last_success_finished_us`、`last_success_finish_age_ms`、
+  `read_start_gap_ms/read_idle_gap_ms/current_read_idle_ms`：观察每只手最近一次读请求与更新空档。
+- `sample_mono_us/sample_timestamp_offset_ms`：当前反馈采样时间与读取完成时间的差值。若
+  `feedback_age_ms > 500` 而 `last_success_finish_age_ms` 很小、`sample_timestamp_offset_ms` 很大，
+  说明刚完成的读取使用了较旧的巡读开始时间戳；若两种年龄都很大，说明更新确实中断。
+- `ack_command_age_ms`：最后成功写入命令的**原始采样时间**距现在的年龄；Core 只接纳年龄
+  小于 100 ms 的命令 ACK。`ack_write_age_ms` 是距写入完成的年龄，两者差距大说明写入耗时
+  或命令排队造成延迟。节点无法观察 Core 是否收到了该 ACK。
+- `received/accepted/rejected`、`accepted_sequence`、`bound_session`：判断有没有新命令、是否
+  被拒绝以及 ACK 是否推进。`reject command` 额外打印被拒绝命令的序号、会话、epoch、
+  命令和 origin 年龄、时钟 ID 及具体拒绝原因。
+- `state_sent/state_dropped/max_state_gap_ms`：判断状态发布是否出现本地拥塞或长间隔；发送
+  成功表示已交给本地 ZMQ，不代表 Core 已收到。
+
+事件 `feedback_read_failed`、`feedback_status_changed`、`modbus_write_failed/slow`、
+`feedback_poll_gap`、`feedback_sample_timestamp_offset`、`feedback_reader_failed`、
+`command_processing_slow`、`command_batch_slow`、`command_watchdog_expired`、`safe_pose_failed`
+会打印相关侧、阶段、耗时或故障原因。日志字段 `mono_us` 与同机 Core 的单调时间戳可对照。
+这些改动只增加诊断，不改变命令、反馈超时和安全姿态控制。

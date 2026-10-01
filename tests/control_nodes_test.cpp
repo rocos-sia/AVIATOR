@@ -109,6 +109,7 @@ int main(int argc, char **argv) {
         const fs::path source = argv[4];
         const std::string mode = argv[5];
         const bool position_hold = mode == "flight_hold";
+        const bool console = mode == "interactive" || mode == "grasp";
         const bool flight = mode == "flight" || mode == "flight_auto" || position_hold;
         char pattern[] = "/tmp/aviator-control-test-XXXXXX";
         directory = mkdtemp(pattern);
@@ -125,6 +126,8 @@ int main(int argc, char **argv) {
         robot["backend"] = "mujoco";
         for (const auto *key : {"model", "urdf", "collision_urdf", "grasp", "posture"})
             robot[key] = fs::weakly_canonical(source / "config" / robot[key].as<std::string>()).string();
+        const auto posture = YAML::LoadFile(robot["posture"].as<std::string>());
+        const auto j2 = posture["joint2_limits_deg"].as<std::vector<double>>();
         // The regression uses explicit faster simulation limits, never edits deployment files.
         robot["wheel_angular_speed"] = .4;
         robot["wheel_linear_speed"] = .04;
@@ -209,12 +212,12 @@ int main(int argc, char **argv) {
         if (mode == "flight") {
             core_args.push_back("--gateway-session");
             core_args.push_back(gateway_session);
-        } else if (!flight && mode != "interactive")
+        } else if (!flight && !console)
             core_args.push_back(mode == "demo" ? "--demo" : "--servo-demo");
-        Child core(core_args, directory / "core.log", mode == "interactive");
+        Child core(core_args, directory / "core.log", console);
         int console_stage = 0;
         uint64_t servo_at = 0;
-        if (mode == "interactive")
+        if (console)
             core.command("enable\n");
         ReceiveState receiver;
         size_t states = 0, commands = 0;
@@ -249,8 +252,8 @@ int main(int argc, char **argv) {
                 const auto q = body["execution"]["target"].get<Joints>();
                 for (double x : q)
                     check(std::isfinite(x), "Nonfinite target");
-                check(q[1] >= 85 * M_PI / 180 - 1e-6 && q[1] <= 94 * M_PI / 180 + 1e-6 &&
-                          q[8] >= 85 * M_PI / 180 - 1e-6 && q[8] <= 94 * M_PI / 180 + 1e-6,
+                check(q[1] >= j2[0] * M_PI / 180 - 1e-6 && q[1] <= j2[1] * M_PI / 180 + 1e-6 &&
+                          q[8] >= j2[0] * M_PI / 180 - 1e-6 && q[8] <= j2[1] * M_PI / 180 + 1e-6,
                       "J2 target outside configured limits");
                 if (body.contains("wheel_measurement") && body["software_lock"].get<bool>()) {
                     const double a = body["wheel_measurement"]["angle"],
@@ -408,7 +411,7 @@ int main(int argc, char **argv) {
                     hold_at = 0;
                 }
             }
-            if (mode == "interactive") {
+            if (console) {
                 const auto text = core.text();
                 if (console_stage == 0 && text.find("[ok] ENABLED") != std::string::npos) {
                     core.command("approach\n");
@@ -416,6 +419,9 @@ int main(int argc, char **argv) {
                 } else if (console_stage == 1 && text.find("[ok] APPROACHED") != std::string::npos) {
                     core.command("lock\n");
                     ++console_stage;
+                } else if (console_stage == 2 && text.find("[ok] LOCKED") != std::string::npos && mode == "grasp") {
+                    core.command("unlock\n");
+                    console_stage = 5;
                 } else if (console_stage == 2 && text.find("[ok] LOCKED") != std::string::npos) {
                     core.command("servo 0.02 -0.002 0.5\n");
                     servo_at = monotonic_us();
@@ -444,7 +450,7 @@ int main(int argc, char **argv) {
         check(core.done() && core.status == 0, core.text() + "\n" + manipulator.text());
         if (flight)
             check(flight_stage == (position_hold ? 10 : 7), "Flight control sequence incomplete");
-        else if (mode == "interactive")
+        else if (console)
             check(console_stage == 7, "Interactive sequence incomplete");
         else
             check(core.text().find("Demo completed") != std::string::npos, "Demo did not complete");
@@ -452,7 +458,7 @@ int main(int argc, char **argv) {
         if (mode == "demo")
             check(max_angle > .84 && min_angle < -.84 && min_displacement < -.16,
                   "Physical wheel did not follow full demo");
-        else
+        else if (mode != "grasp")
             check(max_angle > .001, "Physical wheel did not move in Servo mode");
         check(max_error < .08, "Unexpected simulation wheel tracking error (test assertion only)");
         std::cout << "PASS " << mode << " states=" << states << " commands=" << commands

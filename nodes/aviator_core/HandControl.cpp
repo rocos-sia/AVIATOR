@@ -37,6 +37,7 @@ void HandControl::request(bool close, uint64_t now) {
     if (close && !has_close_)
         throw std::runtime_error("Missing core_hand.close: configure calibrated left/right normalized targets in system.yaml");
     active_ = true;
+    synchronized_ = endpoint_ = endpoint_acknowledged_ = false;
     closing_ = close;
     target_ = close ? close_ : open_;
     requested_ = now;
@@ -45,6 +46,28 @@ void HandControl::request(bool close, uint64_t now) {
     accepted_at_ = 0;
     acknowledged_ = false;
     error_.clear();
+}
+void HandControl::beginApproach(uint64_t now) {
+    if (!has_close_)
+        throw std::runtime_error("Missing core_hand.close for synchronized grasp");
+    request(false, now);
+    synchronized_ = true;
+    closing_ = true;
+}
+void HandControl::approachProgress(const std::array<double, 2>& progress, uint64_t now) {
+    if (!active_ || !synchronized_) throw std::runtime_error("No active synchronized hand trajectory");
+    for (auto u : progress)
+        if (!std::isfinite(u) || u < 0 || u > 1)
+            throw std::runtime_error("Invalid hand trajectory progress");
+    for (int side = 0; side < 2; ++side)
+        for (int j = 0; j < 6; ++j)
+            target_[side][j] = open_[side][j] + progress[side] * (close_[side][j] - open_[side][j]);
+    if (!endpoint_ && progress[0] == 1 && progress[1] == 1) {
+        endpoint_ = true;
+        requested_ = now;
+        first_sequence_ = command_sequence_ + 1; // A partial-target ACK cannot complete the grasp.
+        next_ = 0; // Publish the exact endpoint without waiting for the next 50 Hz slot.
+    }
 }
 void HandControl::revoke() {
     active_ = false; // Protective revocation is not itself a new device fault.
@@ -100,11 +123,14 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string& ses
             stamp <= now && now - stamp < 100000) {
             accepted_at_ = now;
             acknowledged_ = true;
+            if (synchronized_ && endpoint_) endpoint_acknowledged_ = true;
         }
     } catch (const Json::exception&) { return; }
 }
 bool HandControl::complete(uint64_t now) const {
     if (!active_ || !acknowledged_ || !fresh(now) || now - accepted_at_ >= feedback_timeout_) return false;
+    if (synchronized_ && (!endpoint_ || !endpoint_acknowledged_))
+        return false;
     if (closing_) return true; // CAN write acknowledgement, never a claim of physical grasp.
     for (int side = 0; side < 2; ++side) {
         const auto& hand = body_.at("hands").at(side ? "right" : "left");
@@ -119,7 +145,7 @@ std::string HandControl::fault(uint64_t now) const {
     if (!active_) return {};
     if (acknowledged_ && (!fresh(now) || now - accepted_at_ >= feedback_timeout_))
         return "hand.state feedback/command acknowledgement expired";
-    if (!complete(now) && now - requested_ >= timeout_)
+    if ((!synchronized_ || endpoint_ || !acknowledged_) && !complete(now) && now - requested_ >= timeout_)
         return "Hand target timeout: check CAN, pose, feedback and publisher binding; restart hand/Core if session changed";
     return {};
 }

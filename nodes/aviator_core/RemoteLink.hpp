@@ -62,6 +62,7 @@ class RemoteLink final : public DataLink {
     std::deque<JointFrame> stream_;
     uint64_t stream_first_ = 0;
     bool streaming_ = false, stream_finished_ = false;
+    uint64_t synchronized_hand_version_ = 0;
     uint64_t trajectory_id_ = 0, start_ = 0, received_ = 0, sample_ = 0, ack_ = 0;
     uint64_t status_sample_ = 0;
     bool enabled_ = false, publishing_ = false, feedback_valid_ = false;

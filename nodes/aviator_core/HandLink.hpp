@@ -25,7 +25,9 @@ public:
     void stop();
     void allow(bool);
     uint64_t request(bool close);
-    void wait(uint64_t version);
+    uint64_t beginApproach();
+    void approachProgress(uint64_t version, const std::array<double, 2>&);
+    void wait(uint64_t version, const std::atomic<bool>* cancel = nullptr);
     void fail(const std::string&);
     std::string fault() const;
     Status status() const;

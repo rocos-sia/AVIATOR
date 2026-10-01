@@ -58,6 +58,10 @@ core_hand:
         last_change = next_state = locked_at = last_arm = 0
         first_open = close_seen = unlock_seen = aggregate_seen = False
         command_times, operations, captured = [], [], []
+        trajectory_id = cursor = reported_cursor = 0
+        trajectory_at = 0
+        partial_seen = False
+        stalled_targets = []
         bus_process = subprocess.Popen([bus, '--input', endpoints[0], '--output', endpoints[1],
                                        '--lock-file', str(root / 'bus.lock')], stdout=subprocess.DEVNULL)
         child = None
@@ -103,6 +107,10 @@ core_hand:
                     message = json.loads(data)
                     if topic == b'arm.command':
                         last_arm = now
+                        if mode == 'synchronized' and message['total_ticks'] == 1000:
+                            if not trajectory_at:
+                                trajectory_at = now
+                                trajectory_id = message['trajectory_id']
                         continue
                     if topic == b'flight.state':
                         if message['freshness']['hand']['valid']:
@@ -123,7 +131,20 @@ core_hand:
                     if not first_open or incoming != targets:
                         last_change = now
                     targets = incoming
-                    if targets['left'][0] == .9:
+                    if mode == 'synchronized' and trajectory_at and not unlock_seen:
+                        if targets == dict(left=[1]*6, right=[1]*6) and close_seen:
+                            unlock_seen = True
+                        else:
+                            for side, initial, final, start in (('left', 1, .9, 300), ('right', 1, .3, 100)):
+                                u = max(0, (reported_cursor-start)/(1000-start))
+                                progress = u*u*u*(10+u*(-15+6*u))
+                                # The hand target must never advance beyond the reported arm cursor.
+                                assert targets[side][0] >= initial + progress*(final-initial) - 1e-9, (reported_cursor, targets)
+                            partial_seen |= .9 < targets['left'][0] < 1
+                            close_seen |= targets['left'][0] == .9
+                            if cursor == 400 and now - trajectory_at > .48:
+                                stalled_targets.append(dict(targets))
+                    elif targets['left'][0] == .9:
                         assert targets['right'][0] == .3
                         close_seen = True
                     else:
@@ -136,10 +157,15 @@ core_hand:
                 if now >= next_state:
                     next_state = now + .02
                     seq += 1
+                    if trajectory_at:
+                        elapsed = now - trajectory_at
+                        # Freeze the arm at 400 ms for 300 ms while hand traffic stays healthy.
+                        cursor = min(1000, int(1000 * (elapsed if elapsed < .4 else .4 if elapsed < .7 else elapsed-.3)))
+                        reported_cursor = cursor
                     m = header('ArmState', 'manipulator', server)
                     m.update(config_id='test', arms={side: dict(joint_position=[0]*7, joint_velocity=[0]*7,
                              enabled=enabled) for side in ('left','right')},
-                             execution=dict(trajectory_id=0, tick=0, target=[0]*14, fault=False, error='', stopping=False),
+                             execution=dict(trajectory_id=trajectory_id, tick=cursor, target=[0]*14, fault=False, error='', stopping=False),
                              software_lock=locked, wheel_reference=dict(angle=0, displacement=0))
                     if mode == 'arm_failure' and locked_at and now - locked_at > .1:
                         del m['execution']  # A broken arm-state body terminates the arm IO loop.
@@ -170,7 +196,12 @@ core_hand:
                 print('no_arm: constructor failure cleaned up both IO threads', flush=True)
                 return
             assert child.returncode == 0, output
-            if mode in ('normal', 'isolation'):
+            if mode == 'synchronized':
+                assert partial_seen and close_seen and unlock_seen and aggregate_seen
+                assert cursor == 1000 and len(stalled_targets) >= 5
+                assert all(v == stalled_targets[0] for v in stalled_targets), 'hand advanced while arm cursor was frozen'
+                assert operations == ['describe','authorize','enable','lock','unlock','disable'], operations
+            elif mode in ('normal', 'isolation'):
                 assert first_open and close_seen and unlock_seen and aggregate_seen
                 assert operations == ['describe','authorize','enable','lock','stop','unlock','disable'], operations
                 max_gap = max(b-a for a,b in zip(command_times,command_times[1:]))
@@ -192,5 +223,5 @@ core_hand:
 
 
 if __name__ == '__main__':
-    for scenario in ('normal', 'missing', 'readonly', 'foreign', 'dropped', 'revoke', 'isolation', 'heartbeat', 'arm_failure', 'no_arm'):
+    for scenario in ('synchronized', 'normal', 'missing', 'readonly', 'foreign', 'dropped', 'revoke', 'isolation', 'heartbeat', 'arm_failure', 'no_arm'):
         run(*sys.argv[1:], scenario)

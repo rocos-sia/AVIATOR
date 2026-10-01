@@ -50,12 +50,12 @@ posture: posture.json
 # Managed STANDBY requires actual joint positions within this tolerance of home (rad).
 home_position_tolerance: 0.15
 home_speed: 0.2          # 当前位置 → home，rad/s
-approach_speed: 0.2      # home → 预接近位置，rad/s
-joint_acceleration: 0.5  # Home、预接近关节加速度上限，rad/s²
-joint_jerk: 1.0          # Home、预接近关节加加速度上限，rad/s³
+approach_speed: 0.2      # home → 最终抓握位置，rad/s
+joint_acceleration: 0.5  # Home、连续抓握接近关节加速度上限，rad/s²
+joint_jerk: 1.0          # Home、连续抓握接近关节加加速度上限，rad/s³
 
-# 第三阶段：从预接近位置沿笛卡尔路径对准把手的时长，单位 s，必须 >= 1。
-# 此阶段不会自动延长时间；若规划速度超限，需要增大此值。
+# 松开后的笛卡尔撤离时长，单位 s，必须 >= 1。
+# 抓握接近使用 Ruckig 自动计算时长，不使用此参数。
 final_approach_duration: 3.0
 
 # 轨迹规划采样间隔，单位 s，允许范围为 (0, 0.05]；0.02 对应 20 ms。

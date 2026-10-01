@@ -39,6 +39,8 @@ struct JointFrame {
     std::array<double, 14> q{};
     double angle = 0, displacement = 0;
     std::array<double, 14> dq{}, ddq{};
+    // Core-local schedule, excluded from the arm wire protocol; negative means keep target.
+    std::array<double, 2> hand_closure{{-1, -1}};
 };
 
 // 数据链接抽象接口：臂IO + 抓取IO + 周期同步

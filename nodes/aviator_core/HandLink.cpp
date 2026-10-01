@@ -38,9 +38,30 @@ uint64_t HandLink::request(bool close) {
     changed_.notify_all();
     return ++version_;
 }
-void HandLink::wait(uint64_t version) {
+uint64_t HandLink::beginApproach() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (stopping_ || failed_) throw std::runtime_error("Hand IO worker unavailable");
+    if (!allowed_) throw std::runtime_error("Core hand authorization revoked");
+    const auto now = monotonic_us();
+    if (const auto reason = control_.fault(now); !reason.empty()) throw std::runtime_error(reason);
+    control_.beginApproach(now);
+    changed_.notify_all();
+    return ++version_;
+}
+void HandLink::approachProgress(uint64_t version, const std::array<double, 2>& progress) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (stopping_ || failed_) throw std::runtime_error("Hand IO worker unavailable");
+    if (!allowed_) throw std::runtime_error("Core hand authorization revoked");
+    if (version != version_) throw std::runtime_error("Hand target superseded");
+    const auto now = monotonic_us();
+    if (const auto reason = control_.fault(now); !reason.empty()) throw std::runtime_error(reason);
+    control_.approachProgress(progress, now);
+    changed_.notify_all();
+}
+void HandLink::wait(uint64_t version, const std::atomic<bool>* cancel) {
     std::unique_lock<std::mutex> lock(mutex_);
     while (true) {
+        if (cancel && cancel->load()) throw std::runtime_error("Motion stopped during hand completion");
         if (stopping_) throw std::runtime_error("Hand IO worker stopped");
         if (!allowed_) throw std::runtime_error("Core hand authorization revoked");
         if (version != version_) throw std::runtime_error("Hand target superseded");

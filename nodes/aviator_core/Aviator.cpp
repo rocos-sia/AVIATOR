@@ -117,7 +117,10 @@ class Aviator::Impl {
         for (int side = 0; side < 2; ++side)
             tools_[side] = parseFrame(toolFrameConfig(grasp, side));
         wheel_origin_ = parseFrame(grasp["wheel_origin"]);
-        approach_distance_ = grasp["approach_distance"].as<double>();
+        approach_distance_ = grasp["approach_distance"].as<double>(); // Release retreat only.
+        hand_closing_distance_ = grasp["hand_closing_distance"].as<double>(0.07);
+        require(std::isfinite(hand_closing_distance_) && hand_closing_distance_ > 0,
+                "hand_closing_distance must be positive and finite (m)");
 
         // 加载姿态配置
         YAML::Node posture = YAML::LoadFile(resolvePath(config, "posture", config_dir));
@@ -227,7 +230,7 @@ class Aviator::Impl {
     void disable() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
-        if (grasp().locked) command(GraspCommand::Unlock);
+        if (grasp().locked || GetState() == "APPROACHED") command(GraspCommand::Unlock);
 
         stopDrives();
 
@@ -316,50 +319,18 @@ class Aviator::Impl {
         cancel_ = false;
         setState("APPROACHING");
 
-        const char *phase = "home trajectory";
+        const char *phase = "open hands";
         try {
+            command(GraspCommand::Unlock); // Also reopen after an unlatched/aborted approach.
+            phase = "home trajectory";
             if (!from_home) homeMotion(false); // Preserve the Direct demo home stage.
 
-            // 第二阶段：确认 home 指令完成且双臂停稳，从上一段指令末点规划到预接近位置。
-            phase = "pre-approach";
-            auto wheel0 = grasp();
-            Joints seed = approach_seed_;
-            auto goal = solve({target(0, wheel0.angle, wheel0.displacement, approach_distance_),
-                              target(1, wheel0.angle, wheel0.displacement, approach_distance_)},
-                             seed);
-
-            moveJoints(goal, approach_speed_);
-
-            // 第三阶段：笛卡尔空间精确对准
-            phase = "final approach";
-            auto wheel1 = grasp();
-            double duration = final_approach_duration_;
-            size_t steps = static_cast<size_t>(std::ceil(duration / planning_period_));
-            Path path;
-
-            seed = planningStart();
-            pinocchio::SE3 from[2];
-            for (int side = 0; side < 2; ++side) {
-                std::array<double, 7> q{};
-                for (int j = 0; j < 7; ++j)
-                    q[j] = seed[side * 7 + j];
-                require(kinematics_->solveFk(static_cast<Side>(side), q, from[side]), "FK failed");
-            }
-
-            for (size_t k = 0; k <= steps; ++k) {
-                double s = smooth(double(k) / steps);
-                std::array<pinocchio::SE3, 2> targets;
-                for (int side = 0; side < 2; ++side) {
-                    auto end = target(side, wheel1.angle, wheel1.displacement);
-                    targets[side] = interpolatePose(from[side], end, s);
-                }
-                if (k)
-                    seed = solve(targets, seed);
-                path.push_back({seed, wheel1.angle, wheel1.displacement});
-            }
-
-            validate(path, duration);
-            execute(path, duration, false);
+            // One synchronized joint trajectory from home to the final grasp pose.
+            phase = "synchronized approach";
+            const auto wheel0 = grasp();
+            const auto goal = solve({target(0, wheel0.angle, wheel0.displacement),
+                                     target(1, wheel0.angle, wheel0.displacement)}, approach_seed_);
+            moveJoints(goal, approach_speed_, true);
             phase = "approach complete";
 
             // 同步轮盘位形
@@ -460,7 +431,8 @@ class Aviator::Impl {
     void unlockHandles() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
-        require(GetState() == "LOCKED" || GetState() == "FAULT", "No software lock to release");
+        require(GetState() == "LOCKED" || GetState() == "APPROACHED" || GetState() == "FAULT",
+                "No completed approach or software lock to release");
 
         command(GraspCommand::Unlock);
         setState("ENABLED");
@@ -831,7 +803,7 @@ class Aviator::Impl {
     }
 
     // 两臂共用一条 Ruckig 轨迹。先完整规划/检查，运行时只按 1 ms 取样。
-    void moveJoints(const Joints &goal, double speed) {
+    void moveJoints(const Joints &goal, double speed, bool close_hands = false) {
         ruckig::Ruckig<14> planner{command_period};
         ruckig::InputParameter<14> input;
         input.current_position = planningStart();
@@ -869,6 +841,18 @@ class Aviator::Impl {
         for (size_t k = 0; k <= ticks; ++k) {
             trajectory.at_time(std::min(k * command_period, duration), q, velocity, acceleration);
             frames.push_back({q, w.angle, w.displacement});
+        }
+        if (close_hands) {
+            const auto wheel_pose = wheel(w.angle, w.displacement);
+            planHandClosure(frames, hand_closing_distance_, [&](int side, const JointFrame& frame) {
+                require(!cancel_, "Motion cancelled while planning hand closure");
+                std::array<double, 7> joints{};
+                std::copy_n(frame.q.begin() + side * 7, 7, joints.begin());
+                pinocchio::SE3 flange;
+                require(kinematics_->solveFk(static_cast<Side>(side), joints, flange), "FK failed");
+                return ((flange * tools_[side]).translation() -
+                        (wheel_pose * handles_[side]).translation()).norm();
+            });
         }
         datalink_->runTrajectory(frames, cancel_);
         last_target_ = frames.back().q;
@@ -932,7 +916,7 @@ class Aviator::Impl {
     double wheel_angular_speed_, wheel_linear_speed_;
     double servo_period_, servo_timeout_;
     std::array<double, 2> wheel_acceleration_, wheel_jerk_;
-    double approach_distance_;
+    double approach_distance_, hand_closing_distance_;
 
     double joint2_min_, joint2_max_, joint2_margin_;
 

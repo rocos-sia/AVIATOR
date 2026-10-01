@@ -18,7 +18,23 @@ int main(int argc, char** argv) {
         auto cleanup = [&] { done = true; heartbeat.join(); };
         try {
             const std::string mode = argv[2];
-            if (mode == "normal" || mode == "isolation") {
+            if (mode == "synchronized") {
+                link.enable(Side::Left);
+                std::vector<JointFrame> frames(1001);
+                for (size_t k = 0; k < frames.size(); ++k) {
+                    for (int side = 0; side < 2; ++side) {
+                        const size_t start = side ? 100 : 300;
+                        const double u = k <= start ? 0 : double(k-start)/(1000-start);
+                        frames[k].hand_closure[side] = u*u*u*(10+u*(-15+6*u));
+                    }
+                }
+                std::atomic<bool> cancel{false};
+                link.runTrajectory(frames, cancel);
+                link.sendGraspCommand(GraspCommand::Lock);
+                link.sendGraspCommand(GraspCommand::Unlock);
+                link.disable(Side::Left);
+                cleanup();
+            } else if (mode == "normal" || mode == "isolation") {
                 link.enable(Side::Left);
                 link.sendGraspCommand(GraspCommand::Lock);
                 if (mode == "isolation") RemoteLinkTestAccess::stallArmIO(link);

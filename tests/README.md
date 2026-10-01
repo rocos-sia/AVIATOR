@@ -1,7 +1,13 @@
 # 通信测试
 
-`grasp_tools`（完整机器人构建）使用不同的左右工具位置和朝向，验证 Core 预接近及最终抓握
-目标、旧共享配置兼容、缺失/混合配置拒绝、碰撞模型加载与 MuJoCo TCP；无需连接真机。
+`grasp_tools`（完整机器人构建）验证不同左右工具变换、直接抓握目标、70/40 mm 独立触发与
+平滑闭合终点、真实 Pinocchio FK/IK、旧共享配置兼容、缺失/混合配置拒绝、碰撞模型加载与
+MuJoCo TCP；无需连接真机。`control_nodes_grasp` 运行真实总线和 MuJoCo，覆盖使能、从 home
+连续接近、锁定、张开、失能和退出。
+
+`core_hand` 验证接近期间的双手目标插值、超过普通完成时限的持续运动、终点 ACK 与取消。
+`core_hand_process_test.py` 的 `synchronized` 场景使用真实 ZMQ 和模拟设备反馈，冻结机械臂
+游标 300 ms，确认手指目标不按墙钟时间继续闭合，并验证恢复执行与最终锁定。
 
 `communication_test.cpp` 经 CTest 注册为 `communication`，不依赖机器人或相机硬件，使用实际 libzmq socket。
 

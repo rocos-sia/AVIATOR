@@ -162,7 +162,11 @@ void RemoteLink::handTarget(bool close) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!motion_allowed_) throw std::runtime_error("Core hand authorization revoked");
         if (!error_.empty()) throw std::runtime_error(error_);
-        version = hand_.request(close);
+        if (close && synchronized_hand_version_) version = synchronized_hand_version_;
+        else {
+            synchronized_hand_version_ = 0;
+            version = hand_.request(close);
+        }
     }
     // Do not hold the arm mutex while waiting for physical hand feedback.
     hand_.wait(version);
@@ -268,6 +272,13 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
     std::unique_lock<std::mutex> lock(mutex_);
     if (!motion_allowed_ || !enabled_ || state_.fault || !hand_.fault().empty())
         throw std::runtime_error("Manipulator is not enabled/healthy");
+    const bool synchronized = frames.front().hand_closure[0] >= 0;
+    uint64_t hand_version = 0;
+    if (hand_.enabled() && synchronized) {
+        synchronized_hand_version_ = 0;
+        hand_version = hand_.beginApproach(); // Validate close targets before starting arm motion.
+        hand_.approachProgress(hand_version, frames.front().hand_closure);
+    }
     streaming_ = false;
     stream_.clear();
     trajectory_ = data;
@@ -290,11 +301,20 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
             throw std::runtime_error(
                 "arm.state feedback timeout: receive_age_us=" + std::to_string(now - received_) +
                 " sample_age_us=" + std::to_string(now - sample_));
+        if (hand_version && state_.id == id)
+            hand_.approachProgress(hand_version, data->at(std::min<uint64_t>(state_.cursor, data->size() - 1)).hand_closure);
         if (state_.id == id && state_.cursor >= data->size() - 1)
             break;
         if (std::chrono::steady_clock::now() > until)
             throw std::runtime_error("Trajectory execution progress timeout");
         changed_.wait_for(lock, std::chrono::milliseconds(5));
+    }
+    if (hand_version) {
+        lock.unlock();
+        hand_.wait(hand_version, &cancel); // Endpoint CAN-write ACK; fingers were already closing during approach.
+        lock.lock();
+        if (!motion_allowed_ || cancel) throw std::runtime_error("Motion stopped during hand completion");
+        synchronized_hand_version_ = hand_version;
     }
 }
 void RemoteLink::stopTrajectory() {

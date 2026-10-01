@@ -1,0 +1,17 @@
+rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_bus --config config/system.yaml 
+
+
+rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ sudo ./build/bin/manipulator  --config config/system.yaml 
+
+
+rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/flight_gateway 
+
+
+conda activate rh56-pendant
+(rh56-pendant) rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ python3 nodes/rh56ftp_hand/rh56ftp_node.py   --right-host 192.168.21.210   --left-host 192.168.11.210   --speed 500 --force 500
+
+
+rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_core_managed --config config/system.yaml 
+
+
+rocos@rocos-controller:~/Documents/GitHub/AVIATOR/build/debug/bin$ ./aviator_monitor 

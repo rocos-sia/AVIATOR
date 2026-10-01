@@ -9,6 +9,8 @@ public:
     void configure(const std::filesystem::path&, const std::string& backend);
     bool enabled() const { return enabled_; }
     void request(bool close, uint64_t now);
+    void beginApproach(uint64_t now);
+    void approachProgress(const std::array<double, 2>&, uint64_t now);
     void revoke();
     void fail(const std::string& reason);
     void receive(const Message&, uint64_t now, const std::string& core_session);
@@ -22,7 +24,8 @@ public:
 private:
     using Pose = std::array<std::array<double, 6>, 2>; // left, right
     bool enabled_ = false, has_close_ = false, active_ = false, closing_ = false;
-    bool valid_ = false, acknowledged_ = false;
+    bool valid_ = false, acknowledged_ = false, synchronized_ = false, endpoint_ = false;
+    bool endpoint_acknowledged_ = false;
     Pose open_{{{1,1,1,1,1,1}, {1,1,1,1,1,1}}}, close_{}, target_{};
     std::string publisher_ = "inspire_hand", node_session_, epoch_ = new_session_id(), error_;
     uint64_t timeout_ = 5000000, feedback_timeout_ = 500000;
