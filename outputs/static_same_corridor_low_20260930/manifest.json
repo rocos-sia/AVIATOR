@@ -1,0 +1,4391 @@
+{
+  "seed": 2026093008,
+  "reference_path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0047.npz",
+  "reference_sha256": "9e6928363b8d997df59359807e03d3da956b41950493f087db58457eafdc6c37",
+  "high_metrics": {
+    "min_wall_clearance_m": 0.00832989447981633,
+    "contact_samples": 0,
+    "wall_failure_samples": 0,
+    "joint_limit_samples": 0,
+    "geometry_pass": true,
+    "max_qdot": 1.3076822202196179,
+    "max_qddot": 9.565029759299737,
+    "pass_velocity_geometry": true,
+    "pass_with_acceleration": true,
+    "first_speed_failure_s": null,
+    "first_acceleration_failure_s": null
+  },
+  "field_sha256": "0f6a0ff7a178d3e68f14863e8d266c60b49744d84f6041a805427191b46b5851",
+  "start_x": [
+    0.025733483693733572,
+    -0.10242273707755005
+  ],
+  "end_x": [
+    0.0009788286038877603,
+    -0.10242273707755005
+  ],
+  "theta_corridor": [
+    -0.7110354337164739,
+    0.6243975270790075
+  ],
+  "slide": -0.10242273707755005,
+  "task_limits": {
+    "theta_speed": 0.6,
+    "theta_acceleration": 5.0,
+    "theta_jerk": 20.0
+  },
+  "trajectories": {
+    "traj_0000": {
+      "mode": "same_waypoints",
+      "seed": 2026093008,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 33
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.62
+        },
+        {
+          "kind": "hold",
+          "n": 27
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 5.5
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 8.58
+        },
+        {
+          "kind": "hold",
+          "n": 27
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 5.18
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.11
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.58
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "hold",
+          "n": 32
+        }
+      ],
+      "duration": 23.55,
+      "theta_peak": 0.4611216076894977,
+      "theta_acceleration_peak": 1.6198470693741631,
+      "theta_jerk_peak": 19.515698843898928,
+      "sha256": "4269c102b77e109b6d3ad858194b6cb37fa60836a7777645024234204915f3de"
+    },
+    "traj_0001": {
+      "mode": "same_waypoints",
+      "seed": 2026093009,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 42
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.62
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 5.39
+        },
+        {
+          "kind": "hold",
+          "n": 30
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 12.05
+        },
+        {
+          "kind": "hold",
+          "n": 48
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.71
+        },
+        {
+          "kind": "hold",
+          "n": 47
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.24
+        },
+        {
+          "kind": "hold",
+          "n": 30
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.81
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "hold",
+          "n": 45
+        }
+      ],
+      "duration": 27.36,
+      "theta_peak": 0.41287873566911715,
+      "theta_acceleration_peak": 1.143469312488664,
+      "theta_jerk_peak": 11.986338814459772,
+      "sha256": "23b64d153d1c4f0f36ad148c5b5d5a53b76f1b78200ad6fdc59971f9a1f2885e"
+    },
+    "traj_0002": {
+      "mode": "same_waypoints",
+      "seed": 2026093010,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 27
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.53
+        },
+        {
+          "kind": "hold",
+          "n": 26
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 4.29
+        },
+        {
+          "kind": "hold",
+          "n": 35
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 12.42
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 5.43
+        },
+        {
+          "kind": "hold",
+          "n": 39
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.29
+        },
+        {
+          "kind": "hold",
+          "n": 30
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.66
+        },
+        {
+          "kind": "hold",
+          "n": 17
+        }
+      ],
+      "duration": 26.48,
+      "theta_peak": 0.39680414039167566,
+      "theta_acceleration_peak": 1.4537779091442675,
+      "theta_jerk_peak": 19.14721631125867,
+      "sha256": "1b2893c180ebf52af150c95bfaa8ebc32e74cdc48c5bc711094f6387a2f3bb0d"
+    },
+    "traj_0003": {
+      "mode": "same_waypoints",
+      "seed": 2026093011,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 58
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.75
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 5.1000000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 41
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 5.5600000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 31
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.88
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.09
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.6900000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 49
+        }
+      ],
+      "duration": 20.41,
+      "theta_peak": 0.5254064031906682,
+      "theta_acceleration_peak": 1.4799693335927682,
+      "theta_jerk_peak": 11.576392731246127,
+      "sha256": "9d7c29a5fa30cccc1a107716b6535667c95d9174ea2a33e7832a5a225e603c28"
+    },
+    "traj_0004": {
+      "mode": "same_waypoints",
+      "seed": 2026093012,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 60
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.55
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 5.83
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 7.71
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 3.25
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.83
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.75
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        }
+      ],
+      "duration": 21.57,
+      "theta_peak": 0.5283055819026379,
+      "theta_acceleration_peak": 1.350999810421907,
+      "theta_jerk_peak": 17.136081595391417,
+      "sha256": "6a1231be18c1a127950cccdefafc26fa4273f9ffc7b06d5d5c6764e21122ccd9"
+    },
+    "traj_0005": {
+      "mode": "same_waypoints",
+      "seed": 2026093013,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 38
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.56
+        },
+        {
+          "kind": "hold",
+          "n": 24
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 5.82
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 9.69
+        },
+        {
+          "kind": "hold",
+          "n": 25
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.88
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.77
+        },
+        {
+          "kind": "hold",
+          "n": 54
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.61
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "hold",
+          "n": 40
+        }
+      ],
+      "duration": 25.26,
+      "theta_peak": 0.35185285015903267,
+      "theta_acceleration_peak": 1.464253228201552,
+      "theta_jerk_peak": 16.748576008185246,
+      "sha256": "b10ad641b6ca2495921f4547c471e86632c8728777d8e6aa1156b367fbe7381e"
+    },
+    "traj_0006": {
+      "mode": "same_waypoints",
+      "seed": 2026093014,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 11
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.6900000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 11
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 3.74
+        },
+        {
+          "kind": "hold",
+          "n": 17
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 10.91
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 7.42
+        },
+        {
+          "kind": "hold",
+          "n": 27
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.04
+        },
+        {
+          "kind": "hold",
+          "n": 52
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.72
+        },
+        {
+          "kind": "hold",
+          "n": 10
+        },
+        {
+          "kind": "hold",
+          "n": 34
+        }
+      ],
+      "duration": 26.14,
+      "theta_peak": 0.49227849252856276,
+      "theta_acceleration_peak": 1.625505372341939,
+      "theta_jerk_peak": 10.92333933125509,
+      "sha256": "7a46ee2814a5ded307966bb7c4d57c1b26763e2cb2ff102e75e1f2d787412160"
+    },
+    "traj_0007": {
+      "mode": "same_waypoints",
+      "seed": 2026093015,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 52
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.64
+        },
+        {
+          "kind": "hold",
+          "n": 59
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 2.71
+        },
+        {
+          "kind": "hold",
+          "n": 43
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 8.25
+        },
+        {
+          "kind": "hold",
+          "n": 50
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 3.52
+        },
+        {
+          "kind": "hold",
+          "n": 31
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.21
+        },
+        {
+          "kind": "hold",
+          "n": 29
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.78
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        }
+      ],
+      "duration": 20.13,
+      "theta_peak": 0.5507722118844861,
+      "theta_acceleration_peak": 1.2006149624026534,
+      "theta_jerk_peak": 10.897369983568451,
+      "sha256": "40e0b43554a5bfb328ac6b6d55a910263866ff9587b2646e40cc1b2b9c14b91e"
+    },
+    "traj_0008": {
+      "mode": "same_waypoints",
+      "seed": 2026093016,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 44
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.76
+        },
+        {
+          "kind": "hold",
+          "n": 22
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 3.79
+        },
+        {
+          "kind": "hold",
+          "n": 42
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 8.98
+        },
+        {
+          "kind": "hold",
+          "n": 46
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.69
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.11
+        },
+        {
+          "kind": "hold",
+          "n": 34
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.59
+        },
+        {
+          "kind": "hold",
+          "n": 22
+        },
+        {
+          "kind": "hold",
+          "n": 44
+        }
+      ],
+      "duration": 22.46,
+      "theta_peak": 0.4611216076894977,
+      "theta_acceleration_peak": 1.5643525502089453,
+      "theta_jerk_peak": 18.50815034112629,
+      "sha256": "3c95f4c34763092a4f63d6e62f60c0208a3cdc3ff53f57442d6bea1dde1a8a67"
+    },
+    "traj_0009": {
+      "mode": "same_waypoints",
+      "seed": 2026093017,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 27
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.64
+        },
+        {
+          "kind": "hold",
+          "n": 58
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 2.69
+        },
+        {
+          "kind": "hold",
+          "n": 19
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 5.91
+        },
+        {
+          "kind": "hold",
+          "n": 14
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 3.09
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.47
+        },
+        {
+          "kind": "hold",
+          "n": 31
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.62
+        },
+        {
+          "kind": "hold",
+          "n": 17
+        },
+        {
+          "kind": "hold",
+          "n": 40
+        }
+      ],
+      "duration": 17.03,
+      "theta_peak": 0.555659534018922,
+      "theta_acceleration_peak": 1.4174154115350164,
+      "theta_jerk_peak": 15.976918502361482,
+      "sha256": "d4fdbbd32cf35ec29ca2eedfea72129327259a2d18e9dba37f5a2966feee87d4"
+    },
+    "traj_0010": {
+      "mode": "same_waypoints",
+      "seed": 2026093018,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 25
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.66
+        },
+        {
+          "kind": "hold",
+          "n": 50
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 3.75
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 5.65
+        },
+        {
+          "kind": "hold",
+          "n": 37
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 5.64
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.08
+        },
+        {
+          "kind": "hold",
+          "n": 60
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.59
+        },
+        {
+          "kind": "hold",
+          "n": 11
+        }
+      ],
+      "duration": 19.75,
+      "theta_peak": 0.5170322386776807,
+      "theta_acceleration_peak": 1.5643525502089453,
+      "theta_jerk_peak": 18.50815034112629,
+      "sha256": "2c07173cddd79a6f7b6ea94cf01921faaa1877ed2e6be2737d7ad96d42c06435"
+    },
+    "traj_0011": {
+      "mode": "same_waypoints",
+      "seed": 2026093019,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 39
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.56
+        },
+        {
+          "kind": "hold",
+          "n": 60
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 3.17
+        },
+        {
+          "kind": "hold",
+          "n": 46
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 7.18
+        },
+        {
+          "kind": "hold",
+          "n": 52
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.32
+        },
+        {
+          "kind": "hold",
+          "n": 43
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.22
+        },
+        {
+          "kind": "hold",
+          "n": 58
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.59
+        },
+        {
+          "kind": "hold",
+          "n": 45
+        },
+        {
+          "kind": "hold",
+          "n": 40
+        }
+      ],
+      "duration": 20.87,
+      "theta_peak": 0.4708546074767001,
+      "theta_acceleration_peak": 1.5643525502089453,
+      "theta_jerk_peak": 18.50815034112629,
+      "sha256": "c43bdce19eeee789fd8d5fce0647aa69292cfd62ad8a0da70f70a90165511c94"
+    },
+    "traj_0012": {
+      "mode": "same_waypoints",
+      "seed": 2026093020,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 54
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.74
+        },
+        {
+          "kind": "hold",
+          "n": 18
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 3.98
+        },
+        {
+          "kind": "hold",
+          "n": 52
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 6.17
+        },
+        {
+          "kind": "hold",
+          "n": 30
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 5.4
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.03
+        },
+        {
+          "kind": "hold",
+          "n": 34
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.68
+        },
+        {
+          "kind": "hold",
+          "n": 47
+        }
+      ],
+      "duration": 20.35,
+      "theta_peak": 0.4969173511954816,
+      "theta_acceleration_peak": 1.6566139131701718,
+      "theta_jerk_peak": 12.109922122528262,
+      "sha256": "6501d67d9c72b8c77179867607881f451dcfcca7555be8fe1bc90626ef572c64"
+    },
+    "traj_0013": {
+      "mode": "same_waypoints",
+      "seed": 2026093021,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 30
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.6
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 4.88
+        },
+        {
+          "kind": "hold",
+          "n": 24
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 6.48
+        },
+        {
+          "kind": "hold",
+          "n": 36
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 3.73
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.25
+        },
+        {
+          "kind": "hold",
+          "n": 21
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.67
+        },
+        {
+          "kind": "hold",
+          "n": 18
+        },
+        {
+          "kind": "hold",
+          "n": 60
+        }
+      ],
+      "duration": 19.88,
+      "theta_peak": 0.46032302545421544,
+      "theta_acceleration_peak": 1.2123335697214792,
+      "theta_jerk_peak": 13.225371097095227,
+      "sha256": "300b9935c02074777f87936e5568b9dd491c6d6e75edb6bcf72e666c34938ba3"
+    },
+    "traj_0014": {
+      "mode": "same_waypoints",
+      "seed": 2026093022,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 16
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.66
+        },
+        {
+          "kind": "hold",
+          "n": 48
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 4.63
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 7.26
+        },
+        {
+          "kind": "hold",
+          "n": 48
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 3.27
+        },
+        {
+          "kind": "hold",
+          "n": 14
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.53
+        },
+        {
+          "kind": "hold",
+          "n": 36
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.59
+        },
+        {
+          "kind": "hold",
+          "n": 20
+        },
+        {
+          "kind": "hold",
+          "n": 57
+        }
+      ],
+      "duration": 20.330000000000002,
+      "theta_peak": 0.5250745369722288,
+      "theta_acceleration_peak": 1.5643525502089453,
+      "theta_jerk_peak": 18.50815034112629,
+      "sha256": "757a29d86183de65665b6da1b51ba41a2644748835b7eb6353ca141dd26c21fa"
+    },
+    "traj_0015": {
+      "mode": "same_waypoints",
+      "seed": 2026093023,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 11
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.64
+        },
+        {
+          "kind": "hold",
+          "n": 17
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 6.61
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 9.82
+        },
+        {
+          "kind": "hold",
+          "n": 49
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.51
+        },
+        {
+          "kind": "hold",
+          "n": 44
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.82
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.79
+        },
+        {
+          "kind": "hold",
+          "n": 35
+        }
+      ],
+      "duration": 25.75,
+      "theta_peak": 0.38071321151290394,
+      "theta_acceleration_peak": 0.9974944595280373,
+      "theta_jerk_peak": 10.897369983568451,
+      "sha256": "77445e6e36dabb6297ef2963441213489101c03a597fa6caff9922cfdb37822a"
+    },
+    "traj_0016": {
+      "mode": "same_waypoints",
+      "seed": 2026093024,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 30
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.6900000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 33
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 5.69
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 5.33
+        },
+        {
+          "kind": "hold",
+          "n": 13
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.21
+        },
+        {
+          "kind": "hold",
+          "n": 40
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.18
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.61
+        },
+        {
+          "kind": "hold",
+          "n": 44
+        },
+        {
+          "kind": "hold",
+          "n": 56
+        }
+      ],
+      "duration": 19.87,
+      "theta_peak": 0.548072936799251,
+      "theta_acceleration_peak": 1.464253228201552,
+      "theta_jerk_peak": 16.748576008185246,
+      "sha256": "74099a9fc64a3c929999af3a2c279a5f31a0b57d6bc116269e24bd8f20d235b7"
+    },
+    "traj_0017": {
+      "mode": "same_waypoints",
+      "seed": 2026093025,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 56
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.6
+        },
+        {
+          "kind": "hold",
+          "n": 34
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 3.83
+        },
+        {
+          "kind": "hold",
+          "n": 16
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 6.5200000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 29
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 5.7
+        },
+        {
+          "kind": "hold",
+          "n": 16
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.16
+        },
+        {
+          "kind": "hold",
+          "n": 51
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.67
+        },
+        {
+          "kind": "hold",
+          "n": 25
+        }
+      ],
+      "duration": 20.75,
+      "theta_peak": 0.44804595118713425,
+      "theta_acceleration_peak": 1.3067766864113093,
+      "theta_jerk_peak": 13.225371097095227,
+      "sha256": "b7fa31380b38fa8e53e12aeee3caed3d891f539e87f70d78078c31326a22a6c9"
+    },
+    "traj_0018": {
+      "mode": "same_waypoints",
+      "seed": 2026093026,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 51
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.64
+        },
+        {
+          "kind": "hold",
+          "n": 16
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 5.21
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 6.4
+        },
+        {
+          "kind": "hold",
+          "n": 45
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.95
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.1300000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 45
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.8
+        },
+        {
+          "kind": "hold",
+          "n": 52
+        },
+        {
+          "kind": "hold",
+          "n": 19
+        }
+      ],
+      "duration": 21.41,
+      "theta_peak": 0.45644681277189303,
+      "theta_acceleration_peak": 1.3769481730929358,
+      "theta_jerk_peak": 10.897369983568451,
+      "sha256": "3405085e0c29fee80b2a068280c9faa844649494d84b457c7af44b17bab476be"
+    },
+    "traj_0019": {
+      "mode": "same_waypoints",
+      "seed": 2026093027,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 14
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.62
+        },
+        {
+          "kind": "hold",
+          "n": 56
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 5.03
+        },
+        {
+          "kind": "hold",
+          "n": 32
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 8.85
+        },
+        {
+          "kind": "hold",
+          "n": 50
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 5.03
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.16
+        },
+        {
+          "kind": "hold",
+          "n": 59
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.6
+        },
+        {
+          "kind": "hold",
+          "n": 10
+        },
+        {
+          "kind": "hold",
+          "n": 14
+        }
+      ],
+      "duration": 23.64,
+      "theta_peak": 0.4413531312325046,
+      "theta_acceleration_peak": 1.5118455451952806,
+      "theta_jerk_peak": 17.628458485327812,
+      "sha256": "f84e52f2317d221929714ab35321d188f55abe1317496bd1197e009bf0645a62"
+    },
+    "traj_0020": {
+      "mode": "same_waypoints",
+      "seed": 2026093028,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 15
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.56
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 3.0700000000000003
+        },
+        {
+          "kind": "hold",
+          "n": 35
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 6.5600000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 29
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.53
+        },
+        {
+          "kind": "hold",
+          "n": 51
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 2.09
+        },
+        {
+          "kind": "hold",
+          "n": 54
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.7000000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 25
+        },
+        {
+          "kind": "hold",
+          "n": 22
+        }
+      ],
+      "duration": 19.82,
+      "theta_peak": 0.48619093011023434,
+      "theta_acceleration_peak": 1.3012447657610424,
+      "theta_jerk_peak": 16.266628080428706,
+      "sha256": "576841c34cdcca1a9783e701e74f84c7ca504ba5ffedf0112a72e5248b624c6a"
+    },
+    "traj_0021": {
+      "mode": "same_waypoints",
+      "seed": 2026093029,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 29
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.67
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 4.44
+        },
+        {
+          "kind": "hold",
+          "n": 59
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 8.78
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.23
+        },
+        {
+          "kind": "hold",
+          "n": 25
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.52
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.67
+        },
+        {
+          "kind": "hold",
+          "n": 56
+        }
+      ],
+      "duration": 22.0,
+      "theta_peak": 0.40591326720551146,
+      "theta_acceleration_peak": 1.2123335697214792,
+      "theta_jerk_peak": 12.643372159271989,
+      "sha256": "fc6dabe312417aa1c2fc2341514e50dbc61a49fe26ff8c98901b5d26cd8fa0e8"
+    },
+    "traj_0022": {
+      "mode": "same_waypoints",
+      "seed": 2026093030,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 23
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.65
+        },
+        {
+          "kind": "hold",
+          "n": 13
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 6.33
+        },
+        {
+          "kind": "hold",
+          "n": 50
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 10.040000000000001
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.66
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.41
+        },
+        {
+          "kind": "hold",
+          "n": 25
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.8300000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 30
+        },
+        {
+          "kind": "hold",
+          "n": 28
+        }
+      ],
+      "duration": 25.73,
+      "theta_peak": 0.36846392892190544,
+      "theta_acceleration_peak": 0.9676021675776676,
+      "theta_jerk_peak": 10.387343225283617,
+      "sha256": "aba63015f69b4cecc089f1da01cebe070db6a7a12bb8efd32543cc21b06ff29f"
+    },
+    "traj_0023": {
+      "mode": "same_waypoints",
+      "seed": 2026093031,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 14
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.64
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 5.97
+        },
+        {
+          "kind": "hold",
+          "n": 13
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 7.73
+        },
+        {
+          "kind": "hold",
+          "n": 53
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.16
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 2.1
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.8
+        },
+        {
+          "kind": "hold",
+          "n": 22
+        }
+      ],
+      "duration": 22.42,
+      "theta_peak": 0.4127504588404037,
+      "theta_acceleration_peak": 0.9974944595280373,
+      "theta_jerk_peak": 10.897369983568451,
+      "sha256": "f761f30816d7bef32eb720842c6f9a507b950a00cf34554db1f5becb845587f2"
+    },
+    "traj_0024": {
+      "mode": "same_waypoints",
+      "seed": 2026093032,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 28
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.5700000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 4.64
+        },
+        {
+          "kind": "hold",
+          "n": 27
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 11.77
+        },
+        {
+          "kind": "hold",
+          "n": 42
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 3.94
+        },
+        {
+          "kind": "hold",
+          "n": 50
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.45
+        },
+        {
+          "kind": "hold",
+          "n": 52
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.72
+        },
+        {
+          "kind": "hold",
+          "n": 35
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        }
+      ],
+      "duration": 26.1,
+      "theta_peak": 0.43579743877565463,
+      "theta_acceleration_peak": 1.257694908619518,
+      "theta_jerk_peak": 15.396942734291905,
+      "sha256": "88797fb6fda1c14b6b97f1b1d3c8ea818d559a0f25f1d12c8ca853019d6482de"
+    },
+    "traj_0025": {
+      "mode": "same_waypoints",
+      "seed": 2026093033,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 31
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.6900000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 39
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 4.48
+        },
+        {
+          "kind": "hold",
+          "n": 47
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 6.62
+        },
+        {
+          "kind": "hold",
+          "n": 17
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 5.69
+        },
+        {
+          "kind": "hold",
+          "n": 48
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.56
+        },
+        {
+          "kind": "hold",
+          "n": 35
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.64
+        },
+        {
+          "kind": "hold",
+          "n": 31
+        },
+        {
+          "kind": "hold",
+          "n": 39
+        }
+      ],
+      "duration": 22.55,
+      "theta_peak": 0.44127788545923197,
+      "theta_acceleration_peak": 1.329587619132794,
+      "theta_jerk_peak": 14.525402194331384,
+      "sha256": "99244eeb74ae30ca3af283e7f42e8cd81b004cdeb693af2f0197cca4b5be3da7"
+    },
+    "traj_0026": {
+      "mode": "same_waypoints",
+      "seed": 2026093034,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 33
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.56
+        },
+        {
+          "kind": "hold",
+          "n": 23
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 5.86
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 7.41
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.71
+        },
+        {
+          "kind": "hold",
+          "n": 34
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.42
+        },
+        {
+          "kind": "hold",
+          "n": 41
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.71
+        },
+        {
+          "kind": "hold",
+          "n": 50
+        },
+        {
+          "kind": "hold",
+          "n": 35
+        }
+      ],
+      "duration": 22.830000000000002,
+      "theta_peak": 0.3942299110603016,
+      "theta_acceleration_peak": 1.3012447657610424,
+      "theta_jerk_peak": 16.266628080428706,
+      "sha256": "d716842d90156745839397ddceaf9de33bc623e0c6ca51df0fd08ef4a568859d"
+    },
+    "traj_0027": {
+      "mode": "same_waypoints",
+      "seed": 2026093035,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 21
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.68
+        },
+        {
+          "kind": "hold",
+          "n": 31
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 2.91
+        },
+        {
+          "kind": "hold",
+          "n": 31
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 7.92
+        },
+        {
+          "kind": "hold",
+          "n": 51
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 3.61
+        },
+        {
+          "kind": "hold",
+          "n": 30
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.9100000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 27
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.64
+        },
+        {
+          "kind": "hold",
+          "n": 53
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        }
+      ],
+      "duration": 20.490000000000002,
+      "theta_peak": 0.5129212327266187,
+      "theta_acceleration_peak": 1.329587619132794,
+      "theta_jerk_peak": 14.525402194331384,
+      "sha256": "8519d25f7bab91dbd917ab7bf60e4075d11b3402de02da79846e731181d90ee1"
+    },
+    "traj_0028": {
+      "mode": "same_waypoints",
+      "seed": 2026093036,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 53
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.58
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 3.29
+        },
+        {
+          "kind": "hold",
+          "n": 33
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 6.99
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 6.3500000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 52
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.24
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.79
+        },
+        {
+          "kind": "hold",
+          "n": 39
+        }
+      ],
+      "duration": 21.13,
+      "theta_peak": 0.4536815492578543,
+      "theta_acceleration_peak": 1.2152553571740783,
+      "theta_jerk_peak": 14.641232507342291,
+      "sha256": "a81ddc8c258a9b51cf5a0f5d4cbaad670734c903aa4be93ad6e46e8bb3738d14"
+    },
+    "traj_0029": {
+      "mode": "same_waypoints",
+      "seed": 2026093037,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 36
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.028679471677172497,
+          "duration": 0.62
+        },
+        {
+          "kind": "hold",
+          "n": 50
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.028679471677172497,
+          "end_theta": -0.7110354337164738,
+          "duration": 3.5
+        },
+        {
+          "kind": "hold",
+          "n": 42
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7110354337164738,
+          "end_theta": 0.6243975270790075,
+          "duration": 6.51
+        },
+        {
+          "kind": "hold",
+          "n": 43
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6243975270790075,
+          "end_theta": -0.1605359169329145,
+          "duration": 4.26
+        },
+        {
+          "kind": "hold",
+          "n": 26
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1605359169329145,
+          "end_theta": 0.07350734351495075,
+          "duration": 1.16
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.07350734351495075,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.81
+        },
+        {
+          "kind": "hold",
+          "n": 37
+        }
+      ],
+      "duration": 19.2,
+      "theta_peak": 0.44873101732623716,
+      "theta_acceleration_peak": 1.3067766864113093,
+      "theta_jerk_peak": 11.986338814459772,
+      "sha256": "d5ca62248bb34f2a06a6c0c6c348f1593796bafbc962a9f11937b3309744684a"
+    },
+    "traj_0030": {
+      "mode": "random_route",
+      "seed": 2026093038,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 29
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.11241435923194723,
+          "duration": 0.84
+        },
+        {
+          "kind": "hold",
+          "n": 47
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.11241435923194723,
+          "end_theta": -0.6569806057788298,
+          "duration": 4.0
+        },
+        {
+          "kind": "hold",
+          "n": 53
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6569806057788298,
+          "end_theta": 0.5747599647765436,
+          "duration": 7.61
+        },
+        {
+          "kind": "hold",
+          "n": 59
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5747599647765436,
+          "end_theta": -0.3502747494122955,
+          "duration": 6.01
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.3502747494122955,
+          "end_theta": 0.2683825259657947,
+          "duration": 4.64
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.2683825259657947,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.0
+        },
+        {
+          "kind": "hold",
+          "n": 57
+        },
+        {
+          "kind": "hold",
+          "n": 45
+        }
+      ],
+      "duration": 28.67,
+      "theta_peak": 0.42076287149026864,
+      "theta_acceleration_peak": 0.9228189751863844,
+      "theta_jerk_peak": 7.677940364425106,
+      "sha256": "bcc93c153bf02e9e4937666ef325e3a861854f156401f51c9097b0d33129f57e"
+    },
+    "traj_0031": {
+      "mode": "random_route",
+      "seed": 2026093039,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 40
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.07388289523763089,
+          "duration": 0.91
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.07388289523763089,
+          "end_theta": -0.6288576784511252,
+          "duration": 3.47
+        },
+        {
+          "kind": "hold",
+          "n": 34
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6288576784511252,
+          "end_theta": 0.556909464857404,
+          "duration": 8.55
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.556909464857404,
+          "end_theta": -0.33275899798172875,
+          "duration": 5.01
+        },
+        {
+          "kind": "hold",
+          "n": 28
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.33275899798172875,
+          "end_theta": 0.27975144433692856,
+          "duration": 3.72
+        },
+        {
+          "kind": "hold",
+          "n": 25
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.27975144433692856,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.75
+        },
+        {
+          "kind": "hold",
+          "n": 53
+        },
+        {
+          "kind": "hold",
+          "n": 44
+        }
+      ],
+      "duration": 25.650000000000002,
+      "theta_peak": 0.3884484035712202,
+      "theta_acceleration_peak": 0.9037369525007991,
+      "theta_jerk_peak": 6.935074438001301,
+      "sha256": "3cf690b081f1fe9f5ca4ea581488eb9a0a715a09989e7f7294f8f4e49d37d536"
+    },
+    "traj_0032": {
+      "mode": "random_route",
+      "seed": 2026093040,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 26
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.12028375951253564,
+          "duration": 0.6900000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 22
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.12028375951253564,
+          "end_theta": -0.6218100730325417,
+          "duration": 4.33
+        },
+        {
+          "kind": "hold",
+          "n": 36
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6218100730325417,
+          "end_theta": 0.600150276980451,
+          "duration": 7.33
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.600150276980451,
+          "end_theta": -0.2896761932027245,
+          "duration": 4.65
+        },
+        {
+          "kind": "hold",
+          "n": 42
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.2896761932027245,
+          "end_theta": 0.2923145712846269,
+          "duration": 2.47
+        },
+        {
+          "kind": "hold",
+          "n": 16
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.2923145712846269,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.62
+        },
+        {
+          "kind": "hold",
+          "n": 52
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        }
+      ],
+      "duration": 23.41,
+      "theta_peak": 0.5154016987316933,
+      "theta_acceleration_peak": 1.492029327424588,
+      "theta_jerk_peak": 15.09132135227467,
+      "sha256": "27bf98a581658b10e25f762c0c0359317a57f836fa321458dbf104b50daee42c"
+    },
+    "traj_0033": {
+      "mode": "random_route",
+      "seed": 2026093041,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 39
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.09252050744517751,
+          "duration": 0.91
+        },
+        {
+          "kind": "hold",
+          "n": 45
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.09252050744517751,
+          "end_theta": -0.6150384494951335,
+          "duration": 4.69
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6150384494951335,
+          "end_theta": 0.513290190978018,
+          "duration": 6.18
+        },
+        {
+          "kind": "hold",
+          "n": 49
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.513290190978018,
+          "end_theta": -0.5024320178997583,
+          "duration": 5.2
+        },
+        {
+          "kind": "hold",
+          "n": 42
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.5024320178997583,
+          "end_theta": 0.2778404395967139,
+          "duration": 3.84
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.2778404395967139,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.85
+        },
+        {
+          "kind": "hold",
+          "n": 29
+        },
+        {
+          "kind": "hold",
+          "n": 11
+        }
+      ],
+      "duration": 24.82,
+      "theta_peak": 0.44449114603477424,
+      "theta_acceleration_peak": 1.0728205815086855,
+      "theta_jerk_peak": 8.232584239025014,
+      "sha256": "4c2eb5b92c66d7cbb0b55ac1a297b8ff825444995b7a9b75ff4cbdb8d5d08778"
+    },
+    "traj_0034": {
+      "mode": "random_route",
+      "seed": 2026093042,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 28
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.07309111091518132,
+          "duration": 0.86
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.07309111091518132,
+          "end_theta": -0.7079787683348501,
+          "duration": 3.89
+        },
+        {
+          "kind": "hold",
+          "n": 30
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7079787683348501,
+          "end_theta": 0.5117687334946411,
+          "duration": 4.93
+        },
+        {
+          "kind": "hold",
+          "n": 41
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5117687334946411,
+          "end_theta": -0.44087531933400625,
+          "duration": 4.23
+        },
+        {
+          "kind": "hold",
+          "n": 32
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.44087531933400625,
+          "end_theta": 0.22555169842393188,
+          "duration": 3.27
+        },
+        {
+          "kind": "hold",
+          "n": 46
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.22555169842393188,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.41
+        },
+        {
+          "kind": "hold",
+          "n": 59
+        },
+        {
+          "kind": "hold",
+          "n": 14
+        }
+      ],
+      "duration": 21.09,
+      "theta_peak": 0.5412098836342168,
+      "theta_acceleration_peak": 1.0037247477686018,
+      "theta_jerk_peak": 8.156972368734879,
+      "sha256": "7f14e66c7aa7ae94133c2f9eca5c45a9d4422d18fd9eef9eb02a94e903f0cdd7"
+    },
+    "traj_0035": {
+      "mode": "random_route",
+      "seed": 2026093043,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 57
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.0104820660000976,
+          "duration": 0.58
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.0104820660000976,
+          "end_theta": -0.6832370545211064,
+          "duration": 4.94
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6832370545211064,
+          "end_theta": 0.5237855000140036,
+          "duration": 5.09
+        },
+        {
+          "kind": "hold",
+          "n": 52
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5237855000140036,
+          "end_theta": -0.17038794021933434,
+          "duration": 3.5
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.17038794021933434,
+          "end_theta": 0.478543780158029,
+          "duration": 5.01
+        },
+        {
+          "kind": "hold",
+          "n": 34
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.478543780158029,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.34
+        },
+        {
+          "kind": "hold",
+          "n": 44
+        }
+      ],
+      "duration": 23.71,
+      "theta_peak": 0.5187291285625724,
+      "theta_acceleration_peak": 0.8088356987491365,
+      "theta_jerk_peak": 9.744743321405844,
+      "sha256": "1669e75901f040d9a0f692e146444aa8fda2cf68b257535f02ccb63ff22b9b8e"
+    },
+    "traj_0036": {
+      "mode": "random_route",
+      "seed": 2026093044,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 58
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.1493295068513687,
+          "duration": 1.01
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1493295068513687,
+          "end_theta": -0.6534968819008409,
+          "duration": 2.91
+        },
+        {
+          "kind": "hold",
+          "n": 11
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6534968819008409,
+          "end_theta": 0.5612601698271437,
+          "duration": 7.36
+        },
+        {
+          "kind": "hold",
+          "n": 11
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5612601698271437,
+          "end_theta": -0.4701614201509826,
+          "duration": 4.7700000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 50
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.4701614201509826,
+          "end_theta": 0.2680942416619988,
+          "duration": 3.58
+        },
+        {
+          "kind": "hold",
+          "n": 54
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.2680942416619988,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.67
+        },
+        {
+          "kind": "hold",
+          "n": 26
+        },
+        {
+          "kind": "hold",
+          "n": 27
+        }
+      ],
+      "duration": 23.67,
+      "theta_peak": 0.4729989474746717,
+      "theta_acceleration_peak": 1.2893425456628798,
+      "theta_jerk_peak": 8.915260315334283,
+      "sha256": "39b9e3dc42ab0cf4a873d762b2197f5411d004623aab4d2319c8846bba95b18c"
+    },
+    "traj_0037": {
+      "mode": "random_route",
+      "seed": 2026093045,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 37
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.1474043262003564,
+          "duration": 0.79
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.1474043262003564,
+          "end_theta": -0.6058182468270836,
+          "duration": 4.47
+        },
+        {
+          "kind": "hold",
+          "n": 39
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6058182468270836,
+          "end_theta": 0.5332576627871202,
+          "duration": 4.71
+        },
+        {
+          "kind": "hold",
+          "n": 45
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5332576627871202,
+          "end_theta": -0.5158266126337696,
+          "duration": 7.6000000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 29
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.5158266126337696,
+          "end_theta": 0.21119862130526668,
+          "duration": 4.2700000000000005
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.21119862130526668,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.91
+        },
+        {
+          "kind": "hold",
+          "n": 11
+        },
+        {
+          "kind": "hold",
+          "n": 33
+        }
+      ],
+      "duration": 24.69,
+      "theta_peak": 0.529022262482331,
+      "theta_acceleration_peak": 1.9071501780062912,
+      "theta_jerk_peak": 14.63504221258383,
+      "sha256": "7ab832705e3739e2e1b56e54458360b0b3c062211e3a4bb5820518bc58878481"
+    },
+    "traj_0038": {
+      "mode": "random_route",
+      "seed": 2026093046,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 44
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.07901064958750038,
+          "duration": 0.78
+        },
+        {
+          "kind": "hold",
+          "n": 58
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.07901064958750038,
+          "end_theta": -0.6964426479236251,
+          "duration": 3.42
+        },
+        {
+          "kind": "hold",
+          "n": 15
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6964426479236251,
+          "end_theta": 0.5455734812733785,
+          "duration": 7.1000000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 43
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5455734812733785,
+          "end_theta": -0.18127426987267353,
+          "duration": 5.54
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.18127426987267353,
+          "end_theta": 0.27707460857053484,
+          "duration": 2.63
+        },
+        {
+          "kind": "hold",
+          "n": 26
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.27707460857053484,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.54
+        },
+        {
+          "kind": "hold",
+          "n": 10
+        },
+        {
+          "kind": "hold",
+          "n": 35
+        }
+      ],
+      "duration": 23.32,
+      "theta_peak": 0.3949217825614833,
+      "theta_acceleration_peak": 1.2924600019045163,
+      "theta_jerk_peak": 11.587912383184102,
+      "sha256": "032c91b09250e6b501aad49ccff1bff6af38f0cddb5180586ceb303a0ec00dba"
+    },
+    "traj_0039": {
+      "mode": "random_route",
+      "seed": 2026093047,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 28
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.14183158833894186,
+          "duration": 0.76
+        },
+        {
+          "kind": "hold",
+          "n": 22
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.14183158833894186,
+          "end_theta": -0.6592154993783522,
+          "duration": 4.47
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6592154993783522,
+          "end_theta": 0.5709650970279037,
+          "duration": 8.05
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5709650970279037,
+          "end_theta": -0.2650469589783408,
+          "duration": 3.94
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.2650469589783408,
+          "end_theta": 0.37417895175132987,
+          "duration": 3.41
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.37417895175132987,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.2800000000000002
+        },
+        {
+          "kind": "hold",
+          "n": 56
+        },
+        {
+          "kind": "hold",
+          "n": 45
+        }
+      ],
+      "duration": 24.42,
+      "theta_peak": 0.46415643972427917,
+      "theta_acceleration_peak": 1.5101572072566656,
+      "theta_jerk_peak": 13.884928774861118,
+      "sha256": "2d7bca77f663ba75429dc0b4c8f5fbd064c3b34c0b8d11e86f484f60c66569e3"
+    },
+    "traj_0040": {
+      "mode": "random_route",
+      "seed": 2026093048,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 45
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.013443015453807466,
+          "duration": 0.59
+        },
+        {
+          "kind": "hold",
+          "n": 15
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.013443015453807466,
+          "end_theta": -0.6389814509664165,
+          "duration": 3.52
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6389814509664165,
+          "end_theta": 0.6102113517330505,
+          "duration": 7.95
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6102113517330505,
+          "end_theta": -0.5680869593257921,
+          "duration": 7.07
+        },
+        {
+          "kind": "hold",
+          "n": 14
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.5680869593257921,
+          "end_theta": 0.17188379008859767,
+          "duration": 4.0200000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 14
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.17188379008859767,
+          "end_theta": 0.0009788286038877603,
+          "duration": 0.88
+        },
+        {
+          "kind": "hold",
+          "n": 13
+        },
+        {
+          "kind": "hold",
+          "n": 31
+        }
+      ],
+      "duration": 25.900000000000002,
+      "theta_peak": 0.42483477641795786,
+      "theta_acceleration_peak": 1.6575539733607452,
+      "theta_jerk_peak": 13.16636703774663,
+      "sha256": "bab5bf00694613f1ebc94d09feed69ba637bd80bbb0c4f230f869c329a59f638"
+    },
+    "traj_0041": {
+      "mode": "random_route",
+      "seed": 2026093049,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 35
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.061742703634362184,
+          "duration": 0.8
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.061742703634362184,
+          "end_theta": -0.6367008668974502,
+          "duration": 3.42
+        },
+        {
+          "kind": "hold",
+          "n": 13
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6367008668974502,
+          "end_theta": 0.6041265288402833,
+          "duration": 9.5
+        },
+        {
+          "kind": "hold",
+          "n": 15
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6041265288402833,
+          "end_theta": -0.23037734440683305,
+          "duration": 4.41
+        },
+        {
+          "kind": "hold",
+          "n": 54
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.23037734440683305,
+          "end_theta": 0.29978795565531635,
+          "duration": 3.97
+        },
+        {
+          "kind": "hold",
+          "n": 27
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.29978795565531635,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.04
+        },
+        {
+          "kind": "hold",
+          "n": 17
+        },
+        {
+          "kind": "hold",
+          "n": 37
+        }
+      ],
+      "duration": 26.240000000000002,
+      "theta_peak": 0.4139340280410587,
+      "theta_acceleration_peak": 1.0268643508625708,
+      "theta_jerk_peak": 8.969726239697316,
+      "sha256": "b2ae6ac3c230dfc737d2a03ee59002941795fc81d9e8491630e7cfe28a251aab"
+    },
+    "traj_0042": {
+      "mode": "random_route",
+      "seed": 2026093050,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 39
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.10989809491739508,
+          "duration": 0.66
+        },
+        {
+          "kind": "hold",
+          "n": 29
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.10989809491739508,
+          "end_theta": -0.6451635085548848,
+          "duration": 6.890000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 33
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6451635085548848,
+          "end_theta": 0.5290547769992476,
+          "duration": 7.640000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 20
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5290547769992476,
+          "end_theta": -0.19318366184632274,
+          "duration": 3.92
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.19318366184632274,
+          "end_theta": 0.4030316759579389,
+          "duration": 3.14
+        },
+        {
+          "kind": "hold",
+          "n": 56
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.4030316759579389,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.69
+        },
+        {
+          "kind": "hold",
+          "n": 40
+        },
+        {
+          "kind": "hold",
+          "n": 29
+        }
+      ],
+      "duration": 26.400000000000002,
+      "theta_peak": 0.5203539802303415,
+      "theta_acceleration_peak": 1.4511757181763512,
+      "theta_jerk_peak": 15.369403710807205,
+      "sha256": "2725fa02e66ca0c45cc1ac787a70041a764b9c5bd8b7a47be0341c12b85ced50"
+    },
+    "traj_0043": {
+      "mode": "random_route",
+      "seed": 2026093051,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.04979053718838715,
+          "duration": 0.77
+        },
+        {
+          "kind": "hold",
+          "n": 43
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.04979053718838715,
+          "end_theta": -0.6574129331974946,
+          "duration": 3.58
+        },
+        {
+          "kind": "hold",
+          "n": 43
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6574129331974946,
+          "end_theta": 0.5254185417757131,
+          "duration": 5.88
+        },
+        {
+          "kind": "hold",
+          "n": 60
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5254185417757131,
+          "end_theta": -0.3668077390292891,
+          "duration": 5.49
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.3668077390292891,
+          "end_theta": 0.42442892673400157,
+          "duration": 5.44
+        },
+        {
+          "kind": "hold",
+          "n": 44
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.42442892673400157,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.64
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        }
+      ],
+      "duration": 26.63,
+      "theta_peak": 0.4400414713441993,
+      "theta_acceleration_peak": 0.9567137278183468,
+      "theta_jerk_peak": 8.676260353623595,
+      "sha256": "9f47269dbff3eba882a267778cfd9fdcecfc096677823d20a164129093155f37"
+    },
+    "traj_0044": {
+      "mode": "random_route",
+      "seed": 2026093052,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 56
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.08099248809276256,
+          "duration": 0.79
+        },
+        {
+          "kind": "hold",
+          "n": 15
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.08099248809276256,
+          "end_theta": -0.6822763414055897,
+          "duration": 3.46
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6822763414055897,
+          "end_theta": 0.6055011663468364,
+          "duration": 9.1
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6055011663468364,
+          "end_theta": -0.18893588180680204,
+          "duration": 4.84
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.18893588180680204,
+          "end_theta": 0.3634786297962421,
+          "duration": 4.5200000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.3634786297962421,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.92
+        },
+        {
+          "kind": "hold",
+          "n": 58
+        }
+      ],
+      "duration": 26.59,
+      "theta_peak": 0.41300433078556,
+      "theta_acceleration_peak": 1.2846738578329955,
+      "theta_jerk_peak": 11.353518671276447,
+      "sha256": "2634ac84735d5225060797093961d4646831846f54e871bde64c318b9923745d"
+    },
+    "traj_0045": {
+      "mode": "random_route",
+      "seed": 2026093053,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 34
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.019879114140652354,
+          "duration": 0.67
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.019879114140652354,
+          "end_theta": -0.6160167660643611,
+          "duration": 2.88
+        },
+        {
+          "kind": "hold",
+          "n": 59
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6160167660643611,
+          "end_theta": 0.5568978933584717,
+          "duration": 7.98
+        },
+        {
+          "kind": "hold",
+          "n": 59
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5568978933584717,
+          "end_theta": -0.5792382579166195,
+          "duration": 9.33
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.5792382579166195,
+          "end_theta": 0.40891407293152826,
+          "duration": 5.97
+        },
+        {
+          "kind": "hold",
+          "n": 44
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.40891407293152826,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.39
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "hold",
+          "n": 39
+        }
+      ],
+      "duration": 32.12,
+      "theta_peak": 0.45279552554969194,
+      "theta_acceleration_peak": 0.7624268003369331,
+      "theta_jerk_peak": 7.95131473846543,
+      "sha256": "23201044935fe30e709a56a2fc25b421371813d19f7aff09a22884d86b1c1955"
+    },
+    "traj_0046": {
+      "mode": "random_route",
+      "seed": 2026093054,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 57
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.015440090216240154,
+          "duration": 0.36
+        },
+        {
+          "kind": "hold",
+          "n": 13
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.015440090216240154,
+          "end_theta": -0.6958809078715741,
+          "duration": 4.82
+        },
+        {
+          "kind": "hold",
+          "n": 35
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6958809078715741,
+          "end_theta": 0.585967033131678,
+          "duration": 6.9
+        },
+        {
+          "kind": "hold",
+          "n": 56
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.585967033131678,
+          "end_theta": -0.4836698670228864,
+          "duration": 6.25
+        },
+        {
+          "kind": "hold",
+          "n": 45
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.4836698670228864,
+          "end_theta": 0.2538888753680273,
+          "duration": 3.19
+        },
+        {
+          "kind": "hold",
+          "n": 22
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.2538888753680273,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.04
+        },
+        {
+          "kind": "hold",
+          "n": 43
+        },
+        {
+          "kind": "hold",
+          "n": 35
+        }
+      ],
+      "duration": 25.62,
+      "theta_peak": 0.5319622377851493,
+      "theta_acceleration_peak": 1.7565412434763814,
+      "theta_jerk_peak": 11.803895808842068,
+      "sha256": "02a7a6d1e6a66ea2cf2f823766f30c6164cefffd92004ca9ac09551b95d32aac"
+    },
+    "traj_0047": {
+      "mode": "random_route",
+      "seed": 2026093055,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 40
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.0831739364900499,
+          "duration": 0.55
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.0831739364900499,
+          "end_theta": -0.6763738823452983,
+          "duration": 4.21
+        },
+        {
+          "kind": "hold",
+          "n": 14
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6763738823452983,
+          "end_theta": 0.5511262566808085,
+          "duration": 8.16
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5511262566808085,
+          "end_theta": -0.5484680990236113,
+          "duration": 6.26
+        },
+        {
+          "kind": "hold",
+          "n": 46
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.5484680990236113,
+          "end_theta": 0.26979241456678515,
+          "duration": 4.2700000000000005
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.26979241456678515,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.26
+        },
+        {
+          "kind": "hold",
+          "n": 53
+        },
+        {
+          "kind": "hold",
+          "n": 58
+        }
+      ],
+      "duration": 26.82,
+      "theta_peak": 0.466690253407808,
+      "theta_acceleration_peak": 1.4261684613415557,
+      "theta_jerk_peak": 18.08952076365624,
+      "sha256": "180fb6725b3936319c73f15c2792b3fa7db00321b30765d02ab8b041454d8c07"
+    },
+    "traj_0048": {
+      "mode": "random_route",
+      "seed": 2026093056,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 59
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.10229679313425966,
+          "duration": 0.91
+        },
+        {
+          "kind": "hold",
+          "n": 16
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.10229679313425966,
+          "end_theta": -0.6846162953741486,
+          "duration": 3.39
+        },
+        {
+          "kind": "hold",
+          "n": 56
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6846162953741486,
+          "end_theta": 0.5662716944575636,
+          "duration": 8.05
+        },
+        {
+          "kind": "hold",
+          "n": 52
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5662716944575636,
+          "end_theta": -0.5684058371121592,
+          "duration": 6.24
+        },
+        {
+          "kind": "hold",
+          "n": 29
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.5684058371121592,
+          "end_theta": 0.46017231634876665,
+          "duration": 6.5
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.46017231634876665,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.98
+        },
+        {
+          "kind": "hold",
+          "n": 45
+        },
+        {
+          "kind": "hold",
+          "n": 41
+        }
+      ],
+      "duration": 31.05,
+      "theta_peak": 0.3977735737674309,
+      "theta_acceleration_peak": 1.1615127296293848,
+      "theta_jerk_peak": 8.91318786774821,
+      "sha256": "a4273e687b2c9dc6e649952d3909ce172339c3ef0650e414b39d986e8c6054e3"
+    },
+    "traj_0049": {
+      "mode": "random_route",
+      "seed": 2026093057,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 20
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.05492858172151742,
+          "duration": 0.66
+        },
+        {
+          "kind": "hold",
+          "n": 51
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.05492858172151742,
+          "end_theta": -0.692624561787147,
+          "duration": 4.0200000000000005
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.692624561787147,
+          "end_theta": 0.5292703521690686,
+          "duration": 10.03
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5292703521690686,
+          "end_theta": -0.2783756623993908,
+          "duration": 6.5
+        },
+        {
+          "kind": "hold",
+          "n": 28
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.2783756623993908,
+          "end_theta": 0.298389620619243,
+          "duration": 3.77
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.298389620619243,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.25
+        },
+        {
+          "kind": "hold",
+          "n": 44
+        },
+        {
+          "kind": "hold",
+          "n": 22
+        }
+      ],
+      "duration": 27.88,
+      "theta_peak": 0.5203689623961398,
+      "theta_acceleration_peak": 1.4296170529584118,
+      "theta_jerk_peak": 14.729799490430048,
+      "sha256": "3cbdab1ec0506f0a598ce9f72432eb2afc5cb4041123871c0b79d7ad098a3bd1"
+    },
+    "traj_0050": {
+      "mode": "random_route",
+      "seed": 2026093058,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 49
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.10954714393274542,
+          "duration": 0.9
+        },
+        {
+          "kind": "hold",
+          "n": 58
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.10954714393274542,
+          "end_theta": -0.7000826192098608,
+          "duration": 2.8000000000000003
+        },
+        {
+          "kind": "hold",
+          "n": 51
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.7000826192098608,
+          "end_theta": 0.5541652252993288,
+          "duration": 7.07
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5541652252993288,
+          "end_theta": -0.4055192397769282,
+          "duration": 5.1000000000000005
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.4055192397769282,
+          "end_theta": 0.38776478848984924,
+          "duration": 3.3000000000000003
+        },
+        {
+          "kind": "hold",
+          "n": 27
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.38776478848984924,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.7800000000000002
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        }
+      ],
+      "duration": 24.18,
+      "theta_peak": 0.5258511551010835,
+      "theta_acceleration_peak": 1.2547409032087966,
+      "theta_jerk_peak": 9.742432030713505,
+      "sha256": "adfcdb5f5a1af607c9629d34b25ebfca86c44bf9a64c1b087482c75c37cd9443"
+    },
+    "traj_0051": {
+      "mode": "random_route",
+      "seed": 2026093059,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 57
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.04137532413750508,
+          "duration": 0.45
+        },
+        {
+          "kind": "hold",
+          "n": 57
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.04137532413750508,
+          "end_theta": -0.6669639408517541,
+          "duration": 4.34
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6669639408517541,
+          "end_theta": 0.602950917975862,
+          "duration": 5.92
+        },
+        {
+          "kind": "hold",
+          "n": 14
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.602950917975862,
+          "end_theta": -0.2071344059820298,
+          "duration": 4.8100000000000005
+        },
+        {
+          "kind": "hold",
+          "n": 46
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.2071344059820298,
+          "end_theta": 0.42090474277460643,
+          "duration": 3.0500000000000003
+        },
+        {
+          "kind": "hold",
+          "n": 49
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.42090474277460643,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.65
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        },
+        {
+          "kind": "hold",
+          "n": 15
+        }
+      ],
+      "duration": 24.36,
+      "theta_peak": 0.4692464110955085,
+      "theta_acceleration_peak": 0.5789742009992876,
+      "theta_jerk_peak": 8.985069403835633,
+      "sha256": "2d09d40bdce9a9741ceb882f930e83778751bed41014099ebb531eb4c3287223"
+    },
+    "traj_0052": {
+      "mode": "random_route",
+      "seed": 2026093060,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 54
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.08392089740689068,
+          "duration": 0.81
+        },
+        {
+          "kind": "hold",
+          "n": 11
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.08392089740689068,
+          "end_theta": -0.6799384000046323,
+          "duration": 2.74
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6799384000046323,
+          "end_theta": 0.5143028037959558,
+          "duration": 7.58
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5143028037959558,
+          "end_theta": -0.584529643109301,
+          "duration": 6.96
+        },
+        {
+          "kind": "hold",
+          "n": 30
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.584529643109301,
+          "end_theta": 0.229299640729775,
+          "duration": 5.16
+        },
+        {
+          "kind": "hold",
+          "n": 19
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.229299640729775,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.1400000000000001
+        },
+        {
+          "kind": "hold",
+          "n": 24
+        }
+      ],
+      "duration": 25.77,
+      "theta_peak": 0.4758351412162627,
+      "theta_acceleration_peak": 1.3193453699821533,
+      "theta_jerk_peak": 10.822633298569162,
+      "sha256": "515d1d5b8b92c95a3d04d7aef217f691031fc347a08b9f13bd5b41437f588794"
+    },
+    "traj_0053": {
+      "mode": "random_route",
+      "seed": 2026093061,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 13
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.03733708508137021,
+          "duration": 0.64
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.03733708508137021,
+          "end_theta": -0.6992234606741734,
+          "duration": 4.28
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6992234606741734,
+          "end_theta": 0.5485464322653505,
+          "duration": 9.68
+        },
+        {
+          "kind": "hold",
+          "n": 23
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5485464322653505,
+          "end_theta": -0.4189904363144054,
+          "duration": 4.45
+        },
+        {
+          "kind": "hold",
+          "n": 58
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.4189904363144054,
+          "end_theta": 0.4968517034964861,
+          "duration": 3.81
+        },
+        {
+          "kind": "hold",
+          "n": 56
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.4968517034964861,
+          "end_theta": 0.0009788286038877603,
+          "duration": 3.69
+        },
+        {
+          "kind": "hold",
+          "n": 49
+        }
+      ],
+      "duration": 29.09,
+      "theta_peak": 0.5258171331606318,
+      "theta_acceleration_peak": 1.1562052177391307,
+      "theta_jerk_peak": 12.631244128009598,
+      "sha256": "f81c780944b66e7eb706680305772580416999053fe41b212457d2c198b07018"
+    },
+    "traj_0054": {
+      "mode": "random_route",
+      "seed": 2026093062,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 22
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.023134508046750435,
+          "duration": 0.58
+        },
+        {
+          "kind": "hold",
+          "n": 46
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.023134508046750435,
+          "end_theta": -0.6251865731210346,
+          "duration": 4.11
+        },
+        {
+          "kind": "hold",
+          "n": 15
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6251865731210346,
+          "end_theta": 0.5873112588812176,
+          "duration": 6.7
+        },
+        {
+          "kind": "hold",
+          "n": 13
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5873112588812176,
+          "end_theta": -0.385294494336531,
+          "duration": 9.21
+        },
+        {
+          "kind": "hold",
+          "n": 18
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.385294494336531,
+          "end_theta": 0.4567300323166692,
+          "duration": 6.44
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.4567300323166692,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.23
+        },
+        {
+          "kind": "hold",
+          "n": 54
+        },
+        {
+          "kind": "hold",
+          "n": 41
+        }
+      ],
+      "duration": 31.36,
+      "theta_peak": 0.4470383928290712,
+      "theta_acceleration_peak": 1.0914145050962503,
+      "theta_jerk_peak": 13.149214637620501,
+      "sha256": "17a3d8165fb4112b679f1239e5a8b57e7fb289cf7dd00fcc178356b98c43aea8"
+    },
+    "traj_0055": {
+      "mode": "random_route",
+      "seed": 2026093063,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 43
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.026312898268583407,
+          "duration": 0.36
+        },
+        {
+          "kind": "hold",
+          "n": 32
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.026312898268583407,
+          "end_theta": -0.6198771015841998,
+          "duration": 3.27
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6198771015841998,
+          "end_theta": 0.5267450683506006,
+          "duration": 6.18
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5267450683506006,
+          "end_theta": -0.1557887040229008,
+          "duration": 3.43
+        },
+        {
+          "kind": "hold",
+          "n": 59
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1557887040229008,
+          "end_theta": 0.239117227711912,
+          "duration": 1.73
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.239117227711912,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.7
+        },
+        {
+          "kind": "hold",
+          "n": 33
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        }
+      ],
+      "duration": 19.1,
+      "theta_peak": 0.4992890970863638,
+      "theta_acceleration_peak": 0.9913190490405624,
+      "theta_jerk_peak": 4.0033870493172845,
+      "sha256": "b3bc24056fb809b88cb3e74a2d4351b727b1319f92595fd25d134c331ec939f1"
+    },
+    "traj_0056": {
+      "mode": "random_route",
+      "seed": 2026093064,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 16
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.12310191350112007,
+          "duration": 0.77
+        },
+        {
+          "kind": "hold",
+          "n": 31
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.12310191350112007,
+          "end_theta": -0.6577864148313245,
+          "duration": 4.73
+        },
+        {
+          "kind": "hold",
+          "n": 19
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6577864148313245,
+          "end_theta": 0.5361100423630266,
+          "duration": 6.74
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5361100423630266,
+          "end_theta": -0.5342262106633201,
+          "duration": 7.5
+        },
+        {
+          "kind": "hold",
+          "n": 49
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.5342262106633201,
+          "end_theta": 0.167624171106735,
+          "duration": 4.33
+        },
+        {
+          "kind": "hold",
+          "n": 18
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.167624171106735,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.17
+        },
+        {
+          "kind": "hold",
+          "n": 27
+        }
+      ],
+      "duration": 26.84,
+      "theta_peak": 0.3874849406695316,
+      "theta_acceleration_peak": 1.233431593879778,
+      "theta_jerk_peak": 11.185763646654609,
+      "sha256": "d5723c3ab63c5905c7cf20dac0bca241ef53fcebc000e8e5953c7288ba663014"
+    },
+    "traj_0057": {
+      "mode": "random_route",
+      "seed": 2026093065,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 46
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.1403260846307381,
+          "duration": 1.32
+        },
+        {
+          "kind": "hold",
+          "n": 39
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1403260846307381,
+          "end_theta": -0.5928908617138288,
+          "duration": 1.84
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.5928908617138288,
+          "end_theta": 0.5262944172019068,
+          "duration": 6.59
+        },
+        {
+          "kind": "hold",
+          "n": 12
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5262944172019068,
+          "end_theta": -0.19319270827420765,
+          "duration": 4.14
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.19319270827420765,
+          "end_theta": 0.4785956493184197,
+          "duration": 3.0
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.4785956493184197,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.93
+        },
+        {
+          "kind": "hold",
+          "n": 58
+        },
+        {
+          "kind": "hold",
+          "n": 14
+        }
+      ],
+      "duration": 21.51,
+      "theta_peak": 0.53803557058112,
+      "theta_acceleration_peak": 1.004298388518646,
+      "theta_jerk_peak": 3.814051776331191,
+      "sha256": "a7012ee9c719bae6f0c8ac5673bade79058c0a3c939da0c7ae4a96f3111d24ac"
+    },
+    "traj_0058": {
+      "mode": "random_route",
+      "seed": 2026093066,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 44
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": 0.10394294439155463,
+          "duration": 0.75
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.10394294439155463,
+          "end_theta": -0.641094851530484,
+          "duration": 4.66
+        },
+        {
+          "kind": "hold",
+          "n": 49
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.641094851530484,
+          "end_theta": 0.6055849097781458,
+          "duration": 8.77
+        },
+        {
+          "kind": "hold",
+          "n": 58
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.6055849097781458,
+          "end_theta": -0.1851894515065623,
+          "duration": 4.1
+        },
+        {
+          "kind": "hold",
+          "n": 10
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.1851894515065623,
+          "end_theta": 0.4402785451508274,
+          "duration": 2.99
+        },
+        {
+          "kind": "hold",
+          "n": 53
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.4402785451508274,
+          "end_theta": 0.0009788286038877603,
+          "duration": 2.5
+        },
+        {
+          "kind": "hold",
+          "n": 16
+        },
+        {
+          "kind": "hold",
+          "n": 54
+        }
+      ],
+      "duration": 26.61,
+      "theta_peak": 0.4575803781224787,
+      "theta_acceleration_peak": 1.044286796037846,
+      "theta_jerk_peak": 9.722352843106101,
+      "sha256": "8fd7efc75597a2daf695a0d5de52b337f26019bb4099292c37bd5bb498ae0b51"
+    },
+    "traj_0059": {
+      "mode": "random_route",
+      "seed": 2026093067,
+      "events": [
+        {
+          "kind": "hold",
+          "n": 21
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.025733483693733572,
+          "end_theta": -0.021391671799126544,
+          "duration": 0.61
+        },
+        {
+          "kind": "hold",
+          "n": 38
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.021391671799126544,
+          "end_theta": -0.6322888742193777,
+          "duration": 3.66
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.6322888742193777,
+          "end_theta": 0.5532156262812623,
+          "duration": 10.26
+        },
+        {
+          "kind": "hold",
+          "n": 50
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.5532156262812623,
+          "end_theta": -0.31109764618174246,
+          "duration": 4.41
+        },
+        {
+          "kind": "hold",
+          "n": 55
+        },
+        {
+          "kind": "turn",
+          "start_theta": -0.31109764618174246,
+          "end_theta": 0.3498590496368745,
+          "duration": 5.71
+        },
+        {
+          "kind": "hold",
+          "n": 11
+        },
+        {
+          "kind": "turn",
+          "start_theta": 0.3498590496368745,
+          "end_theta": 0.0009788286038877603,
+          "duration": 1.83
+        },
+        {
+          "kind": "hold",
+          "n": 18
+        },
+        {
+          "kind": "hold",
+          "n": 27
+        }
+      ],
+      "duration": 29.23,
+      "theta_peak": 0.42872020829316965,
+      "theta_acceleration_peak": 0.951393547000578,
+      "theta_jerk_peak": 10.88233020678223,
+      "sha256": "47f9a3701e224f0155297f934daf0c7e5c72e209da6535be2169399ab4d67110"
+    }
+  }
+}

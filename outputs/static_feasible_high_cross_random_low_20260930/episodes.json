@@ -1,0 +1,362 @@
+{
+  "traj_0000": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0000.npz",
+    "sha256": "49aeae4919127400185c4f410a31ea705365824233125a696ff520989561735b",
+    "mode": "steering_only",
+    "metrics": {
+      "min_wall_clearance_m": 0.008499486966640681,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.6367665061654884,
+      "max_qddot": 22.259228614411875,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": false,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": 3.08
+    }
+  },
+  "traj_0001": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0001.npz",
+    "sha256": "66023bb1f912dcc46b40e4697962e554e85ff8c9415a96f50d6a6139a01571e7",
+    "mode": "steering_only",
+    "metrics": {
+      "min_wall_clearance_m": 0.008503053769263021,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5098756770318936,
+      "max_qddot": 7.992377545316398,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0002": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0002.npz",
+    "sha256": "86259d645d3b43cc4bf4526c1fec6e9880ef118869b1b2b0f8cf6ee92b062561",
+    "mode": "steering_only",
+    "metrics": {
+      "min_wall_clearance_m": 0.008481296872437299,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5216607424013309,
+      "max_qddot": 8.635673534032884,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0003": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0003.npz",
+    "sha256": "17fdbb6d86fef8abda89a153e94b7691b79d7eff59f75470051100eb44ee83df",
+    "mode": "steering_only",
+    "metrics": {
+      "min_wall_clearance_m": 0.008447614533259012,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.549098502466222,
+      "max_qddot": 5.125481547124666,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0004": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0004.npz",
+    "sha256": "0779bd9b750d4cb98bc1dba8b8863105a9c3bb34ab0585567a7148259e357b0c",
+    "mode": "steering_only",
+    "metrics": {
+      "min_wall_clearance_m": 0.00839147469039047,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5811030210396473,
+      "max_qddot": 4.794097559363275,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0005": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0005.npz",
+    "sha256": "0dae4f7e9a52fe8f60256950140907804001b18d84a788bbd8bb20d15c8024e4",
+    "mode": "steering_only",
+    "metrics": {
+      "min_wall_clearance_m": 0.008422095279907438,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5343001368250361,
+      "max_qddot": 6.045302514205431,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0006": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0006.npz",
+    "sha256": "cdc411c7d0b5bf1a56ac539fb964046e1a9729d9fed497191f6bb46bbc2fa503",
+    "mode": "steering_only",
+    "metrics": {
+      "min_wall_clearance_m": 0.008384051237934963,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5813095396740076,
+      "max_qddot": 5.027843661162823,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0007": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0007.npz",
+    "sha256": "8a09a994e4cdaac19574a4376db3a6e5865bfd45900b89b9dcd3554fc58cd69c",
+    "mode": "steering_only",
+    "metrics": {
+      "min_wall_clearance_m": 0.008503967889349727,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5694237645917074,
+      "max_qddot": 23.282616934350298,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": false,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": 2.24
+    }
+  },
+  "traj_0008": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0008.npz",
+    "sha256": "da20d24e36c62f9da373a79e9ca9d200b532e730fdc9cfc8876137ac29202cc1",
+    "mode": "steering_only",
+    "metrics": {
+      "min_wall_clearance_m": 0.008482811508839408,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.600118649385202,
+      "max_qddot": 11.336810919072292,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": false,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": 8.73
+    }
+  },
+  "traj_0009": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0009.npz",
+    "sha256": "99ef9a12bd7ecd6865601be33e4be6d951631e2d6b8b4c1f9ac3d937e040eabd",
+    "mode": "steering_only",
+    "metrics": {
+      "min_wall_clearance_m": 0.008477160078884678,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.6258789873202497,
+      "max_qddot": 45.13594565722201,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": false,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": 3.5100000000000002
+    }
+  },
+  "traj_0010": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0010.npz",
+    "sha256": "e8e12d20b8098919befc61bc042c5763df202775c45de3a033972c433d17d0bc",
+    "mode": "steering_with_slide",
+    "metrics": {
+      "min_wall_clearance_m": 0.0085425082514448,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5587820847839305,
+      "max_qddot": 15.361732637581836,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": false,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": 8.49
+    }
+  },
+  "traj_0011": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0011.npz",
+    "sha256": "ff0979291aa6b4a7036cac31af61bd1acf2c201c42aba888b2b454a54161b8db",
+    "mode": "steering_with_slide",
+    "metrics": {
+      "min_wall_clearance_m": 0.0087859236461083,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5328760378810804,
+      "max_qddot": 5.339871452768596,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0012": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0012.npz",
+    "sha256": "bdd1d06a8778d7beadc5f4d886e064e408f89250a3b12cdde61cf26d5c5b2f8d",
+    "mode": "steering_with_slide",
+    "metrics": {
+      "min_wall_clearance_m": 0.008487392512329502,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5841682785995533,
+      "max_qddot": 9.087299448528595,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0013": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0013.npz",
+    "sha256": "bd9da910e5b830161e41bb8ec08d5c6244b4d7b0973f939ab07bebb395f18afa",
+    "mode": "steering_with_slide",
+    "metrics": {
+      "min_wall_clearance_m": 0.008523643905299593,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5536995559941804,
+      "max_qddot": 21.696976687208824,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": false,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": 2.89
+    }
+  },
+  "traj_0014": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0014.npz",
+    "sha256": "6261cb0f1ab181e8b4764b6c2f74df1cb61a0a5ba7f1503df4512353888d4d9c",
+    "mode": "steering_with_slide",
+    "metrics": {
+      "min_wall_clearance_m": 0.00826758382468255,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.583902050539313,
+      "max_qddot": 5.559162960635522,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0015": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0015.npz",
+    "sha256": "756b43c8d7053c6dd013673f010f42b4f7861246cae33da1cb7afb7d03f80bb4",
+    "mode": "steering_with_slide",
+    "metrics": {
+      "min_wall_clearance_m": 0.00847229277876246,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5765421686369093,
+      "max_qddot": 19.582016497847743,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": false,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": 2.9
+    }
+  },
+  "traj_0016": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0016.npz",
+    "sha256": "1f84c44a6b95feef6a2964ccdd667925fdfa47412e43973847fcc35a4306a282",
+    "mode": "steering_with_slide",
+    "metrics": {
+      "min_wall_clearance_m": 0.008259438240913498,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.6470381355681953,
+      "max_qddot": 6.064265516461109,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0017": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0017.npz",
+    "sha256": "04e4cd0f3928dc5671a9ab463712409ff17c8c715b53cc10f15425489d1d3a75",
+    "mode": "steering_with_slide",
+    "metrics": {
+      "min_wall_clearance_m": 0.008380840315800452,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.530555108369879,
+      "max_qddot": 24.029219548742375,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": false,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": 8.64
+    }
+  },
+  "traj_0018": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0018.npz",
+    "sha256": "7ea2b682cebf553e13af0c0439a66b7b444719179127a05fc5ebc2bd7005332e",
+    "mode": "steering_with_slide",
+    "metrics": {
+      "min_wall_clearance_m": 0.008384342259049302,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.509798187157201,
+      "max_qddot": 5.333144434575831,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "traj_0019": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0019.npz",
+    "sha256": "a9844c81b5e6df2737a7970058d8a12028d3fde8ac049d0e392caf544f3ec103",
+    "mode": "steering_with_slide",
+    "metrics": {
+      "min_wall_clearance_m": 0.008178442124500168,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.6111257122349403,
+      "max_qddot": 3.5951120538291192,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  }
+}

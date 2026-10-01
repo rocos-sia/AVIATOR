@@ -1,0 +1,173 @@
+[0.000000] (-) TimerEvent: {}
+[0.000138] (inspire_hand) JobQueued: {'identifier': 'inspire_hand', 'dependencies': OrderedDict()}
+[0.000155] (inspire_hand) JobStarted: {'identifier': 'inspire_hand'}
+[0.037615] (inspire_hand) JobProgress: {'identifier': 'inspire_hand', 'progress': 'cmake'}
+[0.037758] (inspire_hand) Command: {'cmd': ['/usr/bin/cmake', '/home/inspire001/zero_ws/src/inspire_hand/src', '-DCMAKE_INSTALL_PREFIX=/home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand'], 'cwd': '/home/inspire001/zero_ws/src/inspire_hand/src/build/inspire_hand', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('LANGUAGE', 'zh_CN:en_US:en'), ('USER', 'inspire001'), ('LC_TIME', 'zh_CN.UTF-8'), ('XDG_SESSION_TYPE', 'wayland'), ('SHLVL', '1'), ('LD_LIBRARY_PATH', '/home/inspire001/zero_ws/install/service_interfaces/lib:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib'), ('HOME', '/home/inspire001'), ('DESKTOP_SESSION', 'ubuntu'), ('ROS_PYTHON_VERSION', '3'), ('GNOME_SHELL_SESSION_MODE', 'ubuntu'), ('GTK_MODULES', 'gail:atk-bridge'), ('LC_MONETARY', 'zh_CN.UTF-8'), ('DBUS_STARTER_BUS_TYPE', 'session'), ('SYSTEMD_EXEC_PID', '1740'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus,guid=44f8ecdf5988f4faec72dd47671b3428'), ('COLORTERM', 'truecolor'), ('IM_CONFIG_PHASE', '1'), ('WAYLAND_DISPLAY', 'wayland-0'), ('COLCON_PREFIX_PATH', '/home/inspire001/zero_ws/install:/home/inspire001/try_ws/install'), ('ROS_DISTRO', 'humble'), ('LOGNAME', 'inspire001'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('XDG_SESSION_CLASS', 'user'), ('USERNAME', 'inspire001'), ('TERM', 'xterm-256color'), ('GNOME_DESKTOP_SESSION_ID', 'this-is-deprecated'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/opt/ros/humble/bin:/home/inspire001/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin'), ('SESSION_MANAGER', 'local/inspire001-System-Product-Name:@/tmp/.ICE-unix/1740,unix/inspire001-System-Product-Name:/tmp/.ICE-unix/1740'), ('PAPERSIZE', 'a4'), ('XDG_MENU_PREFIX', 'gnome-'), ('LC_ADDRESS', 'zh_CN.UTF-8'), ('GNOME_TERMINAL_SCREEN', '/org/gnome/Terminal/screen/1c511e53_3eb8_4b44_b8a9_f22b36fde489'), ('GNOME_SETUP_DISPLAY', ':1'), ('XDG_RUNTIME_DIR', '/run/user/1000'), ('DISPLAY', ':0'), ('LANG', 'zh_CN.UTF-8'), ('XDG_CURRENT_DESKTOP', 'ubuntu:GNOME'), ('LC_TELEPHONE', 'zh_CN.UTF-8'), ('XMODIFIERS', '@im=ibus'), ('XDG_SESSION_DESKTOP', 'ubuntu'), ('XAUTHORITY', '/run/user/1000/.mutter-Xwaylandauth.K3V0V2'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('GNOME_TERMINAL_SERVICE', ':1.109'), ('SSH_AGENT_LAUNCHER', 'gnome-keyring'), ('SSH_AUTH_SOCK', '/run/user/1000/keyring/ssh'), ('AMENT_PREFIX_PATH', '/home/inspire001/zero_ws/install/inspire_hand:/home/inspire001/zero_ws/install/service_interfaces:/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LC_NAME', 'zh_CN.UTF-8'), ('QT_ACCESSIBILITY', '1'), ('GDMSESSION', 'ubuntu'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('LC_MEASUREMENT', 'zh_CN.UTF-8'), ('LC_IDENTIFICATION', 'zh_CN.UTF-8'), ('QT_IM_MODULE', 'ibus'), ('PWD', '/home/inspire001/zero_ws/src/inspire_hand/src/build/inspire_hand'), ('LC_ALL', 'en_US.UTF-8'), ('XDG_CONFIG_DIRS', '/etc/xdg/xdg-ubuntu:/etc/xdg'), ('DBUS_STARTER_ADDRESS', 'unix:path=/run/user/1000/bus,guid=44f8ecdf5988f4faec72dd47671b3428'), ('XDG_DATA_DIRS', '/usr/share/ubuntu:/usr/local/share/:/usr/share/:/var/lib/snapd/desktop'), ('PYTHONPATH', '/home/inspire001/zero_ws/install/service_interfaces/local/lib/python3.10/dist-packages:/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('LC_NUMERIC', 'zh_CN.UTF-8'), ('LC_PAPER', 'zh_CN.UTF-8'), ('COLCON', '1'), ('VTE_VERSION', '6800'), ('CMAKE_PREFIX_PATH', '/home/inspire001/zero_ws/install/inspire_hand:/home/inspire001/zero_ws/install/service_interfaces:/opt/ros/humble')]), 'shell': False}
+[0.099674] (-) TimerEvent: {}
+[0.200217] (-) TimerEvent: {}
+[0.278429] (inspire_hand) StdoutLine: {'line': b'-- The C compiler identification is GNU 11.4.0\n'}
+[0.300338] (-) TimerEvent: {}
+[0.400876] (-) TimerEvent: {}
+[0.425664] (inspire_hand) StdoutLine: {'line': b'-- The CXX compiler identification is GNU 11.4.0\n'}
+[0.434694] (inspire_hand) StdoutLine: {'line': b'-- Detecting C compiler ABI info\n'}
+[0.500990] (-) TimerEvent: {}
+[0.536064] (inspire_hand) StdoutLine: {'line': b'-- Detecting C compiler ABI info - done\n'}
+[0.542361] (inspire_hand) StdoutLine: {'line': b'-- Check for working C compiler: /usr/bin/cc - skipped\n'}
+[0.543167] (inspire_hand) StdoutLine: {'line': b'-- Detecting C compile features\n'}
+[0.544000] (inspire_hand) StdoutLine: {'line': b'-- Detecting C compile features - done\n'}
+[0.548218] (inspire_hand) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info\n'}
+[0.601131] (-) TimerEvent: {}
+[0.629677] (inspire_hand) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info - done\n'}
+[0.634337] (inspire_hand) StdoutLine: {'line': b'-- Check for working CXX compiler: /usr/bin/c++ - skipped\n'}
+[0.634437] (inspire_hand) StdoutLine: {'line': b'-- Detecting CXX compile features\n'}
+[0.634766] (inspire_hand) StdoutLine: {'line': b'-- Detecting CXX compile features - done\n'}
+[0.637862] (inspire_hand) StdoutLine: {'line': b'-- Found ament_cmake: 1.3.6 (/opt/ros/humble/share/ament_cmake/cmake)\n'}
+[0.701257] (-) TimerEvent: {}
+[0.753180] (inspire_hand) StdoutLine: {'line': b'-- Found Python3: /usr/bin/python3.10 (found version "3.10.12") found components: Interpreter \n'}
+[0.801416] (-) TimerEvent: {}
+[0.824875] (inspire_hand) StdoutLine: {'line': b'-- Found rclcpp: 16.0.7 (/opt/ros/humble/share/rclcpp/cmake)\n'}
+[0.864075] (inspire_hand) StdoutLine: {'line': b'-- Found rosidl_generator_c: 3.1.5 (/opt/ros/humble/share/rosidl_generator_c/cmake)\n'}
+[0.867856] (inspire_hand) StdoutLine: {'line': b'-- Found rosidl_adapter: 3.1.5 (/opt/ros/humble/share/rosidl_adapter/cmake)\n'}
+[0.875813] (inspire_hand) StdoutLine: {'line': b'-- Found rosidl_generator_cpp: 3.1.5 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)\n'}
+[0.888012] (inspire_hand) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c\n'}
+[0.901551] (-) TimerEvent: {}
+[0.902950] (inspire_hand) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp\n'}
+[0.955916] (inspire_hand) StdoutLine: {'line': b'-- Found rmw_implementation_cmake: 6.1.1 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)\n'}
+[0.958267] (inspire_hand) StdoutLine: {'line': b'-- Found rmw_fastrtps_cpp: 6.2.5 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)\n'}
+[1.001650] (-) TimerEvent: {}
+[1.022990] (inspire_hand) StdoutLine: {'line': b'-- Found OpenSSL: /usr/lib/x86_64-linux-gnu/libcrypto.so (found version "3.0.2")  \n'}
+[1.038907] (inspire_hand) StdoutLine: {'line': b'-- Found FastRTPS: /opt/ros/humble/include  \n'}
+[1.063719] (inspire_hand) StdoutLine: {'line': b"-- Using RMW implementation 'rmw_fastrtps_cpp' as default\n"}
+[1.072608] (inspire_hand) StdoutLine: {'line': b'-- Looking for pthread.h\n'}
+[1.101783] (-) TimerEvent: {}
+[1.143676] (inspire_hand) StdoutLine: {'line': b'-- Looking for pthread.h - found\n'}
+[1.144069] (inspire_hand) StdoutLine: {'line': b'-- Performing Test CMAKE_HAVE_LIBC_PTHREAD\n'}
+[1.201932] (-) TimerEvent: {}
+[1.227075] (inspire_hand) StdoutLine: {'line': b'-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success\n'}
+[1.227956] (inspire_hand) StdoutLine: {'line': b'-- Found Threads: TRUE  \n'}
+[1.302080] (-) TimerEvent: {}
+[1.339305] (inspire_hand) StdoutLine: {'line': b'-- Found service_interfaces: 0.0.0 (/home/inspire001/zero_ws/install/service_interfaces/share/service_interfaces/cmake)\n'}
+[1.350998] (inspire_hand) StdoutLine: {'line': b'-- Found sensor_msgs: 4.2.3 (/opt/ros/humble/share/sensor_msgs/cmake)\n'}
+[1.402217] (-) TimerEvent: {}
+[1.437067] (inspire_hand) StdoutLine: {'line': b'-- Found message_filters: 4.3.3 (/opt/ros/humble/share/message_filters/cmake)\n'}
+[1.442434] (inspire_hand) StdoutLine: {'line': b'-- Found serial: 1.2.1 (/usr/local/share/serial/cmake)\n'}
+[1.444531] (inspire_hand) StdoutLine: {'line': b'-- Found example_interfaces: 0.9.3 (/opt/ros/humble/share/example_interfaces/cmake)\n'}
+[1.502370] (-) TimerEvent: {}
+[1.542403] (inspire_hand) StdoutLine: {'line': b'-- Found ament_lint_auto: 0.12.9 (/opt/ros/humble/share/ament_lint_auto/cmake)\n'}
+[1.602539] (-) TimerEvent: {}
+[1.606126] (inspire_hand) StdoutLine: {'line': b"-- Added test 'cppcheck' to perform static code analysis on C / C++ code\n"}
+[1.606234] (inspire_hand) StdoutLine: {'line': b'-- Configured cppcheck include dirs: \n'}
+[1.606275] (inspire_hand) StdoutLine: {'line': b'-- Configured cppcheck exclude dirs and/or files: \n'}
+[1.608542] (inspire_hand) StdoutLine: {'line': b"-- Added test 'lint_cmake' to check CMake code style\n"}
+[1.613014] (inspire_hand) StdoutLine: {'line': b"-- Added test 'uncrustify' to check C / C++ code style\n"}
+[1.613080] (inspire_hand) StdoutLine: {'line': b'-- Configured uncrustify additional arguments: \n'}
+[1.613889] (inspire_hand) StdoutLine: {'line': b"-- Added test 'xmllint' to check XML markup files\n"}
+[1.614920] (inspire_hand) StdoutLine: {'line': b'-- Configuring done\n'}
+[1.621017] (inspire_hand) StdoutLine: {'line': b'-- Generating done\n'}
+[1.622033] (inspire_hand) StdoutLine: {'line': b'-- Build files have been written to: /home/inspire001/zero_ws/src/inspire_hand/src/build/inspire_hand\n'}
+[1.628272] (inspire_hand) CommandEnded: {'returncode': 0}
+[1.628891] (inspire_hand) JobProgress: {'identifier': 'inspire_hand', 'progress': 'build'}
+[1.628909] (inspire_hand) Command: {'cmd': ['/usr/bin/cmake', '--build', '/home/inspire001/zero_ws/src/inspire_hand/src/build/inspire_hand', '--', '-j12', '-l12'], 'cwd': '/home/inspire001/zero_ws/src/inspire_hand/src/build/inspire_hand', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('LANGUAGE', 'zh_CN:en_US:en'), ('USER', 'inspire001'), ('LC_TIME', 'zh_CN.UTF-8'), ('XDG_SESSION_TYPE', 'wayland'), ('SHLVL', '1'), ('LD_LIBRARY_PATH', '/home/inspire001/zero_ws/install/service_interfaces/lib:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib'), ('HOME', '/home/inspire001'), ('DESKTOP_SESSION', 'ubuntu'), ('ROS_PYTHON_VERSION', '3'), ('GNOME_SHELL_SESSION_MODE', 'ubuntu'), ('GTK_MODULES', 'gail:atk-bridge'), ('LC_MONETARY', 'zh_CN.UTF-8'), ('DBUS_STARTER_BUS_TYPE', 'session'), ('SYSTEMD_EXEC_PID', '1740'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus,guid=44f8ecdf5988f4faec72dd47671b3428'), ('COLORTERM', 'truecolor'), ('IM_CONFIG_PHASE', '1'), ('WAYLAND_DISPLAY', 'wayland-0'), ('COLCON_PREFIX_PATH', '/home/inspire001/zero_ws/install:/home/inspire001/try_ws/install'), ('ROS_DISTRO', 'humble'), ('LOGNAME', 'inspire001'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('XDG_SESSION_CLASS', 'user'), ('USERNAME', 'inspire001'), ('TERM', 'xterm-256color'), ('GNOME_DESKTOP_SESSION_ID', 'this-is-deprecated'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/opt/ros/humble/bin:/home/inspire001/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin'), ('SESSION_MANAGER', 'local/inspire001-System-Product-Name:@/tmp/.ICE-unix/1740,unix/inspire001-System-Product-Name:/tmp/.ICE-unix/1740'), ('PAPERSIZE', 'a4'), ('XDG_MENU_PREFIX', 'gnome-'), ('LC_ADDRESS', 'zh_CN.UTF-8'), ('GNOME_TERMINAL_SCREEN', '/org/gnome/Terminal/screen/1c511e53_3eb8_4b44_b8a9_f22b36fde489'), ('GNOME_SETUP_DISPLAY', ':1'), ('XDG_RUNTIME_DIR', '/run/user/1000'), ('DISPLAY', ':0'), ('LANG', 'zh_CN.UTF-8'), ('XDG_CURRENT_DESKTOP', 'ubuntu:GNOME'), ('LC_TELEPHONE', 'zh_CN.UTF-8'), ('XMODIFIERS', '@im=ibus'), ('XDG_SESSION_DESKTOP', 'ubuntu'), ('XAUTHORITY', '/run/user/1000/.mutter-Xwaylandauth.K3V0V2'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('GNOME_TERMINAL_SERVICE', ':1.109'), ('SSH_AGENT_LAUNCHER', 'gnome-keyring'), ('SSH_AUTH_SOCK', '/run/user/1000/keyring/ssh'), ('AMENT_PREFIX_PATH', '/home/inspire001/zero_ws/install/inspire_hand:/home/inspire001/zero_ws/install/service_interfaces:/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LC_NAME', 'zh_CN.UTF-8'), ('QT_ACCESSIBILITY', '1'), ('GDMSESSION', 'ubuntu'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('LC_MEASUREMENT', 'zh_CN.UTF-8'), ('LC_IDENTIFICATION', 'zh_CN.UTF-8'), ('QT_IM_MODULE', 'ibus'), ('PWD', '/home/inspire001/zero_ws/src/inspire_hand/src/build/inspire_hand'), ('LC_ALL', 'en_US.UTF-8'), ('XDG_CONFIG_DIRS', '/etc/xdg/xdg-ubuntu:/etc/xdg'), ('DBUS_STARTER_ADDRESS', 'unix:path=/run/user/1000/bus,guid=44f8ecdf5988f4faec72dd47671b3428'), ('XDG_DATA_DIRS', '/usr/share/ubuntu:/usr/local/share/:/usr/share/:/var/lib/snapd/desktop'), ('PYTHONPATH', '/home/inspire001/zero_ws/install/service_interfaces/local/lib/python3.10/dist-packages:/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('LC_NUMERIC', 'zh_CN.UTF-8'), ('LC_PAPER', 'zh_CN.UTF-8'), ('COLCON', '1'), ('VTE_VERSION', '6800'), ('CMAKE_PREFIX_PATH', '/home/inspire001/zero_ws/install/inspire_hand:/home/inspire001/zero_ws/install/service_interfaces:/opt/ros/humble')]), 'shell': False}
+[1.655991] (inspire_hand) StdoutLine: {'line': b'[ 25%] \x1b[32mBuilding CXX object CMakeFiles/Poor_node.dir/src/Poor.cpp.o\x1b[0m\n'}
+[1.656131] (inspire_hand) StdoutLine: {'line': b'[ 50%] \x1b[32mBuilding CXX object CMakeFiles/Hand_control_node.dir/src/Hand_control.cpp.o\x1b[0m\n'}
+[1.702701] (-) TimerEvent: {}
+[1.803004] (-) TimerEvent: {}
+[1.903268] (-) TimerEvent: {}
+[2.003602] (-) TimerEvent: {}
+[2.103921] (-) TimerEvent: {}
+[2.204243] (-) TimerEvent: {}
+[2.304554] (-) TimerEvent: {}
+[2.404881] (-) TimerEvent: {}
+[2.505212] (-) TimerEvent: {}
+[2.605563] (-) TimerEvent: {}
+[2.705917] (-) TimerEvent: {}
+[2.806254] (-) TimerEvent: {}
+[2.906605] (-) TimerEvent: {}
+[3.006951] (-) TimerEvent: {}
+[3.107276] (-) TimerEvent: {}
+[3.207618] (-) TimerEvent: {}
+[3.307957] (-) TimerEvent: {}
+[3.408280] (-) TimerEvent: {}
+[3.508614] (-) TimerEvent: {}
+[3.608924] (-) TimerEvent: {}
+[3.709238] (-) TimerEvent: {}
+[3.809463] (inspire_hand) StdoutLine: {'line': b'[ 75%] \x1b[32m\x1b[1mLinking CXX executable Poor_node\x1b[0m\n'}
+[3.809624] (-) TimerEvent: {}
+[3.904720] (inspire_hand) StdoutLine: {'line': b'[ 75%] Built target Poor_node\n'}
+[3.909744] (-) TimerEvent: {}
+[4.010024] (-) TimerEvent: {}
+[4.110351] (-) TimerEvent: {}
+[4.210683] (-) TimerEvent: {}
+[4.311006] (-) TimerEvent: {}
+[4.411312] (-) TimerEvent: {}
+[4.511626] (-) TimerEvent: {}
+[4.611941] (-) TimerEvent: {}
+[4.712266] (-) TimerEvent: {}
+[4.812582] (-) TimerEvent: {}
+[4.912909] (-) TimerEvent: {}
+[5.013234] (-) TimerEvent: {}
+[5.113561] (-) TimerEvent: {}
+[5.213894] (-) TimerEvent: {}
+[5.314217] (-) TimerEvent: {}
+[5.414547] (-) TimerEvent: {}
+[5.514856] (-) TimerEvent: {}
+[5.615145] (-) TimerEvent: {}
+[5.715448] (-) TimerEvent: {}
+[5.815758] (-) TimerEvent: {}
+[5.916057] (-) TimerEvent: {}
+[6.016355] (-) TimerEvent: {}
+[6.116653] (-) TimerEvent: {}
+[6.216953] (-) TimerEvent: {}
+[6.317245] (-) TimerEvent: {}
+[6.417581] (-) TimerEvent: {}
+[6.517906] (-) TimerEvent: {}
+[6.618228] (-) TimerEvent: {}
+[6.718557] (-) TimerEvent: {}
+[6.818855] (-) TimerEvent: {}
+[6.919147] (-) TimerEvent: {}
+[7.019452] (-) TimerEvent: {}
+[7.119763] (-) TimerEvent: {}
+[7.220057] (-) TimerEvent: {}
+[7.320343] (-) TimerEvent: {}
+[7.420627] (-) TimerEvent: {}
+[7.520927] (-) TimerEvent: {}
+[7.621218] (-) TimerEvent: {}
+[7.721539] (-) TimerEvent: {}
+[7.821857] (-) TimerEvent: {}
+[7.922185] (-) TimerEvent: {}
+[8.022498] (-) TimerEvent: {}
+[8.122825] (-) TimerEvent: {}
+[8.223150] (-) TimerEvent: {}
+[8.323465] (-) TimerEvent: {}
+[8.391142] (inspire_hand) StdoutLine: {'line': b'[100%] \x1b[32m\x1b[1mLinking CXX executable Hand_control_node\x1b[0m\n'}
+[8.423600] (-) TimerEvent: {}
+[8.523927] (-) TimerEvent: {}
+[8.624242] (-) TimerEvent: {}
+[8.700880] (inspire_hand) StdoutLine: {'line': b'[100%] Built target Hand_control_node\n'}
+[8.707045] (inspire_hand) CommandEnded: {'returncode': 0}
+[8.720174] (inspire_hand) JobProgress: {'identifier': 'inspire_hand', 'progress': 'install'}
+[8.724329] (-) TimerEvent: {}
+[8.724794] (inspire_hand) Command: {'cmd': ['/usr/bin/cmake', '--install', '/home/inspire001/zero_ws/src/inspire_hand/src/build/inspire_hand'], 'cwd': '/home/inspire001/zero_ws/src/inspire_hand/src/build/inspire_hand', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('LANGUAGE', 'zh_CN:en_US:en'), ('USER', 'inspire001'), ('LC_TIME', 'zh_CN.UTF-8'), ('XDG_SESSION_TYPE', 'wayland'), ('SHLVL', '1'), ('LD_LIBRARY_PATH', '/home/inspire001/zero_ws/install/service_interfaces/lib:/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib/x86_64-linux-gnu:/opt/ros/humble/lib'), ('HOME', '/home/inspire001'), ('DESKTOP_SESSION', 'ubuntu'), ('ROS_PYTHON_VERSION', '3'), ('GNOME_SHELL_SESSION_MODE', 'ubuntu'), ('GTK_MODULES', 'gail:atk-bridge'), ('LC_MONETARY', 'zh_CN.UTF-8'), ('DBUS_STARTER_BUS_TYPE', 'session'), ('SYSTEMD_EXEC_PID', '1740'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus,guid=44f8ecdf5988f4faec72dd47671b3428'), ('COLORTERM', 'truecolor'), ('IM_CONFIG_PHASE', '1'), ('WAYLAND_DISPLAY', 'wayland-0'), ('COLCON_PREFIX_PATH', '/home/inspire001/zero_ws/install:/home/inspire001/try_ws/install'), ('ROS_DISTRO', 'humble'), ('LOGNAME', 'inspire001'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('XDG_SESSION_CLASS', 'user'), ('USERNAME', 'inspire001'), ('TERM', 'xterm-256color'), ('GNOME_DESKTOP_SESSION_ID', 'this-is-deprecated'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/opt/ros/humble/bin:/home/inspire001/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin'), ('SESSION_MANAGER', 'local/inspire001-System-Product-Name:@/tmp/.ICE-unix/1740,unix/inspire001-System-Product-Name:/tmp/.ICE-unix/1740'), ('PAPERSIZE', 'a4'), ('XDG_MENU_PREFIX', 'gnome-'), ('LC_ADDRESS', 'zh_CN.UTF-8'), ('GNOME_TERMINAL_SCREEN', '/org/gnome/Terminal/screen/1c511e53_3eb8_4b44_b8a9_f22b36fde489'), ('GNOME_SETUP_DISPLAY', ':1'), ('XDG_RUNTIME_DIR', '/run/user/1000'), ('DISPLAY', ':0'), ('LANG', 'zh_CN.UTF-8'), ('XDG_CURRENT_DESKTOP', 'ubuntu:GNOME'), ('LC_TELEPHONE', 'zh_CN.UTF-8'), ('XMODIFIERS', '@im=ibus'), ('XDG_SESSION_DESKTOP', 'ubuntu'), ('XAUTHORITY', '/run/user/1000/.mutter-Xwaylandauth.K3V0V2'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('GNOME_TERMINAL_SERVICE', ':1.109'), ('SSH_AGENT_LAUNCHER', 'gnome-keyring'), ('SSH_AUTH_SOCK', '/run/user/1000/keyring/ssh'), ('AMENT_PREFIX_PATH', '/home/inspire001/zero_ws/install/inspire_hand:/home/inspire001/zero_ws/install/service_interfaces:/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LC_NAME', 'zh_CN.UTF-8'), ('QT_ACCESSIBILITY', '1'), ('GDMSESSION', 'ubuntu'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('LC_MEASUREMENT', 'zh_CN.UTF-8'), ('LC_IDENTIFICATION', 'zh_CN.UTF-8'), ('QT_IM_MODULE', 'ibus'), ('PWD', '/home/inspire001/zero_ws/src/inspire_hand/src/build/inspire_hand'), ('LC_ALL', 'en_US.UTF-8'), ('XDG_CONFIG_DIRS', '/etc/xdg/xdg-ubuntu:/etc/xdg'), ('DBUS_STARTER_ADDRESS', 'unix:path=/run/user/1000/bus,guid=44f8ecdf5988f4faec72dd47671b3428'), ('XDG_DATA_DIRS', '/usr/share/ubuntu:/usr/local/share/:/usr/share/:/var/lib/snapd/desktop'), ('PYTHONPATH', '/home/inspire001/zero_ws/install/service_interfaces/local/lib/python3.10/dist-packages:/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('LC_NUMERIC', 'zh_CN.UTF-8'), ('LC_PAPER', 'zh_CN.UTF-8'), ('COLCON', '1'), ('VTE_VERSION', '6800'), ('CMAKE_PREFIX_PATH', '/home/inspire001/zero_ws/install/inspire_hand:/home/inspire001/zero_ws/install/service_interfaces:/opt/ros/humble')]), 'shell': False}
+[8.729553] (inspire_hand) StdoutLine: {'line': b'-- Install configuration: ""\n'}
+[8.729693] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/lib/inspire_hand/Poor_node\n'}
+[8.730343] (inspire_hand) StdoutLine: {'line': b'-- Set runtime path of "/home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/lib/inspire_hand/Poor_node" to ""\n'}
+[8.730415] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/lib/inspire_hand/Hand_control_node\n'}
+[8.733120] (inspire_hand) StdoutLine: {'line': b'-- Set runtime path of "/home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/lib/inspire_hand/Hand_control_node" to ""\n'}
+[8.733185] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/ament_index/resource_index/package_run_dependencies/inspire_hand\n'}
+[8.733225] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/ament_index/resource_index/parent_prefix_path/inspire_hand\n'}
+[8.733285] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/environment/ament_prefix_path.sh\n'}
+[8.733330] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/environment/ament_prefix_path.dsv\n'}
+[8.733378] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/environment/path.sh\n'}
+[8.733421] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/environment/path.dsv\n'}
+[8.733470] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/local_setup.bash\n'}
+[8.733522] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/local_setup.sh\n'}
+[8.733572] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/local_setup.zsh\n'}
+[8.733616] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/local_setup.dsv\n'}
+[8.733659] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/package.dsv\n'}
+[8.733719] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/ament_index/resource_index/packages/inspire_hand\n'}
+[8.733780] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/cmake/inspire_handConfig.cmake\n'}
+[8.733816] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/cmake/inspire_handConfig-version.cmake\n'}
+[8.733859] (inspire_hand) StdoutLine: {'line': b'-- Installing: /home/inspire001/zero_ws/src/inspire_hand/src/install/inspire_hand/share/inspire_hand/package.xml\n'}
+[8.734726] (inspire_hand) CommandEnded: {'returncode': 0}
+[8.819497] (inspire_hand) JobEnded: {'identifier': 'inspire_hand', 'rc': 0}
+[8.819829] (-) EventReactorShutdown: {}

@@ -1,0 +1,90 @@
+{
+  "field": "/home/rocos/sia/AVIATOR/outputs/static_field_audit/old_fixed_q_field_00_10.npz",
+  "field_sha256": "0f6a0ff7a178d3e68f14863e8d266c60b49744d84f6041a805427191b46b5851",
+  "source_manifest": "/home/rocos/sia/AVIATOR/outputs/speed_reversal_grid_v3_1200/manifest.json",
+  "source_manifest_sha256": "35980b8f82f36f07fb082e0b9ae7b03a4dd68b06d3163e74b7d32189197f7e0c",
+  "reference_high": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_field_audit/strict_theta15/trajs/val/traj_0003.npz",
+    "sha256": "e5c7f102e10b21937d024eb0adf75122ffdec515e0896adfed04ff7e30219ce6",
+    "metrics": {
+      "min_wall_clearance_m": 0.008504206676176719,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 1.3961262964303223,
+      "max_qddot": 25.41409362701155,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": false
+    }
+  },
+  "low_theta_speed_cap": 0.6,
+  "summary": {
+    "n_paths": 120,
+    "pass_velocity_geometry": 120,
+    "pass_with_acceleration": 36,
+    "speed_failures": 0,
+    "acceleration_failures": 84,
+    "contact_episodes": 0,
+    "wall_failure_episodes": 0,
+    "joint_limit_episodes": 0,
+    "max_qdot": 0.7632781343322244,
+    "max_qddot": 34.31842909120408,
+    "min_wall_clearance_m": 0.008180231822155243
+  },
+  "by_reversals": {
+    "2": {
+      "n_paths": 40,
+      "pass_velocity_geometry": 40,
+      "pass_with_acceleration": 13,
+      "speed_failures": 0,
+      "acceleration_failures": 27,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 0.7632781343322244,
+      "max_qddot": 27.44512316576353,
+      "min_wall_clearance_m": 0.008180231822155243
+    },
+    "4": {
+      "n_paths": 40,
+      "pass_velocity_geometry": 40,
+      "pass_with_acceleration": 12,
+      "speed_failures": 0,
+      "acceleration_failures": 28,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 0.7055528479849401,
+      "max_qddot": 34.31842909120408,
+      "min_wall_clearance_m": 0.00820889400087272
+    },
+    "6": {
+      "n_paths": 40,
+      "pass_velocity_geometry": 40,
+      "pass_with_acceleration": 11,
+      "speed_failures": 0,
+      "acceleration_failures": 29,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 0.673370444727292,
+      "max_qddot": 31.48919368796854,
+      "min_wall_clearance_m": 0.008264065729201537
+    }
+  },
+  "limits": {
+    "qdot": 1.5,
+    "qddot": 10,
+    "wall_clearance": 0.005,
+    "contact_penetration": 0.001
+  },
+  "caveats": [
+    "Frozen global table transfer, not replaying the reference joint time series.",
+    "Different paths run separately, starting at their own F(x0); no inter-path joining test.",
+    "Existing val is diagnostic; the new test split was not accessed.",
+    "Reference passes velocity/geometry but not acceleration constraints.",
+    "Point/midpoint collision audit; no continuous proof, torque, tracking or grasp FK audit.",
+    "Initial rest-to-motion acceleration boundary excluded."
+  ]
+}

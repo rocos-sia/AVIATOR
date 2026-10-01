@@ -1,0 +1,4 @@
+source;share/inspire_hand/local_setup.bash
+source;share/inspire_hand/local_setup.dsv
+source;share/inspire_hand/local_setup.sh
+source;share/inspire_hand/local_setup.zsh

@@ -1,0 +1,8 @@
+prefix=/home/cindy/try_ws/src/inspire_hand/build/devel
+
+Name: inspire_hand
+Description: Description of inspire_hand
+Version: 1.0.0
+Cflags: -I/home/cindy/try_ws/src/inspire_hand/build/devel/include -I/home/cindy/try_ws/src/inspire_hand/include
+Libs: -L${prefix}/lib 
+Requires: roscpp serial tf

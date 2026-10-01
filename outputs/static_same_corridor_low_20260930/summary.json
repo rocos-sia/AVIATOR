@@ -1,0 +1,89 @@
+{
+  "reference": {
+    "path": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs/traj_0047.npz",
+    "sha256": "9e6928363b8d997df59359807e03d3da956b41950493f087db58457eafdc6c37",
+    "metrics": {
+      "min_wall_clearance_m": 0.00832989447981633,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 1.3076822202196179,
+      "max_qddot": 9.565029759299737,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true,
+      "first_speed_failure_s": null,
+      "first_acceleration_failure_s": null
+    }
+  },
+  "field": "/home/rocos/sia/AVIATOR/outputs/static_field_audit/old_fixed_q_field_00_10.npz",
+  "field_sha256": "0f6a0ff7a178d3e68f14863e8d266c60b49744d84f6041a805427191b46b5851",
+  "fixed_start": [
+    0.025733483693733572,
+    -0.10242273707755005
+  ],
+  "fixed_end": [
+    0.0009788286038877603,
+    -0.10242273707755005
+  ],
+  "fixed_slide": -0.10242273707755005,
+  "theta_corridor": [
+    -0.7110354337164739,
+    0.6243975270790075
+  ],
+  "total": {
+    "n_paths": 60,
+    "pass_velocity_geometry": 60,
+    "pass_with_acceleration": 60,
+    "speed_failures": 0,
+    "acceleration_failures": 0,
+    "contact_episodes": 0,
+    "wall_failure_episodes": 0,
+    "joint_limit_episodes": 0,
+    "max_qdot": 0.5364061062860692,
+    "max_qddot": 5.366243806126936,
+    "min_wall_clearance_m": 0.00832989447981633
+  },
+  "by_arm": {
+    "same_waypoints": {
+      "n_paths": 30,
+      "pass_velocity_geometry": 30,
+      "pass_with_acceleration": 30,
+      "speed_failures": 0,
+      "acceleration_failures": 0,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 0.5364061062860692,
+      "max_qddot": 4.865152087718538,
+      "min_wall_clearance_m": 0.00832989447981633
+    },
+    "random_route": {
+      "n_paths": 30,
+      "pass_velocity_geometry": 30,
+      "pass_with_acceleration": 30,
+      "speed_failures": 0,
+      "acceleration_failures": 0,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 0.5253909062227176,
+      "max_qddot": 5.366243806126936,
+      "min_wall_clearance_m": 0.008332543000884547
+    }
+  },
+  "limits": {
+    "qdot": 1.5,
+    "qddot": 10,
+    "task_theta_speed": 0.6,
+    "task_theta_acceleration": 5.0,
+    "task_theta_jerk": 20.0,
+    "wall_clearance": 0.005
+  },
+  "caveats": [
+    "A finite randomized test does not prove all admissible low paths.",
+    "Same-waypoints arm changes timing only; random-route arm changes waypoint geometry in the same corridor.",
+    "Both arms fix the table, start/end, slide coordinate, and allowed theta interval.",
+    "Sample/midpoint geometry and finite-difference dynamics only; no torque/tracking proof."
+  ]
+}

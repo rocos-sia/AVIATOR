@@ -1,0 +1,61 @@
+{
+  "n_episodes": 4,
+  "completed": 0,
+  "contact_episodes": 0,
+  "wall_failure_episodes": 0,
+  "speed_failure_episodes": 1,
+  "acceleration_failure_episodes": 4,
+  "qddot_max": 10.0,
+  "joint_limit_episodes": 0,
+  "min_clearance_m": 0.005681396376454213,
+  "episodes": {
+    "traj_0000": {
+      "complete": false,
+      "termination": "end",
+      "joint_limit_samples": 0,
+      "max_qdot": 1.0647184337864886,
+      "max_qddot": 51.53602029260185,
+      "min_wall_clearance_m": 0.008156070979240666,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "mid_contact_samples": 0,
+      "mid_wall_failure_samples": 0
+    },
+    "traj_0030": {
+      "complete": false,
+      "termination": "end",
+      "joint_limit_samples": 0,
+      "max_qdot": 1.4024728512416844,
+      "max_qddot": 35.20063763445602,
+      "min_wall_clearance_m": 0.008072375923368975,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "mid_contact_samples": 0,
+      "mid_wall_failure_samples": 0
+    },
+    "traj_0060": {
+      "complete": false,
+      "termination": "end",
+      "joint_limit_samples": 0,
+      "max_qdot": 1.323011156163073,
+      "max_qddot": 39.25028356034588,
+      "min_wall_clearance_m": 0.005681396376454213,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "mid_contact_samples": 0,
+      "mid_wall_failure_samples": 0
+    },
+    "traj_0090": {
+      "complete": false,
+      "termination": "speed",
+      "joint_limit_samples": 0,
+      "max_qdot": 1.5310641191605938,
+      "max_qddot": 46.325823223823946,
+      "min_wall_clearance_m": 0.008398804148367998,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "mid_contact_samples": 0,
+      "mid_wall_failure_samples": 0
+    }
+  }
+}

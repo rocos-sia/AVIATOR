@@ -96,6 +96,20 @@ def test_registered_initial_phase_is_used_without_projection(tmp_path):
         env.reset(options={"initial_phi": [2.0, 0.0]})
 
 
+def test_randomized_initial_phase_is_reproducible_and_safe(tmp_path):
+    env = _env(tmp_path)
+    env.initial_phi_fraction_range = (0.25, 0.75)
+    env.reset(seed=7)
+    first = env._phi.copy()
+    env.reset(seed=7)
+    np.testing.assert_allclose(env._phi, first)
+    box = env.lookup.safe_interval(env._x[None, :])
+    assert np.all(first >= box["phi_safe_lo"][0])
+    assert np.all(first <= box["phi_safe_hi"][0])
+    env.reset(seed=8)
+    assert not np.array_equal(first, env._phi)
+
+
 # --------------------------------------------------------------------------
 # end termination (short trajectory)
 # --------------------------------------------------------------------------
@@ -119,6 +133,18 @@ def test_speed_violation_termination(tmp_path):
     assert term and not trunc
     assert info["termination"] == "speed"
     assert info["max_qdot"] > 1.5
+
+
+def test_acceleration_limit_terminates_on_velocity_change(tmp_path):
+    env = _env(tmp_path, scale=1.0)
+    env.qddot_max = 10.0
+    env.reset(seed=0)
+    _, _, term, _, _ = env.step(np.zeros(2))
+    assert not term
+    _, _, term, trunc, info = env.step(np.array([1.0, 0.0]))
+    assert term and not trunc
+    assert info["termination"] == "acceleration"
+    assert info["max_qddot"] > 10.0
 
 
 def test_grid_exit_returns_terminal_transition(tmp_path):

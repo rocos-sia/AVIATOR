@@ -1,0 +1,13 @@
+{
+  "source_episodes": 99,
+  "dynamics_candidates": 6,
+  "accepted_episodes": 6,
+  "transitions": 5992,
+  "reasons": {
+    "grid": 0,
+    "lookup": 0,
+    "speed": 0,
+    "acceleration": 93
+  },
+  "output": "../outputs/speed_reversal_grid_v3_1200/dp_safe_prior.pkl"
+}

@@ -1,0 +1,151 @@
+{
+  "field": "/home/rocos/sia/AVIATOR/outputs/static_field_audit/old_fixed_q_field_00_10.npz",
+  "field_sha256": "0f6a0ff7a178d3e68f14863e8d266c60b49744d84f6041a805427191b46b5851",
+  "summary": {
+    "n_paths": 60,
+    "pass_velocity_geometry": 59,
+    "pass_with_acceleration": 21,
+    "speed_failures": 1,
+    "acceleration_failures": 39,
+    "contact_episodes": 0,
+    "wall_failure_episodes": 0,
+    "joint_limit_episodes": 0,
+    "max_qdot": 1.5156790226931893,
+    "max_qddot": 99.68289859459522,
+    "min_wall_clearance_m": 0.00815802992380419
+  },
+  "by_speed": {
+    "0.6": {
+      "n_paths": 20,
+      "pass_velocity_geometry": 20,
+      "pass_with_acceleration": 12,
+      "speed_failures": 0,
+      "acceleration_failures": 8,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 0.6470381355681953,
+      "max_qddot": 45.13594565722201,
+      "min_wall_clearance_m": 0.008178442124500168
+    },
+    "1.0": {
+      "n_paths": 20,
+      "pass_velocity_geometry": 20,
+      "pass_with_acceleration": 8,
+      "speed_failures": 0,
+      "acceleration_failures": 12,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 1.0682131598753501,
+      "max_qddot": 54.34412803940081,
+      "min_wall_clearance_m": 0.00815802992380419
+    },
+    "1.5": {
+      "n_paths": 20,
+      "pass_velocity_geometry": 19,
+      "pass_with_acceleration": 1,
+      "speed_failures": 1,
+      "acceleration_failures": 19,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 1.5156790226931893,
+      "max_qddot": 99.68289859459522,
+      "min_wall_clearance_m": 0.008208745486289519
+    }
+  },
+  "by_cell": {
+    "0.6/steering_only": {
+      "n_paths": 10,
+      "pass_velocity_geometry": 10,
+      "pass_with_acceleration": 6,
+      "speed_failures": 0,
+      "acceleration_failures": 4,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 0.6367665061654884,
+      "max_qddot": 45.13594565722201,
+      "min_wall_clearance_m": 0.008384051237934963
+    },
+    "0.6/steering_with_slide": {
+      "n_paths": 10,
+      "pass_velocity_geometry": 10,
+      "pass_with_acceleration": 6,
+      "speed_failures": 0,
+      "acceleration_failures": 4,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 0.6470381355681953,
+      "max_qddot": 24.029219548742375,
+      "min_wall_clearance_m": 0.008178442124500168
+    },
+    "1.0/steering_only": {
+      "n_paths": 10,
+      "pass_velocity_geometry": 10,
+      "pass_with_acceleration": 5,
+      "speed_failures": 0,
+      "acceleration_failures": 5,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 1.0464080849214519,
+      "max_qddot": 32.083735640215934,
+      "min_wall_clearance_m": 0.008342989224831874
+    },
+    "1.0/steering_with_slide": {
+      "n_paths": 10,
+      "pass_velocity_geometry": 10,
+      "pass_with_acceleration": 3,
+      "speed_failures": 0,
+      "acceleration_failures": 7,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 1.0682131598753501,
+      "max_qddot": 54.34412803940081,
+      "min_wall_clearance_m": 0.00815802992380419
+    },
+    "1.5/steering_only": {
+      "n_paths": 10,
+      "pass_velocity_geometry": 9,
+      "pass_with_acceleration": 1,
+      "speed_failures": 1,
+      "acceleration_failures": 9,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 1.5156790226931893,
+      "max_qddot": 48.82756622834189,
+      "min_wall_clearance_m": 0.00832989447981633
+    },
+    "1.5/steering_with_slide": {
+      "n_paths": 10,
+      "pass_velocity_geometry": 10,
+      "pass_with_acceleration": 0,
+      "speed_failures": 0,
+      "acceleration_failures": 10,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 1.4800134829072413,
+      "max_qddot": 99.68289859459522,
+      "min_wall_clearance_m": 0.008208745486289519
+    }
+  },
+  "limits": {
+    "qdot": 1.5,
+    "qddot": 10,
+    "wall_clearance": 0.005,
+    "contact_penetration": 0.001
+  },
+  "caveats": [
+    "Synthetic submovements, no empirical human validation.",
+    "Each trajectory has rest boundaries; no abrupt position/velocity jumps.",
+    "Frozen table, no retraining/retuning or failure rejection.",
+    "Points and joint-segment midpoints only, no continuous collision proof.",
+    "No torque, tracking or independent grasp FK audit."
+  ]
+}

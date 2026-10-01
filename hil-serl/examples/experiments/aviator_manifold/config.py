@@ -48,6 +48,7 @@ from .wrappers import StateEncoder
 # hil-serl/ root (config.py -> aviator_manifold -> experiments -> examples -> hil-serl)
 _HIL_SERL_ROOT = Path(__file__).resolve().parents[3]
 _MANIFOLD_DIR = _HIL_SERL_ROOT / "data" / "aviator" / "manifold_phi"
+_CONFIGURED_MANIFOLD_DIR = Path(os.getenv("AVIATOR_MANIFOLD_DIR", str(_MANIFOLD_DIR)))
 _TRAJECTORY_DIR = Path(os.getenv(
     "AVIATOR_TRAJECTORY_DIR",
     str(_HIL_SERL_ROOT / "data" / "aviator" / "trajectory_source"),
@@ -117,8 +118,13 @@ class TrainConfig(DefaultTrainingConfig):
         self.phi_dot_scale = _read_phi_dot_scale()
         self.max_steps = int(os.getenv("AVIATOR_MAX_STEPS", self.max_steps))
         self.max_traj_length = int(os.getenv("AVIATOR_MAX_TRAJ_LENGTH", self.max_traj_length))
+        qddot_max = os.getenv("AVIATOR_QDDOT_MAX")
+        self.qddot_max = float(qddot_max) if qddot_max is not None else None
         self.num_actor_envs = int(os.getenv("AVIATOR_NUM_ENVS", self.num_actor_envs))
         self.max_online_episodes = int(os.getenv("AVIATOR_MAX_ONLINE_EPISODES", self.max_online_episodes))
+        self.max_online_transitions = int(os.getenv("AVIATOR_MAX_ONLINE_TRANSITIONS", "0"))
+        if self.max_online_transitions < 0:
+            raise ValueError("AVIATOR_MAX_ONLINE_TRANSITIONS must be nonnegative")
         self.checkpoint_period = int(os.getenv("AVIATOR_CHECKPOINT_PERIOD", self.checkpoint_period))
         self.training_starts = int(os.getenv("AVIATOR_TRAINING_STARTS", self.training_starts))
         self.actor_step_delay = float(os.getenv("AVIATOR_ACTOR_STEP_DELAY", self.actor_step_delay))
@@ -137,10 +143,11 @@ class TrainConfig(DefaultTrainingConfig):
     def get_environment(self, fake_env=False, save_video=False, classifier=False):
         del fake_env, save_video, classifier   # kinematic env: no robot, no camera
         env = AviatorManifoldEnv(
-            manifold_dir=str(_MANIFOLD_DIR),
+            manifold_dir=str(_CONFIGURED_MANIFOLD_DIR),
             trajectory_dir=str(_TRAJECTORY_DIR),
             split=self.trajectory_split,
             phi_dot_scale=self.phi_dot_scale,
+            qddot_max=self.qddot_max,
             initial_phi_fraction_range=self.initial_phi_fraction_range,
         )
         env = ChunkingWrapper(env, obs_horizon=1, act_exec_horizon=None)

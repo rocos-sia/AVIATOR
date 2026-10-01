@@ -1,0 +1,11 @@
+# generated from genmsg/cmake/pkg-genmsg.context.in
+
+messages_str = "/home/cindy/try_ws/src/inspire_hand/msg/get_force_act_1.msg;/home/cindy/try_ws/src/inspire_hand/msg/get_angle_act_1.msg;/home/cindy/try_ws/src/inspire_hand/msg/get_touch_act_1.msg;/home/cindy/try_ws/src/inspire_hand/msg/set_angle_1.msg;/home/cindy/try_ws/src/inspire_hand/msg/set_force_1.msg;/home/cindy/try_ws/src/inspire_hand/msg/set_speed_1.msg"
+services_str = "/home/cindy/try_ws/src/inspire_hand/srv/set_id.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_redu_ratio.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_clear_error.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_save_flash.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_reset_para.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_force_clb.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_gesture_no.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_current_limit.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_default_speed.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_default_force.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_user_def_angle.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_pos.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_angle.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_angle_1.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_force.srv;/home/cindy/try_ws/src/inspire_hand/srv/set_speed.srv;/home/cindy/try_ws/src/inspire_hand/srv/get_pos_act.srv;/home/cindy/try_ws/src/inspire_hand/srv/get_angle_act.srv;/home/cindy/try_ws/src/inspire_hand/srv/get_force_act.srv;/home/cindy/try_ws/src/inspire_hand/srv/get_current.srv;/home/cindy/try_ws/src/inspire_hand/srv/get_error.srv;/home/cindy/try_ws/src/inspire_hand/srv/get_status.srv;/home/cindy/try_ws/src/inspire_hand/srv/get_temp.srv;/home/cindy/try_ws/src/inspire_hand/srv/get_pos_set.srv;/home/cindy/try_ws/src/inspire_hand/srv/get_angle_set.srv;/home/cindy/try_ws/src/inspire_hand/srv/get_force_set.srv"
+pkg_name = "inspire_hand"
+dependencies_str = "std_msgs"
+langs = "gencpp;geneus;genlisp;gennodejs;genpy"
+dep_include_paths_str = "inspire_hand;/home/cindy/try_ws/src/inspire_hand/msg;std_msgs;/opt/ros/noetic/share/std_msgs/cmake/../msg"
+PYTHON_EXECUTABLE = "/usr/bin/python3"
+package_has_static_sources = '' == 'TRUE'
+genmsg_check_deps_script = "/opt/ros/noetic/share/genmsg/cmake/../../../lib/genmsg/genmsg_check_deps.py"

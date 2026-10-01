@@ -1,0 +1,11 @@
+{
+  "seed": 20260930,
+  "n": 1200,
+  "grid_failures": 0,
+  "branch_failures": 0,
+  "lookup_clearance_failures": 0,
+  "joint_failures": 0,
+  "contact_failures": 0,
+  "wall_failures": 0,
+  "minimum_wall_clearance_m": 0.008228032884237069
+}

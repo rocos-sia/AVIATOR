@@ -1,0 +1,3 @@
+I0930 17:07:51.047467 139447395399488 _schedule.py:72] A polynomial schedule was set with a non-positive `transition_steps` value; this results in a constant schedule with value `init_value`.
+I0930 17:07:51.047717 139447395399488 _schedule.py:72] A polynomial schedule was set with a non-positive `transition_steps` value; this results in a constant schedule with value `init_value`.
+I0930 17:07:51.047796 139447395399488 _schedule.py:72] A polynomial schedule was set with a non-positive `transition_steps` value; this results in a constant schedule with value `init_value`.

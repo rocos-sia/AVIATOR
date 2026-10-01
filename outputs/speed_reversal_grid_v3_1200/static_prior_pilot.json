@@ -1,0 +1,69 @@
+{
+  "source_paths": 20,
+  "candidate_segments": 10,
+  "accepted_segments": 10,
+  "transitions": 2058,
+  "output": "../outputs/speed_reversal_grid_v3_1200/static_prior_pilot.pkl",
+  "episodes": [
+    {
+      "trajectory": "traj_0000",
+      "start": 23,
+      "stop": 259,
+      "steps": 236
+    },
+    {
+      "trajectory": "traj_0000",
+      "start": 311,
+      "stop": 490,
+      "steps": 179
+    },
+    {
+      "trajectory": "traj_0001",
+      "start": 30,
+      "stop": 254,
+      "steps": 224
+    },
+    {
+      "trajectory": "traj_0001",
+      "start": 320,
+      "stop": 504,
+      "steps": 184
+    },
+    {
+      "trajectory": "traj_0002",
+      "start": 49,
+      "stop": 219,
+      "steps": 170
+    },
+    {
+      "trajectory": "traj_0002",
+      "start": 272,
+      "stop": 512,
+      "steps": 240
+    },
+    {
+      "trajectory": "traj_0003",
+      "start": 23,
+      "stop": 249,
+      "steps": 226
+    },
+    {
+      "trajectory": "traj_0003",
+      "start": 295,
+      "stop": 483,
+      "steps": 188
+    },
+    {
+      "trajectory": "traj_0004",
+      "start": 30,
+      "stop": 206,
+      "steps": 176
+    },
+    {
+      "trajectory": "traj_0004",
+      "start": 268,
+      "stop": 503,
+      "steps": 235
+    }
+  ]
+}

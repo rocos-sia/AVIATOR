@@ -1,0 +1,14 @@
+{
+  "max_abs_dq_dtheta": 1.0546437319388635,
+  "max_neighbor_slope_jump": 0.1015455588773797,
+  "minimum_joint_limit_margin_rad": 4.351000759683643e-08,
+  "joint_speed_upper_bound": 0.6327862391633181,
+  "conservative_discrete_joint_acceleration_upper_bound": 11.365952192337101,
+  "task_theta_speed_bound": 0.6,
+  "task_theta_acceleration_bound": 5.0,
+  "dt": 0.01,
+  "sufficient_task_acceleration_bound_at_theta_speed_0_6": 3.7048212102622324,
+  "qdot_limit": 1.5,
+  "qddot_limit": 10.0,
+  "interpretation": "speed has an analytical bound in the fixed-slide corridor; acceleration bound at task a=5 is inconclusive; joint-limit margin is nearly zero and not robust"
+}

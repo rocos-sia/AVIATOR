@@ -59,7 +59,11 @@ class VectorizedManifoldEnv:
         self.envs = [config.get_environment() for _ in range(n_envs)]
         self.max_episodes = config.max_online_episodes
         available = len(self.envs[0].unwrapped._traj_paths)
-        if self.max_episodes > available or self.max_episodes < n_envs:
+        self.transition_budget = getattr(config, "max_online_transitions", 0)
+        self._available = available
+        if available == 0:
+            raise ValueError("no online trajectories")
+        if not self.transition_budget and (self.max_episodes > available or self.max_episodes < n_envs):
             raise ValueError(f"need {self.max_episodes} distinct online trajectories; found {available}")
         self._next_trajectory = 0
         self.active = np.ones(n_envs, dtype=bool)
@@ -73,29 +77,40 @@ class VectorizedManifoldEnv:
     def reset(self):
         obss = []
         self._next_trajectory = 0
+        self._trajectory_rng = np.random.default_rng(self._seed)
+        self._trajectory_order = None
         self.active[:] = True
         for i, e in enumerate(self.envs):
             obs, _ = e.reset(seed=self._seed + i,
-                             options={"trajectory_index": self._next_trajectory})
-            self._next_trajectory += 1
+                             options={"trajectory_index": self._take_trajectory()})
             obss.append(obs)
         self.obs = self._stack(obss)
         self._done[:] = False
         return self.obs
 
+    def _take_trajectory(self):
+        index = self._next_trajectory
+        if self.transition_budget:
+            cursor = index % self._available
+            if cursor == 0:
+                self._trajectory_order = self._trajectory_rng.permutation(self._available)
+            index = int(self._trajectory_order[cursor])
+        self._next_trajectory += 1
+        return index
+
     def reset_done(self):
         """Reset envs that finished last episode; call BEFORE sampling actions.
 
-        Each reset gets the next unused trajectory from rl_train. Doing it here
+        Budgeted runs reshuffle all rl_train paths after each full pass.
+        Legacy episode-limited runs use each selected trajectory once. Doing it here
         makes the new episode's first action come from its own initial
         observation, not the prior episode's terminal observation (audit §4).
         """
         for i, e in enumerate(self.envs):
             if self._done[i]:
-                if self._next_trajectory < self.max_episodes:
-                    obs, _ = e.reset(options={"trajectory_index": self._next_trajectory})
+                if self.transition_budget or self._next_trajectory < self.max_episodes:
+                    obs, _ = e.reset(options={"trajectory_index": self._take_trajectory()})
                     self.obs["state"][i] = obs["state"]
-                    self._next_trajectory += 1
                 else:
                     self.active[i] = False
                 self._done[i] = False
@@ -174,13 +189,17 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
     window_completed = 0
     window_clearance = 0
     window_speed = 0
+    window_acceleration = 0
     window_joint_limit = 0
     window_grid_exit = 0
     window_branch = 0
     online_steps = 0
+    transition_budget = vec_env.transition_budget
 
     pbar = tqdm.tqdm(range(config.max_steps), dynamic_ncols=True)
     for step in pbar:
+        if transition_budget and online_steps >= transition_budget:
+            break
         loop_started = time.monotonic()
         timer.tick("total")
 
@@ -190,6 +209,10 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
             obs = vec_env.reset_done()
         if not np.any(vec_env.active):
             break
+        if transition_budget:
+            # Only step the remaining slots on the last batch; never overshoot.
+            active_indices = np.flatnonzero(vec_env.active)
+            vec_env.active[active_indices[transition_budget - online_steps:]] = False
 
         with timer.context("sample_actions"):
             if step < config.random_steps:
@@ -243,6 +266,7 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
                     window_completed += int(term == "end")
                     window_clearance += int(term == "clearance")
                     window_speed += int(term == "speed")
+                    window_acceleration += int(term == "acceleration")
                     window_joint_limit += int(term == "joint_limit")
                     window_grid_exit += int(term == "grid_exit")
                     window_branch += int(term == "branch")
@@ -279,6 +303,9 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
             window_steps = max(window_steps, 1)
             stats = {
                 "environment": {
+                    "online_transitions": online_steps,
+                    "transition_budget": transition_budget,
+                    "episodes_started": vec_env._next_trajectory,
                     "max_qdot": window_max_qdot,
                     "min_d": window_min_d,
                     "mean_episode_return": (float(np.mean(window_episode_returns))
@@ -288,6 +315,7 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
                         "end": window_completed,
                         "clearance": window_clearance,
                         "speed": window_speed,
+                        "acceleration": window_acceleration,
                         "joint_limit": window_joint_limit,
                         "grid_exit": window_grid_exit,
                         "branch": window_branch,
@@ -299,6 +327,7 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
             client.update()
 
             pbar.set_description(
+                f"transitions={online_steps}/{transition_budget or 'episode-limited'}, "
                 f"completed={window_completed}/{window_episodes}, "
                 f"mean J={np.mean(window_episode_returns) if window_episode_returns else float('nan'):.2f}"
             )
@@ -311,6 +340,7 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
             window_completed = 0
             window_clearance = 0
             window_speed = 0
+            window_acceleration = 0
             window_joint_limit = 0
             window_grid_exit = 0
             window_branch = 0
@@ -322,9 +352,13 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
     # Flush transitions before announcing completion to the learner. A step
     # cap hit is a failed run, not a successful 400-episode experiment.
     client.update()
-    complete = not np.any(vec_env.active)
+    complete = (online_steps >= transition_budget if transition_budget
+                else not np.any(vec_env.active))
     if complete:
-        response = client.request("actor-done", {"episodes": vec_env._next_trajectory})
+        print(f"actor finished: online_transitions={online_steps}, "
+              f"episodes_started={vec_env._next_trajectory}", flush=True)
+        response = client.request("actor-done", {"episodes": vec_env._next_trajectory,
+                                                "online_transitions": online_steps})
         if response != {"received": True}:
             raise RuntimeError(f"learner did not acknowledge actor completion: {response}")
     client.stop()
@@ -332,6 +366,6 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
     if publisher is not None:
         publisher.close()
     if not complete:
-        raise RuntimeError(f"actor step cap reached after assigning "
+        raise RuntimeError(f"actor step cap reached at {online_steps}/{transition_budget} transitions, after assigning "
                            f"{vec_env._next_trajectory}/{vec_env.max_episodes} episodes")
     return

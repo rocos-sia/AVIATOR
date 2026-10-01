@@ -22,7 +22,10 @@ def continuous_theta_peak(data: dict) -> float:
                                                data["xddot"][:, 0])))
     poly = PPoly.from_bernstein_basis(curve)
     critical = poly.derivative(2).roots(extrapolate=False)
-    times = np.r_[t[0], critical, t[-1]]
+    # SciPy encodes identically-zero polynomial intervals with NaN roots.
+    # Stationary holds are valid; evaluate knots and finite interior extrema.
+    critical = critical[np.isfinite(critical)]
+    times = np.r_[t, critical]
     return float(np.max(np.abs(poly.derivative(1)(times))))
 
 

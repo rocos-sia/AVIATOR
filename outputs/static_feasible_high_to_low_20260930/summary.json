@@ -1,0 +1,71 @@
+{
+  "field": "/home/rocos/sia/AVIATOR/outputs/static_field_audit/old_fixed_q_field_00_10.npz",
+  "field_sha256": "0f6a0ff7a178d3e68f14863e8d266c60b49744d84f6041a805427191b46b5851",
+  "source": "/home/rocos/sia/AVIATOR/outputs/static_random_steering_20260930/trajs",
+  "n_paths": 1,
+  "requested_rate": null,
+  "target_theta_speed": 0.6,
+  "required_high_feasible": true,
+  "limits": {
+    "qdot": 1.5,
+    "qddot": 10,
+    "wall_clearance": 0.005,
+    "contact_penetration": 0.001
+  },
+  "summary": {
+    "high": {
+      "pass_velocity_geometry": 1,
+      "pass_with_acceleration": 1,
+      "speed_failures": 0,
+      "acceleration_failures": 0,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 1.3076822202196179,
+      "max_qddot": 9.565029759299737,
+      "min_wall_clearance_m": 0.00832989447981633
+    },
+    "exact_time_stretch": {
+      "pass_velocity_geometry": 1,
+      "pass_with_acceleration": 1,
+      "speed_failures": 0,
+      "acceleration_failures": 0,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 0.5854726620817293,
+      "max_qddot": 1.9173223277830764,
+      "min_wall_clearance_m": 0.00832989447981633
+    },
+    "slow_100hz": {
+      "pass_velocity_geometry": 1,
+      "pass_with_acceleration": 1,
+      "speed_failures": 0,
+      "acceleration_failures": 0,
+      "contact_episodes": 0,
+      "wall_failure_episodes": 0,
+      "joint_limit_episodes": 0,
+      "max_qdot": 0.5871293696942012,
+      "max_qddot": 4.479431577990717,
+      "min_wall_clearance_m": 0.008329894479825534
+    }
+  },
+  "conditional": {
+    "pass_velocity_geometry": {
+      "high_pass_count": 1,
+      "slow_100hz_pass_count": 1,
+      "exact_stretch_pass_count": 1
+    },
+    "pass_with_acceleration": {
+      "high_pass_count": 1,
+      "slow_100hz_pass_count": 1,
+      "exact_stretch_pass_count": 1
+    }
+  },
+  "caveats": [
+    "No torque, tracking or independent grasp FK audit.",
+    "Sample and joint-segment midpoint collision checks; not a continuous proof.",
+    "Acceleration uses second differences, excluding rest-start boundary.",
+    "Selected source paths are diagnostic, not a held-out generalization test."
+  ]
+}

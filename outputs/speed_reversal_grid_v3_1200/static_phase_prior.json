@@ -1,0 +1,2409 @@
+{
+  "source_paths": 1200,
+  "candidate_segments": 311,
+  "accepted_segments": 300,
+  "transitions": 35557,
+  "output": "../outputs/speed_reversal_grid_v3_1200/static_phase_prior.pkl",
+  "episodes": [
+    {
+      "trajectory": "traj_0000",
+      "start": 23,
+      "stop": 259,
+      "steps": 236,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0000",
+      "start": 311,
+      "stop": 490,
+      "steps": 179,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0001",
+      "start": 30,
+      "stop": 254,
+      "steps": 224,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0001",
+      "start": 320,
+      "stop": 504,
+      "steps": 184,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0002",
+      "start": 49,
+      "stop": 219,
+      "steps": 170,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0002",
+      "start": 272,
+      "stop": 512,
+      "steps": 240,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0003",
+      "start": 23,
+      "stop": 249,
+      "steps": 226,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0003",
+      "start": 295,
+      "stop": 483,
+      "steps": 188,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0004",
+      "start": 30,
+      "stop": 206,
+      "steps": 176,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0004",
+      "start": 268,
+      "stop": 503,
+      "steps": 235,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0005",
+      "start": 41,
+      "stop": 223,
+      "steps": 182,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0005",
+      "start": 281,
+      "stop": 503,
+      "steps": 222,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0006",
+      "start": 12,
+      "stop": 220,
+      "steps": 208,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0006",
+      "start": 281,
+      "stop": 487,
+      "steps": 206,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0007",
+      "start": 33,
+      "stop": 217,
+      "steps": 184,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0007",
+      "start": 279,
+      "stop": 488,
+      "steps": 209,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0008",
+      "start": 40,
+      "stop": 232,
+      "steps": 192,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0008",
+      "start": 299,
+      "stop": 500,
+      "steps": 201,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0009",
+      "start": 42,
+      "stop": 229,
+      "steps": 187,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0009",
+      "start": 284,
+      "stop": 502,
+      "steps": 218,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0010",
+      "start": 21,
+      "stop": 221,
+      "steps": 200,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0010",
+      "start": 281,
+      "stop": 490,
+      "steps": 209,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0011",
+      "start": 11,
+      "stop": 260,
+      "steps": 249,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0011",
+      "start": 316,
+      "stop": 473,
+      "steps": 157,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0012",
+      "start": 18,
+      "stop": 230,
+      "steps": 212,
+      "speed_bin": 0.6,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0100",
+      "start": 17,
+      "stop": 241,
+      "steps": 224,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0100",
+      "start": 300,
+      "stop": 483,
+      "steps": 183,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0100",
+      "start": 548,
+      "stop": 761,
+      "steps": 213,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0100",
+      "start": 828,
+      "stop": 1008,
+      "steps": 180,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0101",
+      "start": 29,
+      "stop": 247,
+      "steps": 218,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0101",
+      "start": 289,
+      "stop": 504,
+      "steps": 215,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0101",
+      "start": 565,
+      "stop": 760,
+      "steps": 195,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0101",
+      "start": 821,
+      "stop": 1025,
+      "steps": 204,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0102",
+      "start": 45,
+      "stop": 231,
+      "steps": 186,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0102",
+      "start": 297,
+      "stop": 503,
+      "steps": 206,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0102",
+      "start": 562,
+      "stop": 763,
+      "steps": 201,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0102",
+      "start": 824,
+      "stop": 1034,
+      "steps": 210,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0103",
+      "start": 18,
+      "stop": 239,
+      "steps": 221,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0103",
+      "start": 292,
+      "stop": 474,
+      "steps": 182,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0103",
+      "start": 538,
+      "stop": 763,
+      "steps": 225,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0103",
+      "start": 829,
+      "stop": 1007,
+      "steps": 178,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0104",
+      "start": 11,
+      "stop": 255,
+      "steps": 244,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0104",
+      "start": 318,
+      "stop": 472,
+      "steps": 154,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0104",
+      "start": 535,
+      "stop": 782,
+      "steps": 247,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0104",
+      "start": 843,
+      "stop": 997,
+      "steps": 154,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0105",
+      "start": 30,
+      "stop": 228,
+      "steps": 198,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0105",
+      "start": 279,
+      "stop": 488,
+      "steps": 209,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0105",
+      "start": 555,
+      "stop": 739,
+      "steps": 184,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0105",
+      "start": 803,
+      "stop": 1018,
+      "steps": 215,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0106",
+      "start": 20,
+      "stop": 249,
+      "steps": 229,
+      "speed_bin": 0.6,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0200",
+      "start": 31,
+      "stop": 228,
+      "steps": 197,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0200",
+      "start": 290,
+      "stop": 494,
+      "steps": 204,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0200",
+      "start": 556,
+      "stop": 753,
+      "steps": 197,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0200",
+      "start": 815,
+      "stop": 1024,
+      "steps": 209,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0200",
+      "start": 1080,
+      "stop": 1272,
+      "steps": 192,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0200",
+      "start": 1318,
+      "stop": 1541,
+      "steps": 223,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0201",
+      "start": 31,
+      "stop": 230,
+      "steps": 199,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0201",
+      "start": 292,
+      "stop": 491,
+      "steps": 199,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0201",
+      "start": 550,
+      "stop": 757,
+      "steps": 207,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0201",
+      "start": 814,
+      "stop": 1019,
+      "steps": 205,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0201",
+      "start": 1077,
+      "stop": 1276,
+      "steps": 199,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0201",
+      "start": 1339,
+      "stop": 1538,
+      "steps": 199,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0202",
+      "start": 17,
+      "stop": 100,
+      "steps": 83,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0202",
+      "start": 124,
+      "stop": 262,
+      "steps": 138,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0202",
+      "start": 320,
+      "stop": 493,
+      "steps": 173,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0202",
+      "start": 547,
+      "stop": 623,
+      "steps": 76,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0202",
+      "start": 648,
+      "stop": 789,
+      "steps": 141,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0202",
+      "start": 854,
+      "stop": 1008,
+      "steps": 154,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0202",
+      "start": 1063,
+      "stop": 1147,
+      "steps": 84,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0202",
+      "start": 1171,
+      "stop": 1309,
+      "steps": 138,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0202",
+      "start": 1372,
+      "stop": 1526,
+      "steps": 154,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0203",
+      "start": 20,
+      "stop": 243,
+      "steps": 223,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0203",
+      "start": 309,
+      "stop": 484,
+      "steps": 175,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0203",
+      "start": 544,
+      "stop": 769,
+      "steps": 225,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0203",
+      "start": 824,
+      "stop": 1016,
+      "steps": 192,
+      "speed_bin": 0.6,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0300",
+      "start": 16,
+      "stop": 149,
+      "steps": 133,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0300",
+      "start": 177,
+      "stop": 289,
+      "steps": 112,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0301",
+      "start": 21,
+      "stop": 130,
+      "steps": 109,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0301",
+      "start": 171,
+      "stop": 302,
+      "steps": 131,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0302",
+      "start": 16,
+      "stop": 134,
+      "steps": 118,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0302",
+      "start": 172,
+      "stop": 300,
+      "steps": 128,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0303",
+      "start": 6,
+      "stop": 150,
+      "steps": 144,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0303",
+      "start": 186,
+      "stop": 284,
+      "steps": 98,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0304",
+      "start": 27,
+      "stop": 142,
+      "steps": 115,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0304",
+      "start": 182,
+      "stop": 306,
+      "steps": 124,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0305",
+      "start": 7,
+      "stop": 161,
+      "steps": 154,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0305",
+      "start": 202,
+      "stop": 283,
+      "steps": 81,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0306",
+      "start": 16,
+      "stop": 134,
+      "steps": 118,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0306",
+      "start": 176,
+      "stop": 275,
+      "steps": 99,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0307",
+      "start": 19,
+      "stop": 116,
+      "steps": 97,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0307",
+      "start": 159,
+      "stop": 300,
+      "steps": 141,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0308",
+      "start": 17,
+      "stop": 141,
+      "steps": 124,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0308",
+      "start": 182,
+      "stop": 298,
+      "steps": 116,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0309",
+      "start": 13,
+      "stop": 132,
+      "steps": 119,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0309",
+      "start": 180,
+      "stop": 289,
+      "steps": 109,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0310",
+      "start": 11,
+      "stop": 144,
+      "steps": 133,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0310",
+      "start": 178,
+      "stop": 291,
+      "steps": 113,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0311",
+      "start": 10,
+      "stop": 134,
+      "steps": 124,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0311",
+      "start": 167,
+      "stop": 290,
+      "steps": 123,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0312",
+      "start": 15,
+      "stop": 121,
+      "steps": 106,
+      "speed_bin": 1.0,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0400",
+      "start": 14,
+      "stop": 144,
+      "steps": 130,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0400",
+      "start": 178,
+      "stop": 298,
+      "steps": 120,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0400",
+      "start": 334,
+      "stop": 457,
+      "steps": 123,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0400",
+      "start": 495,
+      "stop": 606,
+      "steps": 111,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0401",
+      "start": 15,
+      "stop": 134,
+      "steps": 119,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0401",
+      "start": 177,
+      "stop": 290,
+      "steps": 113,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0401",
+      "start": 324,
+      "stop": 453,
+      "steps": 129,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0401",
+      "start": 491,
+      "stop": 604,
+      "steps": 113,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0402",
+      "start": 15,
+      "stop": 139,
+      "steps": 124,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0402",
+      "start": 176,
+      "stop": 292,
+      "steps": 116,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0402",
+      "start": 332,
+      "stop": 453,
+      "steps": 121,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0402",
+      "start": 485,
+      "stop": 608,
+      "steps": 123,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0403",
+      "start": 30,
+      "stop": 141,
+      "steps": 111,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0403",
+      "start": 179,
+      "stop": 299,
+      "steps": 120,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0403",
+      "start": 337,
+      "stop": 455,
+      "steps": 118,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0403",
+      "start": 489,
+      "stop": 612,
+      "steps": 123,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0404",
+      "start": 15,
+      "stop": 121,
+      "steps": 106,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0404",
+      "start": 174,
+      "stop": 290,
+      "steps": 116,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0404",
+      "start": 328,
+      "stop": 451,
+      "steps": 123,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0404",
+      "start": 487,
+      "stop": 604,
+      "steps": 117,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0405",
+      "start": 16,
+      "stop": 148,
+      "steps": 132,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0405",
+      "start": 188,
+      "stop": 297,
+      "steps": 109,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0405",
+      "start": 329,
+      "stop": 463,
+      "steps": 134,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0405",
+      "start": 502,
+      "stop": 613,
+      "steps": 111,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0406",
+      "start": 29,
+      "stop": 128,
+      "steps": 99,
+      "speed_bin": 1.0,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0500",
+      "start": 29,
+      "stop": 120,
+      "steps": 91,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0500",
+      "start": 171,
+      "stop": 303,
+      "steps": 132,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0500",
+      "start": 343,
+      "stop": 434,
+      "steps": 91,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0500",
+      "start": 484,
+      "stop": 618,
+      "steps": 134,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0500",
+      "start": 656,
+      "stop": 748,
+      "steps": 92,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0500",
+      "start": 784,
+      "stop": 932,
+      "steps": 148,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0501",
+      "start": 17,
+      "stop": 136,
+      "steps": 119,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0501",
+      "start": 173,
+      "stop": 293,
+      "steps": 120,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0501",
+      "start": 331,
+      "stop": 448,
+      "steps": 117,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0501",
+      "start": 483,
+      "stop": 607,
+      "steps": 124,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0501",
+      "start": 644,
+      "stop": 762,
+      "steps": 118,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0501",
+      "start": 798,
+      "stop": 921,
+      "steps": 123,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0502",
+      "start": 25,
+      "stop": 138,
+      "steps": 113,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0502",
+      "start": 172,
+      "stop": 298,
+      "steps": 126,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0502",
+      "start": 331,
+      "stop": 452,
+      "steps": 121,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0502",
+      "start": 494,
+      "stop": 612,
+      "steps": 118,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0502",
+      "start": 646,
+      "stop": 773,
+      "steps": 127,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0502",
+      "start": 808,
+      "stop": 926,
+      "steps": 118,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0503",
+      "start": 17,
+      "stop": 150,
+      "steps": 133,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0503",
+      "start": 183,
+      "stop": 293,
+      "steps": 110,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0503",
+      "start": 329,
+      "stop": 464,
+      "steps": 135,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0503",
+      "start": 501,
+      "stop": 607,
+      "steps": 106,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0503",
+      "start": 643,
+      "stop": 780,
+      "steps": 137,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0503",
+      "start": 816,
+      "stop": 928,
+      "steps": 112,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0504",
+      "start": 22,
+      "stop": 128,
+      "steps": 106,
+      "speed_bin": 1.0,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0600",
+      "start": 19,
+      "stop": 105,
+      "steps": 86,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0600",
+      "start": 138,
+      "stop": 249,
+      "steps": 111,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0601",
+      "start": 26,
+      "stop": 116,
+      "steps": 90,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0601",
+      "start": 140,
+      "stop": 254,
+      "steps": 114,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0602",
+      "start": 20,
+      "stop": 120,
+      "steps": 100,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0602",
+      "start": 149,
+      "stop": 242,
+      "steps": 93,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0603",
+      "start": 14,
+      "stop": 116,
+      "steps": 102,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0603",
+      "start": 139,
+      "stop": 248,
+      "steps": 109,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0604",
+      "start": 11,
+      "stop": 133,
+      "steps": 122,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0604",
+      "start": 160,
+      "stop": 238,
+      "steps": 78,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0605",
+      "start": 25,
+      "stop": 112,
+      "steps": 87,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0605",
+      "start": 145,
+      "stop": 259,
+      "steps": 114,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0606",
+      "start": 26,
+      "stop": 122,
+      "steps": 96,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0606",
+      "start": 148,
+      "stop": 249,
+      "steps": 101,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0607",
+      "start": 9,
+      "stop": 116,
+      "steps": 107,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0607",
+      "start": 129,
+      "stop": 160,
+      "steps": 31,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0607",
+      "start": 160,
+      "stop": 238,
+      "steps": 78,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0608",
+      "start": 7,
+      "stop": 109,
+      "steps": 102,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0608",
+      "start": 137,
+      "stop": 239,
+      "steps": 102,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0609",
+      "start": 23,
+      "stop": 109,
+      "steps": 86,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0609",
+      "start": 140,
+      "stop": 253,
+      "steps": 113,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0610",
+      "start": 24,
+      "stop": 91,
+      "steps": 67,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0610",
+      "start": 123,
+      "stop": 184,
+      "steps": 61,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0610",
+      "start": 213,
+      "stop": 250,
+      "steps": 37,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0611",
+      "start": 8,
+      "stop": 123,
+      "steps": 115,
+      "speed_bin": 1.2,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0700",
+      "start": 14,
+      "stop": 115,
+      "steps": 101,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0700",
+      "start": 143,
+      "stop": 244,
+      "steps": 101,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0700",
+      "start": 270,
+      "stop": 379,
+      "steps": 109,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0700",
+      "start": 407,
+      "stop": 506,
+      "steps": 99,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0701",
+      "start": 3,
+      "stop": 134,
+      "steps": 131,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0701",
+      "start": 159,
+      "stop": 240,
+      "steps": 81,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0701",
+      "start": 269,
+      "stop": 389,
+      "steps": 120,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0701",
+      "start": 425,
+      "stop": 499,
+      "steps": 74,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0702",
+      "start": 7,
+      "stop": 120,
+      "steps": 113,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0702",
+      "start": 154,
+      "stop": 243,
+      "steps": 89,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0702",
+      "start": 271,
+      "stop": 382,
+      "steps": 111,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0702",
+      "start": 413,
+      "stop": 505,
+      "steps": 92,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0703",
+      "start": 24,
+      "stop": 109,
+      "steps": 85,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0703",
+      "start": 138,
+      "stop": 258,
+      "steps": 120,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0703",
+      "start": 286,
+      "stop": 375,
+      "steps": 89,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0703",
+      "start": 405,
+      "stop": 520,
+      "steps": 115,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0704",
+      "start": 23,
+      "stop": 98,
+      "steps": 75,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0704",
+      "start": 132,
+      "stop": 168,
+      "steps": 36,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0704",
+      "start": 208,
+      "stop": 249,
+      "steps": 41,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0704",
+      "start": 286,
+      "stop": 360,
+      "steps": 74,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0704",
+      "start": 388,
+      "stop": 429,
+      "steps": 41,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0704",
+      "start": 470,
+      "stop": 504,
+      "steps": 34,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0705",
+      "start": 7,
+      "stop": 121,
+      "steps": 114,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0705",
+      "start": 155,
+      "stop": 239,
+      "steps": 84,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0705",
+      "start": 271,
+      "stop": 386,
+      "steps": 115,
+      "speed_bin": 1.2,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_0800",
+      "start": 14,
+      "stop": 109,
+      "steps": 95,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0800",
+      "start": 129,
+      "stop": 241,
+      "steps": 112,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0800",
+      "start": 275,
+      "stop": 369,
+      "steps": 94,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0800",
+      "start": 400,
+      "stop": 503,
+      "steps": 103,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0800",
+      "start": 532,
+      "stop": 631,
+      "steps": 99,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0800",
+      "start": 662,
+      "stop": 768,
+      "steps": 106,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0801",
+      "start": 15,
+      "stop": 112,
+      "steps": 97,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0801",
+      "start": 145,
+      "stop": 248,
+      "steps": 103,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0801",
+      "start": 269,
+      "stop": 374,
+      "steps": 105,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0801",
+      "start": 406,
+      "stop": 512,
+      "steps": 106,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0801",
+      "start": 531,
+      "stop": 639,
+      "steps": 108,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0801",
+      "start": 664,
+      "stop": 768,
+      "steps": 104,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0802",
+      "start": 23,
+      "stop": 115,
+      "steps": 92,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0802",
+      "start": 144,
+      "stop": 227,
+      "steps": 83,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0802",
+      "start": 285,
+      "stop": 371,
+      "steps": 86,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0802",
+      "start": 403,
+      "stop": 490,
+      "steps": 87,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0802",
+      "start": 490,
+      "stop": 521,
+      "steps": 31,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0802",
+      "start": 547,
+      "stop": 633,
+      "steps": 86,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0802",
+      "start": 664,
+      "stop": 775,
+      "steps": 111,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0803",
+      "start": 21,
+      "stop": 115,
+      "steps": 94,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0803",
+      "start": 144,
+      "stop": 248,
+      "steps": 104,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0803",
+      "start": 283,
+      "stop": 308,
+      "steps": 25,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0803",
+      "start": 308,
+      "stop": 353,
+      "steps": 45,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0803",
+      "start": 406,
+      "stop": 510,
+      "steps": 104,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0803",
+      "start": 531,
+      "stop": 570,
+      "steps": 39,
+      "speed_bin": 1.2,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_0900",
+      "start": 11,
+      "stop": 99,
+      "steps": 88,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0900",
+      "start": 116,
+      "stop": 200,
+      "steps": 84,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0901",
+      "start": 3,
+      "stop": 70,
+      "steps": 67,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0901",
+      "start": 70,
+      "stop": 97,
+      "steps": 27,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0901",
+      "start": 121,
+      "stop": 202,
+      "steps": 81,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0902",
+      "start": 19,
+      "stop": 87,
+      "steps": 68,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0902",
+      "start": 131,
+      "stop": 200,
+      "steps": 69,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0903",
+      "start": 2,
+      "stop": 103,
+      "steps": 101,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0903",
+      "start": 132,
+      "stop": 190,
+      "steps": 58,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0904",
+      "start": 44,
+      "stop": 109,
+      "steps": 65,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0904",
+      "start": 132,
+      "stop": 190,
+      "steps": 58,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0905",
+      "start": 32,
+      "stop": 95,
+      "steps": 63,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0905",
+      "start": 142,
+      "stop": 192,
+      "steps": 50,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0906",
+      "start": 15,
+      "stop": 101,
+      "steps": 86,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0906",
+      "start": 121,
+      "stop": 199,
+      "steps": 78,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0907",
+      "start": 10,
+      "stop": 88,
+      "steps": 78,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0907",
+      "start": 131,
+      "stop": 201,
+      "steps": 70,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0908",
+      "start": 14,
+      "stop": 68,
+      "steps": 54,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0908",
+      "start": 117,
+      "stop": 196,
+      "steps": 79,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0909",
+      "start": 19,
+      "stop": 80,
+      "steps": 61,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0909",
+      "start": 166,
+      "stop": 196,
+      "steps": 30,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0910",
+      "start": 7,
+      "stop": 78,
+      "steps": 71,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0910",
+      "start": 122,
+      "stop": 168,
+      "steps": 46,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0911",
+      "start": 6,
+      "stop": 95,
+      "steps": 89,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_0911",
+      "start": 111,
+      "stop": 145,
+      "steps": 34,
+      "speed_bin": 1.5,
+      "reversals": 2
+    },
+    {
+      "trajectory": "traj_1000",
+      "start": 19,
+      "stop": 85,
+      "steps": 66,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1000",
+      "start": 108,
+      "stop": 205,
+      "steps": 97,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1000",
+      "start": 219,
+      "stop": 294,
+      "steps": 75,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1000",
+      "start": 319,
+      "stop": 408,
+      "steps": 89,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1001",
+      "start": 18,
+      "stop": 88,
+      "steps": 70,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1001",
+      "start": 118,
+      "stop": 202,
+      "steps": 84,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1001",
+      "start": 220,
+      "stop": 306,
+      "steps": 86,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1001",
+      "start": 326,
+      "stop": 411,
+      "steps": 85,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1002",
+      "start": 11,
+      "stop": 95,
+      "steps": 84,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1002",
+      "start": 131,
+      "stop": 195,
+      "steps": 64,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1002",
+      "start": 219,
+      "stop": 305,
+      "steps": 86,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1002",
+      "start": 339,
+      "stop": 403,
+      "steps": 64,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1003",
+      "start": 4,
+      "stop": 74,
+      "steps": 70,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1003",
+      "start": 123,
+      "stop": 191,
+      "steps": 68,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1003",
+      "start": 216,
+      "stop": 277,
+      "steps": 61,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1003",
+      "start": 336,
+      "stop": 406,
+      "steps": 70,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1004",
+      "start": 13,
+      "stop": 67,
+      "steps": 54,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1004",
+      "start": 68,
+      "stop": 98,
+      "steps": 30,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1004",
+      "start": 117,
+      "stop": 190,
+      "steps": 73,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1004",
+      "start": 240,
+      "stop": 269,
+      "steps": 29,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1004",
+      "start": 322,
+      "stop": 398,
+      "steps": 76,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1005",
+      "start": 18,
+      "stop": 92,
+      "steps": 74,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1005",
+      "start": 139,
+      "stop": 200,
+      "steps": 61,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1005",
+      "start": 228,
+      "stop": 296,
+      "steps": 68,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1005",
+      "start": 336,
+      "stop": 412,
+      "steps": 76,
+      "speed_bin": 1.5,
+      "reversals": 4
+    },
+    {
+      "trajectory": "traj_1100",
+      "start": 12,
+      "stop": 85,
+      "steps": 73,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1100",
+      "start": 111,
+      "stop": 195,
+      "steps": 84,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1100",
+      "start": 218,
+      "stop": 296,
+      "steps": 78,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1100",
+      "start": 318,
+      "stop": 407,
+      "steps": 89,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1100",
+      "start": 431,
+      "stop": 504,
+      "steps": 73,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1100",
+      "start": 531,
+      "stop": 614,
+      "steps": 83,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1101",
+      "start": 13,
+      "stop": 98,
+      "steps": 85,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1101",
+      "start": 142,
+      "stop": 184,
+      "steps": 42,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1101",
+      "start": 223,
+      "stop": 307,
+      "steps": 84,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1101",
+      "start": 329,
+      "stop": 417,
+      "steps": 88,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1101",
+      "start": 428,
+      "stop": 517,
+      "steps": 89,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1101",
+      "start": 561,
+      "stop": 603,
+      "steps": 42,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1102",
+      "start": 13,
+      "stop": 112,
+      "steps": 99,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1102",
+      "start": 126,
+      "stop": 190,
+      "steps": 64,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1102",
+      "start": 223,
+      "stop": 325,
+      "steps": 102,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1102",
+      "start": 342,
+      "stop": 400,
+      "steps": 58,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1102",
+      "start": 432,
+      "stop": 526,
+      "steps": 94,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1102",
+      "start": 544,
+      "stop": 615,
+      "steps": 71,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1103",
+      "start": 8,
+      "stop": 93,
+      "steps": 85,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1103",
+      "start": 107,
+      "stop": 185,
+      "steps": 78,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1103",
+      "start": 224,
+      "stop": 297,
+      "steps": 73,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1103",
+      "start": 339,
+      "stop": 402,
+      "steps": 63,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1103",
+      "start": 429,
+      "stop": 511,
+      "steps": 82,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1103",
+      "start": 534,
+      "stop": 604,
+      "steps": 70,
+      "speed_bin": 1.5,
+      "reversals": 6
+    },
+    {
+      "trajectory": "traj_1104",
+      "start": 10,
+      "stop": 82,
+      "steps": 72,
+      "speed_bin": 1.5,
+      "reversals": 6
+    }
+  ]
+}

@@ -28,7 +28,7 @@ TASK_V_MAX = (1.5, V_MAX[1])
 
 def make_path(rng: np.random.Generator, theta_speed: float, reversals: int,
               dt: float = 0.01,
-              start_axes: tuple[np.ndarray, np.ndarray] | None = None) -> dict[str, np.ndarray]:
+              start_cells: np.ndarray | None = None) -> dict[str, np.ndarray]:
     if theta_speed <= 0 or theta_speed > 1.5 or reversals < 1 or dt <= 0:
         raise ValueError("speed must be in (0, 1.5], reversals >= 1, dt > 0")
     theta_amp, slide_amp = 0.5, 0.03
@@ -37,13 +37,11 @@ def make_path(rng: np.random.Generator, theta_speed: float, reversals: int,
     t = np.arange(int(np.ceil(duration / dt)) + 1, dtype=np.float64) * dt
     # Different start states, identical excursion amplitudes and derivative
     # envelopes across cells. Slide phase is independent of the wheel phase.
-    if start_axes is None:
+    if start_cells is None:
         center = np.array([rng.uniform(-0.15, 0.15), rng.uniform(-0.105, -0.055)])
         phase = rng.uniform(-np.pi, np.pi, size=2)
     else:
-        theta_nodes = start_axes[0][np.abs(start_axes[0]) <= 0.10]
-        slide_nodes = start_axes[1][(start_axes[1] >= -0.10) & (start_axes[1] <= -0.06)]
-        start = np.array([rng.choice(theta_nodes), rng.choice(slide_nodes)])
+        start = start_cells[rng.integers(len(start_cells))]
         phase = np.array([rng.uniform(-0.15, 0.15) + rng.choice([0.0, np.pi]),
                           rng.uniform(-np.pi, np.pi)])
         center = start - np.array([theta_amp, slide_amp]) * np.sin(phase)
@@ -72,7 +70,19 @@ def generate(output: Path, seed: int, counts: dict[str, int],
         raise ValueError("speed and reversal bins must be unique")
     output.mkdir(parents=True, exist_ok=True)
     lookup = ManifoldLookup(manifold_dir)
-    start_axes = (lookup.theta_axis, lookup.s_axis)
+    theta_nodes = lookup.theta_axis[np.abs(lookup.theta_axis) <= 0.10]
+    slide_nodes = lookup.s_axis[(lookup.s_axis >= -0.10) & (lookup.s_axis <= -0.06)]
+    # Distinct start-state grid cells across train, validation and test. This
+    # tests start generalization without requiring a pre-motion transition.
+    start_cells = {}
+    for split_index, split in enumerate(counts):
+        cells = [np.array([theta, slide])
+                 for i, theta in enumerate(theta_nodes)
+                 for j, slide in enumerate(slide_nodes)
+                 if (i + 3 * j) % len(counts) == split_index]
+        if not cells:
+            raise ValueError(f"no grid-aligned start cells for {split}")
+        start_cells[split] = np.asarray(cells)
     rows = []
     for split_index, (split, count) in enumerate(counts.items()):
         if count < 0:
@@ -86,7 +96,7 @@ def generate(output: Path, seed: int, counts: dict[str, int],
                     path_seed = (seed * 1_000_003 + split_index * 1_000_000 +
                                  speed_index * 100_000 + reversal_index * 10_000 + local_index)
                     path = make_path(np.random.default_rng(path_seed), speed, n_reversals,
-                                     start_axes=start_axes)
+                                     start_cells=start_cells[split])
                     name = f"traj_{index:04d}.npz"
                     target = destination / name
                     np.savez_compressed(target, **path)

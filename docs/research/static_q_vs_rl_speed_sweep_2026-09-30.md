@@ -4,6 +4,81 @@
 
 ## 要回答的问题
 
+### 更正与严格配对补验：先确认高速满足全部已检查约束
+
+此前用于跨路径解释的高速参考 `strict_theta15/val/traj_0003` 峰值关节加速度为 25.414 rad/s²，**不满足 10 rad/s² 上限**。该参考不能用于证明或反驳“一个全部约束可行的高速解，单纯降速后会失效”。此前低速不同路径的加速度失败也不等于同一高速可行解降速失败。静态表在某条路径上通过，不代表整张表在全任务域和任意时序下通过。
+
+按用户要求，从新合成随机路径的高速组中选出唯一通过全部已检查约束的 `static_random_steering_20260930/trajs/traj_0047.npz`，重新独立复核后，仅对同一路径作匀速时间拉伸。高速任务转角实际峰值为 **1.340 rad/s**，不是 1.5；保留原冻结表及任务起终点，低速峰值不超过 0.6 rad/s，重新以 100 Hz 查询同一表并做点/中点碰撞复核。
+
+| 指标 | 已复核高速解 | 同路径降速后 | 限制 |
+|---|---:|---:|---:|
+| 峰值关节速度 rad/s | 1.307682 | 0.587129 | ≤1.5 |
+| 峰值关节加速度 rad/s² | 9.565030 | 4.479432 | ≤10 |
+| 最小墙面净空 mm | 8.329894 | 8.329894 | ≥5 |
+| 限位、接触与净空检查 | 通过 | 通过 | 按现有检查器 |
+| 全部已检查约束 | **通过** | **通过** | |
+
+该补验得到的是“这条满足约束的高速解，降速后仍满足约束”，没有观察到反例。另保留原关节采样点仅拉长时间间隔时，峰值差分加速度为 1.917322 rad/s²；100 Hz 重新采样查表时为 4.479432 rad/s²，两者都通过，但采样位置不同不能混为同一数值。仍未验证连续时间约束、驱动力矩、实际跟踪和独立抓握 FK。
+
+结果：`outputs/static_feasible_high_to_low_20260930/{summary,episodes}.json`。工具增加 `--require-high-feasible`，高速源不满足任何已检查约束即报错，避免再次混用不合格参考。
+
+```bash
+cd /home/rocos/sia/AVIATOR/hil-serl
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=. \
+  /home/rocos/miniconda3/envs/mujo/bin/python -m tools.audit_static_slowdown \
+  --field ../outputs/static_field_audit/old_fixed_q_field_00_10.npz \
+  --source ../outputs/static_random_steering_20260930/trajs \
+  --trajectory-name traj_0047 --require-high-feasible --target-theta-speed 0.6 \
+  --output ../outputs/static_feasible_high_to_low_repeat
+```
+
+### 可行高速参考用于此前不同低速随机路径的复核
+
+以通过全部已检查约束的 `static_random_steering_20260930/trajs/traj_0047.npz` 为参考，复用其同一张冻结二维表，重新检查此前 20 条任务转角速度上限 0.6 rad/s 的合成人类操作路径。高速参考先独立复核通过，随后复核全部 20 条低速路径，表和轨迹均用 SHA256 校验，未修改输入、未调整姿态。
+
+结果：速度、限位、接触和净空 **20/20** 通过；加上关节加速度上限 **12/20** 通过。纯转动 6/10、伴随推拉 6/10。8 条失败均为加速度超限；最大关节速度 0.647038 rad/s、最大加速度 45.135946 rad/s²、最小墙面净空 8.178442 mm。独立重算与原随机测试逐条一致。
+
+该复核证明这张表在一条完整可行高速路径之外的不同低速路径上，并非全部满足加速度限制。它不等于同一高速关节解降速失效：高速参考的 s 固定为 -0.102423 m；例如低速 `traj_0000` 的 s 为 -0.053994 m，访问的是表中不同的区域，该路径任务峰值 0.589091 rad/s、关节速度 0.636767 rad/s、关节加速度 22.259229 rad/s²。单条高速路径不能认证这些其他区域。新路径通过整张表计算自己的关节序列，未把参考的关节时间序列照搬过去。
+
+产物：`outputs/static_feasible_high_cross_random_low_20260930/{summary,episodes}.json`。复现：
+
+```bash
+cd /home/rocos/sia/AVIATOR/hil-serl
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=. \
+  /home/rocos/miniconda3/envs/mujo/bin/python -m tools.audit_feasible_reference_transfer \
+  --archive ../outputs/static_random_steering_20260930 \
+  --high-audit ../outputs/static_feasible_high_to_low_20260930 \
+  --output ../outputs/static_feasible_high_cross_random_low_repeat
+```
+
+### 单变量对照：同一可行高速轨迹的走廊内随机低速任务
+
+前一轮 20 条低速路径改变了推拉位置与转角范围，因此不能作为“同一区域、只改变任务时序”的对照。现以已满足全部检查约束的高速 `traj_0047` 为参考，固定表 SHA256、起点 `(0.02573348,-0.10242274)`、终点 `(0.00097883,-0.10242274)`、全部路径的 `s=-0.10242274 m` 和 `theta ∈ [-0.71103543,0.62439753] rad`。高速参考任务转角峰值 1.340 rad/s、关节最大速度 1.308 rad/s、最大加速度 9.565 rad/s²，点/中点碰撞与净空通过。
+
+新生成 60 条低速路径，任务速度 ≤0.6 rad/s、任务加速度 ≤5 rad/s²、jerk ≤20 rad/s³，100 Hz 采样、无位置/速度跳变。30 条严格沿参考路径的同一串转角目标，只随机改变各段时长和停顿；另外 30 条在相同转角区间内随机改变往返目标，保持起终点与推拉位置。两组使用同一冻结表，均未按检查结果筛选样本。
+
+| 低速组 | 完整通过速度、加速度、限位、接触、净空 |
+|---|---:|
+| 同一串转角目标，仅随机改变时间分配 | **30/30** |
+| 同一转角走廊内随机目标路径 | **30/30** |
+
+60 条中最大关节速度 0.5364 rad/s、最大关节加速度 5.3662 rad/s²，最小墙面净空 8.3299 mm。复核了生成种子、文件哈希、完全相同的起终点/推拉位置/转角走廊以及任务速度、加速度、jerk 上限。**这是有限样本中未发现反例，不是“任意随机低速轨迹都可行”的证明。** 第二组把路径形状也随机化，只能作为走廊内覆盖诊断；第一组才是严格的时间分配对照。
+
+固定 `s` 的一维查表函数在该转角走廊内最大 `|dq/dtheta|=1.05464`，因此对任何满足 `|theta_dot|≤0.6` 的轨迹有解析关节速度上界 0.63279 rad/s，小于 1.5。跨网格斜率跳变最大 0.10155，结合任务加速度上限 5 和 10 ms 步长得到的保守关节加速度上界 **11.366 rad/s²**，高于硬限制 10，因而无法用此界证明所有允许轨迹的加速度都安全。若任务加速度上限收紧至约 3.70 rad/s² 或以下，这个保守离散上界才降到 10 以下；碰撞与跟踪仍需要单独证明。该走廊的名义关节限位余量仅约 `4.35e-8 rad`，没有可用于真机鲁棒性的余量。
+
+数据：`outputs/static_same_corridor_low_20260930/{manifest,episodes,summary,corridor_bounds}.json`，所有路径在 `trajs/`。采样点与关节空间中点检查不构成连续时间安全证明。
+
+```bash
+cd /home/rocos/sia/AVIATOR/hil-serl
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=. \
+  /home/rocos/miniconda3/envs/mujo/bin/python -m tools.audit_same_corridor_low \
+  --archive ../outputs/static_random_steering_20260930 \
+  --feasible-audit ../outputs/static_feasible_high_to_low_20260930 \
+  --output ../outputs/static_same_corridor_low_repeat
+```
+
+### 原正向实验问题
+
 在同一批随机几何路径、同一每关节速度上限 `|qdot_j| <= 1.5 rad/s` 下，把任务转角速度从低速 `max|theta_dot| = 0.6 rad/s` 提高到 `1.5 rad/s`，固定的 `q = F(theta,s)` 是否仍可行，RL 能否补偿？
 
 ## 已执行协议
@@ -57,6 +132,94 @@ RL 的 1.5 档另有 3 条相位网格退出。以上失败类别是按整条执
 5. **价值判据。** RL 只有在相同起点与约束下，能稳定救回固定表因未来换向或局部死路失败的路径，同时不增加碰撞与超限，才说明时序决策在此任务中提供了实质增益。否则优先采用固定表或离线重新设计平滑的构型场。
 
 ## 复现与文件
+
+### 反向验证补充：高速选表后降速（2026-09-30）
+
+冻结已按高速表现选出的 `old_fixed_q_field_00_10.npz`，使用原 `strict_theta15/trajs/val` 的相同 50 条路径，将时间按约 2.5 倍拉长，从峰值 1.5 降至不超过 0.6 rad/s。通过五次 Hermite 重建保持几何路径及两个端点，低速重新以 100 Hz 查询同一张二维关节表。为精确保留端点，时长向上取整至 10 ms 的整数倍，因此缩放率略小于或等于 0.4。未重新选表，未读取新 test，未运行 RL 评测。
+
+| 检查 | 高速 1.5 rad/s | 降速后 0.6 rad/s |
+|---|---:|---:|
+| 速度、关节限位、接触及墙面净空均通过 | 22/50 | 48/50 |
+| 再加关节加速度 ≤10 rad/s² | 0/50 | 25/50 |
+| 关节超速路径 | 28/50 | 2/50 |
+| 关节加速度超限路径 | 50/50 | 25/50 |
+| 接触、墙面净空、关节限位失败路径 | 0/50 | 0/50 |
+
+**关键配对结果：高速通过原速度与几何约束的 22 条路径，降速后 22/22 仍通过。** 检查覆盖各采样点及相邻关节角中点；沿用接触穿透超过 1 mm 判失败、墙面净空至少 5 mm 的规则。两档最小墙面净空均约 7.994 mm。这支持同一路径降速的可行性，但高速端没有满足加速度上限的完整路径，不能把这 22 条称为全部硬约束下的高速可行解。
+
+另作数值诊断：仅保持原关节采样点、把采样间隔放大，速度和二阶差分加速度严格按缩放率及其平方下降，分别通过 49/50 与 35/50。该结果不同于上表的实际 100 Hz 重新查表；后者增加了路径上的采样点，能观察到原采样遗漏的局部变化。双线性表跨单元时通常没有连续的一阶导数，因此不能仅凭粗采样的加速度缩放值认定实际控制输出可行。
+
+结果为旧 val 上的诊断，不能推广为任意新几何路径、任意换向或任意速度调制的全域保证。尚未检查驱动力矩、跟踪误差和独立抓握 FK；加速度仍不计从静止接入的边界。
+
+结果文件：`outputs/static_slowdown_high_to_low_20260930/{summary,episodes}.json`，低速任务点保存在同目录 `slow_tasks/`；记录了表和源轨迹的 SHA256。复现（需指定尚不存在的输出目录）：
+
+```bash
+cd /home/rocos/sia/AVIATOR/hil-serl
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=. \
+  /home/rocos/miniconda3/envs/mujo/bin/python -m tools.audit_static_slowdown \
+  --field ../outputs/static_field_audit/old_fixed_q_field_00_10.npz \
+  --source ../outputs/static_field_audit/strict_theta15/trajs/val \
+  --output ../outputs/static_slowdown_high_to_low_repeat
+```
+
+### 跨路径补充：同一高速选表用于不同低速路径（2026-09-30）
+
+继续冻结 `(0.0,1.0)` 表，按文件名顺序选择上一轮第一个速度和几何均通过的高速参考 `strict_theta15/trajs/val/traj_0003.npz`。再次独立检查其峰值关节速度为 1.396 rad/s、墙面净空至少 8.504 mm；峰值关节加速度为 25.414 rad/s²，因此它只满足原速度与几何约束。
+
+目标为 `speed_reversal_grid_v3_1200` 的 120 条 val 几何路径，2/4/6 次换向各 40 条，全部降至任务转角峰值不超过 0.6 rad/s，保持端点和 100 Hz 控制采样率。几何路径与高速参考不同；固定表和相位选择不再调整。每条独立从自身 `F(x0)` 开始，不包含上一条路径末端到下一条起点的连接。这里迁移的是整张二维表，而不是照搬一条高速关节时间序列。
+
+| 每条换向次数 | 速度、限位、碰撞、净空均通过 | 加上加速度 ≤10 rad/s² |
+|---|---:|---:|
+| 2 | 40/40 | 13/40 |
+| 4 | 40/40 | 12/40 |
+| 6 | 40/40 | 11/40 |
+| 合计 | **120/120** | **36/120** |
+
+所有目标路径中最大关节速度 0.7633 rad/s、最小墙面净空 8.180 mm；无检测到的接触、净空或关节限位失败。84 条因加速度超过 10 rad/s² 不满足扩展约束，最大为 34.318 rad/s²。结果支持这张表在该批不同低速路径上的速度与几何适用性；不能推广为任意路径或突然切换的保证，也不能称为全动力学可执行。两次试验的路径群体不同，本轮 120/120 与上一轮 48/50 不矛盾。
+
+产物：`outputs/static_cross_path_low_20260930/{summary,episodes,verification}.json` 与低速 `trajs/val/*.npz`。复核了 120 条文件哈希、端点、时间戳及速度上限；按 theta/0.5、s/0.03 归一化后，各目标路径到参考采样点的最大最近邻距离均超过 0.728，表明它们包含参考之外的任务位置。工具为 `hil-serl/tools/audit_static_cross_path.py`；只使用旧 val 做诊断，未访问新的 test。
+
+```bash
+cd /home/rocos/sia/AVIATOR/hil-serl
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=. \
+  /home/rocos/miniconda3/envs/mujo/bin/python -m tools.audit_static_cross_path \
+  --source ../outputs/speed_reversal_grid_v3_1200 \
+  --high-audit ../outputs/static_slowdown_high_to_low_20260930 \
+  --output ../outputs/static_cross_path_low_repeat
+```
+
+### 随机方向盘操作补充（2026-09-30）
+
+使用 `tools.audit_random_steering` 新生成并冻结 60 条合成轨迹：任务转角速度上限 0.6/1.0/1.5 rad/s × 纯转动/转动伴随推拉 × 每格 10 条。采用“小修正、大转向、快速反向、回正、修正、收尾”的动作模板，随机初始位置、方向、幅度、各动作目标速度及停顿。它是工程合成的间歇操作模型，不是真人记录或经过人类操作数据拟合的模型；动作种类顺序采用模板，随机的是参数和停顿。
+
+动作采用七次平滑多项式 `35u^4-84u^5+70u^6-20u^7`，段间速度、加速度和 jerk 连续且在边界为零；每个动作经过减速再反向，没有位置或速度跳变。段时长由解析导数峰值决定，约束任务加速度 `[5 rad/s², 2 m/s²]`、jerk `[20 rad/s³, 10 m/s³]`、推拉速度 0.04 m/s，并保持转角在 ±0.72 rad、推拉位置在 [-0.14,-0.02] m。每条轨迹 8.48–26.42 s、2–5 次反向，100 Hz 采样。三个速度组的实测转角峰值分别为 0.513–0.595、0.879–0.989、1.283–1.469 rad/s。
+
+继续使用相同冻结的二维表，未重新选表、筛掉失败样本或运行 RL 评测。MuJoCo 检查全部采样点及关节空间中点，沿用速度 1.5 rad/s、加速度 10 rad/s²、净空 5 mm 及接触穿透 1 mm 判定规则。
+
+| 任务速度上限 | 速度、限位、接触和净空均通过 | 再加关节加速度限制 |
+|---|---:|---:|
+| 0.6 rad/s | 20/20 | 12/20 |
+| 1.0 rad/s | 20/20 | 8/20 |
+| 1.5 rad/s | 19/20 | 1/20 |
+| 合计 | **59/60** | **21/60** |
+
+全部轨迹无检测到的碰撞、净空不足或关节限位失败，最小墙面净空 8.158 mm；1 条关节超速，峰值 1.5157 rad/s。39 条关节加速度超限，峰值达到 99.683 rad/s²。纯转动与带推拉两组各 30 条，在扩展约束下分别通过 12/30、9/30；两组随机几何不同，该差异不构成推拉动作因果效应的证明。
+
+本批结果显示该表在随机幅度、停顿和换向的合成输入下，多数路径满足原速度和几何约束，但高速组仍普遍不能满足加速度要求。平滑任务输入不保证二维表输出的关节加速度可行；跨网格插值的平滑性需要进一步检查。本试验没有连续碰撞证明，也未检查驱动力矩、实际跟踪和独立抓握 FK。
+
+数据与图：`outputs/static_random_steering_20260930/` 中的 `manifest.json`、`episodes.json`、`summary.json`、`verification.json` 和 `steering_examples.{png,pdf}`。60 条轨迹均已按种子精确重生成核对，检查了哈希、C3 边界及任务导数上限。图选各速度组第一条带推拉路径，不按成败挑例子。
+
+```bash
+cd /home/rocos/sia/AVIATOR/hil-serl
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=. \
+  /home/rocos/miniconda3/envs/mujo/bin/python -m tools.audit_random_steering \
+  --output ../outputs/static_random_steering_repeat
+OPENBLAS_NUM_THREADS=1 PYTHONPATH=. \
+  /home/rocos/miniconda3/envs/mujo/bin/python -m tools.plot_random_steering \
+  --directory ../outputs/static_random_steering_repeat
+```
+
+### 原正向验证文件列表
 
 - 固定表：`outputs/static_field_audit/old_fixed_q_field_from06.npz`。
 - 四档任务轨迹：`outputs/static_field_audit/strict_theta{06,10,12,15}/trajs/val/`。

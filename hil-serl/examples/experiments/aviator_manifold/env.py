@@ -58,6 +58,7 @@ class AviatorManifoldEnv(gym.Env):
         phi_dot_scale: float = 1.0,
         dt: float = _DT,
         qdot_max: float = _QDOT_MAX,
+        qddot_max: float | None = None,
         d_safe: float = _D_SAFE,
         trajectories: list = None,
         initial_phi_fraction_range: tuple[float, float] | None = None,
@@ -69,6 +70,9 @@ class AviatorManifoldEnv(gym.Env):
         self.phi_dot_scale = phi_dot_scale
         self.dt = dt
         self.qdot_max = qdot_max
+        if qddot_max is not None and qddot_max <= 0:
+            raise ValueError("qddot_max must be positive")
+        self.qddot_max = qddot_max
         self.d_safe = d_safe
         if initial_phi_fraction_range is not None:
             low, high = initial_phi_fraction_range
@@ -95,6 +99,7 @@ class AviatorManifoldEnv(gym.Env):
         self._a_prev = np.zeros(2)
         # Previous executed velocity; the first step has no acceleration cost.
         self._phi_dot_prev = None
+        self._qdot_prev = None
 
         self._hist_x = deque(maxlen=21)
         self._hist_xdot = deque(maxlen=21)
@@ -154,6 +159,7 @@ class AviatorManifoldEnv(gym.Env):
             self._phi = initial_phi.copy()
         self._a_prev = np.zeros(2)
         self._phi_dot_prev = None
+        self._qdot_prev = None
 
         self._hist_x.clear()
         self._hist_xdot.clear()
@@ -209,6 +215,10 @@ class AviatorManifoldEnv(gym.Env):
         res_cur = self.lookup.query(x[None, :], phi[None, :], check_safe=False)
         q_cur = np.concatenate([res_cur["qL"][0], res_cur["qR"][0]])
         max_qdot = float(np.max(np.abs((q_next - q_cur) / self.dt)))
+        qdot = (q_next - q_cur) / self.dt
+        max_qddot = (float(np.max(np.abs((qdot - self._qdot_prev) / self.dt)))
+                      if self._qdot_prev is not None else 0.0)
+        self._qdot_prev = qdot
         d_min = float(res_next["d_min"][0])
         m_q = float(res_next["m_q"][0])
 
@@ -233,6 +243,9 @@ class AviatorManifoldEnv(gym.Env):
         elif max_qdot > self.qdot_max:
             terminated = True
             info["termination"] = "speed"
+        elif self.qddot_max is not None and max_qddot > self.qddot_max:
+            terminated = True
+            info["termination"] = "acceleration"
         elif self._t >= len(self._traj["x"]) - 1:
             truncated = True
             info["termination"] = "end"
@@ -245,6 +258,7 @@ class AviatorManifoldEnv(gym.Env):
         )
         info.update(rinfo)
         info.update({"d_min": d_min, "max_qdot": max_qdot, "m_q": m_q,
+                     "max_qddot": max_qddot,
                      "branch": int(res_next["branch"][0]),
                      "q": q_next, "x": x_next})
 

@@ -48,8 +48,14 @@ flags.DEFINE_boolean("learner", False, "Whether this is a learner.")
 flags.DEFINE_boolean("actor", False, "Whether this is an actor.")
 flags.DEFINE_string("ip", "localhost", "IP address of the learner.")
 flags.DEFINE_multi_string("demo_path", None, "Path to the demo data.")
+flags.DEFINE_multi_string("extra_demo_path", None,
+                          "Optional second replay prior sampled at a fixed extra quota.")
 flags.DEFINE_string("checkpoint_path", None, "Path to save checkpoints.")
 flags.DEFINE_string("bc_checkpoint_path", None, "Path to the BC checkpoint to warm-start the SAC actor.")
+flags.DEFINE_string("sac_init_checkpoint_path", None,
+                    "Optional SAC state to initialize a fresh experiment from.")
+flags.DEFINE_integer("sac_init_checkpoint_step", None,
+                     "Checkpoint step inside sac_init_checkpoint_path.")
 flags.DEFINE_integer("eval_checkpoint_step", 0, "Step to evaluate the checkpoint.")
 flags.DEFINE_integer("eval_n_trajs", 0, "Number of trajectories to evaluate.")
 flags.DEFINE_boolean("save_video", False, "Save video.")
@@ -116,11 +122,10 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
         print(f"average time: {np.mean(time_list)}")
         return  # after done eval, return and exit
     
-    start_step = (
-        int(os.path.basename(natsorted(glob.glob(os.path.join(FLAGS.checkpoint_path, "buffer/*.pkl")))[-1])[12:-4]) + 1
-        if FLAGS.checkpoint_path and os.path.exists(FLAGS.checkpoint_path)
-        else 0
-    )
+    buffer_files = (natsorted(glob.glob(os.path.join(FLAGS.checkpoint_path, "buffer/*.pkl")))
+                    if FLAGS.checkpoint_path else [])
+    start_step = (int(os.path.basename(buffer_files[-1])[12:-4]) + 1
+                  if buffer_files else 0)
 
     datastore_dict = {
         "actor_env": data_store,
@@ -249,7 +254,8 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 ##############################################################################
 
 
-def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
+def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
+            extra_demo_buffer=None):
     """
     The learner loop, which runs when "--learner" is set to True.
     """
@@ -305,6 +311,16 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
     # it is never an action-distance penalty or a behavior-cloning target here.
     ratios = ((0, 0.5), (500, 0.25), (1_500, 0.1))
     batch_iterators = {}
+    extra_iterator = None
+    if extra_demo_buffer is not None:
+        extra_size = round(config.batch_size * 0.25)
+        if extra_size < 1:
+            raise ValueError("extra replay quota is zero")
+        extra_args = {"batch_size": extra_size}
+        if config.image_keys:
+            extra_args["pack_obs_and_next_obs"] = True
+        extra_iterator = extra_demo_buffer.get_iterator(
+            sample_args=extra_args, device=sharding.replicate())
     for _, prior_fraction in ratios:
         n_prior = round(config.batch_size * prior_fraction)
         n_online = config.batch_size - n_prior
@@ -322,7 +338,10 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
         prior_fraction = next(frac for threshold, frac in reversed(ratios)
                               if len(replay_buffer) >= threshold)
         online_iterator, prior_iterator = batch_iterators[prior_fraction]
-        return concat_batches(next(online_iterator), next(prior_iterator), axis=0)
+        batch = concat_batches(next(online_iterator), next(prior_iterator), axis=0)
+        if extra_iterator is not None:
+            batch = concat_batches(batch, next(extra_iterator), axis=0)
+        return batch
 
     # wait till the replay buffer is filled with enough data
     timer = Timer()
@@ -463,6 +482,13 @@ def main(_):
     # SAC state (actor + critic + temperature) instead.
     latest_checkpoint = (checkpoints.latest_checkpoint(os.path.abspath(FLAGS.checkpoint_path))
                          if FLAGS.checkpoint_path else None)
+    if FLAGS.sac_init_checkpoint_path is not None and latest_checkpoint is None:
+        init_state = checkpoints.restore_checkpoint(
+            os.path.abspath(FLAGS.sac_init_checkpoint_path), agent.state,
+            step=FLAGS.sac_init_checkpoint_step,
+        )
+        agent = agent.replace(state=init_state)
+        print_green("initialized SAC state from supplied checkpoint")
     if FLAGS.bc_checkpoint_path is not None and latest_checkpoint is None:
         bc_agent = config.make_bc_agent(
             seed=FLAGS.seed,
@@ -521,6 +547,8 @@ def main(_):
         sampling_rng = jax.device_put(sampling_rng, device=sharding.replicate())
         replay_buffer, wandb_logger = create_replay_buffer_and_wandb_logger()
         demo_buffer = make_buffer(config.replay_buffer_capacity)
+        extra_demo_buffer = (make_buffer(config.replay_buffer_capacity)
+                             if FLAGS.extra_demo_path else None)
 
         assert FLAGS.demo_path is not None
         for path in FLAGS.demo_path:
@@ -531,6 +559,14 @@ def main(_):
                         transition['grasp_penalty'] = transition['infos']['grasp_penalty']
                     demo_buffer.insert(transition)
         print_green(f"demo buffer size: {len(demo_buffer)}")
+        if extra_demo_buffer is not None:
+            for path in FLAGS.extra_demo_path:
+                with open(path, "rb") as f:
+                    for transition in pkl.load(f):
+                        extra_demo_buffer.insert(transition)
+            if not len(extra_demo_buffer):
+                raise ValueError("extra demo buffer is empty")
+            print_green(f"extra demo buffer size: {len(extra_demo_buffer)}")
         print_green(f"online buffer size: {len(replay_buffer)}")
 
         if FLAGS.checkpoint_path is not None and os.path.exists(
@@ -566,6 +602,7 @@ def main(_):
             agent,
             replay_buffer,
             demo_buffer=demo_buffer,
+            extra_demo_buffer=extra_demo_buffer,
             wandb_logger=wandb_logger,
         )
 

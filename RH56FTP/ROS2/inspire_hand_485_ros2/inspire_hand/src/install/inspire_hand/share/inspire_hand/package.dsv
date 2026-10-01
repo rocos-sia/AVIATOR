@@ -1,0 +1,8 @@
+source;share/inspire_hand/hook/cmake_prefix_path.ps1
+source;share/inspire_hand/hook/cmake_prefix_path.dsv
+source;share/inspire_hand/hook/cmake_prefix_path.sh
+source;share/inspire_hand/local_setup.bash
+source;share/inspire_hand/local_setup.dsv
+source;share/inspire_hand/local_setup.ps1
+source;share/inspire_hand/local_setup.sh
+source;share/inspire_hand/local_setup.zsh

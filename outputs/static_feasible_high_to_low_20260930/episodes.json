@@ -1,0 +1,43 @@
+{
+  "traj_0047": {
+    "source_sha256": "9e6928363b8d997df59359807e03d3da956b41950493f087db58457eafdc6c37",
+    "rate": 0.44771784232365147,
+    "high_samples": 1080,
+    "slow_samples": 2411,
+    "high_theta_peak": 1.340027340247758,
+    "slow_theta_peak": 0.5999541494304405,
+    "high": {
+      "min_wall_clearance_m": 0.00832989447981633,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 1.3076822202196179,
+      "max_qddot": 9.565029759299737,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true
+    },
+    "exact_time_stretch": {
+      "min_wall_clearance_m": 0.00832989447981633,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5854726620817293,
+      "max_qddot": 1.9173223277830764,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true
+    },
+    "slow_100hz": {
+      "min_wall_clearance_m": 0.008329894479825534,
+      "contact_samples": 0,
+      "wall_failure_samples": 0,
+      "joint_limit_samples": 0,
+      "geometry_pass": true,
+      "max_qdot": 0.5871293696942012,
+      "max_qddot": 4.479431577990717,
+      "pass_velocity_geometry": true,
+      "pass_with_acceleration": true
+    }
+  }
+}
