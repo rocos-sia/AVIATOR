@@ -1,0 +1,24 @@
+<launch>
+    <!-- 设置模式参数，默认为 0 -->
+    <arg name="mode" default="0" />
+
+    <!-- 启动 hand_modbus_control 节点 -->
+    <node pkg="inspire_hand_modbus" type="hand_modbus_control" name="hand_modbus_control" output="screen" />
+
+    <!-- 如果 mode == 1，启动 hand_control_client_modbus 节点 -->
+    <group if="$(eval arg('mode') == 1)">
+        <node pkg="inspire_hand_modbus" type="hand_control_client_modbus" name="hand_control_client_modbus" output="screen" />
+    </group>
+
+    <!-- 如果 mode == 2，启动 handcontrol_publisher 和 handcontrol_subscriber -->
+    <group if="$(eval arg('mode') == 2)">
+        <node name="handcontrol_publisher" pkg="inspire_hand_modbus" type="handcontrol_topic_publisher_modbus.py" output="screen"/>
+        <node name="handcontrol_subscriber" pkg="inspire_hand_modbus" type="handcontrol_topic_subscriber_modbus.py" output="screen"/>
+    </group>
+
+    <!-- 如果 mode == 3，启动 inspire_hand_modbus_topic.py -->
+    <group if="$(eval arg('mode') == 3)">
+        <node name="inspire_hand_modbus_topic" pkg="inspire_hand_modbus" type="inspire_hand_modbus_topic.py" output="screen"/>
+    </group>
+</launch>
+
