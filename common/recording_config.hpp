@@ -21,6 +21,7 @@ struct CameraRecordingOptions {
     int bitrate = 8000000, keyframe_interval = 30, zstd_level = 3;
 };
 struct RecorderOptions {
+    std::string arm_command_mode = "full"; // full wire history or compact execution targets
     std::size_t queue_bytes = 16 * 1024 * 1024;
     int receive_hwm = 4096;
     std::size_t chunk_size_bytes = 4 * 1024 * 1024;

@@ -3,6 +3,11 @@
 # 相机输入/编码约定见 nodes/aviator_logger/README.md 与 docs/Logger配置与图像记录实现说明.md。
 config_version: 1
 
+# 只影响存储；full 保留原始窗口，compact 保存反馈游标对应的 record.arm.target。
+# 缺失窗口会显式标记；不改变控制总线或执行频率。省略此项默认 full。
+arm_command:
+  mode: "compact"
+
 bus:
   subscribe_endpoint: "tcp://127.0.0.1:5556"
   receive_hwm: 4096

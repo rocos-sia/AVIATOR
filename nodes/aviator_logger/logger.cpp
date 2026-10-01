@@ -1,4 +1,5 @@
 #include "logger.hpp"
+#include "arm_target_recorder.hpp"
 #include "runtime.hpp"
 #include "service.hpp"
 #include "transport.hpp"
@@ -59,6 +60,8 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
             const auto receive_clock = local_clock_id();
             RecordingWriter recording(output, session, options.chunk_size_bytes,
                                       recording_config_json(config).dump());
+            ArmTargetRecorder arm_targets(session);
+            std::cout << "aviator_logger: arm.command recording=" << options.arm_command_mode << std::endl;
             std::unique_ptr<RecordingWriter> images;
             if (cameras)
                 images = std::make_unique<RecordingWriter>(
@@ -94,6 +97,16 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
                     queue.pop_front();
                 }
                 if (!image) {
+                    if (options.arm_command_mode == "compact") {
+                        if (entry.wire.topic == "arm.command") {
+                            arm_targets.command(entry.wire.payload);
+                            continue;
+                        }
+                        if (entry.wire.topic == "arm.state") {
+                            if (auto target = arm_targets.state(entry.wire.payload))
+                                recording.append_arm_target(*target, entry.log_ns);
+                        }
+                    }
                     if (entry.wire.topic == service_request_topic ||
                         entry.wire.topic == service_reply_topic)
                         recording.append_service(entry.wire.topic, entry.wire.payload,
@@ -131,6 +144,8 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
             }
             if (receiver_failed)
                 throw std::runtime_error("receiver failed; recording retained as partial");
+            if (options.arm_command_mode == "compact")
+                recording.metadata("arm_target_recording", arm_targets.summary());
             nlohmann::json missing = nlohmann::json::array();
             if (cameras)
                 for (const auto& source : options.camera.sources) {

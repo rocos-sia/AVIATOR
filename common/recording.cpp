@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cmath>
 #include <fcntl.h>
 #include <filesystem>
 #include <limits>
@@ -85,6 +86,27 @@ std::string make_schema(std::string_view message_type) {
            "\"session_id\":{\"type\":\"string\"},\"valid\":{\"type\":\"boolean\"}}}";
 }
 
+std::string arm_target_schema() {
+    auto s = nlohmann::json::parse(make_schema("RecordedArmTarget"));
+    auto& p = s["properties"];
+    for (const auto* name : {"joint_position", "joint_velocity", "joint_acceleration"})
+        p[name] = {{"type", {"array", "null"}}, {"minItems", 14}, {"maxItems", 14},
+                   {"items", {{"type", "number"}}}};
+    for (const auto* name : {"trajectory_id", "tick"})
+        p[name] = {{"type", {"integer", "null"}}, {"minimum", 0}};
+    p["streaming"] = {{"type", {"boolean", "null"}}};
+    p["derivatives_available"] = {{"type", "boolean"}};
+    p["reason"] = {{"type", "string"}};
+    p["time_basis"] = {{"type", "string"}};
+    p["source_state"] = {{"type", "object"}};
+    p["source_command"] = {{"type", {"object", "null"}}};
+    for (const auto* name : {"joint_position", "joint_velocity", "joint_acceleration", "trajectory_id", "tick",
+                             "derivatives_available", "reason", "time_basis", "source_state", "source_command", "streaming"})
+        s["required"].push_back(name);
+    s["description"] = "Execution-cursor target, not measured joints; left J1..J7 then right J1..J7. Units rad, rad/s, rad/s^2.";
+    return s.dump();
+}
+
 } // namespace
 
 struct RecordingWriter::Impl {
@@ -143,15 +165,51 @@ void RecordingWriter::append_service(std::string_view topic, std::string_view pa
                                      std::uint64_t receive_utc_ns) {
     append_json(topic, payload, receive_utc_ns, true);
 }
+void RecordingWriter::append_arm_target(const nlohmann::json& target, std::uint64_t receive_utc_ns) {
+    append_json("record.arm.target", target.dump(), receive_utc_ns, false, true);
+}
 void RecordingWriter::append_json(std::string_view topic, std::string_view payload,
-                                  std::uint64_t receive_utc_ns, bool service) {
+                                  std::uint64_t receive_utc_ns, bool service, bool arm_target) {
     auto& impl = *impl_;
     if (impl.finished)
         throw std::logic_error("recording already finished");
     Message decoded;
     std::string error;
     std::string type;
-    if (service) {
+    if (arm_target) {
+        try {
+            const auto j = nlohmann::json::parse(payload);
+            if (j.at("msg_type") != "RecordedArmTarget" || j.at("version") != "1.0" ||
+                j.at("publisher_id") != "aviator_logger") throw std::invalid_argument("Invalid target header");
+            auto& h = decoded.header;
+            h.version = "1.0"; h.publisher_id = "aviator_logger";
+            h.session_id = j.at("session_id").get<std::string>();
+            h.clock_id = j.at("clock_id").get<std::string>();
+            for (const auto* key : {"sequence", "timestamp", "sample_mono_us"}) {
+                const auto& v = j.at(key);
+                if (!v.is_number_unsigned() || v.get<uint64_t>() > max_json_integer)
+                    throw std::invalid_argument("Invalid target timestamp/sequence");
+            }
+            h.sequence = j.at("sequence"); h.timestamp = j.at("timestamp"); h.sample_mono_us = j.at("sample_mono_us");
+            h.valid = j.at("valid").get<bool>();
+            const bool derivatives = j.at("derivatives_available").get<bool>();
+            if (h.sequence == 0 || h.session_id.empty() || h.clock_id.empty() ||
+                !j.at("reason").is_string() || !j.at("source_state").is_object())
+                throw std::invalid_argument("Invalid target identity");
+            for (const auto* key : {"joint_position", "joint_velocity", "joint_acceleration"}) {
+                const auto& a = j.at(key);
+                if (a.is_null()) {
+                    if ((h.valid && std::string_view(key) == "joint_position") || derivatives)
+                        throw std::invalid_argument("Missing target values");
+                } else {
+                    if (!a.is_array() || a.size() != 14) throw std::invalid_argument("Invalid target vector");
+                    for (const auto& x : a)
+                        if (!x.is_number() || !std::isfinite(x.get<double>())) throw std::invalid_argument("Invalid target value");
+                }
+            }
+            type = "RecordedArmTarget";
+        } catch (const std::exception&) { ++impl.summary.invalid; return; }
+    } else if (service) {
         try {
             const auto value = decode_service(payload);
             const bool reply = topic == service_reply_topic;
@@ -184,7 +242,7 @@ void RecordingWriter::append_json(std::string_view topic, std::string_view paylo
         if (impl.schemas.size() >= std::numeric_limits<mcap::SchemaId>::max())
             throw std::runtime_error("MCAP schema limit reached");
         mcap::Schema schema(schema_name, "jsonschema",
-                            service ? service_schema(topic == service_reply_topic).dump()
+                            arm_target ? arm_target_schema() : service ? service_schema(topic == service_reply_topic).dump()
                                     : make_schema(type));
         impl.writer.addSchema(schema);
         schema_it = impl.schemas.emplace(schema_name, schema.id).first;

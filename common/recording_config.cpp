@@ -66,10 +66,14 @@ std::string image_output_path(const std::string& output, const RecorderOptions& 
 }
 RecordingConfig load_recording_config(const std::string& path) {
     const auto root = YAML::LoadFile(path);
-    keys(root, {"config_version", "bus", "output", "camera"});
+    keys(root, {"config_version", "bus", "output", "camera", "arm_command"});
     require(number(root["config_version"]) == 1, "unsupported config_version");
     RecordingConfig c;
     auto& o = c.options;
+    if (const auto n = root["arm_command"]) {
+        keys(n, {"mode"});
+        if (n["mode"]) o.arm_command_mode = string(n["mode"]);
+    }
     if (const auto n = root["bus"]) {
         keys(n, {"subscribe_endpoint", "receive_hwm", "queue_bytes"});
         if (n["subscribe_endpoint"])
@@ -153,6 +157,8 @@ RecordingConfig load_recording_config(const std::string& path) {
 void validate_recording_config(const RecordingConfig& c) {
     const auto& o = c.options;
     const auto& k = o.camera;
+    require(o.arm_command_mode == "full" || o.arm_command_mode == "compact",
+            "arm_command.mode must be full or compact");
     if (k.mode != "disabled" && !c.output.empty()) {
         const auto data = std::filesystem::weakly_canonical(std::filesystem::absolute(c.output));
         const auto image = std::filesystem::weakly_canonical(
@@ -200,6 +206,7 @@ nlohmann::json recording_config_json(const RecordingConfig& c) {
                            {"rgb_pixel_format", "RGB8"},
                            {"depth_pixel_format", "Z16"}});
     return {{"config_version", 1},
+            {"arm_command", {{"mode", o.arm_command_mode}}},
             {"bus",
              {{"subscribe_endpoint", c.subscribe_endpoint},
               {"receive_hwm", o.receive_hwm},

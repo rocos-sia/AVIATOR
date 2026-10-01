@@ -42,6 +42,8 @@ class RecordingWriter {
     void append(std::string_view topic, std::string_view payload, std::uint64_t receive_utc_ns);
     void append_service(std::string_view topic, std::string_view payload,
                         std::uint64_t receive_utc_ns);
+    // Storage-only derived record; never registered in the control wire protocol.
+    void append_arm_target(const nlohmann::json& target, std::uint64_t receive_utc_ns);
     void append_camera(const std::string& topic, const CameraFrame& frame,
                        std::uint64_t receive_utc_ns);
     void metadata(const std::string& name, const nlohmann::json& value);
@@ -49,7 +51,7 @@ class RecordingWriter {
 
   private:
     void append_json(std::string_view topic, std::string_view payload, std::uint64_t receive_utc_ns,
-                     bool service);
+                     bool service, bool arm_target = false);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

@@ -59,6 +59,43 @@ Python 相机节点不是 Logger 的运行依赖。相机在推理前提交图�
 - 深度 `codec` 固定 `zstd`，`level` 为 1..19。帧头保留 Z16 原始 stride、字节序和 `depth_scale`，不能把伪彩色深度图冒充原始深度。
 - 不修改源分辨率和帧率；RGB 实际宽高/fps/源身份/配置 ID 改变时重建编码器并开始新的可解码序列。
 
+
+## 机械臂目标记录模式
+
+仓库 `config/recording.yaml` 已选择精简记录：
+
+```yaml
+arm_command:
+  mode: "compact"  # full 或 compact；省略时默认 full
+```
+
+修改后只需重启 Logger，并使用新的输出文件名。Core、Manipulator、控制总线消息和频率不变，无需重启控制节点。
+
+- `full`：按收到的原始字节保存每条 `arm.command`，包含完整重叠窗口，适合通信排查。
+- `compact`：不写入原始 `arm.command`，在每条可解析的 `arm.state` 到达时生成一条 `record.arm.target`。原始 `arm.state`、手、相机、服务及其他消息仍照常记录。
+
+精简模块只在 Logger 写线程内工作，不发布消息。使用 `arm.state.accepted_command` 的发布者、Core 会话、序号、control_epoch，以及 clock_id、config_id、trajectory_id 和 tick 匹配缓存窗口；提取的目标还必须与 `execution.target` 一致。不能用窗口第一个点或最新窗口代替已接纳的对应点。
+
+`record.arm.target` 是 MCAP 专用 JSON Topic（Schema `RecordedArmTarget/1.0`），不是控制指令，也不是实际关节测量：
+
+| 字段 | 含义 |
+| --- | --- |
+| `joint_position` | 14 路目标位置，rad；顺序左臂 J1～J7、右臂 J1～J7。 |
+| `joint_velocity` / `joint_acceleration` | Servo 对应点的速度、加速度，rad/s、rad/s²。 |
+| `trajectory_id` / `tick` | 底层状态中的轨迹和执行游标。 |
+| `source_state` / `source_command` | 原始状态身份、序号、采样时间，以及已接纳指令身份、序号、epoch；匹配成功时增加指令采样时间。 |
+| `sample_mono_us` / `time_basis` | 使用 `arm.state.status_mono_us`（执行状态发布快照时间）；不是 SDK 精确执行时间，也不替代 `source_state.sample_mono_us` 的关节测量时间。无法取得执行状态时间时为 0 / unavailable。 |
+| `valid` / `reason` | 是否匹配成功及原因。匹配失败时三组目标数组均为 null，不用零值冒充目标。 |
+| `derivatives_available` / `streaming` | 是否含完整导数、源指令是否为 Servo。 |
+
+普通非 Servo 窗口没有完整加速度，且其速度字段并非全部 1 ms 执行点的导数。精简模式只匹配位置（必要时按现有解码规则恢复奇数 tick 的中间位置）；速度和加速度均为 null，`reason=matched_position_only`、`derivatives_available=false`。Servo 成功匹配时三组数组完整，`reason=matched`。
+
+记录频率随已有 `arm.state` 到达频率（当前约 100 Hz），**不保存全部 1 kHz 执行点**。保持同一游标的重复状态也保留时间记录。完整窗口、未执行的未来点和通信重传历史在 compact 文件中不可恢复。
+
+缓存上限 64 条原始窗口（合法消息的负载总计最多 4 MiB，另有解析和对象开销）。缺失/已淘汰窗口、状态先于对应指令到达、时钟/会话不符、执行目标不一致、故障/停止及重复或乱序状态都会生成 `valid=false` 和明确原因；不延迟控制、不等待补包、不事后改写已记录样本。不同会话的指令不混用。
+
+结束时 MCAP 元数据 `arm_target_recording` 记录省略的指令数、匹配/未匹配目标数、非法输入及缓存淘汰数；它们不等同于网络丢包数。MCAP 原有消息数统计只计算实际写入的消息。精简模式用于减少存储，网络流量、接收队列负载和图像编码不变。
+
 ## 队列、状态与退出
 
 接收线程独占 SUB/PULL，写盘线程独占编码器和两个 MCAP Writer。业务队列默认 16 MiB，图像队列默认 256 MiB，分别计费，交替取出保证一侧不会无限抢占另一侧；单次编码仍可能延迟业务写盘。队列按负载和条目结构计费，不含分配器、ZMQ 缓冲和编码器工作区。软件编码线程数设为 4，但 x265 的 `frame-threads` 固定为 1——编码要求每帧立即出包，帧级线程会引入延迟，因此并行度主要来自 WPP，通过 `pools=4:wpp=1` 启用 4 个线程池工作线程。总内存仍需按实际分辨率与来源数量实测。
@@ -71,7 +108,7 @@ SIGINT/SIGTERM 停止接收并排空已入队数据，然后写索引与尾部�
 
 ## MCAP 映射与完整性
 
-业务 JSON 保留原始 Frame1 字节、空白、扩展字段和 `valid=false`，Schema 为 `类型/版本` 的公共头部 jsonschema；Channel 按 Topic、版本、发布者、源会话和时钟区分。未知 Topic/非法业务 JSON 仍只计数跳过，尚无 `record.invalid` 存档。
+除 compact 模式下转换的 `arm.command` 外，业务 JSON 保留原始 Frame1 字节、空白、扩展字段和 `valid=false`，Schema 为 `类型/版本` 的公共头部 jsonschema；Channel 按 Topic、版本、发布者、源会话和时钟区分。未知 Topic/非法业务 JSON 仍只计数跳过，尚无 `record.invalid` 存档。
 
 图像使用 `aviator.record.v1.CameraPacket`，`message_encoding=protobuf`；嵌入完整 `FileDescriptorSet`。该信封是独立的相机协议，不等同于 ICD 中尚未冻结的通用 `RecordEnvelope`。帧头、像素格式、编码器、标定信息随帧保存。现有 Foxglove 通用视频面板不能自动识别此自定义 Schema，需适配或转换。
 
