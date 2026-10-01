@@ -191,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
                 "translation_along_axis_between_samples_m":
                     float(motion["translation_along_axis_m"]),
                 "translation_perpendicular_between_samples_m":
-                    [float(value) for value in motion["translation_perpendicular"]],
+                    [float(value) for value in motion["translation_perpendicular_m"]],
                 "translation_perpendicular_norm_m":
                     float(motion["translation_perpendicular_norm_m"]),
             },

@@ -224,22 +224,38 @@ def calibrate_from_poses(zero: np.ndarray, second: np.ndarray) -> dict[str, Any]
     return motion
 
 
-def evaluate_pose(zero: np.ndarray, current: np.ndarray, axis: Any) -> dict[str, Any]:
+def evaluate_pose(zero: np.ndarray, current: np.ndarray, axis: Any, *,
+                  min_axis_rotation_rad: float = math.radians(3.0)) -> dict[str, Any]:
+    if not math.isfinite(min_axis_rotation_rad) or not 0 <= min_axis_rotation_rad <= math.pi:
+        raise CalibrationError("min_axis_rotation_rad must be finite and in [0, pi]")
     relative = relative_transform(zero, current)
     motion = screw_parameters(relative, axis_hint=axis)
+    quaternion = np.asarray(rotation_to_quaternion(relative[:3, :3]))
+    rotation_magnitude = 2 * math.atan2(float(np.linalg.norm(quaternion[:3])),
+                                       abs(float(quaternion[3])))
     # Estimate the axis independently from the current point and the zero
-    # point.  Keep the stored calibration axis as the hint for the reported
-    # screw parameters, but expose this independent estimate so validation can
-    # detect a tag/camera setup that no longer follows the calibrated axis.
-    try:
-        measured_axis = rotation_axis(relative[:3, :3], relative[:3, 3])
-    except CalibrationError:
-        measured_axis = None
+    # point only when rotation is large enough to avoid normalizing pose noise.
+    # Use the full rotation magnitude: the angle projected onto the stored
+    # axis can be small even for a large rotation about a mismatched axis.
+    # Translation alone cannot validate a rotation axis.
+    measured_axis = None
+    if rotation_magnitude >= min_axis_rotation_rad:
+        try:
+            measured_axis = rotation_axis(relative[:3, :3])
+        except CalibrationError:
+            pass
     stored_axis = _canonical_axis(_finite_vector(axis, 3, "axis_hint"))
     axis_error_rad = None
     if measured_axis is not None:
-        cosine = float(np.clip(np.dot(measured_axis, stored_axis), -1.0, 1.0))
+        # u and -u represent the same axis line.  Align the displayed estimate
+        # with the stored direction so canonical sign changes do not look like
+        # a near-180-degree axis error.
+        dot = float(np.dot(measured_axis, stored_axis))
+        if dot < 0:
+            measured_axis = -measured_axis
+        cosine = float(np.clip(abs(dot), 0.0, 1.0))
         axis_error_rad = float(math.acos(cosine))
+    motion["rotation_magnitude_rad"] = rotation_magnitude
     motion["axis_direction"] = stored_axis
     motion["measured_axis_direction"] = measured_axis
     motion["axis_error_rad"] = axis_error_rad

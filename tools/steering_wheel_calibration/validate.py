@@ -29,6 +29,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="处理 N 个有效位姿后退出，0 表示持续运行")
     parser.add_argument("--axis-tolerance-deg", type=float, default=5.0,
                         help="轴向量一致性允许的夹角（度），默认 5 度")
+    parser.add_argument("--min-axis-rotation-deg", type=float, default=3.0,
+                        help="重新估计旋转轴所需的最小完整旋转角（度），默认 3 度；"
+                             "小于阈值时 axis_match=unknown")
     parser.add_argument("--json", action="store_true", help="以 JSON 输出每个结果")
     return parser.parse_args(argv)
 
@@ -76,6 +79,7 @@ def output_result(result: dict[str, Any], data: dict[str, Any], as_json: bool) -
         "sequence": data.get("sequence"),
         "theta_rad": float(result["rotation_angle_rad"]),
         "theta_deg": math.degrees(float(result["rotation_angle_rad"])),
+        "rotation_magnitude_deg": math.degrees(float(result["rotation_magnitude_rad"])),
         "translation_along_axis_m": float(result["translation_along_axis_m"]),
         "translation_vector_m": [float(value) for value in result["translation_vector"]],
         "translation_perpendicular_norm_m": float(result["translation_perpendicular_norm_m"]),
@@ -94,7 +98,7 @@ def output_result(result: dict[str, Any], data: dict[str, Any], as_json: bool) -
         stored = payload["axis_direction_stored"]
         if payload["axis_error_deg"] is None:
             axis_check = (f"axis_stored=[{stored[0]:.4f},{stored[1]:.4f},{stored[2]:.4f}] "
-                          "axis_measured=unknown axis_match=unknown (insufficient motion)")
+                          "axis_measured=unknown axis_match=unknown (insufficient rotation)")
         else:
             axis_check = (f"axis_stored=[{stored[0]:.4f},{stored[1]:.4f},{stored[2]:.4f}] "
                           f"axis_measured=[{measured[0]:.4f},{measured[1]:.4f},{measured[2]:.4f}] "
@@ -102,18 +106,21 @@ def output_result(result: dict[str, Any], data: dict[str, Any], as_json: bool) -
                           f"axis_match={str(payload['axis_consistent']).lower()}")
         print(f"frame={payload['frame_id']} seq={payload['sequence']} "
               f"theta={payload['theta_deg']:.3f} deg "
+              f"rotation_magnitude={payload['rotation_magnitude_deg']:.3f} deg "
               f"translation=[{translation[0]:.6f},{translation[1]:.6f},{translation[2]:.6f}] m "
               f"translation_axis={payload['translation_along_axis_m']:.6f} m "
-              f"translation_norm={payload['translation_perpendicular_norm_m']:.6f} m "
+              f"translation_perpendicular_norm={payload['translation_perpendicular_norm_m']:.6f} m "
               f"{axis_check}", flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if (args.timeout_ms <= 0 or args.max_msgs < 0 or
-            not math.isfinite(args.axis_tolerance_deg) or args.axis_tolerance_deg < 0):
+            not math.isfinite(args.axis_tolerance_deg) or args.axis_tolerance_deg < 0 or
+            not math.isfinite(args.min_axis_rotation_deg) or not 0 <= args.min_axis_rotation_deg <= 180):
         raise SystemExit("--timeout-ms 必须为正数，--max-msgs 不能为负数，"
-                         "--axis-tolerance-deg 必须为有限非负数")
+                         "--axis-tolerance-deg 必须为有限非负数，"
+                         "--min-axis-rotation-deg 必须在 [0,180]")
     calibration, zero, axis = load_calibration(args.config)
     try:
         import zmq
@@ -139,7 +146,8 @@ def main(argv: list[str] | None = None) -> int:
                 if not isinstance(data, dict) or not accepts(data, args, calibration):
                     continue
                 current = pose_to_matrix(data["pose"])
-                result = evaluate_pose(zero, current, axis)
+                result = evaluate_pose(zero, current, axis,
+                                       min_axis_rotation_rad=math.radians(args.min_axis_rotation_deg))
             except (UnicodeError, json.JSONDecodeError, CalibrationError, TypeError, ValueError, np.linalg.LinAlgError) as exc:
                 print(f"[skip] invalid detection: {exc}", file=sys.stderr)
                 continue

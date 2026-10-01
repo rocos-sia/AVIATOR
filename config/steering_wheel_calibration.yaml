@@ -1,8 +1,6 @@
-# 由 tools/steering_wheel_calibration/calibrate.py 写入。
-# pose 使用 T_camera_tag：AprilTag 目标坐标系到相机坐标系，位置单位 m。
 steering_wheel_calibration:
   schema_version: 1
-  status: uncalibrated
+  status: calibrated
   source:
     topic: camera.detection
     camera_id: cockpit
@@ -18,15 +16,101 @@ steering_wheel_calibration:
   zero:
     theta_rad: 0.0
     translation_along_axis_m: 0.0
-    pose: null
+    pose:
+      sample_count: 20
+      frame_id_first: 19487
+      frame_id_last: 19506
+      sample_mono_us_first: 2790733427
+      sample_mono_us_last: 2791366343
+      confidence_mean: 0.9921268577575683
+      confidence_min: 0.9787685394287109
+      average_method:
+        translation: componentwise_arithmetic_mean
+        orientation: markley_quaternion_mean
+      pose:
+        position:
+          x: -0.026062710571746354
+          y: -0.13135267567480122
+          z: 0.8052298098102518
+        orientation:
+          qx: -0.008475655799929246
+          qy: -0.325424827627797
+          qz: 0.9450522742821752
+          qw: -0.030050685454215385
+      T_camera_tag:
+      - - -0.9980502391249861
+        - 0.062315314919938115
+        - 0.003538602688558292
+        - -0.026062710571746354
+      - - -0.05128255960904005
+        - -0.7863912757343012
+        - -0.6155963454479926
+        - -0.13135267567480122
+      - - -0.03557835384758248
+        - -0.6145775483821451
+        - 0.7880536896443595
+        - 0.8052298098102518
+      - - 0.0
+        - 0.0
+        - 0.0
+        - 1.0
   second:
-    pose: null
+    pose:
+      sample_count: 20
+      frame_id_first: 19666
+      frame_id_last: 19685
+      sample_mono_us_first: 2796694992
+      sample_mono_us_last: 2797327787
+      confidence_mean: 0.9828370437622072
+      confidence_min: 0.9738703918457031
+      average_method:
+        translation: componentwise_arithmetic_mean
+        orientation: markley_quaternion_mean
+      pose:
+        position:
+          x: -0.02374717957139335
+          y: -0.18226364692239022
+          z: 0.8724003785042441
+        orientation:
+          qx: 0.018037985310665784
+          qy: -0.32651406245073494
+          qz: 0.9438183717013474
+          qw: 0.0476453496877416
+      T_camera_tag:
+      - - -0.9948091034781303
+        - -0.10171642444727554
+        - 0.0029354104825100834
+        - -0.02374717957139335
+      - - 0.07815780099842685
+        - -0.7822369753501011
+        - -0.6180587937552674
+        - -0.18226364692239022
+      - - 0.06516291721623156
+        - -0.6146210892841114
+        - 0.7861263962156995
+        - 0.8724003785042441
+      - - 0.0
+        - 0.0
+        - 0.0
+        - 1.0
   motion:
     axis_frame: camera_color_optical_frame
-    axis_direction: null
-    axis_point_m: null
-    rotation_between_samples_rad: null
-    translation_vector_between_samples_m: null
-    translation_along_axis_between_samples_m: null
-    translation_perpendicular_between_samples_m: null
-    translation_perpendicular_norm_m: null
+    axis_direction:
+    - -0.015756422409889045
+    - -0.6138671716593854
+    - 0.7892520704513533
+    axis_point_m:
+    - -0.006559721261583806
+    - 0.29139715526569376
+    - 0.22651291835220175
+    rotation_between_samples_rad: -0.1642698716069858
+    translation_vector_between_samples_m:
+    - -0.061764482340668496
+    - -0.04804661563979312
+    - 0.06811914031690092
+    translation_along_axis_between_samples_m: 0.0842305998567734
+    translation_perpendicular_between_samples_m:
+    - -0.06043730942948684
+    - 0.003659784461457802
+    - 0.0016399649845830477
+    translation_perpendicular_norm_m: 0.06057022270497711

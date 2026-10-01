@@ -73,6 +73,70 @@ class GeometryTests(unittest.TestCase):
         self.assertIsNone(result["measured_axis_direction"])
         self.assertIsNone(result["axis_error_rad"])
 
+    def test_validation_reports_unknown_axis_for_small_rotation_noise(self):
+        current = transform([0, 1, 0], math.radians(0.3), [-0.004, -0.001, 0.001])
+        result = evaluate_pose(np.eye(4), current, [0, 0, 1])
+        self.assertIsNone(result["measured_axis_direction"])
+        self.assertIsNone(result["axis_error_rad"])
+        self.assertAlmostEqual(result["rotation_magnitude_rad"], math.radians(0.3))
+
+    def test_validation_does_not_use_translation_as_rotation_axis(self):
+        current = np.eye(4)
+        current[:3, 3] = [0.2, 0, 0]
+        result = evaluate_pose(np.eye(4), current, [0, 0, 1])
+        self.assertIsNone(result["measured_axis_direction"])
+        self.assertIsNone(result["axis_error_rad"])
+
+    def test_axis_threshold_uses_full_rotation_instead_of_projected_theta(self):
+        current = transform([0, 1, 0], math.radians(30), [0, 0, 0])
+        result = evaluate_pose(np.eye(4), current, [0, 0, 1])
+        self.assertAlmostEqual(result["rotation_angle_rad"], 0.0)
+        self.assertAlmostEqual(result["rotation_magnitude_rad"], math.radians(30))
+        self.assertAlmostEqual(result["axis_error_rad"], math.pi / 2)
+
+    def test_axis_threshold_is_configurable(self):
+        current = transform([0, 0, 1], math.radians(2), [0, 0, 0])
+        self.assertIsNone(evaluate_pose(np.eye(4), current, [0, 0, 1])["axis_error_rad"])
+        result = evaluate_pose(np.eye(4), current, [0, 0, 1],
+                               min_axis_rotation_rad=math.radians(1))
+        self.assertAlmostEqual(result["axis_error_rad"], 0.0)
+
+    def test_axis_comparison_handles_canonical_sign_flip(self):
+        stored = np.array([0, 0.71, -0.70])
+        measured = np.array([0, 0.70, -0.71])
+        current = transform(measured, math.radians(30), [0, 0, 0])
+        result = evaluate_pose(np.eye(4), current, stored)
+        expected = math.acos(abs(np.dot(stored, measured)) /
+                             (np.linalg.norm(stored) * np.linalg.norm(measured)))
+        self.assertAlmostEqual(result["axis_error_rad"], expected)
+        self.assertGreater(np.dot(result["measured_axis_direction"], stored), 0)
+
+    def test_validation_keeps_signed_angle_for_reverse_and_half_turn(self):
+        for angle in [math.radians(30), math.radians(-30), math.pi]:
+            with self.subTest(angle=angle):
+                current = transform([0, 0, 1], angle, [0, 0, 0])
+                result = evaluate_pose(np.eye(4), current, [0, 0, 1])
+                self.assertAlmostEqual(result["rotation_angle_rad"], angle)
+                self.assertAlmostEqual(result["rotation_magnitude_rad"], abs(angle))
+                self.assertAlmostEqual(result["axis_error_rad"], 0.0)
+
+    def test_camera_frame_axis_with_offset_and_nonidentity_zero_pose(self):
+        zero = transform([1, 2, 3], 0.7, [-0.03, -0.13, 0.81])
+        axis = np.array([-0.0158, -0.6139, 0.7893])
+        axis /= np.linalg.norm(axis)
+        point = np.array([0.1, 0.3, 0.2])
+        relative = transform(axis, math.radians(-20), [0, 0, 0])
+        relative[:3, 3] = (np.eye(3) - relative[:3, :3]) @ point + 0.04 * axis
+        current = relative @ zero
+        calibration = calibrate_from_poses(zero, current)
+        result = evaluate_pose(zero, current, axis)
+        self.assertTrue(np.allclose(calibration["axis_direction"], axis))
+        self.assertTrue(np.allclose(result["relative_transform"], relative))
+        self.assertAlmostEqual(result["rotation_angle_rad"], math.radians(-20))
+        self.assertAlmostEqual(result["translation_along_axis_m"], 0.04)
+        self.assertAlmostEqual(result["axis_error_rad"], 0.0)
+        self.assertGreater(result["translation_perpendicular_norm_m"], 0.05)
+
 
 if __name__ == "__main__":
     unittest.main()

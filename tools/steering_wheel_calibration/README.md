@@ -14,7 +14,7 @@ T_relative = T_current @ inverse(T_zero)
 ```
 
 标定程序从 `T_relative` 的旋转部分得到方向盘运动轴；平移向量投影到该轴得到轴向平移，
-垂直分量作为标定质量诊断。若存在旋转，还会估计轴线上离相机原点最近的一点。
+同时输出垂直分量。若存在旋转，还会估计轴线上离相机原点最近的一点。
 
 ## 标定
 
@@ -45,7 +45,7 @@ python3 tools/steering_wheel_calibration/calibrate.py \
 - `second.pose.T_camera_tag`：第二个标定位姿多帧平均后的 4×4 齐次矩阵；
 - `zero.pose.sample_count` / `second.pose.sample_count`：参与平均的有效帧数及采样范围；
 - `motion.axis_direction`：相机坐标系中的单位轴向量；
-- 两帧之间的旋转角、轴向平移、完整平移向量和垂直残差。
+- 两帧之间的旋转角、轴向平移、完整平移向量和垂直分量。
 
 ## 验证
 
@@ -53,6 +53,12 @@ python3 tools/steering_wheel_calibration/calibrate.py \
 当前测试点与零位的相对变换重新估计轴向量，与 YAML 中存储的 `motion.axis_direction`
 比较，并输出夹角及 `axis_match`（JSON 中同时提供 `axis_consistent`，默认允许误差 5°，
 可用 `--axis-tolerance-deg` 调整）：
+
+默认完整旋转角至少为 3° 时才估计轴，可用 `--min-axis-rotation-deg` 调整。
+这是抑制小角度姿态噪声的阈值，不是相机精度保证；应根据静止时的姿态抖动调整。
+零位附近或只有平移时，输出 `axis_measured=unknown axis_match=unknown`，JSON 对应字段为
+`null`。轴线比较使用 `acos(abs(dot(u_measured, u_stored)))`，范围为 0–90°；显示的
+测量轴会与存储轴对齐符号，因为 `u` 和 `-u` 表示同一条轴线。
 
 ```bash
 python3 tools/steering_wheel_calibration/validate.py \
@@ -63,8 +69,16 @@ python3 tools/steering_wheel_calibration/validate.py \
   --config config/steering_wheel_calibration.yaml --json --max-msgs 20
 ```
 
-输出的 `theta_rad/theta_deg` 是绕标定轴的带符号旋转，`translation_along_axis_m` 是沿轴的
+输出的 `theta_rad/theta_deg` 在运动轴与标定轴一致时是绕标定轴的带符号旋转。
+轴不一致时，这个依赖标定轴计算的值不能作为真实转角。
+`rotation_magnitude_deg` 是当前姿态相对零位的完整旋转角（0–180°），不依赖存储轴，
+用于判断是否有足够旋转量来验证轴。`translation_along_axis_m` 是沿轴的
 带符号平移，`translation_vector_m` 是相机坐标系下的完整平移向量。`axis_match=false` 表示
-当前帧重新估计的轴与存储轴偏差超过阈值；零位没有足够运动时会显示为 `unknown`。
-`translation_perpendicular_norm_m` 应较小；若持续偏大，应检查 AprilTag 是否牢固贴在方向盘
-上、相机是否移动、码尺寸和相机内参是否正确。
+当前帧重新估计的轴与存储轴偏差超过阈值；没有足够旋转时会显示为 `unknown`。
+
+`translation_vector_m` 是相对刚体变换中的平移项，不是标签中心的位置差。
+`translation_perpendicular_norm_m` 是该平移项的垂直分量大小，不是轴模型的拟合残差。
+绕不经过相机原点的固定轴旋转也会产生非零垂直分量：若轴上一点为 `p`，则
+`t = (I - R) p + d * u`。因此不能单凭这个数值大就判定标定失败。
+若在明显旋转且保持稳定的位姿仍持续出现较大轴夹角，应检查 AprilTag 固定情况、
+相机是否移动以及检测位姿的稳定性。
