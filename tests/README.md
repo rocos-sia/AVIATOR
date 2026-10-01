@@ -1,5 +1,8 @@
 # 通信测试
 
+`grasp_tools`（完整机器人构建）使用不同的左右工具位置和朝向，验证 Core 预接近及最终抓握
+目标、旧共享配置兼容、缺失/混合配置拒绝、碰撞模型加载与 MuJoCo TCP；无需连接真机。
+
 `communication_test.cpp` 经 CTest 注册为 `communication`，不依赖机器人或相机硬件，使用实际 libzmq socket。
 
 覆盖公共消息编解码、Topic 精确匹配、异常 JSON/重复键/UTF-8/大小/深度/整数边界、版本与 UUID、FlightCommand 范围、会话和 epoch 授权、旧样本/旧 origin/未来时间/序号及超时边界、无效报告、非实时 mailbox 并发读写、TCP 两帧收发与跨轮非法帧排空、XSUB/XPUB 转发及 context 退出。

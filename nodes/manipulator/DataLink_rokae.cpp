@@ -138,7 +138,7 @@ class RokaeDataLink final : public DataLink {
                 " robot=" + ip[side] + " local=" + local_ip[side];
             try {
                 arms_[side] = std::make_unique<RokaeArm>(ip[side], local_ip[side],
-                                                         poseToRowMajor(geometry.tool), config.joint_stiffness);
+                                                         poseToRowMajor(geometry.tools[side]), config.joint_stiffness);
             } catch (const std::exception &e) {
                 throw std::runtime_error("Rokae connect/configure " + endpoints_[side] + ": " + e.what());
             }
@@ -474,7 +474,7 @@ class RokaeDataLink final : public DataLink {
     }
     // 目标"抓取圆柱中心"位姿 = 臂基座 → 轮盘 × 轮盘(θ, d) × handle
     //
-    // 注意：因为 configureToolset() 已把控制器末端坐标系设为 grasp.json 的 tool
+    // 注意：控制器末端坐标系已设为 grasp.json 的 tool.left / tool.right
     // （法兰 → 圆柱中心），所以 tcpPose_m 直接给出圆柱中心的位姿，
     // 期望值里不再需要乘 tool⁻¹。
     pinocchio::SE3 desiredCylinderPose(int side, double angle, double displacement) const {

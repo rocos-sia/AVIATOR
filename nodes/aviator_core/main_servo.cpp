@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
                 std::cout << "aviator_core_servo [--config <system.yaml>] [--gateway-session <UUID>]\n"
                              "Default: bind the first valid flight_gateway session; never auto-switch.\n"
                              "Enable, approach and lock, then follow flight_gateway JOYSTICK input.\n"
-                             "roll -> +/-0.87266 rad; negative pitch -> -0.170 m; v=1.\n"
+                             "roll -> +/-0.87266 rad; pitch [-1,0,1] -> [-0.170,-0.085,0] m; v=1.\n"
                              "Start bus, manipulator and flight_gateway first. Ctrl+C stops and disables.\n";
                 return 0;
             } else throw std::runtime_error("Unknown or incomplete option: " + arg);
@@ -148,7 +148,7 @@ int main(int argc, char **argv) {
                 if (fresh && now >= next_servo &&
                     (state == "LOCKED" || (state == "SERVO" && current.motion_error.empty()))) {
                     const double angle = roll * 0.87266;
-                    const double displacement = std::min(pitch, 0.0) * 0.170;
+                    const double displacement = aviator::joystickWheelDisplacement(pitch);
                     robot.servoWheel(angle, displacement, 1.0);
                     next_servo = now + period; // 不补发错过的周期。
                     if (now >= next_print) {

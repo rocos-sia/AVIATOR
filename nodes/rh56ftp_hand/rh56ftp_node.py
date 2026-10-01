@@ -24,6 +24,8 @@ from typing import Any
 MAX_JSON_INTEGER = (1 << 53) - 1
 SIDES = ("left", "right")
 DEFAULT_SAFE_POSE = (1.0,) * 6
+DEFAULT_SPEED = 500
+DEFAULT_FORCE = 500
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
 
@@ -59,6 +61,12 @@ def _clock_id() -> str:
 def _positive_int(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0 or value > MAX_JSON_INTEGER:
         raise ValueError(f"{name} must be a positive uint53")
+    return value
+
+
+def _register_setting(value: Any, name: str, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
+        raise ValueError(f"{name} must be an integer in [0,{maximum}]")
     return value
 
 
@@ -243,7 +251,8 @@ class Rh56FtpNode:
     def __init__(self, links: dict[str, Any], publisher_id: str = "rh56ftp_hand",
                  command_timeout_ms: int = 100, feedback_timeout_ms: int = 500,
                  feedback_only: bool = False, clock_id: str | None = None,
-                 session_id: str | None = None, read_links: dict[str, Any] | None = None):
+                 session_id: str | None = None, read_links: dict[str, Any] | None = None,
+                 speed: int = DEFAULT_SPEED, force: int = DEFAULT_FORCE):
         if set(links) != set(SIDES) or not any(links.values()):
             raise ValueError("at least one left/right RH56FTP link is required")
         if command_timeout_ms <= 0 or feedback_timeout_ms <= 0:
@@ -257,6 +266,9 @@ class Rh56FtpNode:
         self.command_timeout_us = command_timeout_ms * 1000
         self.feedback_timeout_us = feedback_timeout_ms * 1000
         self.feedback_only = feedback_only
+        self.speed = _register_setting(speed, "speed", 1000)
+        self.force = _register_setting(force, "force", 3000)
+        self._settings_applied: set[str] = set()
         self.clock_id = clock_id or _clock_id()
         self.session_id = session_id or str(uuid.uuid4())
         self.guard = CommandGuard()
@@ -269,6 +281,7 @@ class Rh56FtpNode:
         self._safe_required = not feedback_only
 
     def connect(self) -> None:
+        self._settings_applied.clear()
         seen: set[int] = set()
         entries = list(self.links.items()) + list(self.read_links.items())
         for side, link in entries:
@@ -283,6 +296,7 @@ class Rh56FtpNode:
                 self.snapshots[side].error = str(exc)
 
     def close(self) -> None:
+        self._settings_applied.clear()
         seen: set[int] = set()
         links = list(self.links.values()) + list(self.read_links.values())
         for link in links:
@@ -320,9 +334,26 @@ class Rh56FtpNode:
                 snapshot.errors += 1
 
     def _write_targets(self, raw_by_side: dict[str, list[int]]) -> None:
+        if self.feedback_only:
+            return
+        # Configure every connected hand before moving either hand. Cache
+        # successful writes to avoid adding Modbus traffic at command rate.
+        for side, link in self.links.items():
+            if link is not None and side not in self._settings_applied:
+                try:
+                    link.write_speed_set([self.speed] * 6)
+                    link.write_force_set([self.force] * 6)
+                except Exception as exc:
+                    raise RuntimeError(f"{side} speed/force setup failed: {exc}") from exc
+                self._settings_applied.add(side)
         for side, link in self.links.items():
             if link is not None:
-                link.write_angle_set(canonical_to_rh(raw_by_side[side]))
+                try:
+                    link.write_angle_set(canonical_to_rh(raw_by_side[side]))
+                except Exception:
+                    # Reapply settings on the next attempt after a write error.
+                    self._settings_applied.discard(side)
+                    raise
 
     def _safe_pose(self) -> None:
         raw = normalized_to_raw(list(DEFAULT_SAFE_POSE))
@@ -524,6 +555,7 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
     pub.setsockopt(zmq.LINGER, 0)
     sub.connect(endpoint)
     pub.connect(state_endpoint)
+    print(f"rh56ftp_hand: SUB hand.command={endpoint}; PUB hand.state={state_endpoint}", flush=True)
     stopped = False
 
     def stop(*_args):
@@ -593,8 +625,8 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--endpoint", default="tcp://127.0.0.1:5555", help="hand.command bus ingress")
-    parser.add_argument("--state-endpoint", default="tcp://127.0.0.1:5556", help="hand.state bus egress")
+    parser.add_argument("--endpoint", default="tcp://127.0.0.1:5556", help="hand.command SUB connects to bus egress")
+    parser.add_argument("--state-endpoint", default="tcp://127.0.0.1:5555", help="hand.state PUB connects to bus ingress")
     parser.add_argument("--right-host", default=None)
     parser.add_argument("--left-host", default=None, help="optional second RH56FTP device")
     parser.add_argument("--right-port", type=int, default=None)
@@ -605,10 +637,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--feedback-timeout-ms", type=int, default=500)
     parser.add_argument("--modbus-timeout", type=float, default=0.2,
                         help="每个 Modbus TCP 请求超时秒数（读写连接均使用）")
+    parser.add_argument("--speed", type=int, default=DEFAULT_SPEED,
+                        help="所有已连接手的六路速度设定，0..1000（默认 500）")
+    parser.add_argument("--force", type=int, default=DEFAULT_FORCE,
+                        help="所有已连接手的六路力阈值设定，0..3000（默认 500）")
     parser.add_argument("--feedback-only", action="store_true")
     args = parser.parse_args(argv)
     if not math.isfinite(args.modbus_timeout) or args.modbus_timeout <= 0:
         parser.error("--modbus-timeout 必须为正数")
+    if not 0 <= args.speed <= 1000:
+        parser.error("--speed 必须为 0..1000 的整数")
+    if not 0 <= args.force <= 3000:
+        parser.error("--force 必须为 0..3000 的整数")
     hand_ip, hand_port, hand_link = load_handlink()
     right_host = hand_ip if args.right_host is None else args.right_host
     right_port = hand_port if args.right_port is None else args.right_port
@@ -627,7 +667,7 @@ def main(argv: list[str] | None = None) -> int:
     node = Rh56FtpNode(command_links, read_links=read_links, publisher_id=args.publisher_id,
                        command_timeout_ms=args.command_timeout_ms,
                        feedback_timeout_ms=args.feedback_timeout_ms,
-                       feedback_only=args.feedback_only)
+                       feedback_only=args.feedback_only, speed=args.speed, force=args.force)
     return run_node(node, args.endpoint, args.state_endpoint, args.state_hz)
 
 

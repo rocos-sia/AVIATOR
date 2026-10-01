@@ -48,6 +48,7 @@ def main():
     transmitting = threading.Event()
     checking = threading.Event()
     checking.set()
+    flight_target = (0.0, 0.0)
     children, logs = [], []
 
     def publish():
@@ -62,10 +63,11 @@ def main():
             sequence += 1
             if checking.is_set():
                 checked = time.monotonic_ns() // 1000
+            roll, pitch = flight_target
             msg = dict(msg_type="FlightCommand", version="1.0", sequence=sequence,
                        timestamp=time.time_ns() // 1000, sample_mono_us=sampled,
                        clock_id=clock, publisher_id="flight_gateway", session_id=gateway_session,
-                       valid=True, source="JOYSTICK", control=dict(roll=.04, pitch=-.01),
+                       valid=True, source="JOYSTICK", control=dict(roll=roll, pitch=pitch),
                        input_state=dict(mode="POSITION_HOLD", device_connected=True,
                                         checked_mono_us=checked))
             pub.send_multipart([b"flight.command", json.dumps(msg).encode()])
@@ -123,7 +125,8 @@ def main():
         start("manipulator", [manipulator, "--config", str(directory / "system.yaml"), "--headless"])
         process = start("core", [core, "--config", str(directory / "system.yaml"),
                                  "--operation-service", endpoints[3]])
-        state("READY", 30)  # Startup enables but waits for external home request, even with stdin EOF.
+        initial_state = state("READY", 30)  # Startup enables but waits for external home request, even with stdin EOF.
+        assert abs(initial_state["wheel_reference"]["displacement"] + .085) < 1e-9, initial_state
         assert call(request("enter_standby"), "REJECTED")["result"]["reason"] == "GATEWAY_NOT_BOUND"
         transmitting.set()
         # Gateway enables button submission only after fresh Core binding confirmation.
@@ -132,7 +135,8 @@ def main():
         call(request("grasp_wheel"), "REJECTED")
         call(request("enter_standby"), "ACCEPTED")
         state("HOMING", 3)
-        state("STANDBY", 120)
+        homed = state("STANDBY", 120)
+        assert abs(homed["wheel_reference"]["displacement"] + .085) < 1e-9, homed
         call(request("enter_standby"), "COMPLETED")
         req = request("enter_standby")
         del req["parameters"]["server_session_id"]
@@ -165,7 +169,8 @@ def main():
         req["operation"] = "leave_wheel"
         assert call(req, "REJECTED")["result"]["reason"] == "REQUEST_ID_CONFLICT"
         call(request("grasp_wheel"), "REJECTED")  # BUSY during the original task.
-        state("FOLLOWING", 120)
+        grasped = state("FOLLOWING", 120)
+        assert abs(grasped["wheel_reference"]["displacement"] + .085) < 1e-9, grasped
         assert call(grasp, "ACCEPTED") == accepted  # Cached even beyond the original deadline.
         transmitting.clear()
         time.sleep(.15)
@@ -174,11 +179,15 @@ def main():
         time.sleep(.15)
         call(request("start_control"), "COMPLETED")
         state("CONTROL")
+        wait_for(lambda m: m["system"]["state"] == "CONTROL" and
+                 m["system"]["control_source"] == "JOYSTICK" and
+                 abs(m["wheel_reference"]["displacement"] + .085) < .0004, 10)
+        flight_target = (.04, -.01)
         # A static hardware sample must reach the target using only fresh device checks.
         wait_for(lambda m: m["system"]["state"] == "CONTROL" and
                  m["system"]["control_source"] == "JOYSTICK" and
-                 abs(m["wheel_reference"]["angle"] - .04 * .87266) < .002 and
-                 abs(m["wheel_reference"]["displacement"] + .0017) < .0004, 20)
+                 abs(m["wheel_reference"]["angle"] + .04 * .87266) < .002 and
+                 abs(m["wheel_reference"]["displacement"] + .08585) < .0004, 20)
         call(request("leave_wheel"), "REJECTED")
         call(request("exit_control"), "COMPLETED")
         wait_for(lambda m: m["system"]["state"] == "FOLLOWING" and m["system"].get("settled"), 15)

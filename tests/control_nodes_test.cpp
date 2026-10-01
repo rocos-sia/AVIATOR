@@ -345,8 +345,8 @@ int main(int argc, char **argv) {
                 }
                 // Wait for the completed jerk-limited stop, then observe a stable reference.
                 // 10 s bounds v/a + a/j plus input timeout/buffer at this test configuration.
-                const uint64_t duration[] = {0, 400000, position_hold ? 20000000ULL : 1500000ULL,
-                    position_hold ? 30000000ULL : 2000000ULL, 10000000, 150000, 150000, 10000000, 1000000, 10000000};
+                const uint64_t duration[] = {0, 400000, position_hold ? 20000000ULL : 10000000ULL,
+                    position_hold ? 30000000ULL : 10000000ULL, 10000000, 150000, 150000, 10000000, 1000000, 10000000};
                 const bool stopping_stage = flight_stage == 4 || (position_hold && (flight_stage == 7 || flight_stage == 9));
                 const auto locked_at = text.rfind("state=LOCKED"), servo_state_at = text.rfind("state=SERVO");
                 const bool stop_completed = locked_at != std::string::npos && servo_state_at != std::string::npos &&
@@ -359,9 +359,10 @@ int main(int argc, char **argv) {
                 }
                 // Wait for actual execution progress, allowing joint limits and ZMQ segment overhead.
                 const bool step_reached = position_hold && now - flight_at >= 3000000 &&
-                    ((flight_stage == 2 && std::abs(reference_angle - .43633) < .003 && max_angle > .42) ||
+                    ((flight_stage == 2 && std::abs(reference_angle - .43633) < .003 && max_angle > .42 &&
+                      std::abs(reference_displacement) < 1e-8) ||
                      (flight_stage == 3 && std::abs(reference_angle + .174532) < .003 &&
-                      std::abs(reference_displacement + .017) < .0005 && min_angle < -.16));
+                      std::abs(reference_displacement + .0935) < .0005 && min_angle < -.16));
                 if (flight_stage >= 1 && flight_stage <= last_stage &&
                     (step_reached || (stopping_stage && hold_sampled && now - hold_at > 400000) ||
                      now - flight_at >= duration[flight_stage])) {
@@ -382,10 +383,11 @@ int main(int argc, char **argv) {
                         }
                     }
                     if (flight_stage == 3)
-                        check(min_displacement < -.001, "Negative pitch did not pull wheel");
+                        check(std::abs(reference_displacement - (position_hold ? -.0935 : -.0867)) < .0005,
+                              "Negative pitch did not reach mapped absolute displacement");
                     if (flight_stage == 3 && position_hold)
                         check(std::abs(reference_angle + .174532) < .003 &&
-                              std::abs(reference_displacement + .017) < .0005 && min_angle < -.16,
+                              std::abs(reference_displacement + .0935) < .0005 && min_angle < -.16,
                               "Static negative step did not reach its target");
                     if (stopping_stage) {
                         check(text.find("Servo command timeout") != std::string::npos,

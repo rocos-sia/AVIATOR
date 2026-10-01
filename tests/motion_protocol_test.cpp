@@ -1,6 +1,8 @@
 #include "../nodes/manipulator/OpenLoopGrasp.hpp"
 #include "motion.hpp"
 #include <iostream>
+#include <fstream>
+#include <limits>
 using namespace aviator;
 void check(bool ok, const char *why) {
     if (!ok)
@@ -17,6 +19,23 @@ template <class F> void rejected(F f) {
 int main() {
     try {
         const auto session = new_session_id(), epoch = new_session_id();
+        for (const auto [pitch, expected] : {std::pair<double,double>{-1, -.170}, {0, -.085}, {1, 0}, {-.5, -.1275}, {.5, -.0425}})
+            check(std::abs(joystickWheelDisplacement(pitch) - expected) < 1e-12, "pitch mapping");
+        rejected([] { joystickWheelDisplacement(1.01); });
+        rejected([] { joystickWheelDisplacement(std::numeric_limits<double>::quiet_NaN()); });
+        const auto robot_file = std::filesystem::temp_directory_path() / ("wheel-initial-" + session + ".yaml");
+        struct Cleanup { std::filesystem::path p; ~Cleanup() { std::filesystem::remove(p); } } cleanup{robot_file};
+        std::ofstream(robot_file) << "backend: rokae\n";
+        check(loadInitialWheel(robot_file).displacement == 0, "legacy initial wheel default changed");
+        std::ofstream(robot_file) << "wheel_initial: {angle: 0, displacement: -0.085}\n";
+        const auto initial = loadInitialWheel(robot_file);
+        check(initial.angle == 0 && initial.displacement == -.085, "wheel initial config");
+        for (const char* invalid : {"{angle: 0}", "{angle: 0, displacement: 0.01}",
+                                  "{angle: 0, displacement: -0.171}", "{angle: 0.9, displacement: 0}",
+                                  "{angle: .nan, displacement: 0}"}) {
+            std::ofstream(robot_file) << "wheel_initial: " << invalid << '\n';
+            rejected([&] { loadInitialWheel(robot_file); });
+        }
         Joints lo, hi, speed;
         lo.fill(-3);
         hi.fill(3);

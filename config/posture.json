@@ -1,6 +1,6 @@
 {
   "joint2_limits_deg": [
-    85,
+    80,
     94
   ],
   "joint2_planning_margin_deg": 0.5,

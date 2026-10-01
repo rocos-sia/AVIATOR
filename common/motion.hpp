@@ -14,6 +14,10 @@ struct MotionConfig {
     unsigned period_us = 10000, timeout_us = 50000, origin_timeout_us = 100000;
 };
 MotionConfig loadMotionConfig(const std::filesystem::path &file);
+struct WheelReference { double angle = 0, displacement = 0; };
+WheelReference loadInitialWheel(const std::filesystem::path& robot_file);
+// Absolute wheel displacement in metres: -1 -> -0.170, 0 -> -0.085, +1 -> 0.
+double joystickWheelDisplacement(double pitch);
 std::filesystem::path defaultSystemConfig();
 Message motionMessage(Topic, const std::string &publisher, const std::string &session, uint64_t sequence,
                       bool valid = true);

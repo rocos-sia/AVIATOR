@@ -37,7 +37,8 @@ constexpr uint64_t kLockstepLead = 0;
 } // namespace
 
 MuJoCoDirectDataLink::MuJoCoDirectDataLink(mjModel *model, mjData *data,
-                                           const std::string &urdf_path)
+                                           const std::string &urdf_path,
+                                           const GraspGeometry &geometry)
     : model_(model), data_(data) {
     require(model_ != nullptr && data_ != nullptr, "MuJoCo model/data cannot be null");
     require(model_->nu == 0,
@@ -61,6 +62,21 @@ MuJoCoDirectDataLink::MuJoCoDirectDataLink(mjModel *model, mjData *data,
         require(handle_site_[side] >= 0, "Cannot find site: " + handle);
         require(weld_id_[side] >= 0, "Cannot find equality: " + weld);
 
+        // The gripper body carries both the TCP site and grasp cylinder geometry.
+        // Configure it before starting physics so simulation uses the same TCP as IK.
+        const int gripper = mj_name2id(model_, mjOBJ_BODY, (std::string(names[side]) + "_gripper").c_str());
+        const std::string flange = std::string("AR5-5_07") + (side ? "R" : "L") + "-W4C4A2_flan_link";
+        const int flange_id = mj_name2id(model_, mjOBJ_BODY, flange.c_str());
+        require(gripper >= 0 && flange_id >= 0 && model_->body_parentid[gripper] == flange_id &&
+                    model_->site_bodyid[tcp_site_[side]] == gripper,
+                "Expected TCP on a gripper directly attached to " + flange);
+        const auto &tool = geometry.tools[side];
+        const Eigen::Quaterniond q(tool.rotation());
+        for (int j = 0; j < 3; ++j)
+            model_->body_pos[3 * gripper + j] = tool.translation()[j];
+        const double quat[] = {q.w(), q.x(), q.y(), q.z()};
+        std::copy(quat, quat + 4, model_->body_quat + 4 * gripper);
+
         require(model_->eq_type[weld_id_[side]] == mjEQ_WELD &&
                     model_->eq_objtype[weld_id_[side]] == mjOBJ_SITE &&
                     model_->eq_obj1id[weld_id_[side]] == tcp_site_[side] &&
@@ -71,6 +87,10 @@ MuJoCoDirectDataLink::MuJoCoDirectDataLink(mjModel *model, mjData *data,
         data_->eq_active[weld_id_[side]] = 0;
     }
 
+    // mj_setConst evaluates qpos0/qpos_spring in this data; preserve the loaded home.
+    const std::vector<mjtNum> initial_qpos(data_->qpos, data_->qpos + model_->nq);
+    mj_setConst(model_, data_);
+    std::copy(initial_qpos.begin(), initial_qpos.end(), data_->qpos);
     // 计算一次正向动力学，使 qfrc_bias 在第一次步进前就有效
     mj_forward(model_, data_);
 
@@ -395,8 +415,9 @@ std::array<double, 2> MuJoCoDirectDataLink::elbowRange() const {
 
 // —— 后端工厂 ——
 std::unique_ptr<DataLink> makeMuJoCoDirectDataLink(mjModel *model, mjData *data,
-                                                   const std::string &urdf_path) {
-    return std::make_unique<MuJoCoDirectDataLink>(model, data, urdf_path);
+                                                   const std::string &urdf_path,
+                                                   const GraspGeometry &geometry) {
+    return std::make_unique<MuJoCoDirectDataLink>(model, data, urdf_path, geometry);
 }
 
 } // namespace aviator

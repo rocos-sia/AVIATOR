@@ -23,7 +23,7 @@ std::unique_ptr<DataLink> makeDataLink(const std::string &backend, const Backend
             fail("backend: mujoco 需要 mjModel/mjData 句柄；"
                  "请从 aviator 启动（它会加载模型并传入句柄）");
 #ifdef AVIATOR_HAVE_MUJOCO
-        return makeMuJoCoDirectDataLink(context.model, context.data, urdf_path);
+        return makeMuJoCoDirectDataLink(context.model, context.data, urdf_path, geometry);
 #else
         fail("本构建未包含 MuJoCo 后端；请启用 AVIATOR_WITH_SIMULATION");
 #endif

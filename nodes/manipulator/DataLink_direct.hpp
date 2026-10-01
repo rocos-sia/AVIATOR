@@ -10,6 +10,8 @@
 
 namespace aviator {
 
+struct GraspGeometry;
+
 // MuJoCo 直接访问的 DataLink 实现（单进程，无 IPC）。
 //
 // 物理语义与原 rocos_mujoco 仿真器保持一致：
@@ -26,7 +28,8 @@ namespace aviator {
 // 操纵盘不会因失去支撑而下垂。
 class MuJoCoDirectDataLink final : public DataLink {
   public:
-    MuJoCoDirectDataLink(mjModel *model, mjData *data, const std::string &urdf_path);
+    MuJoCoDirectDataLink(mjModel *model, mjData *data, const std::string &urdf_path,
+                        const GraspGeometry &geometry);
     ~MuJoCoDirectDataLink() override;
 
     ArmFeedback armFeedback() const override;

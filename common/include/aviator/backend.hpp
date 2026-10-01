@@ -26,12 +26,12 @@ struct GraspCylinder {
 //
 //   wheel_origin  轮盘坐标系在 aircraft 系下的位姿
 //   handles[2]    handle site 相对轮盘坐标系的位姿（左/右）
-//   tool          法兰 → 抓取圆柱中心（连接杆 + 圆柱）的刚体变换
+//   tools[2]      左/右法兰 → 各自抓取圆柱中心的刚体变换
 //   approach_dist 预接近距离（沿法兰 -Z 后退量），供真机做同样的接近动作
 struct GraspGeometry {
     pinocchio::SE3 wheel_origin = pinocchio::SE3::Identity();
     pinocchio::SE3 handles[2]{pinocchio::SE3::Identity(), pinocchio::SE3::Identity()};
-    pinocchio::SE3 tool = pinocchio::SE3::Identity();
+    std::array<pinocchio::SE3, 2> tools{{pinocchio::SE3::Identity(), pinocchio::SE3::Identity()}};
     double approach_distance = 0.06;
 };
 
@@ -71,7 +71,8 @@ std::unique_ptr<DataLink> makeDataLink(const std::string &backend, const Backend
 
 // MuJoCo 单进程后端：直接读写 mjModel/mjData，物理步进由 waitTick() 驱动。
 std::unique_ptr<DataLink> makeMuJoCoDirectDataLink(mjModel *model, mjData *data,
-                                                   const std::string &urdf_path);
+                                                   const std::string &urdf_path,
+                                                   const GraspGeometry &geometry);
 
 // 珞石 xMateErPro 真机后端。仅当编译期定义了 AVIATOR_HAVE_ROKAE 时可用。
 // 臂基座 → 轮盘的安装变换由 URDF 的固定关节推算，因此只需传入 grasp.json 的几何。
@@ -89,6 +90,7 @@ std::unique_ptr<Kinematics> makePinIkKinematics(const std::string &urdf_path, do
 // 碰撞 URDF 由 scripts/generate_aviator.py 导出（分片凸网格 + 圆柱工具 + SRDF 排除对）。
 std::unique_ptr<CollisionChecker> makePinocchioCollisionChecker(const std::string &urdf_path,
                                                                const std::string &srdf_path,
-                                                               const GraspCylinder &cylinder);
+                                                               const GraspCylinder &cylinder,
+                                                               const std::array<pinocchio::SE3, 2> &tools);
 
 } // namespace aviator

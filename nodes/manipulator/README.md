@@ -22,3 +22,7 @@ SDK 回调有独立命令截止时间，通信或执行线程停顿不能无限�
 可靠服务包括 describe、authorize、enable、disable、stop、lock、unlock、reset_fault、get_result。单帧 REQ/REP，长操作先返回 ACCEPTED，客户端使用同一请求身份查询已有状态。服务缓存有界，不重复执行同 ID 请求；同 ID 改内容被拒绝。请求绑定 server_session，服务重启后旧请求必须对账，不能自动重放。接口约束见 [协议文档](../../docs/AVIATOR_ZMQ协议格式说明.md)。
 
 独立 `nodes/simulation` 保留为另一套仿真测试入口；同一控制总线只能启动一个机械臂状态生产者。本节点使用迁移后的 `models/control` 模型，未覆盖原来的完整手部模型。
+
+## 轮盘初始参考
+
+`robot.yaml` 的 `wheel_initial: {angle: 0.0, displacement: -0.085}` 指定启动参考（rad/m）。角度范围 ±0.87266 rad，位移范围 [-0.170, 0] m；缺省保持旧版 (0, 0)。Rokae 仅初始化软件参考，不驱动机械轮盘归位；MuJoCo 在启动物理线程前设置 roll_input_joint / pitch_input_joint 实体初值。初始化后的 `arm.state.wheel_reference` 与该配置一致，后续由执行轨迹更新；使能、停止、重新授权不会重复重置初值。启动日志打印有效数值。修改后重启 Manipulator 及相连 Core。

@@ -1,5 +1,6 @@
 #include "ServoPlanner.hpp"
 #include "aviator/backend.hpp"
+#include "aviator/GraspTools.hpp"
 #include <filesystem>
 #include <iostream>
 #include <yaml-cpp/yaml.h>
@@ -20,13 +21,14 @@ int main(int argc, char** argv) {
         double lo = 85 * M_PI / 180, hi = 94 * M_PI / 180;
         auto kin = makePinIkKinematics(
             (root / "config" / config["urdf"].as<std::string>()).string(), lo, hi);
-        auto origin = frame(grasp["wheel_origin"]), tool = frame(grasp["tool"]);
+        auto origin = frame(grasp["wheel_origin"]);
+        pinocchio::SE3 tools[] = {frame(toolFrameConfig(grasp, 0)), frame(toolFrameConfig(grasp, 1))};
         pinocchio::SE3 handles[] = {frame(grasp["left"]), frame(grasp["right"])};
         auto target = [&](int side, double a, double d) {
             return origin *
                    pinocchio::SE3(Eigen::AngleAxisd(a, Eigen::Vector3d::UnitZ()).toRotationMatrix(),
                                   Eigen::Vector3d(0, 0, d)) *
-                   handles[side] * tool.inverse();
+                   handles[side] * tools[side].inverse();
         };
         JointFrame start;
         for (int side = 0; side < 2; ++side) {

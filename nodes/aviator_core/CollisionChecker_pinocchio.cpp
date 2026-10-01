@@ -39,7 +39,8 @@ void require(bool ok, const std::string &message) {
 class PinocchioCollisionChecker final : public CollisionChecker {
   public:
     PinocchioCollisionChecker(const std::string &urdf_path, const std::string &srdf_path,
-                              const GraspCylinder &expected) {
+                              const GraspCylinder &expected,
+                              const std::array<pinocchio::SE3, 2> &tools) {
         const std::string package_dir = parentDir(urdf_path);
 
         pinocchio::urdf::buildModel(urdf_path, model_);
@@ -49,6 +50,23 @@ class PinocchioCollisionChecker final : public CollisionChecker {
 
         pinocchio::urdf::buildGeom(model_, urdf_path, pinocchio::COLLISION, geom_model_,
                                    package_dir);
+        // Fixed flange frames are folded into the parent joint by the URDF parser.
+        // Override only the grasp cylinder placement; mount geometry stays in the URDF.
+        for (int side = 0; side < 2; ++side) {
+            const std::string flange = std::string("AR5-5_07") + (side ? "R" : "L") +
+                                       "-W4C4A2_flan_link";
+            require(model_.existFrame(flange), "Missing flange frame " + flange);
+            const auto id = model_.getFrameId(flange);
+            int found = 0;
+            for (auto &object : geom_model_.geometryObjects) {
+                if (object.parentFrame == id &&
+                    dynamic_cast<const coal::Cylinder *>(object.geometry.get())) {
+                    object.placement = model_.frames[id].placement * tools[side];
+                    ++found;
+                }
+            }
+            require(found == 1, "Expected one grasp cylinder on " + flange);
+        }
         geom_model_.addAllCollisionPairs();
 
         // SRDF 已含父子 FILTERPARENT 排除 + 轮盘轴承 / 腕部壳体排除
@@ -148,8 +166,9 @@ class PinocchioCollisionChecker final : public CollisionChecker {
 
 std::unique_ptr<CollisionChecker> makePinocchioCollisionChecker(const std::string &urdf_path,
                                                                const std::string &srdf_path,
-                                                               const GraspCylinder &cylinder) {
-    return std::make_unique<PinocchioCollisionChecker>(urdf_path, srdf_path, cylinder);
+                                                               const GraspCylinder &cylinder,
+                                                               const std::array<pinocchio::SE3, 2> &tools) {
+    return std::make_unique<PinocchioCollisionChecker>(urdf_path, srdf_path, cylinder, tools);
 }
 
 } // namespace aviator

@@ -1,0 +1,12 @@
+name: rh56-pendant
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - numpy==1.26.4
+      - PyQt5==5.15.11
+      - pyqtgraph==0.13.7
+      # handlink.py uses the device_id keyword supported by this version.
+      - pymodbus==3.11.4

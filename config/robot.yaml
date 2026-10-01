@@ -8,6 +8,12 @@
 backend: rokae
 model: ../models/control/aviator.xml
 
+# 启动时轮盘的实际初始位形；真机声明软件参考，仿真同时设置轮盘关节初值。
+# 沿用原几何零位，不改变 grasp.json。摇杆中位对应 displacement=-0.085 m。
+wheel_initial:
+  angle: 0.0              # rad
+  displacement: -0.085    # m，允许 [-0.170, 0]
+
 rokae:
   # 只有双臂反馈：轮盘位形使用指令参考，lock/unlock 仅切换软件控制阶段。
   grasp_mode: open_loop

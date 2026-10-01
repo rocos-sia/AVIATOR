@@ -1,4 +1,5 @@
 #include "aviator/backend.hpp"
+#include "aviator/GraspTools.hpp"
 #include "motion.hpp"
 #include <atomic>
 #include <cmath>
@@ -83,8 +84,10 @@ Json armState(const DeviceState &s, const ArmFeedback &f, const std::string &bac
     return b;
 }
 void executor(Shared &shared, DataLink &device, const MotionConfig &config, const Joints &lo,
-              const Joints &hi, const Joints &speed, double braking) {
+              const Joints &hi, const Joints &speed, double braking, WheelReference initial) {
     DeviceState state;
+    state.angle = initial.angle;
+    state.displacement = initial.displacement;
     TrajectoryWindow active{};
     bool have = false;
     uint64_t last_message = 0, highest_trajectory = 0;
@@ -390,6 +393,7 @@ int main(int argc, char **argv) {
             return p.is_absolute() ? p : config.robot.parent_path() / p;
         };
         const std::string backend = y["backend"].as<std::string>();
+        const auto initial_wheel = loadInitialWheel(config.robot);
         const auto urdf = urdf::parseURDFFile(path("urdf").string());
         require(bool(urdf), "Cannot load control URDF");
         Joints lo{}, hi{}, speed{};
@@ -412,7 +416,8 @@ int main(int argc, char **argv) {
         require(std::isfinite(braking) && braking > 0, "Invalid braking acceleration");
         auto g = YAML::LoadFile(path("grasp").string());
         GraspGeometry geometry;
-        geometry.tool = frame(g["tool"]);
+        for (int side = 0; side < 2; ++side)
+            geometry.tools[side] = frame(toolFrameConfig(g, side));
         geometry.wheel_origin = frame(g["wheel_origin"]);
         geometry.handles[0] = frame(g["left"]);
         geometry.handles[1] = frame(g["right"]);
@@ -441,11 +446,22 @@ int main(int argc, char **argv) {
             int key = mj_name2id(model.get(), mjOBJ_KEY, "aviator_home");
             require(key >= 0, "Missing aviator_home");
             mj_resetDataKeyframe(model.get(), data.get(), key);
+            const char* wheel_joints[] = {"roll_input_joint", "pitch_input_joint"};
+            const double initial_values[] = {initial_wheel.angle, initial_wheel.displacement};
+            for (int i = 0; i < 2; ++i) {
+                const int joint = mj_name2id(model.get(), mjOBJ_JOINT, wheel_joints[i]);
+                require(joint >= 0, "Missing wheel joint for wheel_initial");
+                data->qpos[model->jnt_qposadr[joint]] = initial_values[i];
+                data->qvel[model->jnt_dofadr[joint]] = 0;
+            }
             mj_forward(model.get(), data.get());
             context = {model.get(), data.get()};
         }
 #endif
         auto device = makeDataLink(backend, context, path("urdf").string(), geometry, rk);
+        device->setWheelReference(initial_wheel.angle, initial_wheel.displacement);
+        std::cout << "Manipulator initial wheel: angle=" << initial_wheel.angle
+                  << " rad displacement=" << initial_wheel.displacement << " m" << std::endl;
         device->setRealTime(true);
 #ifdef AVIATOR_HAVE_GLFW
         std::unique_ptr<Viewer> viewer;
@@ -469,7 +485,9 @@ int main(int argc, char **argv) {
         shared.feedback = device->armFeedback();
         shared.state.q = shared.feedback.q;
         shared.state.target = shared.feedback.target;
-        std::thread worker([&] { executor(shared, *device, config, lo, hi, speed, braking); });
+        shared.state.angle = initial_wheel.angle;
+        shared.state.displacement = initial_wheel.displacement;
+        std::thread worker([&] { executor(shared, *device, config, lo, hi, speed, braking, initial_wheel); });
         struct Join {
             Shared &s;
             std::thread &t;

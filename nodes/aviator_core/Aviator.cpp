@@ -3,6 +3,7 @@
 #include "aviator/Kinematics.hpp"
 #include "aviator/CollisionChecker.hpp"
 #include "aviator/backend.hpp"
+#include "aviator/GraspTools.hpp"
 #include <yaml-cpp/yaml.h>
 #include "aviator/Pose.hpp"
 #include <ruckig/ruckig.hpp>
@@ -113,7 +114,8 @@ class Aviator::Impl {
 
         handles_[0] = parseFrame(grasp["left"]);
         handles_[1] = parseFrame(grasp["right"]);
-        tool_ = parseFrame(grasp["tool"]);
+        for (int side = 0; side < 2; ++side)
+            tools_[side] = parseFrame(toolFrameConfig(grasp, side));
         wheel_origin_ = parseFrame(grasp["wheel_origin"]);
         approach_distance_ = grasp["approach_distance"].as<double>();
 
@@ -184,7 +186,7 @@ class Aviator::Impl {
             GraspCylinder cylinder;
             cylinder.radius = grasp["tool"]["radius"].as<double>(0.028);
             cylinder.length = grasp["tool"]["length"].as<double>(0.060);
-            collision_checker_ = makePinocchioCollisionChecker(collision_urdf, srdf, cylinder);
+            collision_checker_ = makePinocchioCollisionChecker(collision_urdf, srdf, cylinder, tools_);
         }
 
         last_target_ = measured();
@@ -774,7 +776,7 @@ class Aviator::Impl {
     }
 
     pinocchio::SE3 target(int side, double angle, double translation, double retreat = 0) const {
-        auto flange = wheel(angle, translation) * handles_[side] * tool_.inverse();
+        auto flange = wheel(angle, translation) * handles_[side] * tools_[side].inverse();
         flange.translation() -= flange.rotation() * Eigen::Vector3d(0, 0, retreat);
         return flange;
     }
@@ -935,7 +937,7 @@ class Aviator::Impl {
     double joint2_min_, joint2_max_, joint2_margin_;
 
     pinocchio::SE3 handles_[2]{pinocchio::SE3::Identity(), pinocchio::SE3::Identity()};
-    pinocchio::SE3 tool_ = pinocchio::SE3::Identity();
+    std::array<pinocchio::SE3, 2> tools_{{pinocchio::SE3::Identity(), pinocchio::SE3::Identity()}};
     pinocchio::SE3 wheel_origin_ = pinocchio::SE3::Identity();
     Joints home_{}, approach_seed_{};
     Joints last_target_{};

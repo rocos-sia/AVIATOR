@@ -17,6 +17,25 @@ uint64_t integer(const Json &j) {
     return j.get<uint64_t>();
 }
 } // namespace
+WheelReference loadInitialWheel(const std::filesystem::path& robot_file) {
+    const auto config = YAML::LoadFile(robot_file.string());
+    const auto initial = config["wheel_initial"];
+    WheelReference value;
+    if (initial) {
+        require(initial.IsMap() && initial.size() == 2 && initial["angle"] && initial["displacement"],
+                "wheel_initial requires angle (rad) and displacement (m)");
+        value.angle = initial["angle"].as<double>();
+        value.displacement = initial["displacement"].as<double>();
+    }
+    require(std::isfinite(value.angle) && std::abs(value.angle) <= .87266 &&
+            std::isfinite(value.displacement) && value.displacement >= -.170 && value.displacement <= 0,
+            "Invalid wheel_initial: angle must be in [-0.87266,0.87266] rad, displacement in [-0.170,0] m");
+    return value;
+}
+double joystickWheelDisplacement(double pitch) {
+    require(std::isfinite(pitch) && pitch >= -1 && pitch <= 1, "Joystick pitch must be in [-1,1]");
+    return .085 * (pitch - 1.0);
+}
 std::filesystem::path defaultSystemConfig() {
     auto exe = std::filesystem::read_symlink("/proc/self/exe");
     auto installed = exe.parent_path() / "../share/aviator/config/system.yaml";

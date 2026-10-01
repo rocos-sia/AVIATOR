@@ -57,6 +57,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include "kdl_compat.hpp"
+#include "../../common/include/aviator/GraspTools.hpp"
 
 namespace fs = std::filesystem;
 constexpr double rad = 3.14159265358979323846 / 180.;
@@ -481,7 +482,7 @@ class ClearanceTrajectory {
     std::unique_ptr<mjModel, decltype(&mj_deleteModel)> m{nullptr, mj_deleteModel};
     std::unique_ptr<mjData, decltype(&mj_deleteData)> d{nullptr, mj_deleteData};
     std::unique_ptr<PIN_IK::PIN_IK> ik[2];
-    KDL::Frame origin, tool;
+    KDL::Frame origin, tools[2];
     KDL::Frame handle[2];
     KDL::Vector handle_axis[2];    // grip cylinder axis (wheel frame, unit), for handle-axis rotation φ
     KDL::Vector handle_radial[2];  // wheel-center → handle radial (wheel frame, unit), for R2 tilt β_r
@@ -518,8 +519,8 @@ class ClearanceTrajectory {
         auto resolve = [&](const char *key) { return path.parent_path() / config[key].as<std::string>(); };
         grasp = YAML::LoadFile(resolve("grasp").string());
         posture = YAML::LoadFile(resolve("posture").string());
-        tool = frame(grasp["tool"]);
         for (int s = 0; s < 2; s++) {
+            tools[s] = frame(aviator::toolFrameConfig(grasp, s));
             handle[s] = frame(grasp[s ? "right" : "left"]);
             auto ax = grasp["handle_geometry"][s ? "right" : "left"]["axis"];
             handle_axis[s] = KDL::Vector(ax[0].as<double>(), ax[1].as<double>(), ax[2].as<double>());
@@ -547,6 +548,17 @@ class ClearanceTrajectory {
         if (!m)
             throw std::runtime_error(error);
         d.reset(mj_makeData(m.get()));
+        for (int s = 0; s < 2; ++s) {
+            const int gripper = mj_name2id(m.get(), mjOBJ_BODY, s ? "right_gripper" : "left_gripper");
+            if (gripper < 0)
+                throw std::runtime_error("Missing gripper body for tool transform");
+            for (int j = 0; j < 3; ++j)
+                m->body_pos[3 * gripper + j] = tools[s].p.v[j];
+            const Eigen::Quaterniond q(tools[s].M.m);
+            const double quat[] = {q.w(), q.x(), q.y(), q.z()};
+            std::copy(quat, quat + 4, m->body_quat + 4 * gripper);
+        }
+        mj_setConst(m.get(), d.get());
         mj_forward(m.get(), d.get());
         int b = mj_name2id(m.get(), mjOBJ_BODY, "steering_wheel");
         if (b < 0)
@@ -708,7 +720,7 @@ class ClearanceTrajectory {
     }
     KDL::Frame target_Rh(int side, double theta, double s, const KDL::Rotation &Rh) {
         return origin * KDL::Frame(KDL::Rotation::RotZ(theta), KDL::Vector(0, 0, s)) *
-               KDL::Frame(Rh, handle[side].p) * tool.Inverse();
+               KDL::Frame(Rh, handle[side].p) * tools[side].Inverse();
     }
     KDL::Frame target(int side, double theta, double s, double phi = 0.0, double beta = 0.0,
                       int beta_axis = 0) {
