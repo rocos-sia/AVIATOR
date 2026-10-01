@@ -14,8 +14,12 @@ from typing import Any
 import numpy as np
 import yaml
 
-from geometry import (CalibrationError, average_pose_matrices, calibrate_from_poses,
-                      matrix_as_lists, matrix_to_pose, pose_to_matrix)
+if __package__:
+    from .geometry import (CalibrationError, average_pose_matrices, calibrate_from_poses,
+                           matrix_as_lists, matrix_to_pose, pose_to_matrix)
+else:
+    from geometry import (CalibrationError, average_pose_matrices, calibrate_from_poses,
+                          matrix_as_lists, matrix_to_pose, pose_to_matrix)
 
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "config" / "steering_wheel_calibration.yaml"

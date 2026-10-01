@@ -2,6 +2,7 @@
 
 import math
 import os
+import shutil
 import sys
 import time
 
@@ -46,6 +47,27 @@ def pose_lines(result):
             f"RPY (deg): roll={roll:.1f} pitch={pitch:.1f} yaw={yaw:.1f}"]
 
 
+def terminal_pose_lines(result, steering_wheel):
+    """Show the raw tag pose and the same physical motion sent on the bus."""
+    if result.status == "TRACKING" and result.pose is not None:
+        position, quaternion = result.pose["position"], result.pose["orientation"]
+        lines = [f"Tag position (m): X={position['x']:+.6f} Y={position['y']:+.6f} Z={position['z']:+.6f}",
+                 "Tag quaternion (xyzw): " + " ".join(
+                     f"{quaternion[key]:+.6f}" for key in ("qx", "qy", "qz", "qw"))]
+    else:
+        lines = ["No valid pose (target missing or PnP rejected)", "Tag quaternion: unavailable"]
+    if steering_wheel and steering_wheel.get("valid"):
+        vector = steering_wheel["translation_vector_m"]
+        lines += [f"Wheel rotation (rad): {steering_wheel['theta_rad']:+.6f}",
+                  f"Along axis (m): {steering_wheel['translation_along_axis_m']:+.6f}",
+                  f"Relative translation (m): X={vector[0]:+.6f} Y={vector[1]:+.6f} Z={vector[2]:+.6f}"]
+    else:
+        reason = steering_wheel.get("reason", "unavailable") if steering_wheel else "unavailable"
+        lines += [f"Wheel rotation (rad): unavailable ({reason})",
+                  "Along axis (m): unavailable", "Relative translation (m): unavailable"]
+    return lines
+
+
 def render_preview(image, detector, result, frame_id, fps, warming_up):
     display = image.copy()
     detector.draw(display, result)
@@ -76,6 +98,19 @@ class CameraVisualization:
         self.last_status = None
         self.last_frame = None
         self.fps = 0.0
+        self._terminal_lines = 0
+
+    def _print_diagnostics(self, lines):
+        if not sys.stdout.isatty():
+            # Keep redirected logs readable, without cursor escape sequences.
+            print(" | ".join(lines), flush=True)
+            return
+        columns = max(1, shutil.get_terminal_size().columns - 1)
+        # A fixed-height panel and clipped lines avoid wrapping into extra rows.
+        prefix = f"\x1b[{self._terminal_lines}F" if self._terminal_lines else ""
+        sys.stdout.write(prefix + "".join("\x1b[2K" + line[:columns] + "\n" for line in lines))
+        sys.stdout.flush()
+        self._terminal_lines = len(lines)
 
     def check_available(self):
         if not self.show:
@@ -86,19 +121,21 @@ class CameraVisualization:
             if line.strip().startswith("GUI:") and line.split(":", 1)[1].strip() == "NONE":
                 raise RuntimeError("当前 OpenCV 不支持 GUI；请使用带 GUI 的 OpenCV，或 --no-show --print-pose")
 
-    def update(self, image, detector, result, frame_id, warming_up=False, now=None):
+    def update(self, image, detector, result, frame_id, warming_up=False, now=None, steering_wheel=None):
         """Return False if the user closes the preview or presses q/ESC."""
         if not self.show and not self.print_pose:
             return True
         now = time.monotonic() if now is None else now
+        print_state = (result.status, bool(steering_wheel and steering_wheel.get("valid")),
+                       steering_wheel.get("reason") if steering_wheel else None, warming_up)
         if self.print_pose and (self.last_print is None or now - self.last_print >= self.interval
-                                or result.status != self.last_status):
+                                or print_state != self.last_status):
             identity = f" tag={result.tag_id}" if result.tag_id is not None else ""
-            print(f"aviator_camera pose: frame={frame_id} {detector.kind}{identity} "
-                  f"{result.status} conf={result.confidence:.2f} "
-                  f"{'WARMUP ' if warming_up else ''}" + " | ".join(pose_lines(result)), flush=True)
+            header = (f"aviator_camera: frame={frame_id} {detector.kind}{identity} "
+                      f"{result.status} conf={result.confidence:.2f} {'WARMUP' if warming_up else ''}")
+            self._print_diagnostics([header, *terminal_pose_lines(result, steering_wheel)])
             self.last_print = now
-            self.last_status = result.status
+            self.last_status = print_state
         if self.show:
             if self.last_frame is not None and now > self.last_frame:
                 instant = 1 / (now - self.last_frame)
@@ -116,6 +153,7 @@ class CameraVisualization:
         return True
 
     def close(self):
+        self._terminal_lines = 0
         if self.opened:
             try:
                 cv2.destroyWindow(self.window)

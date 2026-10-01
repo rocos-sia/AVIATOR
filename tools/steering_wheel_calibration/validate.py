@@ -10,9 +10,13 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import yaml
 
-from geometry import CalibrationError, evaluate_pose, pose_to_matrix
+if __package__:
+    from .calibration import load_calibration
+    from .geometry import CalibrationError, evaluate_pose, pose_to_matrix
+else:
+    from calibration import load_calibration
+    from geometry import CalibrationError, evaluate_pose, pose_to_matrix
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -34,26 +38,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                              "小于阈值时 axis_match=unknown")
     parser.add_argument("--json", action="store_true", help="以 JSON 输出每个结果")
     return parser.parse_args(argv)
-
-
-def load_calibration(path: Path) -> tuple[dict[str, Any], np.ndarray, np.ndarray]:
-    with path.open("r", encoding="utf-8") as stream:
-        document = yaml.safe_load(stream) or {}
-    calibration = document.get("steering_wheel_calibration")
-    if not isinstance(calibration, dict) or calibration.get("status") != "calibrated":
-        raise CalibrationError(f"{path} 尚未包含 calibrated 标定结果")
-    zero_record = calibration.get("zero", {}).get("pose")
-    zero = zero_record.get("T_camera_tag") if isinstance(zero_record, dict) else None
-    axis = calibration.get("motion", {}).get("axis_direction")
-    if zero is None or axis is None:
-        raise CalibrationError("标定 YAML 缺少 zero.pose.T_camera_tag 或 motion.axis_direction")
-    matrix = np.asarray(zero, dtype=float)
-    if matrix.shape != (4, 4):
-        raise CalibrationError("zero pose matrix must be 4x4")
-    axis_array = np.asarray(axis, dtype=float)
-    if axis_array.shape != (3,) or not np.all(np.isfinite(axis_array)) or np.linalg.norm(axis_array) < 1e-8:
-        raise CalibrationError("motion.axis_direction must be a non-zero finite vector")
-    return calibration, matrix, axis_array / np.linalg.norm(axis_array)
 
 
 def accepts(data: dict[str, Any], args: argparse.Namespace, calibration: dict[str, Any]) -> bool:

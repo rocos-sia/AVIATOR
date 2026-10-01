@@ -2,6 +2,7 @@
 
 import json
 import io
+import re
 from contextlib import redirect_stdout
 from pathlib import Path
 import tempfile
@@ -57,7 +58,7 @@ class CameraNodeTest(unittest.TestCase):
         _, _, _, settings = load_config(DEFAULT_CONFIG)
         options = visualization_options(settings, parse_args([]))
         self.assertFalse(options["show"])
-        self.assertFalse(options["print_pose"])
+        self.assertTrue(options["print_pose"])
         self.assertEqual(visualization_options(settings, parse_args([
             "--show", "--print-pose", "--pose-print-interval", "0.2"])),
             dict(show=True, print_pose=True, print_interval_s=0.2))
@@ -123,6 +124,78 @@ class CameraNodeTest(unittest.TestCase):
         with patch("visualization.cv2.destroyWindow") as destroy:
             visual.close()
             destroy.assert_called_once()
+
+    def test_terminal_pose_panel_refreshes_in_place_and_clears_lost_values(self):
+        class Terminal(io.StringIO):
+            flushes = 0
+
+            def isatty(self):
+                return True
+
+            def flush(self):
+                self.flushes += 1
+
+        class Detector:
+            kind = "apriltag"
+
+        output = Terminal()
+        result = DetectionResult(status="TRACKING", pose=pose_from_pnp(
+            np.array([0., 0., .2]), np.array([.1, -.2, .3])), rvec=np.array([0., 0., .2]))
+        wheel = {"valid": True, "theta_rad": -.25, "translation_along_axis_m": .04,
+                 "translation_vector_m": [.01, -.02, .03]}
+        visual = CameraVisualization(print_pose=True)
+        with redirect_stdout(output), patch("visualization.shutil.get_terminal_size") as size:
+            size.return_value.columns = 120
+            visual.update(None, Detector(), result, 1, now=1., steering_wheel=wheel)
+            visual.update(None, Detector(), result, 2, now=1.6, steering_wheel=wheel)
+            before_loss = output.getvalue()
+            self.assertIn("Tag quaternion (xyzw)", before_loss)
+            self.assertIn("Wheel rotation (rad): -0.250000", before_loss)
+            self.assertIn("Along axis (m): +0.040000", before_loss)
+            self.assertIn("Relative translation (m): X=+0.010000 Y=-0.020000 Z=+0.030000", before_loss)
+            visual.update(None, Detector(), DetectionResult(), 3, now=1.7,
+                          steering_wheel={"valid": False, "reason": "target_not_tracking"})
+            visual.close()
+        # Interpret the emitted cursor controls: updates must occupy the same
+        # six rows, with no stale numeric pose after losing the target.
+        screen, row = {}, 0
+        for token in re.findall(r"\x1b\[\d+[FK]|[^\x1b]+", output.getvalue()):
+            if token.endswith("F") and token.startswith("\x1b["):
+                row -= int(token[2:-1])
+            elif token == "\x1b[2K":
+                screen[row] = ""
+            else:
+                for text in token.splitlines(keepends=True):
+                    screen[row] = screen.get(row, "") + text.rstrip("\n")
+                    row += int(text.endswith("\n"))
+        self.assertEqual(row, 6)
+        self.assertEqual(len(screen), 6)
+        visible = "\n".join(screen.values())
+        self.assertIn("frame=3", visible)
+        self.assertIn("target_not_tracking", visible)
+        self.assertNotIn("-0.250000", visible)
+        self.assertNotIn("X=", visible)
+        self.assertEqual(output.flushes, 3)
+
+    def test_wheel_validity_change_prints_immediately_in_readable_redirected_logs(self):
+        class Detector:
+            kind = "apriltag"
+
+        result = DetectionResult(status="TRACKING", pose=pose_from_pnp(
+            np.zeros(3), np.array([.1, -.2, .3])), rvec=np.zeros(3))
+        wheel = {"valid": True, "theta_rad": -.25, "translation_along_axis_m": .04,
+                 "translation_vector_m": [.01, -.02, .03]}
+        output = io.StringIO()
+        visual = CameraVisualization(print_pose=True, print_interval_s=10)
+        with redirect_stdout(output):
+            visual.update(None, Detector(), result, 1, now=1., steering_wheel=wheel)
+            visual.update(None, Detector(), result, 2, now=1.1,
+                          steering_wheel={"valid": False, "reason": "calibration_unavailable"})
+        lines = output.getvalue().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertNotIn("\x1b", output.getvalue())
+        self.assertIn("calibration_unavailable", lines[-1])
+        self.assertNotIn("Wheel rotation (rad): -0.250000", lines[-1])
 
     def test_record_depth_choice_comes_from_logger_config(self):
         with tempfile.TemporaryDirectory() as root:

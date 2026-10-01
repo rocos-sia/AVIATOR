@@ -36,6 +36,16 @@ def fmt_pose(pose):
             f"quat(qx,qy,qz,qw)=({ori['qx']:.4f},{ori['qy']:.4f},{ori['qz']:.4f},{ori['qw']:.4f})")
 
 
+def fmt_steering_wheel(wheel):
+    if not isinstance(wheel, dict):
+        return "steering_wheel=unavailable"
+    if not wheel.get("valid"):
+        return f"steering_wheel=invalid reason={wheel.get('reason')}"
+    return (f"steering_wheel theta={wheel['theta_rad']:.6f} rad "
+            f"translation_axis={wheel['translation_along_axis_m']:.6f} m "
+            f"axis_match={wheel.get('axis_match')}")
+
+
 def main(argv):
     args = parse_args(argv)
     context = zmq.Context()
@@ -78,6 +88,7 @@ def main(argv):
                   f"valid={valid} detector={detector}{tag} "
                   f"sample_mono_us={sample} timestamp={stamp}")
             print(f"        {fmt_pose(data.get('pose'))}")
+            print(f"        {fmt_steering_wheel(data.get('steering_wheel'))}")
             if args.raw:
                 print("        " + json.dumps(data, ensure_ascii=False))
     except KeyboardInterrupt:

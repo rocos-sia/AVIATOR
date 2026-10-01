@@ -16,6 +16,13 @@ T_relative = T_current @ inverse(T_zero)
 标定程序从 `T_relative` 的旋转部分得到方向盘运动轴；平移向量投影到该轴得到轴向平移，
 同时输出垂直分量。若存在旋转，还会估计轴线上离相机原点最近的一点。
 
+相机节点现在还在 `camera.detection.steering_wheel` 中发布相对零位的
+`theta_rad`（rad）和 `translation_along_axis_m`（m），复用本目录的几何计算与标定加载器。
+原始 `pose` 保持不变；本目录的标定和验证程序继续从它采样和独立计算，
+不依赖派生字段是否有效。首次标定时没有有效 YAML 也不影响相机发布码位姿。
+`calibrate.py` 写入新结果后，相机在约 1 秒内自动加载；验证程序仍在启动时加载 YAML，
+重新标定后应重新启动验证程序。
+
 ## 标定
 
 先启动 `aviator_bus` 和 AprilTag 相机节点，然后运行：

@@ -18,6 +18,7 @@ import zmq
 from detectors import create_detector
 from preview_client import PreviewClient
 from recording_client import RecordingClient
+from steering_wheel import SteeringWheelObservation, steering_wheel_options
 from visualization import CameraVisualization, visualization_options
 
 
@@ -115,7 +116,7 @@ def resolve_device(context, model, serial):
 
 def make_message(camera_id, frame_id, sequence, sample_mono_us,
                  session, clock, width, height, status, confidence, pose,
-                 detector=None, tag_id=None, decision_margin=None):
+                 detector=None, tag_id=None, decision_margin=None, steering_wheel=None):
     """构造 CameraDetection JSON（公共头部 + 业务字段 + 补充 pose 块）。
 
     pose.position 单位为米；pose.orientation 为单位四元数 (qx, qy, qz, qw)。
@@ -148,6 +149,8 @@ def make_message(camera_id, frame_id, sequence, sample_mono_us,
         message["tag_id"] = tag_id
     if decision_margin is not None:
         message["decision_margin"] = decision_margin
+    if steering_wheel is not None:
+        message["steering_wheel"] = steering_wheel.observe(message)
     return message
 
 
@@ -189,6 +192,7 @@ def parse_args(argv):
     p = argparse.ArgumentParser(description="RealSense ChArUco/AprilTag 姿态 -> camera.detection 发布")
     p.add_argument("--config", default=DEFAULT_CONFIG, help="YAML 配置文件路径")
     p.add_argument("--preview-endpoint", help="覆盖独立 JPEG PUB 地址；off 关闭预览")
+    p.add_argument("--steering-wheel-calibration", help="覆盖方向盘标定 YAML 路径")
     p.add_argument("--recording-config", help="Logger recording.yaml；省略则不发送图像记录")
     p.add_argument("--endpoint", default="tcp://127.0.0.1:5555",
                    help="PUB 连接端点（AVIATOR publish_endpoint）")
@@ -199,7 +203,7 @@ def parse_args(argv):
     p.add_argument("--show", action=argparse.BooleanOptionalAction, default=None,
                    help="开启实时识别与位姿预览（默认关闭；--no-show 强制关闭）")
     p.add_argument("--print-pose", action=argparse.BooleanOptionalAction, default=None,
-                   help="在终端打印位姿与检测状态（默认关闭）")
+                   help="在终端原地刷新码位姿和方向盘运动（默认按 YAML 配置）")
     p.add_argument("--pose-print-interval", type=float, default=None,
                    help="位姿打印间隔秒数，默认 0.5；状态变化立即打印")
     p.add_argument("--warmup-s", type=float, default=None,
@@ -221,7 +225,10 @@ def main(argv):
     visual = CameraVisualization(**visualization_options(visual_settings, args))
     visual.check_available()
     with open(args.config, "r", encoding="utf-8") as file:
-        preview_settings = (yaml.safe_load(file) or {}).get("preview", {})
+        extra_settings = yaml.safe_load(file) or {}
+    steering_wheel = SteeringWheelObservation(**steering_wheel_options(
+        extra_settings.get("steering_wheel", {}), args.config, args.steering_wheel_calibration))
+    preview_settings = extra_settings.get("preview", {})
     preview_settings = dict(preview_settings)
     if args.preview_endpoint is not None:
         preview_settings["enabled"] = args.preview_endpoint != "off"
@@ -340,6 +347,8 @@ def main(argv):
     print(f"aviator_camera: {device_name} ({device_serial}) {width}x{height}@{fps}")
     print(f"aviator_camera: detector={detector.kind} settings={detector_settings}")
     print(f"aviator_camera: endpoint={args.endpoint} bind={args.bind}")
+    print(f"aviator_camera: steering_wheel_calibration={steering_wheel.path} "
+          f"enabled={steering_wheel.enabled}")
     print(f"aviator_camera: show={visual.show} print_pose={visual.print_pose} "
           f"pose_print_interval={visual.interval}s")
     print(f"aviator_camera: session={session} clock={clock} warmup_s={warmup_s} "
@@ -386,18 +395,21 @@ def main(argv):
                                sample_mono_us=sample_mono_us)
             detection = detector.detect(image)
 
+            wheel_observation = None
             if sample_mono_us >= warmup_until:
                 sequence += 1
                 message = make_message(args.camera_id, frame_id, sequence, sample_mono_us,
                                        session, clock, w, h, detection.status,
                                        detection.confidence, detection.pose,
                                        detector.kind, detection.tag_id,
-                                       detection.decision_margin)
-                payload = json.dumps(message)
+                                       detection.decision_margin, steering_wheel=steering_wheel)
+                wheel_observation = message["steering_wheel"]
+                payload = json.dumps(message, allow_nan=False)
                 pub.send_multipart([b"camera.detection", payload.encode("utf-8")])
 
             if not visual.update(image, detector, detection, frame_id,
-                                 warming_up=sample_mono_us < warmup_until):
+                                 warming_up=sample_mono_us < warmup_until,
+                                 steering_wheel=wheel_observation):
                 break
     except KeyboardInterrupt:
         pass

@@ -29,7 +29,7 @@
 以架构第 15 章的最终目录与进程划分为准：
 
 - `flight_gateway` 根据配置接入 RS422 或 USB 摇杆；`source` 区分输入来源，不另设 `joystick_gateway` 进程。
-- `manipulator` 发布 `arm.state` 并消费 `arm.command`，负责双臂设备接入与本地执行；当前还以 100 Hz 发布始终 `valid=false` 的兼容 `hand.state` 占位消息，不表示真实手反馈。
+- `manipulator` 发布 `arm.state` 并消费 `arm.command`，负责双臂设备接入与本地执行；不发布 `hand.state`，也不订阅 `hand.command`。
 - `aviator_hand` 消费 `hand.command`、发布 `hand.state`，通过 SocketCAN 独立接入双手；默认 `publisher_id=inspire_hand`。
 - `camera` 负责图像采集与检测。
 - `aviator_core` 是连续设备目标的唯一业务生产者和控制源仲裁者。
@@ -98,7 +98,7 @@ PUB/SUB 无持久历史，也不提供业务执行确认。连续目标周期性
 | `arm.command` / `ArmCommand` | aviator_core | manipulator | 100 Hz / 10 ms | 30 / 50 ms |
 | `arm.state` / `ArmState` | manipulator | aviator_core | 100 Hz / 10 ms | 30 / 50 ms |
 | `hand.command` / `HandCommand` | aviator_core | aviator_hand | 50 Hz / 20 ms | 命令 watchdog 100 ms |
-| `hand.state` / `HandState` | aviator_hand；manipulator 仅兼容 invalid 占位 | aviator_core | 有效反馈 10 Hz / 100 ms；占位 100 Hz / 10 ms | 设备反馈有效期 300 ms |
+| `hand.state` / `HandState` | aviator_hand | aviator_core | 10 Hz / 100 ms | 设备反馈有效期 300 ms |
 | `camera.command` / `CameraCommand` | aviator_core | camera | 30 Hz / 约 33.3 ms | 架构未定义；部署配置冻结 |
 | `camera.detection` / `CameraDetection` | camera | aviator_core | 30 Hz / 约 33.3 ms | 100 / 200 ms |
 | `system.state` / `SystemState` | 各节点，仅报告自身 | 观测工具 | 1—10 Hz | 按节点健康策略配置 |
@@ -627,6 +627,24 @@ Frame0：`camera.command`。
 头部 `sample_mono_us` 使用主机接收 frameset 的单调时刻，timestamp 使用检测快照生成时刻。当前图像 MCAP 使用 Logger 的 `aviator.record.v1.CameraPacket`，以 `(publisher_id, session_id, camera_id, frame_id)` 与检测消息关联；推理队列可以跳帧，不要求检测 frame_id 连续。重复发布同一帧时不得改变 frame_id 或采样时间。
 
 当前 Python 相机节点按 `config/camera.yaml` 的 `detector.type` 单选 `charuco` 或 `apriltag`，在自由 JSON body 中补充 `detector`；AprilTag 识别到配置 ID 时另附 `tag_id` 和原始 `decision_margin`。两种模式均复用相同的公共头部、`status/valid` 与 `pose`，`confidence` 为各自的启发式质量指示，不应解释为概率。
+
+Python 相机节点同时补充 `steering_wheel` 对象，读取 `config/steering_wheel_calibration.yaml`
+的零位与轴，使用 `T_current @ inverse(T_zero)` 计算运动；原始 `pose` 不变。
+此物理单位扩展与上述归一化 `yoke.roll/pitch` 分别定义：
+
+| 字段 | 类型 | 规则 |
+| --- | --- | --- |
+| `steering_wheel.valid` | boolean | 当前已加载有效标定、来源匹配且码位姿可计算；独立于顶层检测 valid。 |
+| `steering_wheel.reason` | string | 有效时为空；否则为 disabled、calibration_unavailable、target_not_tracking、calibration_source_mismatch 或 invalid_target_pose。 |
+| `steering_wheel.theta_rad` | number 或 null | 相对零位、绕存储轴的带符号角度，rad，范围 `[-pi,pi]`；无效时 null。 |
+| `steering_wheel.translation_along_axis_m` | number 或 null | 相对零位沿存储轴的带符号平移，m；无效时 null。 |
+| `steering_wheel.translation_vector_m` | array[3] 或 null | 相对变换的相机坐标系平移项，m；无效时 null。 |
+| `steering_wheel.axis_direction/axis_frame` | array[3]/string 或 null | 使用的单位轴向量及轴坐标系。 |
+| `steering_wheel.axis_error_rad/axis_match` | number/boolean 或 null | 旋转至少 3° 时独立估计轴并以 5° 夹角判断；轴不匹配时角度不能视为真实转角。 |
+| `steering_wheel.calibration_id` | string 或 null | 使用的标定内容摘要；未加载标定时 null。 |
+
+派生量与原始位姿共用同一帧身份和采样时间，丢码时不复用历史数值。
+标定文件约每秒检查并按变更重载；派生量无效不阻断原始码位姿发布与重新标定。
 
 控制可用时须同时满足顶层 valid=true、status=TRACKING、detected=true、置信度达标以及年龄合格。SEARCHING/LOST 等状态可正常上报，但 valid=false、detected=false、roll/pitch=null。未获取任何图像的状态报告使用生成时刻并标 valid=false。
 
