@@ -15,6 +15,7 @@ FK tool 中心到对应抓握目标的距离分别触发闭合，以五次平滑
 规划会报错，避免在范围外继续闭合。`approach_distance`（当前 0.06 m）只用于松开后的撤离。
 实际角度同步误差需在设备上验证；终点确认仍使用 CAN/设备写入 ACK，不代表已抓稳。
 
+- `flight.yaml`：Flight Gateway 的 `joystick` / `keyboard` 输入选择、evdev 设备、键盘方向键速度/限位及状态按钮映射，详见 [Gateway 说明](../nodes/flight_gateway/README.md#键盘操作)。
 - `monitor.yaml`：Monitor 的消息来源、超时、RGB 预览及显示标定。可在网页“配置”页保存并即时应用，详见 [Monitor 说明](../nodes/aviator_monitor/README.md)。
 - `recording.yaml`：Logger 配置 v1。通过 `aviator_logger --config config/recording.yaml` 加载；`camera.mode` 选择 `disabled`、`raw` 或 `compressed`。字段、默认值、校验及 CLI 覆盖规则见 [Logger 说明](../nodes/aviator_logger/README.md)。
 - `camera.yaml`：相机节点的设备选择、彩色采集、深度尺寸与 ChArUco/AprilTag 参数。`detector.type` 每次只选择一种识别模式，当前选择 `charuco`。`visualization.show`、`visualization.print_pose` 默认关闭；可用 `--show --print-pose` 临时开启视频和位姿输出，`print_interval_s` 默认 0.5 秒。传入启用图像的 `--recording-config` 后发送 RGB8；对应 `camera.sources[].record_depth: true` 时才额外采集和记录 Z16。`--camera-id` 必须匹配录制配置。完整命令见 [相机说明](../nodes/camera/README.md)。

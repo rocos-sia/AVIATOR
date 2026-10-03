@@ -335,12 +335,14 @@ Json State::overview(std::uint64_t now, const std::string& clock) {
             std::abs(pitch.get<double>()) > 1)
             invalidate(cg, "INVALID", "command_out_of_range");
         else
+            // Core pitch maps to 0.085 * (pitch - 1) m. Display travel is
+            // the opposite of that joint displacement, matching camera feedback.
             cg["current"] = {{"roll_normalized", roll},
                              {"pitch_normalized", pitch},
                              {"roll_percent", roll.get<double>() * 100},
-                             {"pitch_percent", pitch.get<double>() * 100},
+                             {"pitch_percent", -pitch.get<double>() * 100},
                              {"roll_deg", roll.get<double>() * 50},
-                             {"pitch_mm", 85 + pitch.get<double>() * 85},
+                             {"pitch_mm", 85 - pitch.get<double>() * 85},
                              {"control_source", at(command->message.body, "source")}};
     }
     result["flight_command"] = cg;

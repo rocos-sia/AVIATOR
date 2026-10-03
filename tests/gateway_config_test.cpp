@@ -42,6 +42,46 @@ int main(int argc, char** argv) {
             check(failed, "invalid configuration accepted");
         };
         auto root = YAML::LoadFile(argv[1]);
+        {
+            auto keyboard = YAML::Clone(root);
+            keyboard["source"] = "keyboard";
+            keyboard["device"] = "/dev/input/by-id/test-event-kbd";
+            keyboard["keyboard"]["roll_speed"] = 0.5;
+            keyboard["keyboard"]["pitch_speed"] = 2.0;
+            keyboard["keyboard"]["roll_limit"] = 0.75;
+            write(keyboard);
+            const auto parsed = flight_gateway::load_config(file.string());
+            check(parsed.source == "keyboard" && parsed.keyboard.roll_speed == 0.5 &&
+                      parsed.keyboard.pitch_speed == 2 && parsed.keyboard.roll_limit == 0.75,
+                  "keyboard configuration ignored");
+            keyboard.remove("keyboard");
+            write(keyboard);
+            check(flight_gateway::load_config(file.string()).keyboard.roll_speed == 1,
+                  "optional keyboard defaults");
+            for (const auto* key : {"roll_speed", "pitch_speed", "roll_limit", "pitch_limit"}) {
+                for (const auto* invalid : {"0", "-1", ".nan", ".inf", "abc"}) {
+                    auto bad = YAML::Clone(root);
+                    bad["keyboard"][key] = invalid;
+                    rejected(bad);
+                }
+            }
+            for (const auto* key : {"roll_limit", "pitch_limit"}) {
+                auto bad = YAML::Clone(root);
+                bad["keyboard"][key] = 1.01;
+                rejected(bad);
+            }
+            auto bad = YAML::Clone(root);
+            bad["keyboard"]["roll_spped"] = 1;
+            rejected(bad);
+            bad = YAML::Clone(root);
+            bad["keyboard"] = "invalid";
+            rejected(bad);
+            auto legacy = YAML::Clone(root);
+            legacy.remove("keyboard");
+            write(legacy);
+            check(flight_gateway::load_config(file.string()).source == "joystick",
+                  "legacy joystick config must remain valid");
+        }
         root["buttons"][10] = "exit_control";
         root["invert_roll"] = true;
         root["service_timeout_ms"] = 500;

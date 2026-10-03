@@ -114,6 +114,66 @@ bool JoystickSample::fresh(std::uint64_t now, std::uint64_t timeout) const {
     return valid && !failed && device_connected && sample_us > 0 && checked_us >= sample_us &&
            now >= checked_us && now - checked_us < timeout;
 }
+void KeyboardInput::suppressHeld(unsigned code) {
+    for (unsigned i = 0; i < keyboard_arrows.size(); ++i)
+        if (keyboard_arrows[i] == code) suppressed_[i] = true;
+}
+void KeyboardInput::advance(std::uint64_t now) {
+    if (integrated_us_ && now > integrated_us_) {
+        const double dt = (now - integrated_us_) / 1000000.0;
+        const int roll_direction = int(held_[1]) - int(held_[0]);
+        const int pitch_direction = int(held_[3]) - int(held_[2]);
+        roll_ = roll_direction ? std::clamp(roll_ + roll_direction * config_.roll_speed * dt,
+                                           -config_.roll_limit, config_.roll_limit) : 0;
+        pitch_ = pitch_direction ? std::clamp(pitch_ + pitch_direction * config_.pitch_speed * dt,
+                                             -config_.pitch_limit, config_.pitch_limit) : 0;
+    }
+    integrated_us_ = std::max(integrated_us_, now);
+}
+void KeyboardInput::update(const input_event& event, std::uint64_t now) {
+    if (sample_.failed) return;
+    if (event.type == EV_SYN && event.code == SYN_DROPPED) {
+        sample_.invalidate(); return;
+    }
+    if (event.type != EV_KEY && !(event.type == EV_SYN && event.code == SYN_REPORT)) return;
+    if (event.input_event_sec < 0 || event.input_event_usec < 0 || event.input_event_usec >= 1000000 ||
+        static_cast<std::uint64_t>(event.input_event_sec) > aviator::max_json_integer / 1000000) {
+        sample_.invalidate(); return;
+    }
+    const auto time = static_cast<std::uint64_t>(event.input_event_sec) * 1000000 + event.input_event_usec;
+    if (!time || time > now || time < event_us_ || now - time >= 100000) {
+        sample_.invalidate(); return;
+    }
+    event_us_ = time;
+    if (event.type == EV_KEY) {
+        if (event.value < 0 || event.value > 2) { sample_.invalidate(); return; }
+        sample_.report_pending = true;
+        for (unsigned i = 0; i < keyboard_arrows.size(); ++i) {
+            if (event.code != keyboard_arrows[i]) continue;
+            if (event.value == 0) { suppressed_[i] = false; pending_[i] = false; }
+            if (event.value == 1 && !suppressed_[i]) pending_[i] = true;
+        }
+        return;
+    }
+    advance(time);
+    // Releasing an axis or pressing opposing keys centers it at the complete report.
+    if (pending_[0] == pending_[1] ||
+        int(pending_[1]) - int(pending_[0]) != int(held_[1]) - int(held_[0])) roll_ = 0;
+    if (pending_[2] == pending_[3] ||
+        int(pending_[3]) - int(pending_[2]) != int(held_[3]) - int(held_[2])) pitch_ = 0;
+    held_ = pending_;
+    sample_.report_pending = false;
+}
+void KeyboardInput::deviceChecked(std::uint64_t now) {
+    if (sample_.failed || sample_.report_pending) return;
+    advance(now);
+    sample_.roll_value = sample_.roll.inverted ? -roll_ : roll_;
+    sample_.pitch_value = sample_.pitch.inverted ? -pitch_ : pitch_;
+    // This is a newly integrated software target, based on checked keyboard state.
+    sample_.sample_us = now;
+    sample_.valid = true;
+    sample_.deviceChecked(now);
+}
 aviator::Message command(const JoystickSample& sample, const std::string& session,
                          const std::string& clock, std::uint64_t sequence,
                          std::uint64_t now, std::uint64_t utc, std::uint64_t timeout) {

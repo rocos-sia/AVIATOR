@@ -28,6 +28,12 @@ target_link_libraries(aviator_gateway_config_test PRIVATE aviator_service yaml-c
 add_test(NAME gateway_config COMMAND aviator_gateway_config_test ${PROJECT_SOURCE_DIR}/config/flight.yaml)
 set_tests_properties(gateway_config PROPERTIES TIMEOUT 5)
 
+aviator_add_test_executable(aviator_gateway_keyboard_test gateway_keyboard_test.cpp ../nodes/flight_gateway/gateway.cpp)
+target_include_directories(aviator_gateway_keyboard_test PRIVATE ../nodes/flight_gateway)
+target_link_libraries(aviator_gateway_keyboard_test PRIVATE aviator_runtime)
+add_test(NAME gateway_keyboard COMMAND aviator_gateway_keyboard_test)
+set_tests_properties(gateway_keyboard PROPERTIES TIMEOUT 5)
+
 aviator_add_test_executable(aviator_monitor_preview_receiver_test monitor_preview_receiver_test.cpp)
 target_link_libraries(aviator_monitor_preview_receiver_test PRIVATE aviator_monitor_state)
 add_test(NAME monitor_preview_receiver COMMAND aviator_monitor_preview_receiver_test

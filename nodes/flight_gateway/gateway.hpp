@@ -2,6 +2,7 @@
 
 #include "protocol.hpp"
 #include "runtime.hpp"
+#include "config.hpp"
 #include <array>
 #include <linux/input.h>
 #include <vector>
@@ -40,6 +41,27 @@ struct JoystickSample {
     void deviceChecked(std::uint64_t now_us);
     void invalidate();
     bool fresh(std::uint64_t now_us, std::uint64_t timeout_us) const;
+};
+
+// Keyboard emulates the existing normalized JOYSTICK protocol for Core compatibility.
+inline constexpr std::array<unsigned, 4> keyboard_arrows{KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN};
+inline constexpr std::array<unsigned, 11> keyboard_buttons{
+    KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0, KEY_MINUS};
+class KeyboardInput {
+public:
+    KeyboardInput(JoystickSample& sample, const KeyboardConfig& config)
+        : sample_(sample), config_(config) {}
+    void suppressHeld(unsigned code);
+    void update(const input_event& event, std::uint64_t now_us);
+    // Call only after a successful EVIOCGKEY and a fully drained event queue.
+    void deviceChecked(std::uint64_t now_us);
+private:
+    void advance(std::uint64_t now_us);
+    JoystickSample& sample_;
+    KeyboardConfig config_;
+    std::array<bool, 4> held_{}, pending_{}, suppressed_{};
+    double roll_ = 0, pitch_ = 0;
+    std::uint64_t integrated_us_ = 0, event_us_ = 0;
 };
 
 aviator::Message command(const JoystickSample& sample, const std::string& session,

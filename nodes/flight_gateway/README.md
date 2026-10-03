@@ -1,6 +1,6 @@
 # flight_gateway
 
-当前实现 USB Joystick → `flight.command`，并订阅 `flight.state` 的系统状态摘要。采用一个主循环，直接复用 common 的 ZMQ、消息编解码和 InputGuard；没有新增通信框架或后台线程。`main.cpp` 负责设备与循环，`gateway.hpp/.cpp` 负责采样、归一化和消息构造。
+当前实现 USB Joystick / Keyboard → `flight.command`，并订阅 `flight.state` 的系统状态摘要。采用一个主循环，直接复用 common 的 ZMQ、消息编解码和 InputGuard；没有新增通信框架或后台线程。`main.cpp` 负责设备与循环，`gateway.hpp/.cpp` 负责采样、归一化和消息构造。
 
 RS422 运行入口尚未实现；配置 `source: rs422` 时明确拒绝启动。后续在本节点内添加串口适配。
 
@@ -19,27 +19,55 @@ cmake --build build/communication --parallel
 
 所有运行配置来自 [config/flight.yaml](../../config/flight.yaml)，只保留 `--help` / `-h` 查看用法，不接受原有的设备、端点、按钮等启动参数。启动时打印实际配置路径；修改文件后重启生效，不热加载。
 
-构建目录中的程序默认读取编译时定位的源码 `config/flight.yaml`，不依赖当前工作目录。安装后的程序优先读取可执行文件旁的 `../share/aviator/config/flight.yaml`（随 CMake 安装）；该路径不存在时回退源码路径。配置文件必须存在且字段完整，未知/重复字段、非法按钮事件及超出范围的数值都会导致启动失败。
+构建目录中的程序默认读取编译时定位的源码 `config/flight.yaml`，不依赖当前工作目录。安装后的程序优先读取可执行文件旁的 `../share/aviator/config/flight.yaml`（随 CMake 安装）；该路径不存在时回退源码路径。配置文件必须存在且原有字段完整；新增 `keyboard` 块及其中字段可省略并使用默认值。未知/重复字段、非法按钮事件及超出范围的数值都会导致启动失败。
 
-使用 Linux evdev `/dev/input/event*` 或稳定符号链接，**不是 `/dev/input/js*`**。设备路径不存在、无权限或不支持所选轴/单调事件时钟时直接报错退出；修改 YAML 中的 device 后重启，不再在终端临时输入覆盖。程序不自动扫描其他设备。
+使用 Linux evdev `/dev/input/event*` 或稳定符号链接，**不是 `/dev/input/js*`**。设备路径不存在、无权限或不支持所选轴（摇杆）/方向键（键盘）/单调事件时钟时直接报错退出；修改 YAML 中的 device 后重启，不再在终端临时输入覆盖。程序不自动扫描其他设备。
 
 | YAML 字段 | 默认值 / 含义 |
 | --- | --- |
-| `source` | `joystick`；`rs422` 尚未实现。 |
+| `source` | `joystick` 或 `keyboard`；默认 `joystick`，`rs422` 尚未实现。 |
 | `device` | `/dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick`；绝对 evdev 路径。 |
 | `publish` / `subscribe` | `tcp://127.0.0.1:5555` / `tcp://127.0.0.1:5556`。 |
 | `service` | `tcp://127.0.0.1:5559`；本机 Core 操作服务，与总线端点不同。 |
-| `roll_axis` / `pitch_axis` | `0` / `1`；Linux ABS 事件代码，必须不同。 |
+| `roll_axis` / `pitch_axis` | `0` / `1`；Linux ABS 事件代码，必须不同；键盘模式不使用。 |
 | `invert_roll` / `invert_pitch` | `false`；反转对应轴。 |
 | `input_timeout_ms` | `100`，范围 1–100；设备检查结果有效期。 |
 | `service_timeout_ms` | `100`，范围 1–10000；服务请求等待期限。 |
 | `core_session` | 旧配置兼容字段，已忽略；接收合法 Core 发布者的新鲜反馈，不再固定会话。 |
 | `lock_file` | 空字符串自动使用 `/tmp/flight_gateway-<uid>.lock`，否则填写绝对路径。 |
-| `buttons` | 恰好 11 项，依次对应按钮 1–11；`none` 禁用该按钮。 |
+| `buttons` | 恰好 11 项，依次对应按钮 1–11；键盘对应 `1`–`9`、`0`、`-`；`none` 禁用该按钮。 |
+| `keyboard.roll_speed` / `keyboard.pitch_speed` | 均为 `1.0`；每秒增加的归一化行程，必须为有限正数。 |
+| `keyboard.roll_limit` / `keyboard.pitch_limit` | 均为 `1.0`；各轴对称绝对限位，范围 `(0, 1]`。 |
 
 启动后以最多 10 Hz 打印归一化控制值 `roll=... pitch=...`（范围 `[-1, 1]`，保留四位小数），终端中在同一行刷新，退出或输出其他日志前自动换行；重定向到文件或管道时逐行输出。不再打印 `input=VALID/INVALID`。首次成功设备查询或完整输入报告建立初始位置，失效后显示最后采样值；显示值不代表消息 valid=true。
 
-生产者固定为 `flight_gateway`，source 固定为 `JOYSTICK`。启动打印本次 session 和 clock_id，Core 应通过自己的授权流程接纳该会话；打印 STARTED 仅说明节点已初始化，不代表总线已连通或控制已获授权。
+生产者固定为 `flight_gateway`，线上报文 source 固定为 `JOYSTICK`。键盘作为虚拟摇杆复用该身份（包括服务请求参数），兼容现有 Core 协议和授权；YAML 的 `source` 选择本地输入设备类型，启动日志 `input=keyboard` 可区分实际输入。启动打印本次 session 和 clock_id，Core 应通过自己的授权流程接纳该会话；打印 STARTED 仅说明节点已初始化，不代表总线已连通或控制已获授权。
+
+## 键盘操作
+
+将 `config/flight.yaml` 中 `source` 改为 `keyboard`，`device` 改为实际键盘的绝对 evdev 路径，例如 `/dev/input/by-id/usb-<你的键盘>-event-kbd`。可用 `ls -l /dev/input/by-id/*-event-kbd` 查找设备；内置键盘也可使用 `/dev/input/by-path/*-event-kbd`。程序需要该设备读取权限，不扫描或自动选择其他设备。
+
+`kbd` 后缀不是必需条件。部分复合设备的键盘接口可能被命名为 `event-joystick`：例如本机 `CHERRY MX 3.0S Dongle Keyboard` 对应 `/dev/input/event7`，其稳定链接为 `/dev/input/by-id/usb-CHERRY_MX_3.0S_Dongle-event-joystick`。没有 `*-event-kbd` 时，查看 `cat /proc/bus/input/devices`，按设备名称找到键盘，在同一段 `Handlers` 中取得 `eventN`，再通过 `ls -l /dev/input/by-id /dev/input/by-path` 查找指向它的链接。也可直接配置 `/dev/input/eventN`，但编号可能在重启或拔插后改变。网关按设备实际按键能力校验，不按路径后缀判断。
+
+```yaml
+source: keyboard
+device: /dev/input/by-id/usb-<你的键盘>-event-kbd
+keyboard:
+  roll_speed: 1.0
+  pitch_speed: 1.0
+  roll_limit: 1.0
+  pitch_limit: 1.0
+```
+
+- 左/右方向键分别沿 roll 负/正方向增加绝对位置目标，上/下分别沿 pitch 负/正方向增加；`invert_roll` / `invert_pitch` 同样生效。
+- 按住后按单调时钟经过时间积分，以 50 Hz 发布，达到各轴限位后保持；默认从零到满行程需 1 秒，与操作系统的按键重复延迟/频率无关。roll 和 pitch 可同时操作。
+- 松开后该轴目标在下一发布周期回零（正常调度最多约 20 ms），另一轴不受影响。同轴相反方向同时按下时回零；剩一个方向或切换方向后从零重新增长。这里的回零指发布的位置目标，实际机械运动仍由 Core 控制。
+- 主键盘 `1`–`9`、`0`、`-` 依次对应 `buttons` 的第 1–11 项；不含数字小键盘。默认 `1` 待命、`2` 握盘、`3` 开始控制、`4` 退出控制、`5` 松盘、`6` 复位错误，其余禁用。按下沿在完整输入帧后请求一次，长按重复和松开不发请求；仍需 Core 的新鲜反馈及授权。
+- 启动时已按住的方向键和数字键须先松开再按才生效。输入帧未完成或队列未排空时不续期；拔出、读/查询失败、丢帧、异常时间或超过 100 ms 的旧键盘事件锁存失效，需要重启。
+
+使用本机 Linux evdev 读取真实按下/松开事件，不读取 stdin；SSH 终端字符不能控制远端键盘设备。设备监听不依赖窗口焦点，也不独占键盘，节点运行期间在其他窗口按同样的键仍会被识别。
+
+键盘每 20 ms 用 `EVIOCGKEY` 检查设备，在队列排空且完整输入帧已提交后积分产生新的软件位置目标，同时更新 `sample_mono_us` 与 `checked_mono_us`。这与下述摇杆保持原始硬件采样时间的行为不同，两者都沿用 `POSITION_HOLD` 检查链路。
 
 ## 普通用户设备权限
 
@@ -51,7 +79,7 @@ sudo ./scripts/setup_joystick_udev.sh --device /dev/input/by-id/usb-LiteStar_PXN
 
 脚本自动读取 USB VID/PID，为当前 sudo 用户配置专用组的读取权限。执行后注销并重新登录，必要时拔插设备。支持 `--dry-run` 预览及 `--user` 指定用户，详见 [scripts 使用说明](../../scripts/README.md)。
 
-## 输入及发布语义
+## 摇杆输入及发布语义
 
 - 设备事件通过 `EVIOCSCLOCKID` 指定为 CLOCK_MONOTONIC。EV_ABS 更新待提交轴值，SYN_REPORT 才提交完整快照，使用事件原始时刻而非读到事件的时刻。
 - 有正负范围的轴以 0 为中心，分别按正负行程归一化；非负范围使用中点。输出范围为 [-1,1]，保留正负满行程。异常越界值拒绝，不静默截断。
@@ -93,9 +121,9 @@ Managed Core 的 flight.state.valid 表示设备状态及 Core 拥有线程更�
 ctest --test-dir build/communication --output-on-failure
 ```
 
-测试覆盖归一化、完整帧提交、静止位置保持、原始时间保留、设备检查停止/半帧/断开失效、异常时间、消息编解码与授权。机器人构建的 control_nodes_flight_hold 复用网关消息构造函数，通过真实 ZMQ 与无头 MuJoCo 验证长时间没有轴事件时仍能追到阶跃目标，并验证设备检查过期、网关静默、断开及恢复。真实 USB 查询与拔插仍需现场验证。
+测试覆盖键盘时间积分、双轴/反转/限位、松开回零、对向键、数字键映射和重复抑制、启动已按住、异常及配置校验，以及摇杆归一化、完整帧提交、静止位置保持、原始时间保留、设备检查停止/半帧/断开失效、异常时间、消息编解码与授权。机器人构建的 control_nodes_flight_hold 复用网关消息构造函数，通过真实 ZMQ 与无头 MuJoCo 验证长时间没有轴事件时仍能追到阶跃目标，并验证设备检查过期、网关静默、断开及恢复。真实 USB 查询与拔插仍需现场验证。
 
-本次未连接实际 USB 硬件，设备权限、映射、发布抖动和持续操控需真机验证。当前不实现原始数据记录和 RS422 下行。安装入口为 `${CMAKE_INSTALL_BINDIR}/flight_gateway`。
+本次未连接实际键盘或摇杆硬件，设备权限、映射、发布抖动和持续操控需真机验证。当前不实现原始数据记录和 RS422 下行。安装入口为 `${CMAKE_INSTALL_BINDIR}/flight_gateway`。
 
 ## 摇杆按钮状态请求
 

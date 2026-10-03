@@ -74,8 +74,21 @@ int main(int argc, char** argv) {
                {{"source", "JOYSTICK"}, {"control", {{"roll", .35}, {"pitch", -.12}}}});
         auto command = state.overview(1010000, "clock")["flight_command"];
         check(command["current"]["roll_percent"] == 35 &&
-                  std::abs(command["current"]["pitch_mm"].get<double>() - 74.8) < 1e-9,
+                  command["current"]["pitch_normalized"] == -.12 &&
+                  command["current"]["pitch_percent"] == 12 &&
+                  std::abs(command["current"]["pitch_mm"].get<double>() - 95.2) < 1e-9,
               "command mapping");
+        for (const auto& sample : std::array<std::array<double, 3>, 3>{
+                 {{-1, 100, 170}, {0, 0, 85}, {1, -100, 0}}}) {
+            monitor::State endpoint;
+            ingest(endpoint, aviator::Topic::flight_command,
+                   {{"source", "JOYSTICK"}, {"control", {{"roll", .35}, {"pitch", sample[0]}}}});
+            const auto current = endpoint.overview(1010000, "clock")["flight_command"]["current"];
+            check(current["pitch_normalized"] == sample[0] &&
+                      current["pitch_percent"] == sample[1] && current["pitch_mm"] == sample[2] &&
+                      current["roll_percent"] == 35,
+                  "command pitch display direction at endpoints and neutral");
+        }
         check(state.overview(1100000, "clock")["flight_command"]["current"].is_null(),
               "stale command remains current");
         check(state.overview(1010000, "other")["flight_command"]["measurement_state"] ==

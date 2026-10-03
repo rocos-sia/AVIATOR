@@ -36,13 +36,14 @@ int main(int argc, char** argv) {
         if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
             std::cout << "Usage: flight_gateway\n"
                          "Configuration: config/flight.yaml (installed: share/aviator/config/flight.yaml).\n"
-                         "Edit the YAML file for device, endpoints, axes and 11 button mappings.\n"
+                         "Edit the YAML file for joystick/keyboard source, device, speeds and button mappings.\n"
                          "Publishes at 50 Hz; restart after configuration changes.\n";
             return 0;
         }
         require(argc == 1, "startup options are not supported; edit config/flight.yaml");
         const auto config_path = flight_gateway::default_config_path();
         const auto config = flight_gateway::load_config(config_path);
+        const bool keyboard_mode = config.source == "keyboard";
         const auto& path = config.device;
         const auto& core_session = config.core_session;
         const auto& pub_endpoint = config.publish;
@@ -61,17 +62,33 @@ int main(int argc, char** argv) {
         int clock_type = CLOCK_MONOTONIC;
         require(ioctl(device, EVIOCSCLOCKID, &clock_type) == 0,
                 "device must support monotonic evdev timestamps: " + path);
-        require(ioctl(device, EVIOCGABS(roll_axis), &roll) == 0 &&
-                    ioctl(device, EVIOCGABS(pitch_axis), &pitch) == 0,
-                "selected absolute axes unavailable: " + path);
-        require(roll.minimum < roll.maximum && pitch.minimum < pitch.maximum,
-                "invalid device axis ranges: " + path);
+        if (!keyboard_mode) {
+            require(ioctl(device, EVIOCGABS(roll_axis), &roll) == 0 &&
+                        ioctl(device, EVIOCGABS(pitch_axis), &pitch) == 0,
+                    "selected absolute axes unavailable: " + path);
+            require(roll.minimum < roll.maximum && pitch.minimum < pitch.maximum,
+                    "invalid device axis ranges: " + path);
+        }
         std::array<unsigned char, (KEY_MAX + 8) / 8> keys{}, held_keys{};
         require(ioctl(device, EVIOCGBIT(EV_KEY, keys.size()), keys.data()) >= 0 &&
                     ioctl(device, EVIOCGKEY(held_keys.size()), held_keys.data()) >= 0,
-                "cannot query joystick buttons");
+                "cannot query input keys");
+        if (keyboard_mode) {
+            for (const auto code : flight_gateway::keyboard_arrows)
+                require(keys[code / 8] & (1u << (code % 8)),
+                        "selected device does not provide arrow keys: " + path);
+            buttons.codes = flight_gateway::keyboard_buttons;
+            for (unsigned i = 0; i < buttons.codes.size(); ++i) {
+                const auto code = buttons.codes[i];
+                require(buttons.operations[i].empty() || (keys[code / 8] & (1u << (code % 8))),
+                        "selected keyboard is missing mapped key: " + std::to_string(code));
+                buttons.held[i] = held_keys[code / 8] & (1u << (code % 8));
+                std::cout << "button=" << i + 1 << " evdev_code=" << code << " event="
+                          << (buttons.operations[i].empty() ? "none" : buttons.operations[i]) << '\n';
+            }
+        }
         unsigned button_count = 0;
-        for (unsigned code = BTN_MISC; code <= KEY_MAX && button_count < 11; ++code) {
+        for (unsigned code = BTN_MISC; !keyboard_mode && code <= KEY_MAX && button_count < 11; ++code) {
             if (!(keys[code / 8] & (1u << (code % 8))))
                 continue;
             buttons.codes[button_count] = code;
@@ -97,6 +114,10 @@ int main(int argc, char** argv) {
         flight_gateway::JoystickSample sample{
             {roll_axis, roll.minimum, roll.maximum, roll.value, invert_roll},
             {pitch_axis, pitch.minimum, pitch.maximum, pitch.value, invert_pitch}};
+        flight_gateway::KeyboardInput keyboard(sample, config.keyboard);
+        if (keyboard_mode)
+            for (const auto code : flight_gateway::keyboard_arrows)
+                if (held_keys[code / 8] & (1u << (code % 8))) keyboard.suppressHeld(code);
         const auto session = aviator::new_instance_id(), clock = aviator::local_clock_id();
         flight_gateway::CoreFeedback feedback(core_session, clock);
         zmq::context_t context{1};
@@ -104,12 +125,13 @@ int main(int argc, char** argv) {
         aviator::configure(pub); aviator::configure(sub);
         aviator::subscribe(sub, "flight.state");
         pub.connect(pub_endpoint); sub.connect(sub_endpoint);
-        std::cout << "STARTED source=JOYSTICK session=" << session << " clock=" << clock
+        std::cout << "STARTED input=" << config.source << " source=JOYSTICK session=" << session << " clock=" << clock
                   << " feedback=WAITING" << std::endl;
         aviator::print_startup(
             "flight_gateway",
             {{"Config", config_path},
-            {"Device", path},
+             {"Input", config.source},
+             {"Device", path},
              {"PUB connect", pub_endpoint},
              {"PUB topics",
               "flight.command (50 Hz); record.service.request / record.service.reply"},
@@ -201,7 +223,8 @@ int main(int argc, char** argv) {
                     const auto n = read(device, &event, sizeof(event));
                     if (n == sizeof(event)) {
                         const auto event_now = aviator::monotonic_us();
-                        sample.update(event, event_now);
+                        if (keyboard_mode) keyboard.update(event, event_now);
+                        else sample.update(event, event_now);
                         for (auto index : buttons.update(event, event_now, !sample.failed))
                             request_button(index);
                     } else if (n < 0 && errno == EINTR)
@@ -300,7 +323,18 @@ int main(int argc, char** argv) {
             if (current >= next_publish) {
                 // Query kernel device availability every 20 ms. This is not a new hardware sample.
                 // Only renew the lease after draining events and completing their SYN_REPORT.
-                if (device >= 0 && !sample.failed) {
+                if (device >= 0 && !sample.failed && keyboard_mode) {
+                    std::array<unsigned char, (KEY_MAX + 8) / 8> current_keys{};
+                    if (ioctl(device, EVIOCGKEY(current_keys.size()), current_keys.data()) < 0) {
+                        sample.invalidate();
+                        finish_value_line();
+                        std::cerr << "flight_gateway: keyboard check failed: " << std::strerror(errno)
+                                  << "; restart required\n";
+                        close(device); device = -1;
+                    } else if (input_drained) {
+                        keyboard.deviceChecked(aviator::monotonic_us());
+                    }
+                } else if (device >= 0 && !sample.failed) {
                     input_absinfo current_roll{}, current_pitch{};
                     if (ioctl(device, EVIOCGABS(roll_axis), &current_roll) != 0 ||
                         ioctl(device, EVIOCGABS(pitch_axis), &current_pitch) != 0) {

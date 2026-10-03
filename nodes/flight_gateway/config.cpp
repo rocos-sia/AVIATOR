@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "service.hpp"
 #include <filesystem>
+#include <cmath>
 #include <linux/input.h>
 #include <set>
 #include <stdexcept>
@@ -57,7 +58,7 @@ Config load_config(const std::string& path) {
                                             "invert_pitch",
                                             "input_timeout_ms",
                                             "service_timeout_ms",
-                                            "buttons"};
+                                            "buttons", "keyboard"};
         require(root.IsMap(), "expected mapping");
         std::set<std::string> seen;
         for (const auto& item : root) {
@@ -66,10 +67,10 @@ Config load_config(const std::string& path) {
                     "unknown or duplicate key: " + key);
         }
         for (const auto& key : allowed)
-            require(seen.count(key), "missing key: " + key);
+            require(key == "keyboard" || seen.count(key), "missing key: " + key);
         Config c;
         c.source = string(root["source"]);
-        require(c.source == "joystick",
+        require(c.source == "joystick" || c.source == "keyboard",
                 c.source == "rs422" ? "RS422 mode not implemented" : "unknown source");
         c.device = string(root["device"]);
         require(std::filesystem::path(c.device).is_absolute(),
@@ -95,6 +96,26 @@ Config load_config(const std::string& path) {
         c.invert_pitch = boolean(root["invert_pitch"]);
         c.input_timeout_ms = number(root["input_timeout_ms"], 100);
         c.service_timeout_ms = number(root["service_timeout_ms"], 10000);
+        if (const auto keyboard = root["keyboard"]) {
+            require(keyboard.IsMap(), "keyboard must be a mapping");
+            std::set<std::string> keyboard_seen;
+            for (const auto& item : keyboard) {
+                const auto key = string(item.first);
+                require((key == "roll_speed" || key == "pitch_speed" ||
+                         key == "roll_limit" || key == "pitch_limit") &&
+                            keyboard_seen.insert(key).second,
+                        "unknown or duplicate keyboard key: " + key);
+                require(item.second.IsScalar(), "keyboard." + key + " must be a number");
+                const auto value = item.second.as<double>();
+                const bool limit = key == "roll_limit" || key == "pitch_limit";
+                require(std::isfinite(value) && value > 0 && (!limit || value <= 1),
+                        "keyboard." + key + (limit ? " must be in (0, 1]" : " must be finite and positive"));
+                if (key == "roll_speed") c.keyboard.roll_speed = value;
+                if (key == "pitch_speed") c.keyboard.pitch_speed = value;
+                if (key == "roll_limit") c.keyboard.roll_limit = value;
+                if (key == "pitch_limit") c.keyboard.pitch_limit = value;
+            }
+        }
         const auto buttons = root["buttons"];
         require(buttons.IsSequence() && buttons.size() == c.buttons.size(),
                 "buttons must contain exactly 11 entries");

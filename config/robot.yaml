@@ -5,7 +5,7 @@
 # 所有路径均相对本文件；真机也复用下面的运动学、碰撞和轨迹参数。
 # backend: mujoco
 # viewer: true  # MuJoCo 窗口；--headless 可覆盖为关闭
-backend: rokae
+backend: mujoco
 model: ../models/control/aviator.xml
 
 # 启动时轮盘的实际初始位形；真机声明软件参考，仿真同时设置轮盘关节初值。
