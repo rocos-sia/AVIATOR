@@ -304,6 +304,7 @@ Json State::overview(std::uint64_t now, const std::string& clock) {
     Json result{{"schema_version", 1},
                 {"monitor_session_id", session_id},
                 {"snapshot_revision", ++snapshot_revision},
+                {"config_revision", config_revision},
                 {"snapshot_generated_mono_us", now},
                 {"arms", Json::object()},
                 {"hands", Json::object()},

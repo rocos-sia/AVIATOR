@@ -28,7 +28,7 @@ struct Service {
 struct State {
     Json config = default_config();
     std::string session_id = aviator::new_instance_id();
-    std::uint64_t snapshot_revision = 0;
+    std::uint64_t snapshot_revision = 0, config_revision = 0;
     std::mutex mutex;
     std::vector<Stream> streams;
     std::vector<Service> services;

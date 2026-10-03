@@ -40,3 +40,15 @@ WARNING: Nan, Inf or huge value in QACC at DOF 0. The simulation is unstable. Ti
 Mon Sep 28 15:18:48 2026
 WARNING: Nan, Inf or huge value in QACC at DOF 0. The simulation is unstable. Time = 0.0150.
 
+Sat Oct  3 10:30:03 2026
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+
+Sat Oct  3 10:32:42 2026
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+
+Sat Oct  3 10:33:59 2026
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+
+Sat Oct  3 11:30:07 2026
+WARNING: OpenGL error 0x502 in or before mjr_makeContext
+

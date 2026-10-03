@@ -33,10 +33,12 @@ ctest --test-dir build/communication --output-on-failure
 
 `gateway_test.cpp` 检查 USB 事件快照、轴归一化、原始时间保留、过期/断开/丢帧失效以及 FlightState 系统摘要、会话和超时。另有网关帮助、缺少设备参数、RS422 尚未实现时拒绝启动的命令行测试；不需要实际 USB 硬件。
 
-`monitor_state` 覆盖只读监控统计与有界缓存；`monitor_http`（Python3 标准库，仅测试依赖）启动真实 HTTP 服务与 C++ TCP 发布者，验证页面、接口、慢连接、过期和退出。
+`monitor_state` 覆盖只读监控统计与有界缓存；`monitor_http`（Python3 标准库，仅测试依赖）启动真实 HTTP 服务与 C++ TCP 发布者，验证页面、接口、慢连接、过期、动态配置保存/来源切换、失败回滚、版本冲突、重启持久化和退出。`monitor_config` 覆盖 YAML 解析、类型往返与原子保存；`monitor_preview_receiver` 使用隔离 TCP 端口验证图像订阅启用、地址与身份切换、关闭和重新启用。配置页浏览器测试见 `monitor_config_browser_test.cjs`，需要 Node ≥18、playwright-core 和 Chrome。
 
 ## Logger 记录验证
 
 通信构建包含 `recording`、`logger_help` 和 `logger_invalid_queue`；发现 Python 解释器时还运行 `logger_process`（仅使用标准库）。覆盖 MCAP 读回、全部已注册 Topic、多来源/版本映射、TCP 订阅和有界队列，以及信号关闭、输出冲突与写盘失败。测试使用独立临时目录和动态 TCP 端口，无需机器人硬件。
 
 `camera_recording` 新增三模式、相机双流 TCP→MCAP→解码验证（软件 libx264/libx265、Zstd）、非法输入和图像队列溢出；不依赖相机/GPU。`camera_adapter` 使用 Python 标准库验证 Python/C++ Protobuf 信封互通。`logger_process` 同时验证 YAML 与 CLI 优先级。真实 D436、NVENC 和高分辨率持续带宽需另行实机验收。
+
+`monitor_http` 包含超过 2 s 的大网格慢接收完整性检查。`monitor_remote_model_browser_test.cjs` 使用非 localhost HTTP 域名、限速和延迟验证完整模型加载与同源资源请求；依赖 Node ≥18、playwright-core 和 Chrome，运行方式见 Monitor README。

@@ -1,5 +1,10 @@
 """Local process integration; Python is test-only, production remains C++17."""
 import json
+from http.client import HTTPResponse
+import hashlib
+import pathlib
+import tempfile
+import copy
 import signal
 import socket
 import subprocess
@@ -22,11 +27,16 @@ base = f'http://127.0.0.1:{port}'
 endpoint = f'tcp://127.0.0.1:{zmq_port}'
 children = []
 slow = None
+temporary = tempfile.TemporaryDirectory(prefix="monitor-http-")
+config_path = pathlib.Path(temporary.name) / "monitor.yaml"
+config_path.write_text("version: 1\npreview:\n  endpoint: ''\n")
 http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
-def fetch(path, method='GET', origin=base):
-    req = urllib.request.Request(origin + path, method=method)
+def fetch(path, method='GET', origin=base, payload=None, headers=None):
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(origin + path, method=method, data=data,
+                                 headers=headers or {})
     with http.open(req, timeout=2) as response:
         return response.read()
 
@@ -46,7 +56,7 @@ def until(predicate, timeout=4):
 
 try:
     web = subprocess.Popen([sys.argv[1], '--port', str(port), '--subscribe', endpoint,
-                            '--preview', 'off'],
+                            '--preview', 'off', '--config', str(config_path)],
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     children.append(web)
     until(lambda: fetch('/'))
@@ -73,6 +83,83 @@ try:
             raise AssertionError('request should fail')
         except urllib.error.HTTPError as error:
             assert error.code == expected
+    assert b'tab-settings' in fetch('/') and b'config-save' in fetch('/')
+    assert b'/api/config' in fetch('/assets/settings.js')
+    settings = json.loads(fetch('/api/config'))
+    headers = {'Content-Type': 'application/json', 'X-Monitor-Config': '1'}
+    def save(config=None, yaml=None, revision=None):
+        payload = {'revision': revision or settings['revision']}
+        payload.update({'yaml': yaml} if yaml is not None else {'config': config})
+        return json.loads(fetch('/api/config', 'PUT', payload=payload, headers=headers))
+    for bad in ['timeouts_ms: {arm.state: -1}', 'sources: {unknown: camera}',
+                'preview: {endpoint: "tcp://"}', 'version: 1\nversion: 1']:
+        before = config_path.read_bytes()
+        try:
+            save(yaml=bad)
+            raise AssertionError('invalid configuration accepted')
+        except urllib.error.HTTPError as error:
+            assert error.code == 400
+        assert json.loads(fetch('/api/config')) == settings
+        assert config_path.read_bytes() == before
+    for extra in [{}, {'Content-Type':'text/plain'},
+                  {**headers, 'Origin':'http://untrusted.example'}]:
+        try:
+            fetch('/api/config', 'PUT', payload={'revision':settings['revision'],
+                  'config':settings['config']}, headers=extra)
+            raise AssertionError('cross-origin/untyped write accepted')
+        except urllib.error.HTTPError as error:
+            assert error.code == 403
+    # A fragmented body larger than the old 4 KiB header-only request limit.
+    payload = json.dumps({'revision':settings['revision'], 'config':settings['config']}, indent=4).encode()
+    with socket.create_connection(('127.0.0.1', port)) as fragmented:
+        fragmented.sendall((f'PUT /api/config HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n'
+                            'Content-Type: application/json\r\nX-Monitor-Config: 1\r\n'
+                            f'Content-Length: {len(payload)}\r\n\r\n').encode())
+        for offset in range(0, len(payload), 400):
+            fragmented.sendall(payload[offset:offset+400])
+        result = b''
+        while True:
+            part = fragmented.recv(8192)
+            if not part: break
+            result += part
+        assert result.startswith(b'HTTP/1.1 200'), result
+    old_revision = settings['revision']
+    settings = json.loads(fetch('/api/config'))
+    assert settings['revision'] != old_revision
+    try:
+        save(settings['config'], revision=old_revision)
+        raise AssertionError('stale revision accepted')
+    except urllib.error.HTTPError as error:
+        assert error.code == 409
+    # A persistence error must leave the active configuration intact.
+    config_path.rename(config_path.with_suffix('.backup'))
+    config_path.mkdir()
+    try:
+        save(settings['config'])
+        raise AssertionError('directory replaced by configuration')
+    except urllib.error.HTTPError as error:
+        assert error.code == 400
+    assert json.loads(fetch('/api/config')) == settings
+    config_path.rmdir()
+    config_path.with_suffix('.backup').rename(config_path)
+    # A remote client can take longer than two seconds to receive a large mesh.
+    # Keep its receive window small so the kernel cannot buffer the entire STL.
+    mesh_path = '/models/meshes/Cessna/steering_wheel.STL'
+    with socket.socket() as download:
+        download.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
+        download.settimeout(10)
+        download.connect(('127.0.0.1', port))
+        download.sendall(f'GET {mesh_path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n'.encode())
+        time.sleep(2.3)
+        assert json.loads(fetch('/api/state'))['streams'] == []
+        response = HTTPResponse(download)
+        response.begin()
+        assert response.status == 200
+        mesh = response.read()
+        expected = (pathlib.Path(__file__).resolve().parents[1] / 'models/meshes/Cessna/steering_wheel.STL').read_bytes()
+        assert len(mesh) == len(expected)
+        assert hashlib.sha256(mesh).digest() == hashlib.sha256(expected).digest()
+        response.close()
     slow = socket.create_connection(('127.0.0.1', port))
     slow.sendall(b'GET / HTTP/1.1\r\n')  # Incomplete headers must not block other clients.
     producer = subprocess.Popen([sys.argv[2], '--publish', endpoint], stdout=subprocess.DEVNULL)
@@ -85,6 +172,21 @@ try:
     assert detail['system']['state'] == 'CONTROL'
     assert row['summary']['source'] == 'JOYSTICK'
     assert json.loads(fetch('/api/overview'))['system']['current']['state'] == 'CONTROL'
+    candidate = copy.deepcopy(settings['config'])
+    candidate['sources']['flight.state'] = 'other_core'
+    candidate['timeouts_ms']['flight.state'] = 2000
+    candidate['preview'].update(endpoint='tcp://127.0.0.1:1', camera_id='new_camera', publisher_id='new_publisher')
+    settings = save(candidate)
+    assert json.loads(fetch('/api/overview'))['system']['current'] is None
+    assert json.loads(fetch('/api/camera/latest'))['camera_id'] == 'new_camera'
+    candidate['sources']['flight.state'] = 'aviator_core'
+    candidate['preview']['endpoint'] = ''
+    candidate['arm_joints']['left'][0]['offset_rad'] = .25
+    settings = save(candidate)
+    assert json.loads(fetch('/api/overview'))['system']['current']['state'] == 'CONTROL'
+    assert json.loads(fetch('/api/model-manifest'))['arm_joints']['left'][0]['offset_rad'] == .25
+    assert json.loads(fetch('/api/camera/latest'))['state'] == 'UNCONFIGURED'
+    assert 'sources:' in config_path.read_text() and 'other_core' not in config_path.read_text()
     def service():
         rows = json.loads(fetch('/api/state'))['services']
         return rows and rows[0]['status'] == 'ACCEPTED' and rows[0]
@@ -101,10 +203,12 @@ try:
     assert web.wait(timeout=2) == 0
     for address, excluded in [('127.0.0.1', '127.0.0.2'), ('127.0.0.2', '127.0.0.1')]:
         web = subprocess.Popen([sys.argv[1], '--bind', address, '--port', str(port),
-                                '--subscribe', endpoint, '--preview', 'off'],
+                                '--subscribe', endpoint, '--preview', 'off', '--config', str(config_path)],
                                stdout=subprocess.DEVNULL)
         children.append(web)
         until(lambda: fetch('/', origin=f'http://{address}:{port}'))
+        restored = json.loads(fetch('/api/config', origin=f'http://{address}:{port}'))
+        assert restored['config'] == settings['config']
         with socket.socket() as sock:
             sock.settimeout(1)
             assert sock.connect_ex((excluded, port)) != 0, '--bind must restrict the listener'
@@ -123,3 +227,5 @@ finally:
         if child.poll() is None:
             child.kill()
         child.wait(timeout=2)
+
+    temporary.cleanup()

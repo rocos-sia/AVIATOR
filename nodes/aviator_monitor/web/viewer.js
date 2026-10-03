@@ -22,7 +22,7 @@ export class Viewer {
     this.renderer.outputColorSpace=THREE.SRGBColorSpace;
     container.append(this.renderer.domElement);
     this.controls=new OrbitControls(this.camera,this.renderer.domElement);
-    this.controls.enableDamping=true; this.controls.dampingFactor=.35; this.controls.target.set(0,0,.5);
+    this.controls.enableDamping=true; this.controls.dampingFactor=.6; this.controls.target.set(0,0,.5);
     this.scene.add(new THREE.HemisphereLight(0xffffff,0x777777,2));
     const key=new THREE.DirectionalLight(0xffffff,3); key.position.set(2,-3,5); this.scene.add(key);
     this.grid=new THREE.GridHelper(6,30,0xaaaaaa,0x777777); this.grid.rotation.x=Math.PI/2; this.scene.add(this.grid);
@@ -59,10 +59,11 @@ export class Viewer {
       const manifest=await r.json(); if (generation !== this.generation) return;
       if (manifest.resource_errors.length) throw new Error(`缺失资源：${manifest.resource_errors.join(', ')}`);
       const manager=new THREE.LoadingManager(); const failures=[];
-      manager.setURLModifier(url=> {
-        const path=new URL(url,location.href).pathname;
-        return manifest.aliases[path] ?? url;
-      });
+      const resourceURL = url => {
+        const path = new URL(url, location.href).pathname;
+        return new URL(manifest.aliases[path] ?? path, location.origin).href;
+      };
+      manager.setURLModifier(resourceURL);
       let robot=null;
       manager.onProgress=(url,done,total)=>{if(generation===this.generation) this.note(`网格加载 ${done} / ${total}`);};
       manager.onError=url=>failures.push(url);
@@ -88,7 +89,36 @@ export class Viewer {
         this.scene.add(robot); this.createHelpers(); this.loaded=true; this.apply(); this.fit(); this.note(''); this.style();
       };
       const loader=new URDFLoader(manager); loader.parseVisual=true; loader.parseCollision=false;
-      loader.load(manifest.model_url, result=>{robot=result; this.note('结构已解析，正在加载网格…');}, undefined,error=>{if(generation===this.generation) this.note(`模型加载失败：${error.message}`,true);});
+      // Reserve browser connections for live state/preview requests during remote downloads.
+      // Count queued meshes immediately so LoadingManager cannot finish before the queue drains.
+      const queue = []; let active = 0;
+      const pump = () => {
+        while (active < 3 && queue.length) {
+          const {url, material, done} = queue.shift();
+          if (generation !== this.generation) { manager.itemEnd(url); continue; }
+          active++;
+          const childManager = new THREE.LoadingManager();
+          childManager.setURLModifier(resourceURL);
+          let finished = false;
+          const finish = (mesh, error) => {
+            if (finished) return;
+            finished = true;
+            try {
+              if (generation === this.generation) done(mesh, error);
+              else this.disposeRobot(mesh);
+            } finally {
+              if (error) manager.itemError(url);
+              active--; manager.itemEnd(url); pump();
+            }
+          };
+          try { loader.defaultMeshLoader(resourceURL(url), childManager, material, finish); }
+          catch (error) { finish(null, error); }
+        }
+      };
+      loader.loadMeshCb = (url, unusedManager, material, done) => {
+        manager.itemStart(url); queue.push({url, material, done}); pump();
+      };
+      loader.load(resourceURL(manifest.model_url), result=>{robot=result; this.note('结构已解析，正在加载网格…');}, undefined,error=>{if(generation===this.generation) this.note(`模型加载失败：${error.message}`,true);});
     } catch(error) { if (generation===this.generation) this.note(`模型加载失败：${error.message}`,true); }
   }
   clearHelpers() {

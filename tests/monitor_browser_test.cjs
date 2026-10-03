@@ -15,7 +15,7 @@ async function main() {
   const config={yoke_calibration:{id:'BROWSER-TEST-ONLY',aircraft_camera:identity,tag_yoke:identity,aircraft_yoke_zero:identity,
     roll_axis:[0,0,1],pitch_axis:[0,0,1],pitch_zero_mm:85,min_confidence:.5,max_rotation_residual_deg:2,max_translation_residual_mm:2,
     model:{roll_sign:1,roll_offset_rad:0,pitch_sign:-1,pitch_offset_m:0}}};
-  const configPath=path.join(directory,'monitor.json'),controlPath=path.join(directory,'fixture.json');
+  const configPath=path.join(directory,'monitor.yaml'),controlPath=path.join(directory,'fixture.json');
   fs.writeFileSync(configPath,JSON.stringify(config)); fs.writeFileSync(controlPath,'{}');
   const web=spawn(binary,['--port',String(http),'--subscribe',`tcp://127.0.0.1:${bus}`,'--preview',`tcp://127.0.0.1:${rgb}`,'--config',configPath]);
   children.push(web); let serverErrors=''; web.stderr.on('data',chunk=>serverErrors+=chunk);

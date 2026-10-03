@@ -2,6 +2,7 @@
 #include "monitor.hpp"
 #include "page.hpp"
 #include "preview.hpp"
+#include "preview_receiver.hpp"
 #include "runtime.hpp"
 #include "startup.hpp"
 #include "transport.hpp"
@@ -11,10 +12,13 @@
 #include <arpa/inet.h>
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <functional>
 #include <iostream>
+#include <map>
 #include <poll.h>
 #include <pthread.h>
 #include <signal.h>
@@ -42,6 +46,9 @@ struct Client {
     std::string request, response;
     std::size_t sent = 0;
     std::uint64_t deadline = 0;
+    std::map<std::string, std::string> headers;
+    std::string parse_error;
+    std::size_t body_start = 0;
 };
 unsigned number(const std::string& text, unsigned maximum) {
     if (text.empty() || text.size() > 10 ||
@@ -52,15 +59,99 @@ unsigned number(const std::string& text, unsigned maximum) {
         throw std::runtime_error("numeric argument out of range");
     return static_cast<unsigned>(value);
 }
+bool request_ready(Client& client) {
+    const auto end = client.request.find("\r\n\r\n");
+    if (end == std::string::npos) {
+        if (client.request.size() > 4096)
+            throw std::runtime_error("headers exceed 4 KiB");
+        return false;
+    }
+    if (end + 4 > 4096)
+        throw std::runtime_error("headers exceed 4 KiB");
+    client.body_start = end + 4;
+    client.headers.clear();
+    std::istringstream input(client.request.substr(0, end));
+    std::string line;
+    std::getline(input, line);
+    while (std::getline(input, line)) {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        const auto colon = line.find(':');
+        if (colon == std::string::npos)
+            throw std::runtime_error("malformed header");
+        auto key = line.substr(0, colon), value = line.substr(colon + 1);
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        const auto begin = value.find_first_not_of(" \t"), last = value.find_last_not_of(" \t");
+        value = begin == std::string::npos ? "" : value.substr(begin, last - begin + 1);
+        if (!client.headers.emplace(key, value).second)
+            throw std::runtime_error("duplicate header");
+    }
+    if (client.headers.count("transfer-encoding"))
+        throw std::runtime_error("chunked requests unsupported");
+    std::size_t size = 0;
+    const auto length = client.headers.find("content-length");
+    if (length != client.headers.end()) {
+        const auto& text = length->second;
+        if (text.empty() || text.size() > 6 ||
+            text.find_first_not_of("0123456789") != std::string::npos)
+            throw std::runtime_error("invalid content length");
+        size = std::stoul(text);
+    }
+    if (size > 131072)
+        throw std::runtime_error("body exceeds 128 KiB");
+    return client.request.size() >= client.body_start + size;
+}
 void response(Client& client, monitor::State& state, monitor::Preview& preview,
-              const monitor::Assets& assets, const std::string& clock) {
+              const monitor::Assets& assets, const std::string& clock,
+              const std::function<monitor::Json(const monitor::Json*)>& configuration) {
     std::istringstream line(client.request.substr(0, client.request.find("\r\n")));
     std::string method, path, version, extra;
     line >> method >> path >> version;
     std::string status = "200 OK", body, type = "application/json; charset=utf-8";
-    if ((version != "HTTP/1.1" && version != "HTTP/1.0") || (line >> extra)) {
+    if (!client.parse_error.empty()) {
+        status = "400 Bad Request";
+        body = monitor::Json{{"error", client.parse_error}}.dump();
+    } else if ((version != "HTTP/1.1" && version != "HTTP/1.0") || (line >> extra)) {
         status = "400 Bad Request";
         body = "{}";
+    } else if (path == "/api/config" && (method == "GET" || method == "PUT")) {
+        try {
+            if (method == "GET")
+                body = configuration(nullptr).dump();
+            else {
+                const auto& headers = client.headers;
+                const auto header = [&](const char* key) {
+                    auto found = headers.find(key);
+                    return found == headers.end() ? std::string() : found->second;
+                };
+                const auto origin = header("origin");
+                if (header("content-type") != "application/json" ||
+                    header("x-monitor-config") != "1" ||
+                    (!origin.empty() && origin != "http://" + header("host") &&
+                     origin != "https://" + header("host"))) {
+                    status = "403 Forbidden";
+                    body = monitor::Json{{"error", "configuration writes require same-origin JSON "
+                                                   "and X-Monitor-Config: 1"}}
+                               .dump();
+                } else {
+                    const auto payload = monitor::Json::parse(
+                        client.request.substr(client.body_start),
+                        [](int depth, monitor::Json::parse_event_t, monitor::Json&) {
+                            if (depth > 32)
+                                throw std::runtime_error("configuration nesting limit");
+                            return true;
+                        });
+                    body = configuration(&payload).dump();
+                }
+            }
+        } catch (const std::logic_error& error) {
+            status = "409 Conflict";
+            body = monitor::Json{{"error", error.what()}}.dump();
+        } catch (const std::exception& error) {
+            status = "400 Bad Request";
+            body = monitor::Json{{"error", error.what()}}.dump();
+        }
     } else if (method != "GET") {
         status = "405 Method Not Allowed";
         body = "{}";
@@ -110,6 +201,9 @@ void response(Client& client, monitor::State& state, monitor::Preview& preview,
         status = "404 Not Found";
         body = "{}";
     }
+    // Request upload has a short absolute deadline; a response gets an idle timeout.
+    // Large meshes must keep streaming for as long as the client makes progress.
+    client.deadline = aviator::monotonic_us() + 30000000;
     client.response =
         "HTTP/1.1 " + status + "\r\nContent-Type: " + type +
         "\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n"
@@ -133,24 +227,24 @@ int main(int argc, char** argv) {
         fs::path model_root = fs::exists(deployed / "models/urdf/aviator.urdf")
                                   ? deployed / "models"
                                   : fs::path(AVIATOR_MONITOR_MODELS);
-        if (fs::exists(deployed / "monitor.json"))
-            config_path = (deployed / "monitor.json").string();
+        if (fs::exists(deployed / "monitor.yaml"))
+            config_path = (deployed / "monitor.yaml").string();
         else if (fs::exists(AVIATOR_MONITOR_CONFIG))
             config_path = AVIATOR_MONITOR_CONFIG;
         bool preview_override = false;
         for (int i = 1; i < argc; ++i) {
             const std::string key = argv[i];
             if (key == "--help" || key == "-h") {
-                std::cout
-                    << "Usage: aviator_monitor [--bind 0.0.0.0] [--port 8081]\n"
-                       "  [--subscribe tcp://127.0.0.1:5556]\n"
-                       "  [--config monitor.json] [--model-root MODELS] [--preview "
-                       "tcp://127.0.0.1:5561|off]\n"
-                       "Read-only dual-tab Web UI; HTTP listens on all IPv4 interfaces by "
-                       "default.\n"
-                       "Open http://<server-LAN-IP>:PORT/ from another computer; use "
-                       "--bind 127.0.0.1 for local-only access.\n"
-                       "SIGINT/SIGTERM to stop.\n";
+                std::cout << "Usage: aviator_monitor [--bind 0.0.0.0] [--port 8081]\n"
+                             "  [--subscribe tcp://127.0.0.1:5556]\n"
+                             "  [--config monitor.yaml] [--model-root MODELS] [--preview "
+                             "tcp://127.0.0.1:5561|off]\n"
+                             "Monitoring and live configuration Web UI; HTTP listens on all IPv4 "
+                             "interfaces by "
+                             "default.\n"
+                             "Open http://<server-LAN-IP>:PORT/ from another computer; use "
+                             "--bind 127.0.0.1 for local-only access.\n"
+                             "SIGINT/SIGTERM to stop.\n";
                 return 0;
             }
             if (++i == argc)
@@ -200,6 +294,43 @@ int main(int argc, char** argv) {
         monitor::validate_config(state.config);
         monitor::Preview preview(state.config.at("preview"));
         monitor::Assets assets(web_root, model_root, state.config);
+        monitor::PreviewReceiver preview_receiver(preview);
+        preview_receiver.apply(state.config.at("preview"),
+                               preview_receiver.prepare(state.config.at("preview")));
+        const auto configuration = [&](const monitor::Json* request) -> monitor::Json {
+            if (request) {
+                const auto revision =
+                    state.session_id + "/" + std::to_string(state.config_revision);
+                if (request->at("revision") != revision)
+                    throw std::logic_error("配置已被更新或服务已重启，请重新读取后再保存。");
+                if (request->contains("yaml") == request->contains("config"))
+                    throw std::runtime_error("provide either yaml or config");
+                auto candidate = request->contains("yaml")
+                                     ? monitor::parse_config(request->at("yaml").get<std::string>())
+                                     : request->at("config");
+                monitor::validate_config(candidate);
+                // Prepare all fallible resources before persisting or replacing the active
+                // configuration.
+                monitor::Assets next_assets(web_root, model_root, candidate);
+                const bool preview_changed = candidate.at("preview") != state.config.at("preview");
+                auto next_preview = candidate.at("preview");
+                auto next_socket =
+                    preview_changed ? preview_receiver.prepare(next_preview) : nullptr;
+                monitor::save_config(config_path, candidate);
+                {
+                    std::lock_guard<std::mutex> lock(state.mutex);
+                    state.config.swap(candidate);
+                    ++state.config_revision;
+                }
+                if (preview_changed)
+                    preview_receiver.apply(std::move(next_preview), std::move(next_socket));
+                assets = std::move(next_assets);
+            }
+            return {{"config", state.config},
+                    {"yaml", monitor::config_yaml(state.config)},
+                    {"revision", state.session_id + "/" + std::to_string(state.config_revision)},
+                    {"path", config_path}};
+        };
         const auto clock = aviator::local_clock_id();
         std::atomic<bool> stop{false};
         std::thread receiver([&] {
@@ -240,57 +371,7 @@ int main(int argc, char** argv) {
                 thread.join();
             }
         } join{stop, receiver};
-        std::thread images([&] {
-            const auto address = state.config.at("preview").at("endpoint").get<std::string>();
-            if (address.empty())
-                return;
-            try {
-                zmq::context_t context{1};
-                zmq::socket_t sub(context, zmq::socket_type::sub);
-                sub.set(zmq::sockopt::rcvhwm, 4);
-                sub.set(zmq::sockopt::linger, 0);
-                sub.set(zmq::sockopt::maxmsgsize, std::int64_t{2 * 1024 * 1024});
-                sub.set(zmq::sockopt::subscribe,
-                        "camera.rgb." + state.config["preview"]["camera_id"].get<std::string>());
-                sub.connect(address);
-                std::vector<std::string> parts;
-                bool oversized = false;
-                while (!stop.load()) {
-                    zmq::pollitem_t ready{sub.handle(), 0, ZMQ_POLLIN, 0};
-                    zmq::poll(&ready, 1, std::chrono::milliseconds(20));
-                    const auto until = aviator::monotonic_us() + 5000;
-                    for (unsigned i = 0; i < 128 && !stop.load() && aviator::monotonic_us() < until;
-                         ++i) {
-                        zmq::message_t part;
-                        if (!sub.recv(part, zmq::recv_flags::dontwait))
-                            break;
-                        const bool more = sub.get(zmq::sockopt::rcvmore);
-                        if (parts.size() < 3 && !oversized) {
-                            const auto limit = parts.size() == 0
-                                                   ? 128
-                                                   : (parts.size() == 1 ? 8192 : 2 * 1024 * 1024);
-                            if (part.size() > static_cast<std::size_t>(limit))
-                                oversized = true;
-                            else
-                                parts.emplace_back(static_cast<const char*>(part.data()),
-                                                   part.size());
-                        } else
-                            oversized = true;
-                        if (!more) {
-                            if (!oversized && parts.size() == 3)
-                                preview.ingest(parts[0], parts[1], std::move(parts[2]),
-                                               aviator::monotonic_us());
-                            else
-                                preview.reject("preview must contain topic, metadata and JPEG");
-                            parts.clear();
-                            oversized = false;
-                        }
-                    }
-                }
-            } catch (const std::exception& e) {
-                preview.reject(e.what());
-            }
-        });
+        std::thread images([&] { preview_receiver.run(stop); });
         Join image_join{stop, images};
         std::array<Client, 8> clients;
         const auto listen_url = "http://" + bind_address + ":" + std::to_string(port) + "/";
@@ -309,7 +390,7 @@ int main(int argc, char** argv) {
              {"SUB topics", "* (all topics; empty ZMQ subscription filter)"},
              {"PUB topics", "None (read-only monitor)"},
              {"Transport", "Async connect; HTTP availability does not confirm bus traffic."},
-             {"Inspect", "/api/overview  |  /api/state  |  dual-tab Web UI"},
+             {"Inspect", "/api/overview  |  /api/state  |  Web UI + /api/config"},
              {"Exit", "Ctrl+C"}});
         while (!stop.load()) {
             pollfd ready[]{{server.value, POLLIN, 0}, {signal_fd.value, POLLIN, 0}};
@@ -330,6 +411,9 @@ int main(int argc, char** argv) {
                         slot->request.clear();
                         slot->response.clear();
                         slot->sent = 0;
+                        slot->parse_error.clear();
+                        slot->headers.clear();
+                        slot->body_start = 0;
                         slot->deadline = aviator::monotonic_us() + 2000000;
                     }
                 }
@@ -351,20 +435,25 @@ int main(int argc, char** argv) {
                     }
                     if (n > 0)
                         client.request.append(buffer, static_cast<std::size_t>(n));
-                    if (client.request.size() > 4096) {
-                        client.fd.reset();
-                        continue;
+                    bool complete = false;
+                    try {
+                        complete = request_ready(client);
+                    } catch (const std::exception& error) {
+                        client.parse_error = error.what();
+                        complete = true;
                     }
-                    if (client.request.find("\r\n\r\n") != std::string::npos)
-                        response(client, state, preview, assets, clock);
+                    if (complete)
+                        response(client, state, preview, assets, clock, configuration);
                 }
                 if (!client.response.empty()) {
                     const auto n =
                         send(client.fd.value, client.response.data() + client.sent,
                              std::min<std::size_t>(65536, client.response.size() - client.sent),
                              MSG_DONTWAIT | MSG_NOSIGNAL);
-                    if (n > 0)
+                    if (n > 0) {
                         client.sent += static_cast<std::size_t>(n);
+                        client.deadline = aviator::monotonic_us() + 30000000;
+                    }
                     if ((n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) ||
                         client.sent == client.response.size())
                         client.fd.reset();

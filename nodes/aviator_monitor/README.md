@@ -1,6 +1,6 @@
-# aviator_monitor（双 Tab Web UI）
+# aviator_monitor（监测与动态配置 Web UI）
 
-只读系统监测：C++17 节点订阅 ZMQ，浏览器通过本地 HTTP 查看。页面包含“直观监测”和“系统消息”两个 Tab，视觉依据 [双 Tab 设计方案](../../docs/AVIATOR_Monitor双Tab界面设计方案.md)。没有控制发布接口，不发送 REQ/REP 操作。
+只读系统监测：C++17 节点订阅 ZMQ，浏览器通过本地 HTTP 查看。页面包含“直观监测”“系统消息”和“配置”三个 Tab，视觉依据 [双 Tab 设计方案](../../docs/AVIATOR_Monitor双Tab界面设计方案.md)。没有控制发布接口，不发送 REQ/REP 操作。
 
 ## 构建与启动
 
@@ -19,19 +19,37 @@ cmake --build build/communication --target aviator_monitor --parallel
 ./build/communication/bin/aviator_monitor --bind 192.168.1.100
 ```
 
-页面、API、模型和相机预览均通过同一 HTTP 地址提供，浏览器无需直接连接 ZMQ。若仍无法访问，先用 `ss -ltnp 'sport = :8081'` 确认监听地址，再检查局域网路由和防火墙是否允许 TCP 8081。
+页面、API、模型和相机预览均通过同一 HTTP 地址提供，浏览器无需直接连接 ZMQ。远程电脑无需安装模型或复制网格文件；URDF 和 STL 从运行 Monitor 的主机 `/models/` 路径下载。首次打开需要下载网格，加载进度随网络速度变化。网格最多并发下载 3 项，为状态与图像查询保留浏览器连接；大文件传输采用 30 s 无发送进展超时，持续传输不会被请求头的 2 s 超时截断。若仍无法访问，先用 `ss -ltnp 'sport = :8081'` 确认监听地址，再检查局域网路由和防火墙是否允许 TCP 8081。
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--bind` | `0.0.0.0` | HTTP 监听 IPv4 地址；`127.0.0.1` 限制为本机访问。 |
 | `--port` | `8081` | HTTP 端口。 |
 | `--subscribe` | `tcp://127.0.0.1:5556` | Bus XPUB 出口或回放总线。 |
-| `--config` | 源码或安装目录的 `monitor.json` | 监测专用 JSON 配置；部分字段覆盖默认值。 |
+| `--config` | 源码或安装目录的 `monitor.yaml` | 监测专用 YAML 配置；部分字段覆盖默认值。 |
 | `--model-root` | 源码或安装目录的 `models/` | 包含 `urdf/aviator.urdf` 和 `meshes/` 的目录。 |
 | `--preview` | 配置中的 `tcp://127.0.0.1:5561` | 独立 Camera JPEG PUB 地址；`off` 禁用订阅。 |
 | `--help` | — | 显示帮助。 |
 
-源码构建默认读取 [config/monitor.json](../../config/monitor.json)；安装后优先使用可执行文件相邻的 `../share/aviator/monitor/` 资源。模型与前端文件通过精确资源清单提供，不开放任意文件读取。
+源码构建默认读取 [config/monitor.yaml](../../config/monitor.yaml)；安装后优先使用可执行文件相邻的 `../share/aviator/monitor/` 资源。模型与前端文件通过精确资源清单提供，不开放任意文件读取。
+
+## 动态配置
+
+打开网页的“配置”页，修改后点击“保存并应用”：
+
+- 常用参数表单支持五类概览消息的 `sources`、八类 Topic 的 `timeouts_ms`，以及 RGB 预览的 `endpoint`、`camera_id`、`publisher_id`、`timeout_ms`。
+- “完整 YAML”编辑方式支持全部配置，包括 `arm_joints`、`hand_calibration` 和 `yoke_calibration`。有未保存修改时，需先保存或重新读取再切换编辑方式。
+- 保存先校验并准备新资源，再以临时文件和原子替换写回当前 `--config` 文件，最后更新运行状态。无效配置、无法建立订阅或写文件失败时，保留原配置；网络端点连接为异步，保存成功不表示相机已在线。
+- 来源和超时立即用于现有消息缓存；预览配置变化时清空旧图像、切换订阅；所有已打开页面会检测配置版本并更新三维映射与图像状态。
+- 多个页面同时编辑时，旧版本保存返回冲突，防止覆盖另一页面的修改。“重新读取”获取服务当前生效配置并丢弃表单草稿，不从磁盘重载。
+
+`--preview` 仅在启动时覆盖配置，网页显示该生效值，后续保存会将它写入 YAML。保存输出完整配置并统一格式，不保留原文件注释。旧 JSON 文件仍可通过 `--config` 读取，保存时写为 YAML；新部署统一使用 `monitor.yaml`。进程需要对配置文件所在目录有写权限，可用 `--config` 指定可写的部署配置副本。
+
+HTTP 地址、端口、Bus 订阅地址及模型目录仍由启动参数指定，调整这些参数需重启。可访问 Monitor HTTP 的客户端可修改其监控配置；服务不提供用户认证，`--bind 127.0.0.1` 可限制为本机访问。配置更新只影响 Monitor，不向机器人发布控制命令。
+
+### 配置接口
+
+`GET /api/config` 返回 `{config, yaml, revision, path}`。`PUT /api/config` 使用 `Content-Type: application/json` 和 `X-Monitor-Config: 1`，请求体为 `{revision, config}`（完整配置对象）或 `{revision, yaml}`（YAML 文本，缺省项使用默认值），两种内容只能选其一。成功返回新的配置与版本；无效请求或保存失败返回 400，非同源浏览器写入返回 403，版本冲突返回 409。接口不接受任意保存路径。
 
 ## 直观监测
 
@@ -66,7 +84,7 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 ## 配置与标定
 
-[monitor.json](../../config/monitor.json) 控制概览的发布者筛选、各 Topic 时效、预览身份、关节映射和标定。`sources` 中空字符串可用于观察任意发布者，但仍会报告多源冲突；可使用发布者字符串或 `{ "publisher_id": "aviator_core" }` 筛选；旧配置的 `session_id` 字段兼容读取但不再用于筛选。仓库配置的 `sources["hand.state"]` 为当前 Modbus TCP 后端的 `rh56ftp_hand`；使用 `aviator_hand` CAN 后端时改为其 `node.publisher_id`（默认 `inspire_hand`）。配置修改后需重启 Monitor。若消息页已有 `hand.state`，概览却显示“尚无样本”，先检查该筛选值是否与消息的 `publisher_id` 一致。
+[monitor.yaml](../../config/monitor.yaml) 控制概览的发布者筛选、各 Topic 时效、预览身份、关节映射和标定。`sources` 中空字符串可用于观察任意发布者，但仍会报告多源冲突；可使用发布者字符串或 `{ "publisher_id": "aviator_core" }` 筛选；旧配置的 `session_id` 字段兼容读取但不再用于筛选。仓库配置的 `sources["hand.state"]` 为当前 Modbus TCP 后端的 `rh56ftp_hand`；使用 `aviator_hand` CAN 后端时改为其 `node.publisher_id`（默认 `inspire_hand`）。网页保存后立即生效；手动编辑磁盘文件后需重启 Monitor。若消息页已有 `hand.state`，概览却显示“尚无样本”，先检查该筛选值是否与消息的 `publisher_id` 一致。
 
 默认时效：flight 100 ms，arm 50 ms，hand.state 300 ms，hand.command 100 ms，camera 200 ms，RGB 500 ms；其他流 2 s。左右臂/手还检查侧级采样时间和反馈年龄。原始 `sample_mono_us` 在匹配本机 clock_id 时才计算年龄，未知不伪造为零。驾驶盘显示以本地接收 `camera.detection` 的时间判断时效，不因采样延迟或相机时钟域不同拒绝有效检测；停止接收达到 camera 超时后显示过期。JOYSTICK POSITION_HOLD 使用 checked_mono_us 判断显示有效期，同时保留原始采样年龄。
 
@@ -121,31 +139,31 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 | 文件 | 职责 |
 | --- | --- |
-| main.cpp | 总线与图像独立 SUB、只读 HTTP、资源定位和退出。 |
+| main.cpp | 总线 SUB、HTTP 查询与配置更新、资源定位和退出。 |
 | monitor.cpp / monitor.hpp | 原有有界流缓存、统计和服务事务关联。 |
 | overview.cpp / config.cpp | 类型化概览、侧级时效、来源筛选、单位与标定映射。 |
-| preview.cpp | JPEG 身份、尺寸、时效与有界帧缓存。 |
+| preview.cpp / preview_receiver.hpp | JPEG 身份、尺寸、时效与有界帧缓存，以及可动态切换的独立图像 SUB。 |
 | assets.cpp | URDF/mesh 精确资源清单与原有 Cessna 路径别名。 |
-| index.html / web/ | 双 Tab、布局、浏览器生命周期和 Three.js 视口。 |
+| index.html / web/ | 三个 Tab、配置表单与 YAML 编辑、浏览器生命周期和 Three.js 视口。 |
 
-只支持 GET：`/`、`/api/state`、`/api/message?id=N`、`/api/overview`、`/api/model-manifest`、`/api/camera/latest`、`/api/camera/frame/{token}`，以及清单中的 `/assets/` 和 `/models/` 文件。概览 schema_version=1，包含 Monitor 会话/快照版本，每部分保留独立来源、当前值、状态、年龄及剩余有效时间。
+查询接口使用 GET：`/`、`/api/state`、`/api/message?id=N`、`/api/overview`、`/api/model-manifest`、`/api/camera/latest`、`/api/camera/frame/{token}`，以及清单中的 `/assets/` 和 `/models/` 文件。概览 schema_version=1，包含 Monitor 会话/快照版本，每部分保留独立来源、当前值、状态、年龄及剩余有效时间。
 
 概览最多 50 Hz，以满足 50 ms 机械臂显示时效；消息表摘要 10 Hz；RGB 最高 15 Hz；三维目标约 30 fps，受部署硬件影响。每条轮询链路不重叠请求；本地时效持续推进，按请求耗时保守扣减有效期。视口/数值不等待图像加载。
 
-流与服务事务各最多 64 项；每流保留最新消息及最多 512 个接收时刻。HTTP 最多 8 个同时连接，请求头 4096 字节，整个请求 2 s；慢客户端不阻塞 SUB。
+流与服务事务各最多 64 项；每流保留最新消息及最多 512 个接收时刻。HTTP 最多 8 个同时连接，请求头 4096 字节，配置请求体最多 128 KiB、YAML 最多 64 KiB，请求接收限时 2 s，响应发送采用 30 s 无进展超时；慢客户端不阻塞 SUB。
 
 前端依赖固定为 Three.js 0.186.1、URDFLoader 0.13.1、three-viewport-gizmo 2.2.0。提交的 vendor.js 可离线运行，普通 CMake 构建与运行无需 Node.js/CDN。修改依赖时使用 Node ≥18，在 `web/` 中执行 `npm ci --ignore-scripts && npm run build:vendor`；许可见 [THIRD_PARTY_NOTICES.md](web/THIRD_PARTY_NOTICES.md)。
 
 ## 验证
 
 ```bash
-cmake --build build/communication --target aviator_monitor_test aviator_monitor_overview_test --parallel
+cmake --build build/communication --target aviator_monitor_test aviator_monitor_overview_test aviator_monitor_config_test aviator_monitor_preview_receiver_test --parallel
 ctest --test-dir build/communication -R '^monitor_' --output-on-failure
 python nodes/camera/test_preview.py
 python nodes/camera/test_camera.py
 ```
 
-使用相机 Python 环境执行后两项，均无需真实相机。概览测试覆盖相机方向盘直接映射及端点、无效观测拒绝、旧标定兼容、物理换算、标定缺失、范围、左右侧独立时效、跨时钟、多源、JPEG 缓存和路径白名单；原有缓存/服务及 HTTP/TCP 测试继续保留。
+使用相机 Python 环境执行后两项，均无需真实相机。概览测试覆盖相机方向盘直接映射及端点、无效观测拒绝、旧标定兼容、物理换算、标定缺失、范围、左右侧独立时效、跨时钟、多源、JPEG 缓存和路径白名单；配置与 HTTP/TCP 测试还覆盖 YAML 往返、来源热切换、预览参数切换、非法更新、保存失败、并发版本冲突和重启持久化。
 
 可选真实浏览器验证（测试环境安装 playwright-core，运行节点不依赖它）：
 
@@ -156,3 +174,21 @@ node tests/monitor_browser_test.cjs
 ```
 
 该测试使用独立临时端口和 TEST ONLY 标定，加载仓库真实 URDF，检查 RGB、消息详情、暂停、相机单独过期、恢复及 HTTP 卡顿，并把实际运行截图保存到临时目录。它不连接生产总线或真实设备，也不作为硬件标定证据。
+
+配置页可单独验证，无需相机 Python 环境：
+
+```bash
+AVIATOR_PLAYWRIGHT=/absolute/path/to/node_modules/playwright-core \
+node tests/monitor_config_browser_test.cjs
+```
+
+该测试使用临时 YAML 和隔离端口，验证表单保存、YAML 校验、版本冲突、重新读取、键盘切页及窄屏布局，并保存配置页截图。
+
+远程模型加载回归验证：
+
+```bash
+AVIATOR_PLAYWRIGHT=/absolute/path/to/node_modules/playwright-core \
+node tests/monitor_remote_model_browser_test.cjs
+```
+
+该测试使用映射到本机的远程 HTTP 域名，在 2 MiB/s、40 ms 延迟下加载完整 URDF/STL，检查资源全部来自同一 HTTP 服务、模型几何完整和状态查询正常，并保存截图。`monitor_http` 另对大网格延迟读取超过 2 s，校验响应长度与 SHA-256，防止慢链路下载被截断。

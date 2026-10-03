@@ -1,8 +1,14 @@
 #include "config.hpp"
+#include <cerrno>
 #include <cmath>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <set>
 #include <stdexcept>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <yaml-cpp/yaml.h>
 namespace monitor {
 Json default_config() {
     Json arms = Json::object();
@@ -63,6 +69,12 @@ void pose(const Json& j) {
 void validate_config(const Json& c) {
     require(c.is_object() && c.at("version") == 1, "version must be 1");
     const auto defaults = default_config();
+    for (const auto& [key, value] : c.items())
+        require(defaults.contains(key), "unknown key " + key);
+    require(c.at("timeouts_ms").is_object(), "timeouts_ms must be object");
+    require(c.at("preview").is_object(), "preview must be object");
+    for (const auto& [key, value] : c.at("preview").items())
+        require(defaults.at("preview").contains(key), "unknown preview key " + key);
     require(c.at("sources").is_object(), "sources must be object");
     for (const auto& [key, value] : defaults.at("sources").items())
         require(c.at("sources").contains(key), "source cannot be null/deleted: " + key);
@@ -166,24 +178,138 @@ void validate_config(const Json& c) {
                 "display sign must be +/-1");
     }
 }
-Json load_config(const std::string& path) {
-    Json c = default_config();
-    if (!path.empty()) {
-        std::ifstream file(path);
-        if (!file)
-            throw std::runtime_error("cannot read monitor config: " + path);
-        Json overrides;
-        file >> overrides;
-        require(overrides.is_object(), "root must be object");
-        for (const auto& [key, value] : overrides.items())
-            require(c.contains(key), "unknown key " + key);
-        c.merge_patch(overrides);
-        // JSON merge-patch deletes null fields; calibration null explicitly disables it.
-        for (const auto* key : {"hand_calibration", "yoke_calibration"})
-            if (!c.contains(key))
-                c[key] = nullptr;
+namespace {
+Json from_yaml(const YAML::Node& node, unsigned depth, unsigned& budget) {
+    require(depth < 32 && budget-- > 0, "YAML nesting/size limit exceeded");
+    if (node.IsNull())
+        return nullptr;
+    if (node.IsMap()) {
+        Json result = Json::object();
+        for (const auto& item : node) {
+            require(item.first.IsScalar(), "YAML keys must be strings");
+            const auto key = item.first.Scalar();
+            require(!result.contains(key), "duplicate YAML key " + key);
+            result[key] = from_yaml(item.second, depth + 1, budget);
+        }
+        return result;
     }
+    if (node.IsSequence()) {
+        Json result = Json::array();
+        for (const auto& item : node)
+            result.push_back(from_yaml(item, depth + 1, budget));
+        return result;
+    }
+    require(node.IsScalar(), "invalid YAML value");
+    const auto value = node.Scalar();
+    if (node.Tag() == "!" || node.Tag() == "tag:yaml.org,2002:str")
+        return value;
+    if (value == "true")
+        return true;
+    if (value == "false")
+        return false;
+    long long integer;
+    if (YAML::convert<long long>::decode(node, integer))
+        return integer;
+    double number;
+    if (YAML::convert<double>::decode(node, number)) {
+        require(std::isfinite(number), "non-finite YAML number");
+        return number;
+    }
+    return value;
+}
+void emit_yaml(YAML::Emitter& out, const Json& value) {
+    if (value.is_object()) {
+        out << YAML::BeginMap;
+        for (const auto& [key, item] : value.items()) {
+            out << YAML::Key << key << YAML::Value;
+            emit_yaml(out, item);
+        }
+        out << YAML::EndMap;
+    } else if (value.is_array()) {
+        out << YAML::BeginSeq;
+        for (const auto& item : value)
+            emit_yaml(out, item);
+        out << YAML::EndSeq;
+    } else if (value.is_string())
+        out << YAML::DoubleQuoted << value.get<std::string>();
+    else if (value.is_null())
+        out << YAML::Null;
+    else if (value.is_boolean())
+        out << value.get<bool>();
+    else if (value.is_number_unsigned())
+        out << value.get<std::uint64_t>();
+    else if (value.is_number_integer())
+        out << value.get<std::int64_t>();
+    else
+        out << value.get<double>();
+}
+} // namespace
+Json parse_config(const std::string& yaml) {
+    require(yaml.size() <= 65536, "configuration exceeds 64 KiB");
+    unsigned budget = 8192;
+    const auto documents = YAML::LoadAll(yaml);
+    require(documents.size() == 1, "exactly one YAML document required");
+    const auto overrides = from_yaml(documents.front(), 0, budget);
+    Json c = default_config();
+    require(overrides.is_object(), "root must be object");
+    for (const auto& [key, value] : overrides.items())
+        require(c.contains(key), "unknown key " + key);
+    c.merge_patch(overrides);
+    for (const auto* key : {"hand_calibration", "yoke_calibration"})
+        if (!c.contains(key))
+            c[key] = nullptr;
     validate_config(c);
     return c;
+}
+std::string config_yaml(const Json& config) {
+    validate_config(config);
+    YAML::Emitter out;
+    out.SetDoublePrecision(17);
+    emit_yaml(out, config);
+    require(out.good(), "cannot serialize YAML");
+    return std::string(out.c_str()) + "\n";
+}
+Json load_config(const std::string& path) {
+    if (path.empty())
+        return default_config();
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    require(file && file.tellg() >= 0 && file.tellg() <= 65536,
+            "cannot read configuration (64 KiB maximum): " + path);
+    file.seekg(0);
+    return parse_config(std::string(std::istreambuf_iterator<char>(file), {}));
+}
+void save_config(const std::string& path, const Json& config) {
+    require(!path.empty(), "no configuration file configured");
+    const auto yaml = config_yaml(config);
+    require(yaml.size() <= 65536, "configuration exceeds 64 KiB");
+    // Resolve a configured symlink, and atomically replace its target in the same directory.
+    const auto target = std::filesystem::weakly_canonical(path).string();
+    std::string temporary = target + ".tmp.XXXXXX";
+    int fd = mkstemp(temporary.data());
+    require(fd >= 0, "cannot create temporary configuration: " + std::string(std::strerror(errno)));
+    try {
+        struct stat existing {};
+        if (stat(target.c_str(), &existing) == 0)
+            require(fchmod(fd, existing.st_mode & 0777) == 0, "cannot preserve file permissions");
+        std::size_t written = 0;
+        while (written < yaml.size()) {
+            const auto n = write(fd, yaml.data() + written, yaml.size() - written);
+            if (n < 0 && errno == EINTR)
+                continue;
+            require(n > 0, "cannot write configuration");
+            written += n;
+        }
+        require(fsync(fd) == 0, "cannot flush configuration");
+        const int closed = close(fd);
+        fd = -1;
+        require(closed == 0, "cannot close configuration");
+        require(rename(temporary.c_str(), target.c_str()) == 0,
+                "cannot replace configuration: " + std::string(std::strerror(errno)));
+    } catch (...) {
+        if (fd >= 0)
+            close(fd);
+        unlink(temporary.c_str());
+        throw;
+    }
 }
 } // namespace monitor

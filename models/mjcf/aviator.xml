@@ -690,6 +690,7 @@
     <exclude body1="AR5-5_07L-W4C4A2_link5" body2="AR5-5_07L-W4C4A2_link7" />
     <exclude body1="AR5-5_07R-W4C4A2_base" body2="AR5-5_07R-W4C4A2_link1" />
     <exclude body1="AR5-5_07R-W4C4A2_link5" body2="AR5-5_07R-W4C4A2_link7" />
+    <!-- Wall bodies are disabled above; keep their collision exclusions disabled too.
     <exclude body1="aircraft" body2="aviator_wall_left" />
     <exclude body1="steering_wheel" body2="aviator_wall_left" />
     <exclude body1="aviator_wall_left" body2="AR5-5_07L-W4C4A2_base" />
@@ -698,8 +699,9 @@
     <exclude body1="steering_wheel" body2="aviator_wall_right" />
     <exclude body1="aviator_wall_right" body2="AR5-5_07L-W4C4A2_base" />
     <exclude body1="aviator_wall_right" body2="AR5-5_07R-W4C4A2_base" />
+    -->
   </contact>
   <keyframe>
-    <key name="aviator_home" qpos="0 0 1.94771630354 1.57079632679 -1.37618323285 2.04981289676 0.156860282066 0.0729290021534 0.156918313879 0 0 0 0 0 0 0 0 0 0 0 0 -1.84860741719 1.57079632679 1.11467509058 1.93698015773 -0.180011079028 0.0687414348287 -0.693679354889 0 0 0 0 0 0 0 0 0 0 0 0" />
+    <key name="aviator_home" qpos="0 -0.085 0.4528954876 1.53498217054 -1.645688405 2.21576529858 0.125035387613 -0.109816116535 -0.0336499479785 0 0 0 0 0 0 0 0 0 0 0 0 -0.401390821374 1.49396693312 1.57639883369 2.15232258027 0.05035274892 -0.142959919031 -0.144234009385 0 0 0 0 0 0 0 0 0 0 0 0" />
   </keyframe>
 </mujoco>

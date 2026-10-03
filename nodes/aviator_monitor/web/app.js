@@ -1,3 +1,4 @@
+import './settings.js';
 const $ = id => document.getElementById(id);
 const text = (id, value) => { $(id).textContent = value ?? '—'; };
 const fmt = (value, digits = 1) => Number.isFinite(value) ? value.toFixed(digits) : '—';
@@ -37,7 +38,7 @@ function sourceKey(g) {
 }
 function setTab(next) {
   tab = next;
-  for (const name of ['overview','messages']) {
+  for (const name of ['overview','messages','settings']) {
     $(name).hidden = name !== next;
     $(`tab-${name}`).setAttribute('aria-selected', String(name === next));
     $(`tab-${name}`).tabIndex = name === next ? 0 : -1;
@@ -46,11 +47,14 @@ function setTab(next) {
   if (next === 'messages' && latestState && !pausedAt) renderMessages(latestState);
   if (next === 'overview') cameraRefresh();
 }
-for (const name of ['overview','messages']) {
+for (const name of ['overview','messages','settings']) {
   $(`tab-${name}`).onclick = () => setTab(name);
   $(`tab-${name}`).onkeydown = event => {
     if (['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) {
-      event.preventDefault(); const next = name === 'overview' ? 'messages' : 'overview';
+      event.preventDefault(); const tabs = ['overview','messages','settings'];
+      const index = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length-1 :
+        (tabs.indexOf(name) + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      const next = tabs[index];
       setTab(next); $(`tab-${next}`).focus();
     }
   };
@@ -294,6 +298,12 @@ async function refresh() {
       if (imageURL) URL.revokeObjectURL(imageURL); imageURL=''; displayedImage=null; $('camera-image').hidden=true; $('camera-large').removeAttribute('src');
       viewer?.clearSamples(); displayedState=null; pausedAt=0;
       text('detail','监控服务会话已变化，请重新选择记录。'); text('pause-display','暂停显示'); $('pause-display').setAttribute('aria-pressed','false');
+    }
+    if (overview && (overview.config_revision !== ov.config_revision || overview.monitor_session_id !== ov.monitor_session_id)) {
+      viewer?.clearSamples(); viewer?.load();
+      ++imageGeneration; imageToken=''; imageError=''; preview=null; displayedImage=null; previewReceived=[];
+      if (imageURL) URL.revokeObjectURL(imageURL);
+      imageURL=''; $('camera-image').hidden=true; $('camera-large').removeAttribute('src');
     }
     overview=ov; overviewAt=performance.now(); overviewCost=overviewAt-started; latestState=state; online=true;
     viewer?.setData(overview,live);

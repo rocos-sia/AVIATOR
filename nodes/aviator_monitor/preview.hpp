@@ -9,6 +9,7 @@ namespace monitor {
 class Preview {
   public:
     explicit Preview(Json settings);
+    void configure(Json settings);
     void ingest(const std::string& topic, const std::string& metadata, std::string jpeg,
                 std::uint64_t now);
     Json latest(std::uint64_t now, const std::string& clock);

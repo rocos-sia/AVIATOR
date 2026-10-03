@@ -55,6 +55,15 @@ std::string identity(const Json& meta) {
 } // namespace
 Preview::Preview(Json settings)
     : settings_(std::move(settings)), session_(aviator::new_instance_id()) {}
+void Preview::configure(Json settings) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    settings_.swap(settings);
+    frames_.clear();
+    origins_.clear();
+    bytes_ = 0;
+    rejected_ = 0;
+    error_.clear();
+}
 void Preview::reject(const std::string& reason) {
     std::lock_guard<std::mutex> lock(mutex_);
     ++rejected_;
@@ -83,9 +92,6 @@ void Preview::ingest(const std::string& topic, const std::string& metadata, std:
             require(meta.at(key).is_string() && !meta.at(key).get<std::string>().empty() &&
                         meta.at(key).get<std::string>().size() <= 128,
                     "invalid preview identity");
-        require(meta.at("camera_id") == settings_.at("camera_id") &&
-                    meta.at("publisher_id") == settings_.at("publisher_id"),
-                "unexpected preview source");
         require(topic == "camera.rgb." + meta.at("camera_id").get<std::string>(),
                 "preview topic mismatch");
         for (auto* key : {"sequence", "frame_id", "sample_mono_us", "width", "height"})
@@ -100,6 +106,12 @@ void Preview::ingest(const std::string& topic, const std::string& metadata, std:
         return;
     }
     std::lock_guard<std::mutex> lock(mutex_);
+    if (meta.at("camera_id") != settings_.at("camera_id") ||
+        meta.at("publisher_id") != settings_.at("publisher_id")) {
+        ++rejected_;
+        error_ = "unexpected preview source";
+        return;
+    }
     const auto key = identity(meta);
     auto previous = origins_.find(key);
     if (previous != origins_.end() &&

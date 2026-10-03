@@ -88,7 +88,7 @@ TCP 使用 `left_tcp/right_tcp` site，`frame_id=mujoco_world`，姿态为 `qx,q
 
 每次相机采样都实际渲染并读取 RGB 缓冲，但检测使用 MuJoCo 方向盘关节真值，不执行图像识别，也不判断遮挡。固定相机初始朝向双把手中点；把手中点在视锥和 ROI 中且跟踪命令有效时报告 `TRACKING`，置信度为 1。ROI 按原始图像左上角像素坐标检查，范围不能超出 640×480；置信度阈值须在 `[0,1]`，真值检测分数 1 满足此范围内的阈值。
 
-roll/pitch 分别将 `roll_input_joint` / `pitch_input_joint` 的 MJCF 下限到上限线性映射为 `[-1,1]`。因此当前 home 中 pitch=0 m 对应归一化 +1；这只是版本化的仿真标定，不表示真实飞机标定。未跟踪、ROI 排除或超时为 `SEARCHING/valid=false`，角度值为 null。`--no-camera` 为 `OFFLINE`、frame_id=null。帧号与消息序号独立增长。
+roll/pitch 分别将 `roll_input_joint` / `pitch_input_joint` 的 MJCF 下限到上限线性映射为 `[-1,1]`。因此当前 home 中 pitch=0 m 对应归一化 -1；这只是版本化的仿真标定，不表示真实飞机标定。未跟踪、ROI 排除或超时为 `SEARCHING/valid=false`，角度值为 null。`--no-camera` 为 `OFFLINE`、frame_id=null。帧号与消息序号独立增长。
 
 不向控制总线添加图像帧；当前未实现 `record.camera.*` 原始图像记录通道。未实现 `JOINT_TRAJECTORY`、`GRASP_SETPOINT`、自动抓握/焊接锁定与视觉算法，相关命令明确拒绝；`grasp_verified=false`，不会把手指闭合伪装为抓握完成。IK 与飞控到关节目标转换由上游控制器承担。
 

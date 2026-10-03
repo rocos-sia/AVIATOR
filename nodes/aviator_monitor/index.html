@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AVIATOR Monitor</title><link rel="stylesheet" href="/assets/style.css"></head>
 <body>
-<header><h1>AVIATOR <span>Monitor</span></h1><nav role="tablist" aria-label="监测页面"><button id="tab-overview" role="tab" aria-selected="true" aria-controls="overview">直观监测</button><button id="tab-messages" role="tab" aria-selected="false" aria-controls="messages" tabindex="-1">系统消息</button></nav><div class="header-meta"><span>只读监测</span><span id="connection" class="badge">等待监控服务</span></div></header>
+<header><h1>AVIATOR <span>Monitor</span></h1><nav role="tablist" aria-label="监测页面"><button id="tab-overview" role="tab" aria-selected="true" aria-controls="overview">直观监测</button><button id="tab-messages" role="tab" aria-selected="false" aria-controls="messages" tabindex="-1">系统消息</button><button id="tab-settings" role="tab" aria-selected="false" aria-controls="settings" tabindex="-1">配置</button></nav><div class="header-meta"><span>只读监测</span><span id="connection" class="badge">等待监控服务</span></div></header>
 <div class="status-strip"><span>整机 <strong id="system">等待反馈</strong></span><span>来源 <strong id="source">—</strong></span><span>当前 / 历史错误 <strong id="errors">—</strong></span><span id="notice">状态由实际消息判定</span></div>
 <main id="overview" role="tabpanel" aria-labelledby="tab-overview" class="overview">
 <aside class="left-column"><section class="panel"><div class="panel-head"><h2>消息发布</h2><span class="muted">接收观测</span></div><div id="publisher-lights" class="panel-body"></div><p class="footnote">仅表示消息发布新鲜度</p></section>
@@ -13,6 +13,25 @@
 <section class="panel command-panel"><div class="panel-head"><h2>飞控指令 <span class="muted">只读</span></h2><span id="command-source" class="muted">—</span></div><div class="measurements"><div><label>ROLL 滚转</label><strong id="command-roll">—</strong><meter id="roll-meter" min="-100" max="100" value="0" aria-label="滚转指令百分比"></meter><span>−100% <span class="scale-right">+100%</span></span><small id="command-roll-physical">—</small></div><div><label>PITCH 俯仰</label><strong id="command-pitch">—</strong><meter id="pitch-meter" min="-100" max="100" value="0" aria-label="俯仰指令百分比"></meter><span>−100% <span class="scale-right">+100%</span></span><small id="command-pitch-physical">—</small></div></div><div class="command-plot"><svg id="command-plot" viewBox="0 0 270 255" role="img" aria-label="滚转俯仰指令与视觉实测位置对照"><rect x="30" y="15" width="220" height="220" fill="#2d2d2d" stroke="#929292"/><rect x="40" y="25" width="200" height="200" fill="none" stroke="#666" stroke-dasharray="3 3"/><path d="M140 15V235 M30 125H250" stroke="#777"/><text x="140" y="251" text-anchor="middle">ROLL ±110%</text><text x="32" y="11">PITCH ±110%</text><text x="144" y="140">0</text><circle id="measured-marker" cx="140" cy="125" r="6" fill="#67D6A0" hidden/><path id="command-marker" d="M0 -7L7 0L0 7L-7 0Z" fill="#008CFF" hidden/></svg><div class="plot-legend"><span class="command">◆ 观测指令</span><span class="measured">● 视觉实测</span><p>位置对照<br>未对齐样本不计算跟踪误差</p></div></div><p id="command-meta" class="footnote">消息有效不代表执行到位</p></section></aside>
 </main>
 <main id="messages" role="tabpanel" aria-labelledby="tab-messages" hidden><div class="filter-bar"><input id="message-filter" type="search" placeholder="筛选 Topic / 节点 / 会话 / 请求" aria-label="筛选消息"><select id="status-filter" aria-label="筛选数据状态"><option value="">全部状态</option><option>FRESH</option><option>STALE</option><option>INVALID</option><option>CLOCK_UNKNOWN</option><option>FUTURE</option><option>STALE_ORIGIN</option><option>EVENT</option><option>ACCEPTED</option><option>COMPLETED</option><option>REJECTED</option><option>WAITING</option><option>TIMEOUT_UNKNOWN</option></select><button id="pause-display" aria-pressed="false">暂停显示</button><span id="pause-note" class="muted"></span></div><div class="message-layout"><div class="message-tables"><section class="panel"><div class="panel-head"><h2>总线数据流</h2><span id="counts" class="muted"></span></div><div class="table-scroll"><table><thead><tr><th>Topic / 发布者</th><th>会话</th><th>状态</th><th>接收 Hz</th><th>样本年龄 ms</th><th>最近接收 ms</th><th>序号</th><th>缺口 / 重复乱序</th></tr></thead><tbody id="rows"></tbody></table></div><p class="footnote">接收频率不等于源端发布率 · FRESH 不表示设备已就绪</p></section><section class="panel"><div class="panel-head"><h2>REQ / REP 状态指令</h2><span id="service-counts" class="muted"></span></div><div class="table-scroll"><table><thead><tr><th>操作 / 目标</th><th>客户端 / 会话</th><th>request_id</th><th>网关记录</th><th>Core 应答</th><th>关联 / 等待</th><th>错误码</th><th>REQ / REP 记录数</th><th>观测应答间隔 ms</th></tr></thead><tbody id="service-rows"></tbody></table></div><p class="footnote">ACCEPTED 仅表示受理 · TIMEOUT_UNKNOWN 结果未知 · 最多 64 项缓存，非持久历史</p></section><p id="diagnostics" class="footnote"></p></div><section class="panel detail-panel"><div class="panel-head"><h2 id="detail-title">消息详情 · 只读</h2><button id="copy-detail">复制</button></div><pre id="detail">选择数据流或 REQ / REP 事务查看原始消息</pre></section></div></main>
+<main id="settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+<section class="panel config-panel">
+<div class="panel-head"><h2>监控配置</h2><button id="config-reload" type="button">重新读取（丢弃未保存修改）</button></div>
+<div class="panel-body">
+<p>保存后立即生效并写回 YAML 文件。来源填写消息中的 publisher_id；留空可接收任意发布者。</p>
+<p class="muted">配置文件：<code id="config-path">读取中…</code></p>
+<form id="config-form"><fieldset id="config-fields" disabled>
+<label class="config-mode">编辑方式 <select id="config-mode"><option value="form">常用参数</option><option value="yaml">完整 YAML（含关节映射与标定）</option></select></label>
+<div id="config-form-fields" class="config-grid">
+<section><h3>消息来源 sources</h3><div id="config-sources" class="config-inputs"></div></section>
+<section><h3>消息超时 timeouts_ms</h3><p class="muted">单位 ms，范围 1～10000。</p><div id="config-timeouts" class="config-inputs"></div></section>
+<section><h3>相机预览 preview</h3><p class="muted">endpoint 留空关闭预览。切换地址或身份后重新接收图像。</p><div id="config-preview" class="config-inputs"></div></section>
+</div>
+<label id="config-yaml-label" hidden>完整 YAML 配置<textarea id="config-yaml" spellcheck="false" rows="26" aria-label="完整 YAML 配置"></textarea></label>
+<button id="config-save" type="submit">保存并应用</button>
+</fieldset></form>
+<p id="config-status" role="status" aria-live="polite">正在读取配置…</p>
+<p class="muted">配置版本：<code id="config-revision">—</code></p>
+</div></section></main>
 <dialog id="camera-dialog"><div class="panel-head"><h2>摄像头 RGB · 只读</h2><button id="camera-close">关闭</button></div><img id="camera-large" alt="放大的摄像头预览"><p id="camera-large-state" class="footnote"></p></dialog>
 <script type="module" src="/assets/app.js"></script>
 </body></html>
