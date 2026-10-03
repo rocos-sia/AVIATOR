@@ -38,12 +38,15 @@ void State::ingest(const std::string& topic, const std::string& payload, std::ui
                 [](const Stream& a, const Stream& b) { return a.received_us < b.received_us; }));
             ++evicted;
         }
-        streams.push_back({next_id++, message, payload, now, 0, 0, {now}});
+        streams.push_back({next_id++, std::move(message), payload, now, 0, 0, {now}});
         return;
     }
     if (h.sequence <= it->message.header.sequence) { ++it->duplicates; return; }
     it->gaps += h.sequence - it->message.header.sequence - 1;
-    it->message = std::move(message); it->payload = payload; it->received_us = now;
+    // Release the previous (potentially large trajectory) JSON after unlocking,
+    // so its destruction does not block HTTP snapshots of arm/hand feedback.
+    std::swap(it->message, message);
+    it->payload = payload; it->received_us = now;
     it->arrivals.push_back(now);
     while (it->arrivals.size() > 512 || now - it->arrivals.front() > 2000000) it->arrivals.pop_front();
 }

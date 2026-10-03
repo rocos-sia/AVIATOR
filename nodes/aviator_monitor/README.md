@@ -12,6 +12,8 @@ cmake --build build/communication --target aviator_monitor --parallel
 
 本机浏览器打开 `http://127.0.0.1:8081/`，局域网其他计算机打开 `http://<运行 Monitor 的主机局域网 IP>:8081/`。HTTP 默认监听 `0.0.0.0`（所有 IPv4 网卡），可通过 `--bind` 指定监听地址；`0.0.0.0` 是监听地址，其他计算机访问时必须使用服务主机的实际 IP，`127.0.0.1` 始终指向浏览器所在的计算机。先启动 Bus 和需要观测的节点，或使用 `--subscribe` 连接隔离测试/回放总线；SIGINT/SIGTERM 正常退出。
 
+GCC/Clang 的 Debug 构建保留调试符号，并对 Monitor 启用 `-O2`。`CONTROL` 下每 20 ms 的 81 点轨迹窗口需要较多 JSON 处理；未优化的接收路径可能积压队列，使仍在持续发送的臂、手反馈被判为过期。诊断时同时查看 `/api/state` 的 `age_ms` 和 `receive_age_ms`：后者很小而前者持续增长，表示收到的样本已滞后，不能通过放宽超时或刷新样本时间解决。
+
 ```bash
 # 仅允许本机访问
 ./build/communication/bin/aviator_monitor --bind 127.0.0.1
@@ -165,6 +167,8 @@ python nodes/camera/test_camera.py
 ```
 
 使用相机 Python 环境执行后两项，均无需真实相机。概览测试覆盖相机方向盘直接映射及端点、无效观测拒绝、旧标定兼容、物理换算、标定缺失、范围、左右侧独立时效、跨时钟、多源、JPEG 缓存和路径白名单；配置与 HTTP/TCP 测试还覆盖 YAML 往返、来源热切换、预览参数切换、非法更新、保存失败、并发版本冲突和重启持久化。
+
+完整仿真构建的 `managed_gateway_process` 还会启动 Monitor，在进入 `CONTROL` 后持续轮询消息表和概览，检查臂、手反馈序号推进及新鲜度，覆盖轨迹窗口流量导致接收积压的回归场景。
 
 可选真实浏览器验证（测试环境安装 playwright-core，运行节点不依赖它）：
 

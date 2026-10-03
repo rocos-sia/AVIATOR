@@ -15,6 +15,16 @@ target_compile_definitions(aviator_monitor PRIVATE
   AVIATOR_MONITOR_MODELS="${PROJECT_SOURCE_DIR}/models"
   AVIATOR_MONITOR_CONFIG="${PROJECT_SOURCE_DIR}/config/monitor.yaml")
 target_link_libraries(aviator_monitor PRIVATE aviator_monitor_state)
+# CONTROL publishes an 81-point arm.command window every 20 ms. Unoptimized
+# JSON container operations cannot drain that traffic alongside device feedback:
+# the SUB FIFO then makes current arm/hand samples appear seconds out of date.
+# Optimize both translation-unit sets (JSON templates are instantiated in both),
+# retaining debug symbols and the normal freshness thresholds.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  foreach(target aviator_monitor_state aviator_monitor)
+    target_compile_options(${target} PRIVATE $<$<CONFIG:Debug>:-O2>)
+  endforeach()
+endif()
 install(TARGETS aviator_monitor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES web/app.js web/settings.js web/viewer.js web/vendor.js web/style.css web/THIRD_PARTY_NOTICES.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/monitor/web)

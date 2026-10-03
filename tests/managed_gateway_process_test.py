@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import uuid
+import urllib.request
 
 import yaml
 import zmq
@@ -17,7 +18,8 @@ from robot_state_machine_process_test import port
 
 
 def main():
-    bus, manipulator, core, root = sys.argv[1:]
+    bus, manipulator, core, root = sys.argv[1:5]
+    monitor = sys.argv[5] if len(sys.argv) > 5 else None
     root = Path(root)
     directory = Path(tempfile.mkdtemp(prefix="aviator-managed-gateway-"))
     print(f"Gateway process logs: {directory}", flush=True)
@@ -120,10 +122,47 @@ def main():
         assert response["status"] == expected, response
         return response
 
+    def check_monitor_control():
+        if not monitor:
+            return
+        http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        samples = []
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline:
+            with http.open(monitor_url + "/api/state", timeout=2) as reply:
+                snapshot = json.load(reply)
+            with http.open(monitor_url + "/api/overview", timeout=2) as reply:
+                overview = json.load(reply)
+            samples.append(dict(streams=[r for r in snapshot["streams"]
+                                        if r["topic"] in ("arm.state", "hand.state", "arm.command")],
+                                arms=overview["arms"], hands=overview["hands"]))
+            time.sleep(.02)  # Exercise the browser's 50 Hz overview polling load.
+        (directory / "monitor-control.json").write_text(json.dumps(samples, indent=2))
+        for topic in ("arm.state", "hand.state"):
+            rows = [next(r for r in s["streams"] if r["topic"] == topic) for s in samples]
+            assert rows[-1]["sequence"] > rows[0]["sequence"], (topic, rows)
+            fresh = sum(r["status"] == "FRESH" for r in rows)
+            assert fresh >= len(rows) * .9, (topic, "stale monitor feedback",
+                                           "see", directory / "monitor-control.json")
+        for group in ("arms", "hands"):
+            for side in ("left", "right"):
+                fresh = sum(s[group][side]["measurement_state"] == "VALID" for s in samples)
+                assert fresh >= len(samples) * .9, (group, side, "see", directory / "monitor-control.json")
+        print("PASS: Monitor arm/hand feedback remains fresh during sustained CONTROL", flush=True)
+
     try:
         start("bus", [bus, "--input", endpoints[0], "--output", endpoints[1],
                       "--lock-file", str(directory / "bus.lock")])
         start("manipulator", [manipulator, "--config", str(directory / "system.yaml"), "--headless", "--no-camera"])
+        if monitor:
+            monitor_config = yaml.safe_load((root / "config/monitor.yaml").read_text())
+            monitor_config["sources"]["hand.state"] = config["core_hand"]["publisher_id"]
+            (directory / "monitor.yaml").write_text(yaml.safe_dump(monitor_config))
+            monitor_port = port()
+            monitor_url = f"http://127.0.0.1:{monitor_port}"
+            start("monitor", [monitor, "--bind", "127.0.0.1", "--port", str(monitor_port),
+                              "--subscribe", endpoints[1], "--preview", "off",
+                              "--config", str(directory / "monitor.yaml")])
         process = start("core", [core, "--config", str(directory / "system.yaml"),
                                  "--operation-service", endpoints[3]])
         initial_state = state("READY", 30)  # Startup enables but waits for external home request, even with stdin EOF.
@@ -193,6 +232,7 @@ def main():
                  m["system"]["control_source"] == "JOYSTICK" and
                  abs(m["wheel_reference"]["angle"] + .04 * .87266) < .002 and
                  abs(m["wheel_reference"]["displacement"] + .08585) < .0004, 20)
+        check_monitor_control()
         call(request("leave_wheel"), "REJECTED")
         call(request("exit_control"), "COMPLETED")
         wait_for(lambda m: m["system"]["state"] == "FOLLOWING" and m["system"].get("settled"), 15)

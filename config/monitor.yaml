@@ -54,7 +54,7 @@ sources:
   camera.detection: "camera"
   flight.command: "flight_gateway"
   flight.state: "aviator_core"
-  hand.state: "rh56ftp"
+  hand.state: "rh56ftp_hand"
 timeouts_ms:
   arm.command: 100
   arm.state: 100

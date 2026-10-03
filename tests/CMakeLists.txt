@@ -139,7 +139,8 @@ if(TARGET aviator_core_servo AND TARGET simulation)
       set_tests_properties(robot_state_machine_process PROPERTIES TIMEOUT 220)
       add_test(NAME managed_gateway_process COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/managed_gateway_process_test.py
-        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR}
+        $<TARGET_FILE:aviator_monitor>)
       set_tests_properties(managed_gateway_process PROPERTIES TIMEOUT 300)
       add_test(NAME managed_idle_startup COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/managed_startup_test.py
