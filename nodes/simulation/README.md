@@ -70,7 +70,7 @@ build/simulation-node/bin/simulation --headless \
 | 方向 | Topic | 内容 |
 | --- | --- | --- |
 | 发布 | `arm.state` | 目标 100 Hz；双臂 7 轴位置/速度、TCP 世界位姿、设备状态和命令引用 |
-| 发布 | `hand.state` | 目标 100 Hz；双手各 6 个独立关节位置/速度、设备状态和命令引用 |
+| 发布 | `hand.state` | 目标 100 Hz；双手各 6 通道实际驱动位置（raw/normalized）、设备状态和命令引用 |
 | 发布 | `camera.detection` | 目标 30 Hz；640×480 渲染帧对应的方向盘真值检测或失效报告 |
 | 订阅 | `arm.command` | `JOINT_POSITION`，双侧各 7 个 rad 目标 |
 | 订阅 | `hand.command` | `JOINT_POSITION` 或 `NORMALIZED_POSITION`，双侧各 6 个目标 |
@@ -78,7 +78,9 @@ build/simulation-node/bin/simulation --headless \
 
 所有消息为 `[Topic, JSON]` 两帧，公共字段位于根对象。`config_id=aviator-mjcf-v1`；命令若携带此字段必须匹配。
 
-臂关节顺序：左 `AR5-5_07L-W4C4A2_joint_1..7`，右 `AR5-5_07R-W4C4A2_joint_1..7`。手关节顺序：`{left,right}_thumb_1_joint`、`thumb_2_joint`、`index_1_joint`、`middle_1_joint`、`ring_1_joint`、`little_1_joint`。其他手指关节由模型的 mimic 等式驱动。归一化 0/1 分别映射到各驱动关节 MJCF 下限/上限；反馈始终为 rad 和 rad/s。
+臂关节顺序：左 `AR5-5_07L-W4C4A2_joint_1..7`，右 `AR5-5_07R-W4C4A2_joint_1..7`。手关节顺序：`{left,right}_thumb_1_joint`、`thumb_2_joint`、`index_1_joint`、`middle_1_joint`、`ring_1_joint`、`little_1_joint`。其他手指关节由模型的 mimic 等式驱动。归一化 1 表示张开（MJCF 下限），0 表示闭合（MJCF 上限）。手部反馈从实际积分关节位置反算驱动位置，限幅后量化为 `drive_position_raw[6]`（整数 0～1000），`drive_position_normalized[6]` 严格为 raw/1000；`feedback_available=true`，`joint_position` 和 `joint_velocity` 为 null。`commanded_drive_position_normalized` 单独回显目标，不作为实际反馈。臂反馈仍为 rad 和 rad/s。
+
+监控仿真时，将 Monitor 配置的 `sources["arm.state"]` 和 `sources["hand.state"]` 设为 `simulation`，并避免真实设备同时发布同类状态。手部默认 URDF 行程映射可直接显示仿真反馈；硬件专用标定曲线应按仿真模型重新配置。
 
 TCP 使用 `left_tcp/right_tcp` site，`frame_id=mujoco_world`，姿态为 `qx,qy,qz,qw`。它不是未经变换的 `robot_base` 坐标。关节反馈是真实积分结果，不直接把目标当反馈。
 

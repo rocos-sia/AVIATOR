@@ -21,9 +21,12 @@ aviator::Message command(Simulation& sim,aviator::Topic topic,std::uint64_t now,
         const bool hand=topic==aviator::Topic::hand_command;
         const char* group=hand?"hands":"arms";
         auto state=sim.state(hand,now);
-        m.body={{"mode","JOINT_POSITION"},{"control_epoch",epoch},
+        m.body={{"mode",hand?"NORMALIZED_POSITION":"JOINT_POSITION"},{"control_epoch",epoch},
             {"origin",{{"publisher_id","flight_gateway"},{"session_id",origin},{"sequence",1},{"sample_mono_us",now},{"clock_id",sim.clock()}}}};
-        for(auto side:{"left","right"}) m.body[group][side]["joint_position"]=state.body[group][side]["joint_position"];
+        for(auto side:{"left","right"}) {
+            const char* field=hand?"drive_position_normalized":"joint_position";
+            m.body[group][side][field]=state.body[group][side][field];
+        }
     }
     return m;
 }
@@ -68,7 +71,34 @@ void model_test(const std::string& path) {
     for(auto side:{"left","right"}) hand.body["hands"][side]={{"drive_position_normalized",{.2,.2,.2,.2,.2,.2}}};
     check(sim.command(hand,now,error),"normalized hand command");
     for(int i=0;i<300;++i) sim.step(now);
-    check(sim.state(true,now).body["hands"]["left"]["joint_position"][2].get<double>()>.05,"finger physically follows target");
+    auto feedback=sim.state(true,now);
+    for(auto side:{"left","right"}) {
+        const auto& h=feedback.body["hands"][side];
+        check(h["feedback_available"]==true && h["valid"]==true,"hand feedback available");
+        check(h["joint_position"].is_null() && h["joint_velocity"].is_null(),"drive feedback is not radians");
+        check(h["sample_mono_us"]==now && h["feedback_age_ms"]==0,"hand sample freshness");
+        check(h["drive_position_raw"].size()==6 && h["drive_position_normalized"].size()==6,"six feedback channels");
+        for(int i=0;i<6;++i) {
+            const auto& raw=h["drive_position_raw"][i];
+            double value=h["drive_position_normalized"][i];
+            check(raw.is_number_integer() && raw>=0 && raw<=1000,"raw drive range");
+            check(value>=0 && value<=1 && std::abs(raw.get<double>()/1000-value)<1e-6,"monitor drive consistency");
+            check(std::abs(h["commanded_drive_position_normalized"][i].get<double>()-.2)<1e-9,"command echo");
+        }
+        check(h["drive_position_normalized"][2].get<double>()<.9,"finger physically closes");
+    }
+    // Check endpoint direction and quantization independently of servo settling.
+    for(auto side:{"left","right"}) {
+        int joint=mj_name2id(sim.model(),mjOBJ_JOINT,(std::string(side)+"_index_1_joint").c_str());
+        int q=sim.model()->jnt_qposadr[joint];
+        double lo=sim.model()->jnt_range[2*joint], hi=sim.model()->jnt_range[2*joint+1];
+        for(double fraction:{0.0,.1234,1.0}) {
+            sim.data()->qpos[q]=lo+fraction*(hi-lo);
+            auto h=sim.state(true,now).body["hands"][side];
+            check(h["drive_position_raw"][2]==static_cast<int>(std::lround(1000*(1-fraction))),"measured drive direction and quantization");
+            check(std::abs(h["commanded_drive_position_normalized"][2].get<double>()-.2)<1e-9,"measurement does not overwrite target echo");
+        }
+    }
     auto camera=command(sim,aviator::Topic::camera_command,now,1);
     check(sim.command(camera,now,error),"camera accepted");
     check(sim.detection(now,true,true).header.valid,"valid detection");

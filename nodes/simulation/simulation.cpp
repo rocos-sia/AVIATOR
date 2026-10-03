@@ -81,7 +81,7 @@ bool Simulation::command(const aviator::Message& message, std::uint64_t now, std
                 require(values.is_array() && values.size() == joints.size(), "wrong joint count");
                 for (std::size_t j = 0; j < joints.size(); ++j) {
                     double v = number(values[j]);
-                    if (normalized) { require(v >= 0 && v <= 1, "normalized target out of range"); v = joints[j].low + v*(joints[j].high-joints[j].low); }
+                    if (normalized) { require(v >= 0 && v <= 1, "normalized target out of range"); v = joints[j].low + (1-v)*(joints[j].high-joints[j].low); }
                     require(v >= joints[j].low && v <= joints[j].high, "joint target out of range");
                     targets[s].push_back(v);
                 }
@@ -156,7 +156,29 @@ aviator::Message Simulation::state(bool hand, std::uint64_t now) {
             mju_mat2Quat(q, data()->site_xmat + 9*tcp_[s]);
             side["tcp_pose"] = {{"frame_id", "mujoco_world"}, {"position", {{"x",p[0]}, {"y",p[1]}, {"z",p[2]}}},
                 {"orientation", {{"qx",q[1]}, {"qy",q[2]}, {"qz",q[3]}, {"qw",q[0]}}}};
-        } else side["grasp_verified"] = false;
+        } else {
+            // Emulate the hardware drive channels: 1=open, 0=closed.
+            // Quantize once so raw counts and normalized feedback agree exactly.
+            side["joint_position"] = nullptr;
+            side["joint_velocity"] = nullptr;
+            side["feedback_available"] = true;
+            side["position_source"] = "mujoco_joint_position";
+            side["sample_time_basis"] = "host_simulation_sample";
+            side["feedback_age_ms"] = 0.0;
+            side["drive_position_raw"] = Json::array();
+            side["drive_position_normalized"] = Json::array();
+            side["commanded_drive_position_normalized"] = Json::array();
+            for (const auto& j : joints) {
+                const double range = j.high - j.low;
+                const int raw = static_cast<int>(std::lround(1000 *
+                    std::clamp((j.high-data()->qpos[j.q])/range, 0.0, 1.0)));
+                side["drive_position_raw"].push_back(raw);
+                side["drive_position_normalized"].push_back(raw / 1000.0);
+                side["commanded_drive_position_normalized"].push_back(
+                    std::clamp((j.high-j.target)/range, 0.0, 1.0));
+            }
+            side["grasp_verified"] = false;
+        }
         out.body[hand ? "hands" : "arms"][s == 0 ? "left" : "right"] = side;
     }
     out.body["accepted_command"] = references_[group]; return out;
