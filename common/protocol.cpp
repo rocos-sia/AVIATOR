@@ -80,6 +80,21 @@ void check_value(const Json& value, unsigned depth = 1) {
         for (const auto& child : value) check_value(child, depth + 1);
 }
 
+Header read_header(const Json& json) {
+    Header h;
+    h.version = identifier(json, "version");
+    version(h.version);
+    h.sequence = integer(json, "sequence", true);
+    h.timestamp = integer(json, "timestamp");
+    h.sample_mono_us = integer(json, "sample_mono_us");
+    h.clock_id = identifier(json, "clock_id");
+    h.publisher_id = identifier(json, "publisher_id");
+    h.session_id = identifier(json, "session_id");
+    require(json.at("valid").is_boolean(), "valid must be boolean");
+    h.valid = json.at("valid").get<bool>();
+    return h;
+}
+
 void check_commands(const Message& message) {
     const auto& body = message.body;
     if (message.topic == Topic::flight_command) {
@@ -177,17 +192,7 @@ bool decode(std::string_view topic, std::string_view payload,
         Message message;
         message.topic = *type;
         require(json.at("msg_type") == message_type(*type), "topic/msg_type mismatch");
-        auto& h = message.header;
-        h.version = identifier(json, "version");
-        version(h.version);
-        h.sequence = integer(json, "sequence", true);
-        h.timestamp = integer(json, "timestamp");
-        h.sample_mono_us = integer(json, "sample_mono_us");
-        h.clock_id = identifier(json, "clock_id");
-        h.publisher_id = identifier(json, "publisher_id");
-        h.session_id = identifier(json, "session_id");
-        require(json.at("valid").is_boolean(), "valid must be boolean");
-        h.valid = json.at("valid").get<bool>();
+        message.header = read_header(json);
         for (const auto* key : header_keys) json.erase(key);
         message.body = std::move(json);
         check_commands(message);
@@ -214,9 +219,12 @@ bool encode(const Message& message, std::string& payload, std::string& error) {
         json["session_id"] = h.session_id;
         json["valid"] = h.valid;
         check_value(json); // dump() otherwise silently converts NaN/Inf to null.
+        // Validate the same envelope/business rules without serializing and reparsing
+        // thousands of trajectory scalars. A DOM object cannot contain duplicate keys.
+        (void)read_header(json);
+        check_commands(message);
         auto encoded = json.dump();
-        Message checked;
-        if (!decode(topic_name(message.topic), encoded, checked, error)) return false;
+        require(!encoded.empty() && encoded.size() <= max_payload_bytes, "invalid payload size");
         payload = std::move(encoded);
         error.clear();
         return true;

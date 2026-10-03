@@ -227,7 +227,6 @@ int main(int argc, char **argv) {
         system["manipulator_service"] = service;
         system["robot"] = "robot.yaml";
         auto robot = YAML::LoadFile((source / "config/robot.yaml").string());
-        robot["backend"] = "mujoco";
         for (const auto *key : {"model", "urdf", "collision_urdf", "grasp", "posture"})
             robot[key] = fs::weakly_canonical(source / "config" / robot[key].as<std::string>()).string();
         const auto posture = YAML::LoadFile(robot["posture"].as<std::string>());
@@ -241,10 +240,10 @@ int main(int argc, char **argv) {
         Child bus(
             {argv[1], "--input", input, "--output", output, "--lock-file", (directory / "bus.lock").string()},
             directory / "bus.log");
-        Child manipulator({argv[2], "--config", (directory / "system.yaml").string(), "--headless"},
+        Child manipulator({argv[2], "--config", (directory / "system.yaml").string(), "--headless", "--no-camera"},
                           directory / "manipulator.log");
         const auto deadline = monotonic_us() + 15000000;
-        while (manipulator.text().find("READY manipulator") == std::string::npos) {
+        while (manipulator.text().find("READY simulation") == std::string::npos) {
             check(!manipulator.done(), manipulator.text());
             check(monotonic_us() < deadline, "Manipulator startup timeout");
             usleep(10000);
@@ -300,7 +299,7 @@ int main(int argc, char **argv) {
             manipulator.terminate();
             while (!manipulator.done())
                 usleep(10000);
-            Child restarted({argv[2], "--config", (directory / "system.yaml").string(), "--headless"},
+            Child restarted({argv[2], "--config", (directory / "system.yaml").string(), "--headless", "--no-camera"},
                             directory / "restarted.log");
             auto new_info = callService(ctx, config, serviceRequest(client, "describe", Json::object()));
             check(new_info.at("server_session") != info.at("server_session"),

@@ -6,7 +6,7 @@ namespace aviator {
 // Pure command/feedback state, protected by HandLink's dedicated hand mutex.
 class HandControl {
 public:
-    void configure(const std::filesystem::path&, const std::string& backend);
+    void configure(const std::filesystem::path&);
     bool enabled() const { return enabled_; }
     void request(bool close, uint64_t now);
     void beginApproach(uint64_t now);

@@ -3,10 +3,9 @@
 #include <yaml-cpp/yaml.h>
 
 namespace aviator {
-void HandControl::configure(const std::filesystem::path& path, const std::string& backend) {
+void HandControl::configure(const std::filesystem::path& path) {
     const auto node = YAML::LoadFile(path.string())["core_hand"];
-    // MuJoCo's software/weld lock never publishes to physical hands.
-    enabled_ = backend != "mujoco" && node && node["enabled"].as<bool>(false);
+    enabled_ = node && node["enabled"].as<bool>(false);
     if (!enabled_) return;
     publisher_ = node["publisher_id"].as<std::string>("inspire_hand");
     const int timeout = node["completion_timeout_ms"].as<int>(5000);

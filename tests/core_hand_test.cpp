@@ -11,7 +11,7 @@ int main(int argc, char** argv) {
         struct Cleanup { std::filesystem::path p; ~Cleanup() { std::filesystem::remove(p); } } cleanup{path};
         std::ofstream(path) << "core_hand:\n  enabled: true\n  completion_timeout_ms: 500\n  close:\n    left: [0.9, 0.8, 0.7, 0.6, 0.5, 0.4]\n    right: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]\n";
         const auto session = new_session_id(), node = new_session_id();
-        auto create = [&] { HandControl h; h.configure(path, "rokae"); return h; };
+        auto create = [&] { HandControl h; h.configure(path); return h; };
         auto now = monotonic_us();
         auto h = create(); h.request(true, now);
         const auto command = *h.command(now, now, session);
@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
             zmq::context_t context(1);
             std::atomic<uint64_t> heartbeat{monotonic_us()};
             HandLink link;
-            link.configure(path, "rokae");
+            link.configure(path);
             MotionConfig config;
             config.publish = "inproc://hand-test-pub";
             config.subscribe = "inproc://hand-test-sub";
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
             link.stop();
             expect(third, "stopped");
         }
-        auto sim = HandControl(); sim.configure(path, "mujoco"); check(!sim.enabled(), "simulation can drive physical hands");
+        auto sim = HandControl(); sim.configure(path); check(sim.enabled(), "hand control must not depend on device implementation");
         std::ofstream(path) << "core_hand: {enabled: true, close: null}\n";
         auto missing = create(); bool rejected = false;
         try { missing.request(true, now); } catch (...) { rejected = true; }

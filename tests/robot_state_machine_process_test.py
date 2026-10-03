@@ -25,7 +25,6 @@ def main():
     print(f"FSM process logs: {directory}", flush=True)
     config = yaml.safe_load((root / "config/system.yaml").read_text())
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
-    robot["backend"] = "mujoco"
     robot["viewer"] = False
     robot["settle_duration"] = .15
     for key in ("model", "urdf", "collision_urdf", "grasp", "posture"):
@@ -72,7 +71,7 @@ def main():
     try:
         start("bus", [bus, "--input", endpoints[0], "--output", endpoints[1],
                       "--lock-file", str(directory / "bus.lock")])
-        start("manipulator", [manipulator, "--config", str(directory / "system.yaml"), "--headless"])
+        start("manipulator", [manipulator, "--config", str(directory / "system.yaml"), "--headless", "--no-camera"])
         arguments = [core, "--config", str(directory / "system.yaml"), "--console"]
         process = start("core", arguments)
         wait_state("READY", 30)  # Init/enable completed; no automatic home.

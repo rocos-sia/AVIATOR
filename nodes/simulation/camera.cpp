@@ -26,6 +26,8 @@ Camera::Camera(Simulation& simulation) : rgb_(640*480*3) {
             throw std::runtime_error("EGL context creation failed");
         mjv_defaultScene(&scene_); mjv_defaultCamera(&camera_); mjv_defaultOption(&option_); mjr_defaultContext(&render_);
         auto* m = simulation.model();
+        snapshot_.reset(mj_makeData(m));
+        if (!snapshot_) throw std::runtime_error("Camera snapshot allocation failed");
         m->vis.global.offwidth=640; m->vis.global.offheight=480;
         mjv_makeScene(m,&scene_,4000); mjr_makeContext(m,&render_,mjFONTSCALE_100);
         mjr_setBuffer(mjFB_OFFSCREEN,&render_);
@@ -50,13 +52,20 @@ void Camera::cleanup() {
     }
 }
 Camera::~Camera() { cleanup(); }
-bool Camera::capture(Simulation& simulation) {
+bool Camera::capture(Simulation& simulation, std::mutex* physics_mutex) {
+    Json command;
+    {
+        std::unique_lock<std::mutex> lock;
+        if (physics_mutex) lock = std::unique_lock<std::mutex>(*physics_mutex);
+        mj_copyData(snapshot_.get(), simulation.model(), simulation.data());
+        command = simulation.camera_command();
+    }
     if (!eglMakeCurrent(display_,surface_,surface_,context_)) throw std::runtime_error("EGL make current failed");
     struct ReleaseContext {
         EGLDisplay display;
         ~ReleaseContext() { eglMakeCurrent(display,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT); }
     } release{display_};
-    mjv_updateScene(simulation.model(),simulation.data(),&option_,nullptr,&camera_,mjCAT_ALL,&scene_);
+    mjv_updateScene(simulation.model(),snapshot_.get(),&option_,nullptr,&camera_,mjCAT_ALL,&scene_);
     mjr_render({0,0,640,480},&scene_,&render_);
     mjr_readPixels(rgb_.data(),nullptr,{0,0,640,480},&render_);
     // Ground-truth candidate center projected into the original image coordinates.
@@ -65,7 +74,7 @@ bool Camera::capture(Simulation& simulation) {
     int left=mj_name2id(simulation.model(),mjOBJ_SITE,"left_handle");
     int right=mj_name2id(simulation.model(),mjOBJ_SITE,"right_handle");
     double offset[3], horizontal[3];
-    for (int i=0;i<3;++i) offset[i]=(simulation.data()->site_xpos[3*left+i]+simulation.data()->site_xpos[3*right+i])/2-c.pos[i];
+    for (int i=0;i<3;++i) offset[i]=(snapshot_->site_xpos[3*left+i]+snapshot_->site_xpos[3*right+i])/2-c.pos[i];
     horizontal[0]=c.forward[1]*c.up[2]-c.forward[2]*c.up[1];
     horizontal[1]=c.forward[2]*c.up[0]-c.forward[0]*c.up[2];
     horizontal[2]=c.forward[0]*c.up[1]-c.forward[1]*c.up[0];
@@ -76,7 +85,6 @@ bool Camera::capture(Simulation& simulation) {
     x=640*(.5+(x*c.frustum_near/depth-c.frustum_center)/width);
     y=480*(1-(y*c.frustum_near/depth-c.frustum_bottom)/height);
     if (!std::isfinite(x) || !std::isfinite(y) || x<0 || x>=640 || y<0 || y>=480) return false;
-    const auto& command=simulation.camera_command();
     if (!command.contains("roi") || command.at("roi").is_null()) return true;
     const auto& roi=command.at("roi");
     double rx=roi.at("x"), ry=roi.at("y"), rw=roi.at("width"), rh=roi.at("height");

@@ -97,28 +97,36 @@ if(Python3_Interpreter_FOUND)
   set_tests_properties(camera_adapter PROPERTIES TIMEOUT 10)
 endif()
 
-if(TARGET aviator_core_servo AND TARGET manipulator AND AVIATOR_BUILD_MUJOCO)
+if(TARGET aviator_core_servo AND TARGET simulation)
   aviator_add_test_executable(aviator_control_nodes_test control_nodes_test.cpp
     ../nodes/flight_gateway/gateway.cpp)
   target_include_directories(aviator_control_nodes_test PRIVATE ../nodes/flight_gateway)
+  # The timing regression includes a real 100 Hz trajectory publisher.
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(aviator_control_nodes_test PRIVATE $<$<CONFIG:Debug>:-O2>)
+  endif()
   target_link_libraries(aviator_control_nodes_test PRIVATE aviator_motion_protocol)
-  add_dependencies(aviator_control_nodes_test aviator_bus aviator_core aviator_core_servo manipulator)
+  add_dependencies(aviator_control_nodes_test aviator_bus aviator_core aviator_core_servo simulation)
   foreach(mode IN ITEMS flight flight_auto flight_hold)
     add_test(NAME control_nodes_${mode} COMMAND aviator_control_nodes_test
-      $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core_servo>
+      $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_servo>
       ${PROJECT_SOURCE_DIR} ${mode})
     set_tests_properties(control_nodes_${mode} PROPERTIES TIMEOUT 190 ENVIRONMENT "LD_BIND_NOW=1")
   endforeach()
   add_test(NAME control_nodes_grasp COMMAND aviator_control_nodes_test
-    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core>
+    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core>
     ${PROJECT_SOURCE_DIR} grasp)
   set_tests_properties(control_nodes_grasp PROPERTIES TIMEOUT 190 ENVIRONMENT "LD_BIND_NOW=1")
   add_test(NAME control_nodes_watchdog COMMAND aviator_control_nodes_test
-    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core>
+    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core>
     ${PROJECT_SOURCE_DIR} watchdog)
   set_tests_properties(control_nodes_watchdog PROPERTIES TIMEOUT 190 ENVIRONMENT "LD_BIND_NOW=1")
+  add_test(NAME control_nodes_service COMMAND aviator_control_nodes_test
+    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core>
+    ${PROJECT_SOURCE_DIR} service)
+  set_tests_properties(control_nodes_service PROPERTIES TIMEOUT 30 ENVIRONMENT "LD_BIND_NOW=1")
   add_test(NAME control_nodes_servo_window COMMAND aviator_control_nodes_test
-    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core>
+    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core>
     ${PROJECT_SOURCE_DIR} servo_window)
   set_tests_properties(control_nodes_servo_window PROPERTIES TIMEOUT 30 ENVIRONMENT "LD_BIND_NOW=1")
   if(Python3_Interpreter_FOUND)
@@ -127,11 +135,11 @@ if(TARGET aviator_core_servo AND TARGET manipulator AND AVIATOR_BUILD_MUJOCO)
     if(FSM_PYTHON_DEPS EQUAL 0)
       add_test(NAME robot_state_machine_process COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/robot_state_machine_process_test.py
-        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
       set_tests_properties(robot_state_machine_process PROPERTIES TIMEOUT 220)
       add_test(NAME managed_gateway_process COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/managed_gateway_process_test.py
-        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:manipulator> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
       set_tests_properties(managed_gateway_process PROPERTIES TIMEOUT 300)
       add_test(NAME managed_idle_startup COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/managed_startup_test.py
@@ -163,7 +171,10 @@ if(TARGET aviator_core_control)
   add_test(NAME servo_planner COMMAND aviator_servo_planner_test ${PROJECT_SOURCE_DIR})
   set_tests_properties(servo_planner PROPERTIES TIMEOUT 60)
   aviator_add_test_executable(aviator_grasp_tools_test grasp_tools_test.cpp)
-  target_link_libraries(aviator_grasp_tools_test PRIVATE aviator_core_control aviator_device)
+  target_link_libraries(aviator_grasp_tools_test PRIVATE aviator_core_control)
+  if(TARGET aviator_simulation_device)
+    target_link_libraries(aviator_grasp_tools_test PRIVATE aviator_simulation_device)
+  endif()
   add_test(NAME grasp_tools COMMAND aviator_grasp_tools_test ${PROJECT_SOURCE_DIR})
   set_tests_properties(grasp_tools PROPERTIES TIMEOUT 20)
   aviator_add_test_executable(aviator_motion_protocol_test motion_protocol_test.cpp)

@@ -1,12 +1,10 @@
 # Aviator 双臂控制配置。
 # 路径相对于本 YAML 文件所在目录解析；修改后需重启控制程序生效。
 
-# manipulator 按此字段选择 MuJoCo 或 Rokae；Core 的算法和通信不变。
-# 所有路径均相对本文件；真机也复用下面的运动学、碰撞和轨迹参数。
-# backend: mujoco
-# viewer: true  # MuJoCo 窗口；--headless 可覆盖为关闭
-backend: mujoco
-model: ../models/control/aviator.xml
+# manipulator 固定连接 Rokae；simulation 实现同一设备接口。通过启动的节点选择真机/仿真。
+# 以下模型与窗口选项仅供 simulation 使用；完整模型包含双臂和双手。
+model: ../models/mjcf/aviator.xml
+viewer: true
 
 # 启动时轮盘的实际初始位形；真机声明软件参考，仿真同时设置轮盘关节初值。
 # 沿用原几何零位，不改变 grasp.json。摇杆中位对应 displacement=-0.085 m。

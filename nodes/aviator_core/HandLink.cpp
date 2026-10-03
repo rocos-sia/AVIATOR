@@ -2,8 +2,8 @@
 
 namespace aviator {
 HandLink::~HandLink() { stop(); }
-void HandLink::configure(const std::filesystem::path& path, const std::string& backend) {
-    control_.configure(path, backend);
+void HandLink::configure(const std::filesystem::path& path) {
+    control_.configure(path);
 }
 void HandLink::start(zmq::context_t& context, const MotionConfig& config, const std::string& session,
                      const std::atomic<uint64_t>& heartbeat, bool allowed) {

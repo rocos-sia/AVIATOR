@@ -83,7 +83,7 @@ core_hand:
                     operations.append(op)
                     result = {}
                     if op == 'describe':
-                        result = dict(config_id='test', server_session=server, backend='rokae',
+                        result = dict(config_id='test', server_session=server,
                                       q=[0]*14, target=[0]*14, speed=[1]*14)
                     elif op == 'authorize': result = dict(control_epoch=str(uuid.uuid4()))
                     elif op == 'enable':

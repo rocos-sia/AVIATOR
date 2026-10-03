@@ -18,7 +18,7 @@ public:
         std::string error;
     };
     ~HandLink();
-    void configure(const std::filesystem::path& path, const std::string& backend);
+    void configure(const std::filesystem::path& path);
     bool enabled() const { return control_.enabled(); } // Immutable after configure/before start.
     void start(zmq::context_t&, const MotionConfig&, const std::string& session,
                const std::atomic<uint64_t>& heartbeat, bool allowed);

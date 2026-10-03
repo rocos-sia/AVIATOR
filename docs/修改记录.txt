@@ -1,0 +1,7 @@
+
+
+
+修改项目代码-2026.10.03：
+1. 移除 [manipulator](nodes/manipulator/) 中mujoco相关代码，manipulator只负责真实rokae真实硬件的控制，仿真功能集中在 [simulation](nodes/simulation/) 中实现；
+2. [robot.yaml](config/robot.yaml) 中取消backend配置选项， [manipulator](nodes/manipulator/) 只负责真实硬件，无需选择backend，硬件对 @aviator_core的算法透明
+3. 将 [manipulator](nodes/manipulator/) 以及 [rh56ftp_hand](nodes/rh56ftp_hand/) 中的消息及请求，对应地实现在 [simulation](nodes/simulation/) 中，启动simulation后同时处理臂和手的消息和请求

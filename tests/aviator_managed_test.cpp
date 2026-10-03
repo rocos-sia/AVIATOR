@@ -16,18 +16,17 @@ template<class F> void rejects(F action) {
 int main() try {
     DeviceState idle;
     for (const auto* phase : {"UNINITIALIZED", "INITIALIZED", "DISABLED"}) {
-        check(managedResourcesReady("rokae", phase, idle, false, true), "Rokae pre-enable deadlock");
-        check(!managedResourcesReady("rokae", phase, idle, false, false), "stale status accepted");
-        check(!managedResourcesReady("mujoco", phase, idle, false, true), "invalid simulation feedback accepted");
+        check(managedResourcesReady(phase, idle, false, true), "Rokae pre-enable deadlock");
+        check(!managedResourcesReady(phase, idle, false, false), "stale status accepted");
     }
     for (const auto* phase : {"ENABLED", "APPROACHING", "LOCKED", "SERVO", "RELEASING"})
-        check(!managedResourcesReady("rokae", phase, idle, false, true), "motion bypassed realtime feedback");
+        check(!managedResourcesReady(phase, idle, false, true), "motion bypassed realtime feedback");
     idle.fault = true;
-    check(!managedResourcesReady("rokae", "INITIALIZED", idle, true, true), "device fault ignored");
+    check(!managedResourcesReady("INITIALIZED", idle, true, true), "device fault ignored");
     idle.fault = false; idle.id = 1;
-    check(!managedResourcesReady("rokae", "INITIALIZED", idle, false, true), "active trajectory bypassed feedback");
+    check(!managedResourcesReady("INITIALIZED", idle, false, true), "active trajectory bypassed feedback");
     idle.id = 0; idle.stopping = true;
-    check(!managedResourcesReady("rokae", "INITIALIZED", idle, false, true), "stop in progress bypassed feedback");
+    check(!managedResourcesReady("INITIALIZED", idle, false, true), "stop in progress bypassed feedback");
     // No device object; missing configuration intentionally fails before executor IO.
     Aviator direct(nullptr, nullptr, nullptr, "/does-not-exist/aviator-managed-test.yaml");
     rejects([&] { direct.Init(); });

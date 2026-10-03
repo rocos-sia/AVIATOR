@@ -1,107 +1,80 @@
-# simulation — MuJoCo ZMQ 仿真节点
+# simulation — 臂、手一体的 MuJoCo 设备节点
 
-加载 `models/mjcf/aviator.xml` 和 `aviator_home` keyframe，在一个进程中替代机械臂、手和相机设备节点。复用 `common/` 的两帧 JSON 协议、输入授权和 watchdog；位置力矩控制与 GLFW 窗口参考 `examples/AviatorRobot_simple`，不依赖其 IK、机器人 SDK 或业务控制器。
-
-## 构建
-
-完整工程在 `AVIATOR_BUILD_MUJOCO=ON` 时默认构建 `simulation`。也可以仅构建通信节点、仿真节点及仓库内的 `third_party/mujoco-3.4.0`，避免构建机器人算法依赖。两种方式均从仓库源码构建 MuJoCo，不查找 `/opt/mujoco` 或系统安装的 MuJoCo：
-
-```bash
-# Ubuntu 开发依赖：nlohmann-json3-dev libzmq3-dev libglfw3-dev libegl1-mesa-dev
-# MuJoCo 源码构建还需要：libqhull-dev libccd-dev libtinyobjloader-dev libtinyxml2-dev
-cmake -S . -B build/simulation-node \
-  -DAVIATOR_COMMUNICATION_ONLY=ON \
-  -DAVIATOR_BUILD_SIMULATION_NODE=ON \
-  -DBUILD_TESTING=ON
-cmake --build build/simulation-node --parallel
-ctest --test-dir build/simulation-node --output-on-failure
-```
-
-MuJoCo 编译产物位于构建目录的 `third_party/install`，安装仿真节点时会一并安装 `libmujoco.so*`。lodepng、marchingcubecpp、trianglemeshdistance 同样使用仓库中的源码，不联网下载。
-
-MuJoCo 3.4.0 已验证。相机使用 EGL OpenGL 离屏渲染，需要可用的 EGL 驱动（Mesa 软件渲染亦可），不需要 X server。GUI 使用 GLFW。`AVIATOR_BUILD_SIMULATION_NODE=OFF` 可禁用本节点，不改变原有 communication-only 的默认依赖。
+`simulation` 在同一个物理场景中实现双臂、RH56FTP 双手和相机仿真，替代
+`manipulator` 与 `rh56ftp_hand`。Core 使用相同配置、可靠服务和消息协议，
+不判断硬件类型；`robot.yaml` 不再包含 `backend`。
 
 ## 启动
 
-默认连接与 `aviator_bus`、`aviator_monitor` 一致的总线 `5555/5556`，`publisher_id=simulation`。上层消费者按生产者配置来源；启动标记使用普通文本，不用于授权匹配。
+在不同终端执行，等待 simulation 的 `READY simulation` 再启动 Core：
 
 ```bash
-# 终端 1：总线
-build/simulation-node/bin/aviator_bus
-
-# 终端 2：窗口 + 相机，无命令授权时保持初始姿态
-build/simulation-node/bin/simulation
-
-# 或无头运行，仍渲染相机
-build/simulation-node/bin/simulation --headless
-
-# 无 EGL/GPU 时，仅物理仿真；camera.detection 持续报告 OFFLINE
-build/simulation-node/bin/simulation --headless --no-camera
-
-# 可选观测工具
-build/simulation-node/bin/aviator_monitor
+./build/debug/bin/aviator_bus --config config/system.yaml
+./build/debug/bin/simulation --config config/system.yaml
+./build/debug/bin/aviator_core_managed --config config/system.yaml
+./build/debug/bin/flight_gateway
 ```
 
-完整工程构建时，将上述 `build/simulation-node/bin/` 换为 `build/bin/`。监控页面为 http://127.0.0.1:8081/，话题列表可查看 `arm.state`、`hand.state` 和 `camera.detection`。
-
-窗口复用示例中的鼠标旋转、平移、缩放、R 复位视角与 Esc 退出。窗口相机与固定的仿真传感器相机独立。SIGINT/SIGTERM 正常退出；`--duration 10` 可用于有限时间运行。
-
-默认模型路径支持从任意工作目录启动。安装时模型和网格复制到 `share/aviator/models`；自定义安装布局可用 `--model /absolute/path/aviator.xml` 指定。`--pub-endpoint` 和 `--sub-endpoint` 可覆盖默认端点；连接 `5555/5556` 前应确保对应真实设备节点未同时发布同类反馈。
-
-## 命令授权
-
-启动时显式安装本次测试的 control_epoch；不根据最先到达的消息自动授权。会话 UUID 与会话匹配已取消，旧 --core-session / --origin-session 参数兼容读取但不作为授权条件。以下 epoch 仅供示意，实际由控制方授权后提供：
+无桌面/GPU时使用 `simulation --config config/system.yaml --headless --no-camera`。
+`--headless` 只关闭窗口，`--no-camera` 关闭 EGL 渲染并持续报告相机 OFFLINE。
+`--duration 10` 可限制运行时间。完整启动脚本也支持：
 
 ```bash
-build/simulation-node/bin/simulation --headless \
-  --control-epoch aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
 ```
 
-默认命令生产者为 `aviator_core`，上游为 `flight_gateway`，可分别用 `--core-publisher` / `--origin-publisher` 设置。输入必须使用本机 `clock_id`（hostname + `-` + `/proc/sys/kernel/random/boot_id`）与 `CLOCK_MONOTONIC` 微秒。跨主机时钟映射、可靠使能服务和在线切换授权尚未实现；更换授权需重启。
+同一设备服务端口和控制总线上，真机设备组与 simulation 二选一，不能同时运行。
+仿真不加载 Rokae SDK，也不访问 Modbus 硬件。窗口、相机渲染、设备通信与
+物理执行分离，渲染不会占用设备通信线程。
 
-- 臂、手命令有效期 50 ms，origin 有效期 100 ms；执行前再次检查。
-- 相机命令有效期默认 200 ms，可用 `--camera-timeout-ms` 指定。
-- 未授权、重复/乱序、过期、未来时间、跨时钟域、越界、缺侧或数组长度错误均拒绝。非法消息不更新目标和有效期限；合法 `valid=false` 立即撤销可执行性。
-- 失效后臂、手保持当时的关节位置，仍启用仿真保持伺服，状态为 `SAFE`。未接纳过命令时为 `READY`。重新收到当前授权下的新鲜命令可恢复 `ACTIVE`。
-- PUB/SUB 是持续目标流，发送方应周期发送新鲜输入，不提供执行确认；`accepted_command` 仅表示最近接纳目标。
+## 配置与接口
 
-## 话题与模型映射
+- `--config`：与 Core 使用同一个 `system.yaml`。设备服务默认绑定
+  `manipulator_service: tcp://127.0.0.1:5558`，总线默认 5555/5556。
+- `robot.yaml` 的 `model` 指向含双臂和完整双手的 `models/mjcf/aviator.xml`；
+  `viewer` 控制窗口。`wheel_initial`、URDF 限位、工具变换和制动参数与真机共用。
+- `--model` 可覆盖模型路径；`--pub-endpoint` / `--sub-endpoint` 可覆盖总线。
+- `arm.state` 的逻辑发布者为 `manipulator`；手部发布者读取
+  `system.yaml` 的 `core_hand.publisher_id`（缺省 `rh56ftp_hand`）。
+  Monitor 的来源配置对两种设备相同。
+- 臂服务包括 `describe`、`authorize`、`enable`、`disable`、`stop`、`lock`、
+  `unlock`、`reset_fault`、`get_result`。请求/回复的逻辑 target/server_id
+  均为 `manipulator`。共享设备服务实现保留请求去重、10 秒期限、轨迹游标、
+  50 ms 指令 watchdog、100 ms origin watchdog和本地制动。
+- 臂命令使用 `JOINT_TRAJECTORY` / `SYNCHRONIZED_TICKS`，由 Core 的
+  `authorize` 请求安装 control_epoch；不再通过 CLI 给机械臂预设授权。
+- 手部接受 `NORMALIZED_POSITION` 与 `GRASP_SETPOINT`。六通道顺序为
+  拇指旋转、拇指弯曲、食指、中指、无名指、小指；归一化 1=张开，0=闭合。
+  与 RH56FTP 相同，首次合法命令绑定发布者/epoch/origin，反馈携带
+  `accepted_command`（包含原始采样时间）、`command_valid`、`feedback_only`
+  和各侧实际驱动位置。非法消息不刷新授权或 ACK；`valid=false` 或 100 ms
+  超时使双手回安全张开目标。弯曲通道持续闭合且实测位置在五秒内变化不超过
+  10 个 raw 单位时冻结目标，拇指旋转除外，并分别回显 requested/commanded/closing_hold。
+  手部没有独立 RPC，ACK 通过 `hand.state` 返回。
+- 手部位置来自实际积分关节，按 0..1000 量化，不以目标冒充反馈；
+  力、电流、温度等硬件寄存器不可用时返回空数组，`grasp_verified=false`。
+- `lock` / `unlock` 同时切换抓取 weld；仿真测得轮盘位形放在
+  `wheel_measurement`，与 `wheel_reference` 分开。
 
-| 方向 | Topic | 内容 |
-| --- | --- | --- |
-| 发布 | `arm.state` | 目标 100 Hz；双臂 7 轴位置/速度、TCP 世界位姿、设备状态和命令引用 |
-| 发布 | `hand.state` | 目标 100 Hz；双手各 6 通道实际驱动位置（raw/normalized）、设备状态和命令引用 |
-| 发布 | `camera.detection` | 目标 30 Hz；640×480 渲染帧对应的方向盘真值检测或失效报告 |
-| 订阅 | `arm.command` | `JOINT_POSITION`，双侧各 7 个 rad 目标 |
-| 订阅 | `hand.command` | `JOINT_POSITION` 或 `NORMALIZED_POSITION`，双侧各 6 个目标 |
-| 订阅 | `camera.command` | `cockpit_camera` / `YOKE`，tracking_enabled、ROI、min_confidence |
+## 相机
 
-所有消息为 `[Topic, JSON]` 两帧，公共字段位于根对象。`config_id=aviator-mjcf-v1`；命令若携带此字段必须匹配。
+仍发布 `publisher_id=simulation` 的 `camera.detection`。监控仿真相机时将
+`sources["camera.detection"]` 设为 `simulation`。这是 640×480 EGL 图像对应的
+轮盘真值检测，不做图像识别或遮挡判断。相机命令沿用显式 `--control-epoch`
+与 `--core-publisher` / `--origin-publisher` 授权；这些选项不影响臂、手授权。
+`--camera-timeout-ms` 缺省为 200；窗口视角与传感器相机独立。
 
-臂关节顺序：左 `AR5-5_07L-W4C4A2_joint_1..7`，右 `AR5-5_07R-W4C4A2_joint_1..7`。手关节顺序：`{left,right}_thumb_1_joint`、`thumb_2_joint`、`index_1_joint`、`middle_1_joint`、`ring_1_joint`、`little_1_joint`。其他手指关节由模型的 mimic 等式驱动。归一化 1 表示张开（MJCF 下限），0 表示闭合（MJCF 上限）。手部反馈从实际积分关节位置反算驱动位置，限幅后量化为 `drive_position_raw[6]`（整数 0～1000），`drive_position_normalized[6]` 严格为 raw/1000；`feedback_available=true`，`joint_position` 和 `joint_velocity` 为 null。`commanded_drive_position_normalized` 单独回显目标，不作为实际反馈。臂反馈仍为 rad 和 rad/s。
+## 构建和测试
 
-监控仿真时，将 Monitor 配置的 `sources["arm.state"]` 和 `sources["hand.state"]` 设为 `simulation`，并避免真实设备同时发布同类状态。手部默认 URDF 行程映射可直接显示仿真反馈；硬件专用标定曲线应按仿真模型重新配置。
-
-TCP 使用 `left_tcp/right_tcp` site，`frame_id=mujoco_world`，姿态为 `qx,qy,qz,qw`。它不是未经变换的 `robot_base` 坐标。关节反馈是真实积分结果，不直接把目标当反馈。
-
-## 相机语义与范围
-
-每次相机采样都实际渲染并读取 RGB 缓冲，但检测使用 MuJoCo 方向盘关节真值，不执行图像识别，也不判断遮挡。固定相机初始朝向双把手中点；把手中点在视锥和 ROI 中且跟踪命令有效时报告 `TRACKING`，置信度为 1。ROI 按原始图像左上角像素坐标检查，范围不能超出 640×480；置信度阈值须在 `[0,1]`，真值检测分数 1 满足此范围内的阈值。
-
-roll/pitch 分别将 `roll_input_joint` / `pitch_input_joint` 的 MJCF 下限到上限线性映射为 `[-1,1]`。因此当前 home 中 pitch=0 m 对应归一化 -1；这只是版本化的仿真标定，不表示真实飞机标定。未跟踪、ROI 排除或超时为 `SEARCHING/valid=false`，角度值为 null。`--no-camera` 为 `OFFLINE`、frame_id=null。帧号与消息序号独立增长。
-
-不向控制总线添加图像帧；当前未实现 `record.camera.*` 原始图像记录通道。未实现 `JOINT_TRAJECTORY`、`GRASP_SETPOINT`、自动抓握/焊接锁定与视觉算法，相关命令明确拒绝；`grasp_verified=false`，不会把手指闭合伪装为抓握完成。IK 与飞控到关节目标转换由上游控制器承担。
-
-节点使用单线程调度物理、通信和渲染，模型步长为 1 ms，臂伺服参考示例的 Kp=1000、附加阻尼 80；另有力矩限幅。发布频率为尽力而为，不是硬实时保证。渲染过慢会降低频率和仿真速度；超过 100 ms 的墙钟积压会丢弃。协议时间始终是实际单调时钟，不使用 `mjData.time` 冒充采样时钟。
-
-## 验证
-
-`simulation_model` 检查动力学响应、关节映射、双侧完整性、限位、epoch/origin/时钟校验及文本启动标记、序号、invalid、超时保持和相机 ROI。`simulation_bus` 启动真实子进程及临时 TCP 总线，验证状态发布、命令订阅和退出。可启用 EGL 集成测试：
+完整工程默认构建。也可不构建 Pinocchio/IK/Rokae SDK：
 
 ```bash
-cmake -S . -B build/simulation-node -DAVIATOR_SIMULATION_TEST_EGL=ON
-cmake --build build/simulation-node --parallel
-ctest --test-dir build/simulation-node -R simulation --output-on-failure
+cmake -S . -B build/simulation-node -DAVIATOR_COMMUNICATION_ONLY=ON \
+  -DAVIATOR_BUILD_SIMULATION_NODE=ON -DBUILD_TESTING=ON
+cmake --build build/simulation-node --parallel 2
+ctest --test-dir build/simulation-node --output-on-failure -R simulation
 ```
 
-测试端点使用随机空闲端口，不占用生产总线。
+需要 libzmq、yaml-cpp、urdfdom、GLFW 和 EGL；MuJoCo 从仓库源码构建。
+完整工程的 `control_nodes_*`、`robot_state_machine_process` 和
+`managed_gateway_process` 测试均启动 simulation，不启动真实 manipulator。

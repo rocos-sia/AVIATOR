@@ -77,6 +77,7 @@ int main(int argc, char** argv) {
             bad["keyboard"] = "invalid";
             rejected(bad);
             auto legacy = YAML::Clone(root);
+            legacy["source"] = "joystick";
             legacy.remove("keyboard");
             write(legacy);
             check(flight_gateway::load_config(file.string()).source == "joystick",

@@ -136,7 +136,7 @@ sample_mono_us 必须来自该有效输入；POSITION_HOLD 使用通过校验的
 cmake --build build --target aviator_core_managed -j2
 # 设备、Bus、手节点准备好后；--console 为终端目标测试模式
 ./build/bin/aviator_core_managed --config config/system.yaml --console
-# MuJoCo 使用同一套设备反馈守卫，只切换配置中的后端
+# MuJoCo 使用同一套设备反馈守卫，通过启动 simulation 替代真机设备节点
 ./build/bin/aviator_core_managed --config /path/to/mujoco/system.yaml --console
 ```
 
@@ -146,9 +146,9 @@ cmake --build build --target aviator_core_managed -j2
 `quit` / Ctrl+C 撤销输出并等待任务退出，不自动执行正常撤离；正常离开须先走 EXIT_CONTROL / LEAVE_WHEEL。
 
 此入口不再读取 safety.json，也不再支持 `--safety-file` / `--fsm-simulation`，system.yaml 无需 managed_core.safety_file。
-真机和 MuJoCo 使用同一套运行适配；只由 robot.yaml 选择后端。各条件来源为：
+真机和 MuJoCo 使用同一套运行适配；通过运行 manipulator + rh56ftp_hand 或 simulation 选择设备，robot.yaml 不再包含 backend。各条件来源为：
 
-- ready：通常要求实时反馈新鲜且无故障。Rokae 的 UNINITIALIZED/INITIALIZED/DISABLED 阶段在无轨迹、未停止中时，允许用新鲜设备状态进入待机/使能流程；使能完成、接近及操控仍要求实时反馈。fault_cleared 仍要求实时反馈新鲜且无故障。Aviator 还检查本地执行器故障。
+- ready：通常要求实时反馈新鲜且无故障。设备的 UNINITIALIZED/INITIALIZED/DISABLED 阶段在无轨迹、未停止中时，允许用新鲜设备状态进入待机/使能流程；使能完成、接近及操控仍要求实时反馈。fault_cleared 仍要求实时反馈新鲜且无故障。Aviator 还检查本地执行器故障。
 - settled：设备停止确认、撤销输出后的轨迹清空、工作任务结束及执行器阶段。
 - input_ready / source_authorized：Gateway 输入有效期及绑定会话；终端测试仍受 ServoWheel 的 100 ms 目标时效限制。
 - clear_of_wheel：设备软件锁已解除，且执行器处于初始化/已使能/已失能等非接触流程阶段；这只是程序判据，不是物理脱离检测。
@@ -166,7 +166,7 @@ cmake --build build --target aviator_core_managed -j2
 ctest --test-dir build -R '^(aviator_managed_api|robot_state_machine|core_sml_demo|core_sml_cli|core_hand)$' --output-on-failure
 # 需要 pyzmq / PyYAML；测试自动使用随机 loopback 端口和临时 MuJoCo 配置
 ~/miniconda3/envs/apriltag_realsense/bin/python tests/robot_state_machine_process_test.py \
-  "$PWD/build/bin/aviator_bus" "$PWD/build/bin/manipulator" "$PWD/build/bin/aviator_core_managed" "$PWD"
+  "$PWD/build/bin/aviator_bus" "$PWD/build/bin/simulation" "$PWD/build/bin/aviator_core_managed" "$PWD"
 ```
 
 ## Managed Core：摇杆按钮与连续目标驱动真机
@@ -274,7 +274,7 @@ ERROR 状态不会因摇杆输入恢复而自动退出；故障排除后按 RESE
 ```bash
 # 需要 pyzmq / PyYAML；临时配置固定 MuJoCo，四个随机 loopback 端口，不使用实际摇杆/CAN/机器人
 ~/miniconda3/envs/apriltag_realsense/bin/python tests/managed_gateway_process_test.py \
-  "$PWD/build/bin/aviator_bus" "$PWD/build/bin/manipulator" "$PWD/build/bin/aviator_core_managed" "$PWD"
+  "$PWD/build/bin/aviator_bus" "$PWD/build/bin/simulation" "$PWD/build/bin/aviator_core_managed" "$PWD"
 # 若 CMake 选用的 Python 具备依赖，也会注册为 CTest：
 ctest --test-dir build -R '^managed_gateway_process$' --output-on-failure
 ```
@@ -288,18 +288,18 @@ ctest --test-dir build -R '^managed_gateway_process$' --output-on-failure
 
 ```bash
 cmake -S . -B build
-cmake --build build --target aviator_bus aviator_core aviator_core_servo manipulator -j3
+cmake --build build --target aviator_bus aviator_core aviator_core_servo simulation -j3
 ```
 
 三个终端分别启动：
 
 ```bash
 ./build/bin/aviator_bus --config config/system.yaml
-./build/bin/manipulator --config config/system.yaml
+./build/bin/simulation --config config/system.yaml
 ./build/bin/aviator_core --config config/system.yaml --demo
 ```
 
-`manipulator --headless` 关闭仿真窗口。Core 的 `--servo-demo` 演示每 20 ms 更新目标；不加 Demo 选项进入交互模式：
+`simulation --headless` 关闭仿真窗口。Core 的 `--servo-demo` 演示每 20 ms 更新目标；不加 Demo 选项进入交互模式：
 
 ```text
 enable
@@ -380,7 +380,7 @@ core_hand:
 ```
 
 `close` 缺失时拒绝 lock，超范围/非六元素目标拒绝加载。未配置 `core_hand` 或 `enabled: false`
-保留旧的软件锁定行为。MuJoCo 后端强制关闭真实手发布，保持仿真原有行为。
+保留旧的软件锁定行为。真机和 simulation 均按 core_hand 配置发送手命令并等待反馈/ACK；同一总线只启动一组设备节点。
 
 从仓库根目录，在独立终端依次启动（CAN 接口应已配置并启用）：
 

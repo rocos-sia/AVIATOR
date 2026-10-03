@@ -26,3 +26,9 @@ target_link_libraries(aviator_core_managed PRIVATE aviator_core_control aviator_
 install(TARGETS aviator_core aviator_core_servo aviator_core_managed RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/config/ DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/config)
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/control DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/models)
+
+# Keep network serialization within the device watchdog in Debug, retaining symbols.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  set_source_files_properties(RemoteLink.cpp HandControl.cpp HandLink.cpp
+    PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
+endif()

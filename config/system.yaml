@@ -10,7 +10,7 @@ origin_timeout_ms: 100
 # Arm command/state: 100 Hz. Local dual-arm execution: 1 ms.
 # local.task is the explicitly enabled Core task supervisor, not a FlightCommand.
 
-# Core -> aviator_hand. Ignored for the MuJoCo backend; applies to both Core executables.
+# Core -> hand device. The hardware hand node and simulation expose the same interface.
 core_hand:
   enabled: true
   # publisher_id: inspire_hand

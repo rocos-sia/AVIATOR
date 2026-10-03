@@ -163,3 +163,7 @@ python3 nodes/aviator_hand/hand_command.py
 `command_processing_slow`、`command_batch_slow`、`command_watchdog_expired`、`safe_pose_failed`
 会打印相关侧、阶段、耗时或故障原因。日志字段 `mono_us` 与同机 Core 的单调时间戳可对照。
 诊断不会改变命令、反馈超时和安全姿态控制。默认反馈周期及握紧保持行为见上文。
+
+## 仿真替代
+
+`simulation --config config/system.yaml` 在一个进程中提供臂服务与兼容的手部消息/ACK；仿真时不启动本节点或 manipulator。Core 手部控制使用相同的 `core_hand` 配置，不再按 backend 跳过。详见 [simulation](../simulation/README.md)。

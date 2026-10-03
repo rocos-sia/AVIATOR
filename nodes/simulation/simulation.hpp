@@ -4,6 +4,7 @@
 #include <array>
 #include <memory>
 #include <vector>
+#include <deque>
 
 namespace simulation {
 using Json = nlohmann::json;
@@ -14,9 +15,14 @@ struct Authorization {
 };
 class Simulation {
 public:
-    explicit Simulation(const std::string& path, const Authorization& authorization = {});
+    explicit Simulation(const std::string& path, const Authorization& authorization = {}, bool managed = false);
     bool command(const aviator::Message& message, std::uint64_t now, std::string& error);
     void step(std::uint64_t now);
+    // Managed mode shares model/data with the arm physics thread. Caller holds its mutex.
+    bool handCommand(const aviator::Message&, std::uint64_t now, std::string& error);
+    void applyHands(std::uint64_t now);
+    aviator::Message handState(std::uint64_t now, const std::string& publisher);
+    void setInitialWheel(double angle, double displacement);
     aviator::Message state(bool hand, std::uint64_t now);
     aviator::Message detection(std::uint64_t now, bool captured, bool in_roi);
     const Json& camera_command() const { return camera_command_; }
@@ -25,6 +31,15 @@ public:
     const std::string& session() const { return session_; }
     const std::string& clock() const { return clock_; }
 private:
+    std::unique_ptr<aviator::InputGuard> hand_guard_;
+    Json hand_ack_ = nullptr;
+    bool hand_valid_ = false;
+    struct ClosingHold {
+        int requested = -1, held = -1;
+        std::uint64_t last_command = 0;
+        std::deque<std::pair<std::uint64_t, int>> samples;
+    };
+    std::array<std::array<ClosingHold, 6>, 2> closing_holds_{};
     struct Joint { int q, v; double low, high, target; };
     std::unique_ptr<mjModel, decltype(&mj_deleteModel)> model_{nullptr, mj_deleteModel};
     std::unique_ptr<mjData, decltype(&mj_deleteData)> data_{nullptr, mj_deleteData};

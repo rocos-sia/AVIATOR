@@ -1,5 +1,9 @@
 #include "simulation.hpp"
 #include "transport.hpp"
+#include "motion.hpp"
+#include <yaml-cpp/yaml.h>
+#include <fstream>
+#include <filesystem>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -113,6 +117,73 @@ void model_test(const std::string& path) {
     Simulation readonly(path);
     check(!readonly.command(m,now,error),"default has no authorization");
 }
+void managed_hand_test(const std::string& path) {
+    Simulation sim(path, {}, true);
+    const auto now = aviator::monotonic_us();
+    auto m = command(sim, aviator::Topic::hand_command, now, 1);
+    m.body["origin"]["publisher_id"] = "aviator_core";
+    m.body["mode"] = "GRASP_SETPOINT";
+    for (const char* side : {"left", "right"}) m.body["hands"][side] = {{"grasp", {{"closure", .7}}}};
+    std::string error, payload;
+    check(sim.handCommand(m, now, error), "RH56FTP grasp setpoint accepted");
+    auto feedback = sim.handState(now, "rh56ftp_hand");
+    check(feedback.header.publisher_id == "rh56ftp_hand" && feedback.body["command_valid"] == true,
+          "hardware-compatible hand identity/validity");
+    check(feedback.body["accepted_command"]["sample_mono_us"] == now, "ACK retains command sample timestamp");
+    check(feedback.body["feedback_only"] == false, "simulation supports hand control");
+    check(aviator::encode(feedback, payload, error), "RH56FTP-compatible state encodes");
+    for (const char* side : {"left", "right"})
+        for (const auto& target : feedback.body["hands"][side]["commanded_drive_position_normalized"])
+            check(std::abs(target.get<double>() - .3) < 1e-9, "closure maps to six normalized drive targets");
+    check(!sim.handCommand(m, now, error), "duplicate hand command rejected");
+    for (int kind = 0; kind < 5; ++kind) {
+        auto bad = m; bad.header.sequence = 2;
+        if (kind == 0) bad.body["control_epoch"] = aviator::new_session_id();
+        if (kind == 1) bad.header.publisher_id = "foreign";
+        if (kind == 2) bad.body["origin"]["sample_mono_us"] = now - 100000;
+        if (kind == 3) bad.body["hands"]["right"]["grasp"]["closure"] = 1.1;
+        if (kind == 4) bad.header.clock_id = "foreign";
+        check(!sim.handCommand(bad, now, error), "invalid hand command rejected");
+        check(sim.handState(now, "rh56ftp_hand").body["accepted_command"]["sequence"] == 1,
+              "invalid message cannot advance hand ACK");
+    }
+    m.header.sequence = 2; m.header.valid = false; m.body.erase("hands");
+    check(sim.handCommand(m, now, error), "invalid report accepted as safe-pose request without targets");
+    check(sim.handState(now, "rh56ftp_hand").body["command_valid"] == false, "invalid report revokes hands");
+    m.header.sequence = 3; m.header.valid = true; m.body["mode"] = "NORMALIZED_POSITION";
+    for (const char* side : {"left", "right"}) m.body["hands"][side] = {{"drive_position_normalized", {.4,.4,.4,.4,.4,.4}}};
+    check(sim.handCommand(m, now, error), "valid command resumes hands");
+    sim.applyHands(now + 99999);
+    check(sim.handState(now + 99999, "rh56ftp_hand").body["command_valid"] == true, "hand watchdog before boundary");
+    sim.applyHands(now + 100000);
+    feedback = sim.handState(now + 100000, "rh56ftp_hand");
+    check(feedback.body["command_valid"] == false, "hand watchdog at 100ms boundary");
+    for (const char* side : {"left", "right"})
+        for (const auto& target : feedback.body["hands"][side]["commanded_drive_position_normalized"])
+            check(target == 1.0, "watchdog commands safe open pose");
+    // A physically blocked finger freezes at measured position only after a full
+    // five-second window, even while identical closing commands keep arriving.
+    int joint = mj_name2id(sim.model(), mjOBJ_JOINT, "left_index_1_joint");
+    sim.data()->qpos[sim.model()->jnt_qposadr[joint]] = sim.model()->jnt_range[2*joint] +
+        .4 * (sim.model()->jnt_range[2*joint+1] - sim.model()->jnt_range[2*joint]);
+    for (int tick = 0; tick <= 500; ++tick) {
+        const auto stamp = now + 200000 + tick * 10000;
+        m.header.sequence = 4 + tick;
+        m.header.sample_mono_us = stamp;
+        m.body["origin"]["sample_mono_us"] = stamp;
+        for (const char* side : {"left", "right"}) m.body["hands"][side] = {{"drive_position_normalized", {0,0,0,0,0,0}}};
+        check(sim.handCommand(m, stamp, error), "refresh closing command");
+        sim.applyHands(stamp);
+        if (tick == 499)
+            check(sim.handState(stamp, "rh56ftp_hand").body["hands"]["left"]["closing_hold_active"][2] == false,
+                  "blocked finger cannot freeze before five seconds");
+    }
+    auto held = sim.handState(now + 5200000, "rh56ftp_hand").body["hands"]["left"];
+    check(held["closing_hold_active"][2] == true && held["closing_hold_active"][0] == false,
+          "blocked-closing hold excludes thumb rotation");
+    check(std::abs(held["commanded_drive_position_normalized"][2].get<double>() - .6) < 1e-9 &&
+          held["requested_drive_position_normalized"][2] == 0.0, "held target and requested target remain distinct");
+}
 void process_test(const char* executable,const char* path,bool camera) {
     // In-test XSUB/XPUB bus uses ephemeral TCP ports, independent of running production buses.
     zmq::context_t context(1);
@@ -123,8 +194,21 @@ void process_test(const char* executable,const char* path,bool camera) {
     zmq::socket_t pub(context,zmq::socket_type::pub),sub(context,zmq::socket_type::sub);
     aviator::configure(pub); aviator::configure(sub); aviator::subscribe(sub,"");
     pub.connect(input); sub.connect(output);
-    std::vector<std::string> args={executable,"--headless","--model",path,"--duration","15","--pub-endpoint",input,"--sub-endpoint",output,
-        "--core-session",core,"--origin-session",origin,"--control-epoch",epoch};
+    zmq::socket_t reserve(context, zmq::socket_type::rep);
+    reserve.bind("tcp://127.0.0.1:*");
+    const std::string endpoint = reserve.get(zmq::sockopt::last_endpoint);
+    reserve.close();
+    char temp[] = "/tmp/aviator-simulation-test-XXXXXX";
+    const std::filesystem::path directory = mkdtemp(temp);
+    auto config = YAML::LoadFile(aviator::defaultSystemConfig().string());
+    config["robot"] = std::filesystem::absolute(aviator::defaultSystemConfig().parent_path() / config["robot"].as<std::string>()).string();
+    config["bus"]["publish"] = input; config["bus"]["subscribe"] = output;
+    config["manipulator_service"] = endpoint;
+    const auto file = directory / "system.yaml";
+    std::ofstream(file) << config;
+    const auto settings = aviator::loadMotionConfig(file);
+    std::vector<std::string> args={executable,"--config",file.string(),"--headless","--model",path,"--duration","15",
+        "--control-epoch",epoch};
     if(!camera) args.push_back("--no-camera");
     std::vector<char*> argv; for(auto& a:args) argv.push_back(a.data()); argv.push_back(nullptr);
     pid_t pid; check(posix_spawn(&pid,executable,nullptr,nullptr,argv.data(),environ)==0,"spawn simulation");
@@ -133,6 +217,13 @@ void process_test(const char* executable,const char* path,bool camera) {
     std::uint64_t sequence=0;
     auto end=aviator::monotonic_us()+12000000;
     try {
+        auto call = [&](const char* op) {
+            return aviator::callService(context, settings, aviator::serviceRequest(core, op,
+                std::string(op) == "describe" ? Json::object() : Json{{"config_id", settings.config_id}}));
+        };
+        const auto description = call("describe");
+        check(description.at("config_id") == settings.config_id, "simulation device description");
+        call("authorize"); call("enable"); call("stop");
         while(aviator::monotonic_us()<end) {
             // Forward complete multipart packets and subscription frames, on their owner thread.
             for(auto pair : {std::pair<zmq::socket_t*,zmq::socket_t*>{&xsub,&xpub},{&xpub,&xsub}}) {
@@ -159,7 +250,7 @@ void process_test(const char* executable,const char* path,bool camera) {
                     cmd.header={"1.0",++sequence,aviator::utc_us(),now,aviator::local_clock_id(),"aviator_core",core,true};
                     cmd.body={{"mode","JOINT_POSITION"},{"control_epoch",epoch},{"origin",{{"publisher_id","flight_gateway"},{"session_id",origin},{"sequence",sequence},{"clock_id",cmd.header.clock_id},{"sample_mono_us",now}}}};
                     for(auto side:{"left","right"}) cmd.body["arms"][side]["joint_position"]=m.body["arms"][side]["joint_position"];
-                    std::string payload; check(aviator::encode(cmd,payload,error),"encode wire command"); aviator::send(pub,"arm.command",payload);
+                    std::string payload;
                     cmd.topic=aviator::Topic::hand_command;
                     cmd.body.erase("arms"); cmd.body["mode"]="NORMALIZED_POSITION";
                     for(auto side:{"left","right"}) cmd.body["hands"][side]={{"drive_position_normalized",{.1,.1,.1,.1,.1,.1}}};
@@ -180,7 +271,7 @@ void process_test(const char* executable,const char* path,bool camera) {
 }
 int main(int argc,char** argv) {
     try {
-        if(argc==2) model_test(argv[1]);
+        if(argc==2) { model_test(argv[1]); managed_hand_test(argv[1]); }
         else if(argc==4) process_test(argv[1],argv[2],std::string(argv[3])=="camera");
         else throw std::runtime_error("invalid test arguments");
         std::cout<<"simulation tests passed\n"; return 0;

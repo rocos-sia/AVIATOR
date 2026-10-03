@@ -53,12 +53,23 @@ install(TARGETS aviator_service aviator_protocol aviator_transport aviator_runti
 install(FILES service.hpp protocol.hpp transport.hpp runtime.hpp startup.hpp recording.hpp recording_config.hpp camera_recording.hpp
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/aviator)
 
-# Robot-node wire/config/service helpers remain outside the pure communication build.
-if(NOT AVIATOR_COMMUNICATION_ONLY AND AVIATOR_BUILD_ROBOTICS_LIBS)
-  add_library(aviator_motion_protocol motion.cpp)
-  target_include_directories(aviator_motion_protocol PUBLIC ${PROJECT_SOURCE_DIR}/common/include)
-  target_link_libraries(aviator_motion_protocol PUBLIC aviator_runtime aviator_transport yaml-cpp)
-  target_compile_definitions(aviator_motion_protocol PRIVATE AVIATOR_SOURCE_CONFIG="${PROJECT_SOURCE_DIR}/config/system.yaml")
-endif()
+# Device protocol is independent of planning libraries and hardware SDKs.
+add_library(aviator_motion_protocol motion.cpp)
+target_include_directories(aviator_motion_protocol PUBLIC ${PROJECT_SOURCE_DIR}/common/include)
+target_link_libraries(aviator_motion_protocol PUBLIC aviator_runtime aviator_transport yaml-cpp)
+target_compile_definitions(aviator_motion_protocol PRIVATE AVIATOR_SOURCE_CONFIG="${PROJECT_SOURCE_DIR}/config/system.yaml")
+find_package(urdfdom REQUIRED)
+add_library(aviator_device_server device_server.cpp device_settings.cpp)
+target_include_directories(aviator_device_server SYSTEM PUBLIC ${urdfdom_INCLUDE_DIRS})
+target_link_libraries(aviator_device_server PUBLIC aviator_motion_protocol ${urdfdom_LIBRARIES})
 
 install(FILES ${PROJECT_SOURCE_DIR}/schemas/recording/camera_packet.proto DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/schemas)
+
+# The 81-point Servo wire format must fit the unchanged 50 ms watchdog even in
+# Debug builds. Keep symbols, but optimize JSON validation/encoding and device IO.
+# Planning and application code retain the selected build's normal debug flags.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  foreach(target aviator_protocol aviator_motion_protocol aviator_device_server)
+    target_compile_options(${target} PRIVATE $<$<CONFIG:Debug>:-O2>)
+  endforeach()
+endif()

@@ -25,7 +25,7 @@ int main() {
         rejected([] { joystickWheelDisplacement(std::numeric_limits<double>::quiet_NaN()); });
         const auto robot_file = std::filesystem::temp_directory_path() / ("wheel-initial-" + session + ".yaml");
         struct Cleanup { std::filesystem::path p; ~Cleanup() { std::filesystem::remove(p); } } cleanup{robot_file};
-        std::ofstream(robot_file) << "backend: rokae\n";
+        std::ofstream(robot_file) << "{}\n";
         check(loadInitialWheel(robot_file).displacement == 0, "legacy initial wheel default changed");
         std::ofstream(robot_file) << "wheel_initial: {angle: 0, displacement: -0.085}\n";
         const auto initial = loadInitialWheel(robot_file);

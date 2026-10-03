@@ -7,9 +7,8 @@ RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), sess
     const auto info = callService(context_, c, serviceRequest(session_, "describe", Json::object()));
     if (info.at("config_id") != c.config_id)
         throw std::runtime_error("Core/device config_id mismatch");
-    backend_ = info.at("backend");
-    hand_.configure(c.system, backend_);
-    std::cout << "Core hand control: " << (hand_.enabled() ? "dedicated ZMQ worker (50 Hz)" : "disabled / simulation") << std::endl;
+    hand_.configure(c.system);
+    std::cout << "Core hand control: " << (hand_.enabled() ? "dedicated ZMQ worker (50 Hz)" : "disabled by configuration") << std::endl;
     state_.q = info.at("q").get<Joints>();
     state_.target = info.at("target").get<Joints>();
     speed_ = info.at("speed").get<Joints>();

@@ -1,5 +1,4 @@
 #include "DataLink_direct.hpp"
-#include "aviator/backend.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -38,8 +37,8 @@ constexpr uint64_t kLockstepLead = 0;
 
 MuJoCoDirectDataLink::MuJoCoDirectDataLink(mjModel *model, mjData *data,
                                            const std::string &urdf_path,
-                                           const GraspGeometry &geometry)
-    : model_(model), data_(data) {
+                                           const SimulationTools &tools, std::function<void()> before_step)
+    : before_step_(std::move(before_step)), model_(model), data_(data) {
     require(model_ != nullptr && data_ != nullptr, "MuJoCo model/data cannot be null");
     require(model_->nu == 0,
             "Expected a torque-driven MJCF without actuators (nu == 0), got nu = " +
@@ -67,15 +66,21 @@ MuJoCoDirectDataLink::MuJoCoDirectDataLink(mjModel *model, mjData *data,
         const int gripper = mj_name2id(model_, mjOBJ_BODY, (std::string(names[side]) + "_gripper").c_str());
         const std::string flange = std::string("AR5-5_07") + (side ? "R" : "L") + "-W4C4A2_flan_link";
         const int flange_id = mj_name2id(model_, mjOBJ_BODY, flange.c_str());
-        require(gripper >= 0 && flange_id >= 0 && model_->body_parentid[gripper] == flange_id &&
-                    model_->site_bodyid[tcp_site_[side]] == gripper,
-                "Expected TCP on a gripper directly attached to " + flange);
-        const auto &tool = geometry.tools[side];
-        const Eigen::Quaterniond q(tool.rotation());
-        for (int j = 0; j < 3; ++j)
-            model_->body_pos[3 * gripper + j] = tool.translation()[j];
-        const double quat[] = {q.w(), q.x(), q.y(), q.z()};
-        std::copy(quat, quat + 4, model_->body_quat + 4 * gripper);
+        require(gripper >= 0 && flange_id >= 0 && model_->site_bodyid[tcp_site_[side]] == gripper,
+                "Expected TCP on a gripper below " + flange);
+        // The full hand model has fixed mount/palm bodies between flange and TCP.
+        // Express the configured flange->tool pose in the gripper parent's frame.
+        const int parent = model_->body_parentid[gripper];
+        for (int body = parent; body != flange_id; body = model_->body_parentid[body])
+            require(body > 0 && model_->body_jntnum[body] == 0, "TCP mount must be fixed to flange");
+        mj_forward(model_, data_);
+        const auto& tool = tools[side];
+        mjtNum world_pos[3], world_quat[4], inverse_pos[3], inverse_quat[4];
+        mju_mulPose(world_pos, world_quat, data_->xpos + 3 * flange_id, data_->xquat + 4 * flange_id,
+                    tool.position.data(), tool.quaternion.data());
+        mju_negPose(inverse_pos, inverse_quat, data_->xpos + 3 * parent, data_->xquat + 4 * parent);
+        mju_mulPose(model_->body_pos + 3 * gripper, model_->body_quat + 4 * gripper,
+                    inverse_pos, inverse_quat, world_pos, world_quat);
 
         require(model_->eq_type[weld_id_[side]] == mjEQ_WELD &&
                     model_->eq_objtype[weld_id_[side]] == mjOBJ_SITE &&
@@ -202,6 +207,7 @@ void MuJoCoDirectDataLink::physicsLoop() {
         // 推进物理一步。原架构里这属于仿真器进程，单进程内由本线程承担，
         // 使控制器与仿真严格同步（一个控制周期 = 一个仿真步）。
         // mutex_ also protects the viewer's scene snapshot.
+        if (before_step_) before_step_();
         mj_step(model_, data_);
         for (int side = 0; side < 2; ++side) {
             const double q = data_->qpos[joint_qpos_adr_[7 * side + 1]];
@@ -411,13 +417,6 @@ uint64_t MuJoCoDirectDataLink::stepCount() const {
 std::array<double, 2> MuJoCoDirectDataLink::elbowRange() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return elbow_range_;
-}
-
-// —— 后端工厂 ——
-std::unique_ptr<DataLink> makeMuJoCoDirectDataLink(mjModel *model, mjData *data,
-                                                   const std::string &urdf_path,
-                                                   const GraspGeometry &geometry) {
-    return std::make_unique<MuJoCoDirectDataLink>(model, data, urdf_path, geometry);
 }
 
 } // namespace aviator

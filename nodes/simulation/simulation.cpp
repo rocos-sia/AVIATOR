@@ -5,7 +5,7 @@
 
 namespace simulation {
 namespace {
-void require(bool value, const char* error) { if (!value) throw std::runtime_error(error); }
+void require(bool value, const std::string& error) { if (!value) throw std::runtime_error(error); }
 int id(mjModel* m, mjtObj kind, const std::string& name) {
     int value = mj_name2id(m, kind, name.c_str());
     if (value < 0) throw std::runtime_error("missing model object: " + name);
@@ -16,7 +16,7 @@ double number(const Json& j) {
     double v = j.get<double>(); require(std::isfinite(v), "non-finite number"); return v;
 }
 }
-Simulation::Simulation(const std::string& path, const Authorization& auth)
+Simulation::Simulation(const std::string& path, const Authorization& auth, bool managed)
     : session_(aviator::new_instance_id()), clock_(aviator::local_clock_id()) {
     char error[2048]{};
     model_.reset(mj_loadXML(path.c_str(), nullptr, error, sizeof(error)));
@@ -24,6 +24,7 @@ Simulation::Simulation(const std::string& path, const Authorization& auth)
     auto* m = model();
     require(m->nu == 0, "model must use external torque control (nu=0)");
     require(m->opt.timestep > 0 && m->opt.timestep <= .01, "invalid model timestep");
+    require(!managed || std::abs(m->opt.timestep - .001) < 1e-12, "device protocol requires 1 ms physics timestep");
     data_.reset(mj_makeData(m)); require(data() != nullptr, "mj_makeData failed");
     mj_resetDataKeyframe(m, data(), id(m, mjOBJ_KEY, "aviator_home"));
     for (int s = 0; s < 2; ++s) {
@@ -36,7 +37,7 @@ Simulation::Simulation(const std::string& path, const Authorization& auth)
             m->dof_damping[v] += damping;
         };
         for (int j = 1; j <= 7; ++j)
-            add(arms_[s], std::string("AR5-5_07") + (s == 0 ? "L" : "R") + "-W4C4A2_joint_" + std::to_string(j), 80);
+            add(arms_[s], std::string("AR5-5_07") + (s == 0 ? "L" : "R") + "-W4C4A2_joint_" + std::to_string(j), managed ? 0 : 80);
         for (const char* joint : {"thumb_1", "thumb_2", "index_1", "middle_1", "ring_1", "little_1"})
             add(hands_[s], side + "_" + joint + "_joint", .15);
         tcp_[s] = id(m, mjOBJ_SITE, side + "_tcp");
@@ -114,6 +115,132 @@ bool Simulation::command(const aviator::Message& message, std::uint64_t now, std
         } else camera_command_ = b;
         error.clear(); return true;
     } catch (const std::exception& e) { error = e.what(); return false; }
+}
+void Simulation::setInitialWheel(double angle, double displacement) {
+    data()->qpos[model()->jnt_qposadr[roll_]] = angle;
+    data()->qpos[model()->jnt_qposadr[pitch_]] = displacement;
+    mj_forward(model(), data());
+}
+bool Simulation::handCommand(const aviator::Message& message, std::uint64_t now, std::string& error) {
+    try {
+        require(message.topic == aviator::Topic::hand_command, "expected hand.command");
+        const auto& b = message.body;
+        std::array<std::array<double, 6>, 2> targets{};
+        if (message.header.valid) {
+            const std::string mode = b.at("mode");
+            require(mode == "NORMALIZED_POSITION" || mode == "GRASP_SETPOINT", "unsupported hand mode");
+            for (int side = 0; side < 2; ++side) {
+                const auto& hand = b.at("hands").at(side ? "right" : "left");
+                require(!hand.contains("joint_position"), "mixed hand target modes");
+                if (mode == "NORMALIZED_POSITION") {
+                    require(!hand.contains("grasp"), "mixed hand target modes");
+                    const auto& values = hand.at("drive_position_normalized");
+                    require(values.is_array() && values.size() == 6, "expected six hand positions");
+                    for (int j = 0; j < 6; ++j) targets[side][j] = number(values[j]);
+                } else {
+                    require(!hand.contains("drive_position_normalized"), "mixed hand target modes");
+                    targets[side].fill(1 - number(hand.at("grasp").at("closure")));
+                }
+                for (auto& v : targets[side]) {
+                    require(v >= 0 && v <= 1, "hand target outside [0,1]");
+                    v = std::round(v * 1000) / 1000; // RH56FTP register resolution.
+                }
+            }
+        }
+        aviator::InputPolicy policy;
+        policy.topic = aviator::Topic::hand_command;
+        policy.publisher_id = message.header.publisher_id;
+        policy.clock_id = clock_;
+        policy.control_epoch = b.at("control_epoch");
+        policy.origin_publisher_id = b.at("origin").at("publisher_id");
+        policy.timeout_us = policy.origin_timeout_us = 100000;
+        // RH56FTP binds publisher/epoch/origin on the first accepted command.
+        auto candidate = hand_guard_ ? *hand_guard_ : aviator::InputGuard(policy);
+        auto checked = message;
+        checked.body["origin"].erase("topic"); // RH56FTP does not constrain this extension.
+        const bool accepted = candidate.accept(checked, now, error);
+        require(accepted || (!message.header.valid && error == "invalid business data"), error);
+        hand_guard_ = std::make_unique<aviator::InputGuard>(std::move(candidate));
+        hand_valid_ = message.header.valid;
+        for (int side = 0; side < 2; ++side)
+            for (int j = 0; j < 6; ++j) {
+                auto& joint = hands_[side][j];
+                auto& hold = closing_holds_[side][j];
+                const int requested = static_cast<int>(std::lround(targets[side][j] * 1000));
+                if (!hand_valid_ || hold.requested != requested || now < hold.last_command || now - hold.last_command >= 100000)
+                    hold = {};
+                hold.requested = hand_valid_ ? requested : -1;
+                hold.last_command = now;
+                const double effective = hold.held >= 0 ? hold.held / 1000.0 : targets[side][j];
+                joint.target = joint.low + (1 - (hand_valid_ ? effective : 1)) * (joint.high - joint.low);
+            }
+        hand_ack_ = {{"publisher_id", message.header.publisher_id}, {"session_id", message.header.session_id},
+                     {"sequence", message.header.sequence}, {"sample_mono_us", message.header.sample_mono_us},
+                     {"control_epoch", b.at("control_epoch")}};
+        error.clear();
+        return true;
+    } catch (const std::exception& e) { error = e.what(); return false; }
+}
+void Simulation::applyHands(std::uint64_t now) {
+    if (hand_valid_ && hand_guard_->expired(now)) {
+        hand_valid_ = false;
+        closing_holds_ = {};
+        for (auto& side : hands_) for (auto& joint : side) joint.target = joint.low; // safe_pose: all open
+    }
+    for (int side = 0; side < 2; ++side) for (int channel = 0; channel < 6; ++channel) {
+        auto& j = hands_[side][channel];
+        auto& hold = closing_holds_[side][channel];
+        // Same five-second stalled-closing policy as RH56FTP, excluding thumb rotation.
+        if (hand_valid_ && channel > 0 && hold.held < 0) {
+            const int actual = static_cast<int>(std::lround(1000 * std::clamp(
+                (j.high - data()->qpos[j.q]) / (j.high - j.low), 0.0, 1.0)));
+            if (actual - hold.requested <= 10) hold.samples.clear();
+            else if (hold.samples.empty() || now - hold.samples.back().first >= 10000) {
+                hold.samples.emplace_back(now, actual);
+                while (hold.samples.size() > 1 && now - hold.samples[1].first >= 5000000)
+                    hold.samples.pop_front();
+                if (now - hold.samples.front().first >= 5000000) {
+                    int low = actual, high = actual;
+                    for (const auto& sample : hold.samples) { low = std::min(low, sample.second); high = std::max(high, sample.second); }
+                    if (high - low <= 10) {
+                        hold.held = actual;
+                        j.target = j.low + (1 - actual / 1000.0) * (j.high - j.low);
+                    }
+                }
+            }
+        }
+        data()->qfrc_applied[j.v] = std::clamp(3 * (j.target - data()->qpos[j.q]) + data()->qfrc_bias[j.v], -1.0, 1.0);
+    }
+}
+aviator::Message Simulation::handState(std::uint64_t now, const std::string& publisher) {
+    auto out = state(true, now);
+    out.header.publisher_id = publisher;
+    out.body.erase("config_id");
+    out.body["accepted_command"] = hand_ack_;
+    out.body["command_valid"] = hand_valid_;
+    out.body["feedback_only"] = false;
+    for (const char* name : {"left", "right"}) {
+        auto& h = out.body["hands"][name];
+        h["status"] = hand_valid_ ? "ACTIVE" : "READY";
+        h["enabled"] = hand_valid_;
+        h["angle"] = h["angle_raw"] = h["drive_position_raw"];
+        h["requested_drive_position_normalized"] = Json::array();
+        h["closing_hold_active"] = Json::array();
+        h["closing_hold_position_normalized"] = Json::array();
+        for (const auto& hold : closing_holds_[std::string(name) == "left" ? 0 : 1]) {
+            if (hand_valid_) h["requested_drive_position_normalized"].push_back(hold.requested / 1000.0);
+            h["closing_hold_active"].push_back(hold.held >= 0);
+            h["closing_hold_position_normalized"].push_back(hold.held >= 0 ? Json(hold.held / 1000.0) : Json(nullptr));
+        }
+        for (const char* field : {"err", "error", "error_codes", "status_code", "status_values", "status_codes"})
+            h[field] = std::array<int, 6>{};
+        // Hardware-only telemetry is unavailable; never invent physical sensor readings.
+        for (const char* field : {"force", "current", "temp", "temperature"}) h[field] = Json::array();
+        h["feedback_samples"] = out.header.sequence;
+        h["feedback_io_errors"] = 0;
+        h["feedback_last_error"] = "";
+    }
+    return out;
 }
 void Simulation::step(std::uint64_t now) {
     auto* m = model(); auto* d = data();

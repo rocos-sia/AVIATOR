@@ -1,16 +1,21 @@
 #pragma once
 #include "aviator/DataLink.hpp"
-#include <mujoco/mujoco.h>
 #include <array>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
+#include <mujoco/mujoco.h>
 #include <mutex>
 #include <thread>
 
 namespace aviator {
 
-struct GraspGeometry;
+struct SimulationTool {
+    std::array<double, 3> position{};
+    std::array<double, 4> quaternion{{1, 0, 0, 0}};
+};
+using SimulationTools = std::array<SimulationTool, 2>;
 
 // MuJoCo 直接访问的 DataLink 实现（单进程，无 IPC）。
 //
@@ -28,8 +33,8 @@ struct GraspGeometry;
 // 操纵盘不会因失去支撑而下垂。
 class MuJoCoDirectDataLink final : public DataLink {
   public:
-    MuJoCoDirectDataLink(mjModel *model, mjData *data, const std::string &urdf_path,
-                        const GraspGeometry &geometry);
+    MuJoCoDirectDataLink(mjModel* model, mjData* data, const std::string& urdf_path,
+                         const SimulationTools& tools, std::function<void()> before_step = {});
     ~MuJoCoDirectDataLink() override;
 
     ArmFeedback armFeedback() const override;
@@ -38,7 +43,7 @@ class MuJoCoDirectDataLink final : public DataLink {
     // 臂 IO
     double getJointPosition(Side side, int axis) const override;
     double getJointVelocity(Side side, int axis) const override;
-    void setJointPositions(const std::array<double, 14> &q) override;
+    void setJointPositions(const std::array<double, 14>& q) override;
     std::array<double, 14> jointTargets() const override;
     double jointVelLimit(Side side, int axis) const override;
     bool isEnabled(Side side) const override;
@@ -56,7 +61,7 @@ class MuJoCoDirectDataLink final : public DataLink {
     double time() const override;
 
     // 渲染/实测采样时与完整物理状态更新互斥。
-    std::mutex *physicsMutex() override { return &mutex_; }
+    std::mutex* physicsMutex() override { return &mutex_; }
 
     // true：物理按 1 ms 墙钟节拍（仿真时间 ≈ 真实时间，用于可视化）
     // false：与 waitTick 严格锁步，尽快推进（无头验证用，可数十倍加速且可复现）
@@ -67,7 +72,7 @@ class MuJoCoDirectDataLink final : public DataLink {
     std::array<double, 2> elbowRange() const;
 
   private:
-    void initJointMapping(const std::string &urdf_path);
+    void initJointMapping(const std::string& urdf_path);
     // 每步更新用于观测的 TCP 误差；不根据误差判定就绪或故障。
     // 调用方必须持有 mutex_。
     void updateAlignmentLocked();
@@ -76,8 +81,9 @@ class MuJoCoDirectDataLink final : public DataLink {
 
     static int sideOffset(Side side) { return (side == Side::Left) ? 0 : 7; }
 
-    mjModel *model_;
-    mjData *data_;
+    std::function<void()> before_step_;
+    mjModel* model_;
+    mjData* data_;
 
     std::array<int, 14> joint_qpos_adr_{};
     std::array<int, 14> joint_dof_adr_{};
@@ -107,8 +113,8 @@ class MuJoCoDirectDataLink final : public DataLink {
     // 节拍同步
     mutable std::mutex mutex_;
     std::condition_variable tick_cv_;
-    uint64_t tick_ = 0;      // 已完成步数
-    uint64_t consumed_ = 0;  // waitTick 已消费到的步数
+    uint64_t tick_ = 0;          // 已完成步数
+    uint64_t consumed_ = 0;      // waitTick 已消费到的步数
     double sim_step_span_ = 0.0; // 本步跨过的仿真时间
     bool real_time_ = true;
     bool running_ = false;

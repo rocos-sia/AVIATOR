@@ -26,7 +26,7 @@ def main():
     home = [math.radians(x) for x in posture["left_home_deg"] + posture["right_home_deg"]]
     config = yaml.safe_load((root / "config/system.yaml").read_text())
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
-    robot.update(backend="mujoco", viewer=False, settle_duration=.15)
+    robot.update(viewer=False, settle_duration=.15)
     for key in ("model", "urdf", "collision_urdf", "grasp", "posture"):
         robot[key] = str((root / "config" / robot[key]).resolve())
     endpoints = [f"tcp://127.0.0.1:{port()}" for _ in range(4)]
@@ -123,7 +123,7 @@ def main():
     try:
         start("bus", [bus, "--input", endpoints[0], "--output", endpoints[1],
                       "--lock-file", str(directory / "bus.lock")])
-        start("manipulator", [manipulator, "--config", str(directory / "system.yaml"), "--headless"])
+        start("manipulator", [manipulator, "--config", str(directory / "system.yaml"), "--headless", "--no-camera"])
         process = start("core", [core, "--config", str(directory / "system.yaml"),
                                  "--operation-service", endpoints[3]])
         initial_state = state("READY", 30)  # Startup enables but waits for external home request, even with stdin EOF.

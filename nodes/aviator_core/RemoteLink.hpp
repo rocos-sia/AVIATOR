@@ -16,7 +16,6 @@ class RemoteLink final : public DataLink {
     void reportSystem(const Json&); // Immutable owner-thread FSM export, separate from executor phase.
     DeviceState snapshot(bool& fresh, bool* status_fresh = nullptr) const;
     void allowMotion(bool); // Revoke queued output and asynchronously request device-local stop.
-    const std::string& backend() const { return backend_; }
     const std::string& session() const { return session_; }
     double getJointPosition(Side, int) const override;
     double getJointVelocity(Side, int) const override;
@@ -48,7 +47,7 @@ class RemoteLink final : public DataLink {
     MotionConfig config_;
     HandLink hand_;
     zmq::context_t context_{1};
-    std::string session_, epoch_, backend_;
+    std::string session_, epoch_;
     std::atomic<bool> quit_{false};
     std::atomic<uint64_t> heartbeat_{0};
     mutable std::mutex mutex_;

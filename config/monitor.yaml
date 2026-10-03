@@ -50,11 +50,11 @@ preview:
   publisher_id: "camera"
   timeout_ms: 500
 sources:
-  arm.state: "simulation"
+  arm.state: "manipulator"
   camera.detection: "camera"
   flight.command: "flight_gateway"
   flight.state: "aviator_core"
-  hand.state: "simulation"
+  hand.state: "rh56ftp"
 timeouts_ms:
   arm.command: 100
   arm.state: 100

@@ -56,7 +56,7 @@ def main():
                     operations.append(operation)
                     assert operation in ('describe', 'authorize', 'enable', 'stop'), f'Unexpected device action: {operation}'
                     if operation == 'enable': enabled = True
-                    result = dict(config_id=config['config_id'], server_session=session, backend='rokae',
+                    result = dict(config_id=config['config_id'], server_session=session,
                                   q=q, target=q, speed=[1.] * 14,
                                   control_epoch=str(uuid.uuid4()))
                     rep.send_json(dict(msg_type='ServiceReply', request_id=req['request_id'],

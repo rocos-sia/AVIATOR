@@ -191,7 +191,7 @@ Json encodeWindow(const TrajectoryWindow &w, const std::string &session, const s
                 points[k]["joint_acceleration"] = a;
             }
         }
-        b["arms"][side ? "right" : "left"]["points"] = points;
+        b["arms"][side ? "right" : "left"]["points"] = std::move(points);
     }
     b["wheel_reference"] = Json::array();
     for (size_t k = 0; k < w.count; k += stride)
