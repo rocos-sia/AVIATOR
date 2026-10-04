@@ -35,6 +35,13 @@ Camera::Camera(Simulation& simulation) : rgb_(640*480*3) {
         int left=mj_name2id(m,mjOBJ_SITE,"left_handle"), right=mj_name2id(m,mjOBJ_SITE,"right_handle");
         for (int i=0;i<3;++i) camera_.lookat[i]=(simulation.data()->site_xpos[3*left+i]+simulation.data()->site_xpos[3*right+i])/2;
         camera_.distance=1.5; camera_.azimuth=90; camera_.elevation=-15;
+        // Models with a tag provide a fixed pilot-side view; retain the legacy
+        // free camera for older/custom models that do not define this camera.
+        const int tag_camera = mj_name2id(m, mjOBJ_CAMERA, "cockpit_apriltag");
+        if (tag_camera >= 0) {
+            camera_.type = mjCAMERA_FIXED;
+            camera_.fixedcamid = tag_camera;
+        }
         // EGL and GLFW/GLX must never both own this thread's current context.
         eglMakeCurrent(display_,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);
     } catch (...) { cleanup(); throw; }
@@ -74,7 +81,12 @@ bool Camera::capture(Simulation& simulation, std::mutex* physics_mutex) {
     int left=mj_name2id(simulation.model(),mjOBJ_SITE,"left_handle");
     int right=mj_name2id(simulation.model(),mjOBJ_SITE,"right_handle");
     double offset[3], horizontal[3];
-    for (int i=0;i<3;++i) offset[i]=(snapshot_->site_xpos[3*left+i]+snapshot_->site_xpos[3*right+i])/2-c.pos[i];
+    const int tag = mj_name2id(simulation.model(),mjOBJ_SITE,"yoke_apriltag_center");
+    for (int i=0;i<3;++i) {
+        const double target = tag >= 0 ? snapshot_->site_xpos[3*tag+i] :
+            (snapshot_->site_xpos[3*left+i]+snapshot_->site_xpos[3*right+i])/2;
+        offset[i] = target - c.pos[i];
+    }
     horizontal[0]=c.forward[1]*c.up[2]-c.forward[2]*c.up[1];
     horizontal[1]=c.forward[2]*c.up[0]-c.forward[0]*c.up[2];
     horizontal[2]=c.forward[0]*c.up[1]-c.forward[1]*c.up[0];

@@ -32,7 +32,7 @@ target_link_libraries(simulation PRIVATE aviator_simulation_model aviator_simula
 install(TARGETS simulation RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/config/ DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/config)
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/urdf DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/models)
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/mjcf ${PROJECT_SOURCE_DIR}/models/meshes DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/models)
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/mjcf ${PROJECT_SOURCE_DIR}/models/meshes ${PROJECT_SOURCE_DIR}/models/textures DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/models)
 if(BUILD_TESTING)
   aviator_add_test_executable(aviator_simulation_test test_simulation.cpp)
   target_link_libraries(aviator_simulation_test PRIVATE aviator_simulation_model aviator_motion_protocol)
@@ -60,5 +60,15 @@ if(BUILD_TESTING)
     add_test(NAME simulation_camera COMMAND aviator_simulation_test $<TARGET_FILE:simulation>
       ${PROJECT_SOURCE_DIR}/models/mjcf/aviator.xml camera)
     set_tests_properties(simulation_camera PROPERTIES TIMEOUT 60)
+    if(Python3_Interpreter_FOUND)
+      execute_process(COMMAND ${Python3_EXECUTABLE} -c
+        "import mujoco, numpy, cv2; assert hasattr(cv2.aruco, 'ArucoDetector')"
+        RESULT_VARIABLE SIMULATION_TAG_PYTHON_DEPS OUTPUT_QUIET ERROR_QUIET)
+      if(SIMULATION_TAG_PYTHON_DEPS EQUAL 0)
+        add_test(NAME simulation_apriltag COMMAND ${Python3_EXECUTABLE}
+          ${PROJECT_SOURCE_DIR}/tests/mjcf_apriltag_test.py)
+        set_tests_properties(simulation_apriltag PROPERTIES TIMEOUT 60 ENVIRONMENT "MUJOCO_GL=egl")
+      endif()
+    endif()
   endif()
 endif()
