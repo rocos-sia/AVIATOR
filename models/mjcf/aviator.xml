@@ -10,6 +10,11 @@
     </default>
     <default class="collision">
       <geom type="mesh" group="3" rgba="0 0 0 0" friction="0.8 0.005 0.0001" density="0" contype="1" conaffinity="7" />
+      <!-- Local grip compliance only. priority prevents mixing with the stiffer hand
+           defaults; soft contact permits penetration, not mesh deformation. -->
+      <default class="steering_grip">
+        <geom type="cylinder" priority="1" solref="0.03 1" solimp="0.9 0.95 0.002" />
+      </default>
     </default>
   </default>
   <statistic center="-0.4 0 0.1" extent="1.5" />
@@ -65,13 +70,7 @@
     <mesh name="steering_wheel_collision_28" file="Cessna/steering_wheel_collision_28.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_29" file="Cessna/steering_wheel_collision_29.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_30" file="Cessna/steering_wheel_collision_30.stl" scale="1 1 1" />
-    <mesh name="steering_wheel_collision_31" file="Cessna/steering_wheel_collision_31.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_32" file="Cessna/steering_wheel_collision_32.stl" scale="1 1 1" />
-    <mesh name="steering_wheel_collision_33" file="Cessna/steering_wheel_collision_33.stl" scale="1 1 1" />
-    <mesh name="steering_wheel_collision_34" file="Cessna/steering_wheel_collision_34.stl" scale="1 1 1" />
-    <mesh name="steering_wheel_collision_35" file="Cessna/steering_wheel_collision_35.stl" scale="1 1 1" />
-    <mesh name="steering_wheel_collision_36" file="Cessna/steering_wheel_collision_36.stl" scale="1 1 1" />
-    <mesh name="steering_wheel_collision_37" file="Cessna/steering_wheel_collision_37.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_38" file="Cessna/steering_wheel_collision_38.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_39" file="Cessna/steering_wheel_collision_39.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_40" file="Cessna/steering_wheel_collision_40.stl" scale="1 1 1" />
@@ -203,13 +202,7 @@
         <geom name="steering_wheel_collision_28" class="collision" mesh="steering_wheel_collision_28" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_29" class="collision" mesh="steering_wheel_collision_29" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_30" class="collision" mesh="steering_wheel_collision_30" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_31" class="collision" mesh="steering_wheel_collision_31" pos="0 0 0" quat="1 0 0 0" contype="1" conaffinity="5" />
         <geom name="steering_wheel_collision_32" class="collision" mesh="steering_wheel_collision_32" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_33" class="collision" mesh="steering_wheel_collision_33" pos="0 0 0" quat="1 0 0 0" contype="1" conaffinity="3" />
-        <geom name="steering_wheel_collision_34" class="collision" mesh="steering_wheel_collision_34" pos="0 0 0" quat="1 0 0 0" contype="1" conaffinity="5" />
-        <geom name="steering_wheel_collision_35" class="collision" mesh="steering_wheel_collision_35" pos="0 0 0" quat="1 0 0 0" contype="1" conaffinity="5" />
-        <geom name="steering_wheel_collision_36" class="collision" mesh="steering_wheel_collision_36" pos="0 0 0" quat="1 0 0 0" contype="1" conaffinity="3" />
-        <geom name="steering_wheel_collision_37" class="collision" mesh="steering_wheel_collision_37" pos="0 0 0" quat="1 0 0 0" contype="1" conaffinity="3" />
         <geom name="steering_wheel_collision_38" class="collision" mesh="steering_wheel_collision_38" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_39" class="collision" mesh="steering_wheel_collision_39" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_40" class="collision" mesh="steering_wheel_collision_40" pos="0 0 0" quat="1 0 0 0" />
@@ -217,6 +210,16 @@
         <geom name="steering_wheel_collision_42" class="collision" mesh="steering_wheel_collision_42" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_43" class="collision" mesh="steering_wheel_collision_43" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_44" class="collision" mesh="steering_wheel_collision_44" pos="0 0 0" quat="1 0 0 0" />
+        <!-- Replace grip meshes 31/34/35 (left) and 33/36/37 (right): their
+             convex hulls obstruct thumb opposition. Keep the original visual mesh
+             and all shaft/support collisions. Centers/axes/half-lengths are in the
+             wheel frame; centers/axes follow config/grasp.json handle_geometry.
+             Half-length 80 mm covers the approximately 156 mm mesh grip and
+             supplies end contact for the opposing thumb (65 mm is too short).
+             Radius 12 mm is a grasp proxy, not the tool.radius of 28 mm.
+             Both hands must contact these geoms (inherited contype=1, conaffinity=7). -->
+        <geom name="steering_wheel_left_grip" class="steering_grip" pos="-0.12608473 -0.00148729 0.44569172" zaxis="0.05261090981972138 0.93179340680708 0.3591561487693014" size="0.012 0.080" />
+        <geom name="steering_wheel_right_grip" class="steering_grip" pos="0.12541949 -0.01257759 0.44539361" zaxis="0.02256000990581838 0.9336399061023193 0.3575018485075316" size="0.012 0.080" />
         <site name="left_handle" pos="-0.127136948196 -0.0201231581361 0.438508597025" quat="0.566245865199 -0.411390821583 -0.388818103402 -0.599119098786" size="0.008" rgba="0.2 1 0.2 1" />
         <site name="right_handle" pos="0.124968289802 -0.031250388122 0.43824357303" quat="-0.493604596516 0.350445269072 0.445462893102 0.659625216735" size="0.008" rgba="0.2 1 0.2 1" />
       </body>

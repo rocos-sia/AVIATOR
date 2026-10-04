@@ -1,0 +1,75 @@
+驾驶盘把手抓握碰撞修复（2026-10-04）
+
+结论与修改
+一键仿真读取 config/robot.yaml -> models/mjcf/aviator.xml。
+左把手原碰撞网格为 steering_wheel_collision_31/34/35，右侧为 33/36/37。
+现将这六个网格碰撞体替换为两个圆柱：半径 0.012 m、半长 0.080 m。
+中心、轴向沿用 grasp.json 的 handle_geometry，位于 steering_wheel 局部坐标系。
+实测原主把手网格沿轴跨度约 156 mm；采用 160 mm 圆柱。
+不能直接使用配置中 65 mm 的 half_length：130 mm 圆柱在 MuJoCo 3.4.0
+测试中使右拇指与上端仍相距约 2.5 mm，能闭合却没有对向接触。
+
+圆柱使用独立 steering_grip 类：
+  solref="0.03 1"
+  solimp="0.9 0.95 0.002"
+  priority="1"
+保持 friction="0.8 0.005 0.0001"、contype=1、conaffinity=7。
+priority 使局部柔性参数在与手部接触时生效，不被双方默认参数平均。
+0.002 是阻抗变化宽度，不是最大允许穿透量。
+质量/惯量、原外观网格、轴和支架碰撞、手部驱动参数保持原样。
+保留蓝色详细外观，因此视觉表面和简化的碰撞表面会有差异。
+
+原因与方案比较
+MuJoCo 常规 mesh 接触使用凸包。主把手复杂外形的凸包，加上其上小零件，
+会阻挡拇指绕到对侧。按当前 grasp.json 对齐双臂而保持手指张开时，
+可检测到左、右拇指分别约 15 mm、11 mm 的几何重叠；这些是静态强制位姿
+下的诊断值，不是动态平衡时的穿透。左小指在部分位姿也会碰下方支架。
+
+方案 1：只把旧网格变软，仍保留阻挡外形；试验未解决左拇指提前受阻，
+并使部分穿透增大。不作为默认方案。
+方案 2：圆柱提供连续且较窄的抓握接触面，减少零件边缘/凸包阻挡。
+最终采用方案 2 + 局部适度柔性，帮助接触后的手指继续包覆。
+这里的“软”是求解器允许接触穿透，不会让 STL 或刚体真实变形。
+真实可变形把手需要另建 flex/软体模型，不属于此次修改。
+
+旧 conaffinity=5/3 也不能被视为可靠的“排除某侧手部”。MuJoCo 的过滤是
+(contype1 & conaffinity2) || (contype2 & conaffinity1)，只改一侧仍可能接触。
+此次没有通过关闭碰撞或启用 grasp weld 来制造抓握成功。
+
+验证与复现
+在仓库根目录执行：
+  python3 tests/mjcf_grasp_contact_test.py
+依赖：mujoco、numpy、PyYAML。建议使用与仿真二进制相同的 MuJoCo 3.4.0。
+CMake 配置时若检测到这些 Python 依赖，会注册 simulation_grasp_contact。
+
+物理回归读取当前 grasp/posture/system 配置，通过 IK 得到抓握目标，使用
+6 秒五次平滑关节接近曲线，进入 hand_closing_distance 后平滑闭合，驻留
+2.5 秒。臂/手增益与 simulation 一致，驾驶盘自由运动，weld 始终关闭。
+这用于隔离接触几何，不是 Core Ruckig 轨迹或消息时序的逐点回放。
+检查数值稳定性、拇指屈曲、四指包覆、拇指与其他手指的对向受力接触及
+穿透深度；对向接触通过法向点积判断，不把纯位置闭合当作成功。
+
+MuJoCo 3.4.0 同一回归：旧模型左拇指屈曲约 6.9%，修改后约 64%，
+右拇指约 82%，双手四指约 94%～98%，双方均有对向受力接触。
+屈曲百分比以各关节可动范围为基准，0% 为张开，100% 为最大屈曲；
+夹住实体把手不应要求所有手指达到空握的 100%。
+修改后最大接触穿透约 3.1 mm；MuJoCo 3.14.0 上同一回归也通过，
+但穿透约 7.2 mm，说明不同引擎版本的接触结果不可直接混用。
+这验证当前初始驾驶盘位形下的抓握，未证明全行程操纵中的抗滑移能力。
+
+另验证现有 simulation_model、simulation_headless、control_nodes_grasp。
+运行相关测试：
+  ctest --test-dir build/debug --output-on-failure -R '^(simulation_model|simulation_headless|simulation_grasp_contact|control_nodes_grasp)$'
+旧模型对照可用 --model /path/to/old.xml --report-only；模型自身 meshdir 必须可解析。
+
+使用方式
+XML 在启动时加载，修改无需重新编译。结束当前仿真，再使用原命令启动：
+  AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
+本次没有修改真机抓握位姿，也没有修改 models/control 下的规划碰撞模型。
+后续若修改把手中心、轴向、工具位姿或手部闭合目标，应重新运行物理回归。
+
+依据
+MuJoCo 3.4 文档的 Solver parameters / Contact parameters：
+https://mujoco.readthedocs.io/en/3.4.0/modeling.html#solver-parameters
+https://mujoco.readthedocs.io/en/3.4.0/modeling.html#contact-parameters
+同版本源码文档：third_party/mujoco-3.4.0/doc/modeling.rst。

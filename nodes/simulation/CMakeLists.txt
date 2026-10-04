@@ -43,6 +43,14 @@ if(BUILD_TESTING)
     add_test(NAME simulation_headless COMMAND ${Python3_EXECUTABLE}
       ${PROJECT_SOURCE_DIR}/tests/simulation_smoke_test.py $<TARGET_FILE:simulation> ${PROJECT_SOURCE_DIR})
     set_tests_properties(simulation_headless PROPERTIES TIMEOUT 60)
+    # Optional Python physics regression; the C++ model/startup tests remain mandatory.
+    execute_process(COMMAND ${Python3_EXECUTABLE} -c "import mujoco, numpy, yaml"
+      RESULT_VARIABLE SIMULATION_CONTACT_PYTHON_DEPS OUTPUT_QUIET ERROR_QUIET)
+    if(SIMULATION_CONTACT_PYTHON_DEPS EQUAL 0)
+      add_test(NAME simulation_grasp_contact COMMAND ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/mjcf_grasp_contact_test.py)
+      set_tests_properties(simulation_grasp_contact PROPERTIES TIMEOUT 60)
+    endif()
   endif()
   add_test(NAME simulation_bus COMMAND aviator_simulation_test $<TARGET_FILE:simulation>
     ${PROJECT_SOURCE_DIR}/models/mjcf/aviator.xml no-camera)
