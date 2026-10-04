@@ -34,6 +34,15 @@ target_link_libraries(aviator_gateway_keyboard_test PRIVATE aviator_runtime)
 add_test(NAME gateway_keyboard COMMAND aviator_gateway_keyboard_test)
 set_tests_properties(gateway_keyboard PROPERTIES TIMEOUT 5)
 
+find_package(SDL2 REQUIRED)
+find_package(Freetype REQUIRED)
+aviator_add_test_executable(aviator_gateway_sdl_test gateway_sdl_test.cpp
+  ../nodes/flight_gateway/sdl_input.cpp ../nodes/flight_gateway/input_help.cpp ../nodes/flight_gateway/gateway.cpp)
+target_include_directories(aviator_gateway_sdl_test PRIVATE ../nodes/flight_gateway)
+target_link_libraries(aviator_gateway_sdl_test PRIVATE aviator_runtime SDL2::SDL2 Freetype::Freetype)
+add_test(NAME gateway_sdl COMMAND aviator_gateway_sdl_test)
+set_tests_properties(gateway_sdl PROPERTIES TIMEOUT 10 ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+
 aviator_add_test_executable(aviator_monitor_preview_receiver_test monitor_preview_receiver_test.cpp)
 target_link_libraries(aviator_monitor_preview_receiver_test PRIVATE aviator_monitor_state)
 add_test(NAME monitor_preview_receiver COMMAND aviator_monitor_preview_receiver_test

@@ -15,7 +15,9 @@ rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_bus --con
 //2、启动manipulator 注意sudo
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ sudo ./build/bin/manipulator  --config config/system.yaml 
 
-//3、启动gateway
+//3、启动gateway：flight.yaml 设置 source: joystick、device: auto，摇杆和键盘同时可用。
+// 键盘需聚焦 SDL 输入窗口；方向键控制轴，1..6 触发状态事件。
+// source: rs422 禁用摇杆和键盘；串口协议尚未实现，会明确报错退出。
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/flight_gateway 
 
 //4、启动rh56ftp

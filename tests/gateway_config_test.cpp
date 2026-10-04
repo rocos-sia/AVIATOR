@@ -44,14 +44,14 @@ int main(int argc, char** argv) {
         auto root = YAML::LoadFile(argv[1]);
         {
             auto keyboard = YAML::Clone(root);
-            keyboard["source"] = "keyboard";
-            keyboard["device"] = "/dev/input/by-id/test-event-kbd";
+            keyboard["source"] = "joystick";
+            keyboard["device"] = "auto";
             keyboard["keyboard"]["roll_speed"] = 0.5;
             keyboard["keyboard"]["pitch_speed"] = 2.0;
             keyboard["keyboard"]["roll_limit"] = 0.75;
             write(keyboard);
             const auto parsed = flight_gateway::load_config(file.string());
-            check(parsed.source == "keyboard" && parsed.keyboard.roll_speed == 0.5 &&
+            check(parsed.source == "joystick" && parsed.keyboard.roll_speed == 0.5 &&
                       parsed.keyboard.pitch_speed == 2 && parsed.keyboard.roll_limit == 0.75,
                   "keyboard configuration ignored");
             keyboard.remove("keyboard");
@@ -108,6 +108,23 @@ int main(int argc, char** argv) {
         }
         auto bad = YAML::Clone(root);
         bad["source"] = "rs422";
+        write(bad);
+        check(flight_gateway::load_config(file.string()).source == "rs422", "RS422 selection rejected");
+        bad["source"] = "keyboard";
+        rejected(bad);
+        for (const auto* device : {"auto", "0", "12"}) {
+            auto selected = YAML::Clone(root);
+            selected["device"] = device;
+            write(selected);
+            check(flight_gateway::load_config(file.string()).device == device, "SDL device selection ignored");
+        }
+        for (const auto* device : {"", "/dev/input/event0", "-1", "1.5", "2147483648"}) {
+            bad = YAML::Clone(root);
+            bad["device"] = device;
+            rejected(bad);
+        }
+        bad = YAML::Clone(root);
+        bad["roll_axis"] = 256;
         rejected(bad);
         bad = YAML::Clone(root);
         bad["pitch_axis"] = 0;

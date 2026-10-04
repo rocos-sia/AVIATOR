@@ -1,7 +1,9 @@
 find_package(Threads REQUIRED)
-add_executable(flight_gateway main.cpp gateway.cpp config.cpp)
+find_package(SDL2 REQUIRED)
+find_package(Freetype REQUIRED)
+add_executable(flight_gateway main.cpp sdl_input.cpp input_help.cpp gateway.cpp config.cpp)
 target_compile_features(flight_gateway PRIVATE cxx_std_17)
-target_link_libraries(flight_gateway PRIVATE aviator_service aviator_transport aviator_runtime Threads::Threads yaml-cpp)
+target_link_libraries(flight_gateway PRIVATE aviator_service aviator_transport aviator_runtime Threads::Threads yaml-cpp SDL2::SDL2 Freetype::Freetype)
 install(TARGETS flight_gateway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 target_compile_definitions(flight_gateway PRIVATE AVIATOR_FLIGHT_CONFIG="${PROJECT_SOURCE_DIR}/config/flight.yaml")

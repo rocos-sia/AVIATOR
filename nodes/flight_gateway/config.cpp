@@ -2,7 +2,7 @@
 #include "service.hpp"
 #include <filesystem>
 #include <cmath>
-#include <linux/input.h>
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <unistd.h>
@@ -70,11 +70,14 @@ Config load_config(const std::string& path) {
             require(key == "keyboard" || seen.count(key), "missing key: " + key);
         Config c;
         c.source = string(root["source"]);
-        require(c.source == "joystick" || c.source == "keyboard",
-                c.source == "rs422" ? "RS422 mode not implemented" : "unknown source");
+        require(c.source == "joystick" || c.source == "rs422", "source must be joystick or rs422");
         c.device = string(root["device"]);
-        require(std::filesystem::path(c.device).is_absolute(),
-                "device must be an absolute evdev path");
+        if (c.source == "joystick" && c.device != "auto") {
+            require(!c.device.empty() && c.device.find_first_not_of("0123456789") == std::string::npos,
+                    "device must be auto or a non-negative SDL joystick index");
+            require(std::stoull(c.device) <= std::numeric_limits<int>::max(),
+                    "SDL joystick index out of range");
+        }
         c.publish = string(root["publish"]);
         c.subscribe = string(root["subscribe"]);
         c.service = string(root["service"]);
@@ -89,8 +92,8 @@ Config load_config(const std::string& path) {
             c.lock_file = "/tmp/flight_gateway-" + std::to_string(getuid()) + ".lock";
         require(std::filesystem::path(c.lock_file).is_absolute(),
                 "lock_file must be absolute or empty");
-        c.roll_axis = number(root["roll_axis"], ABS_MAX, true);
-        c.pitch_axis = number(root["pitch_axis"], ABS_MAX, true);
+        c.roll_axis = number(root["roll_axis"], 255, true);
+        c.pitch_axis = number(root["pitch_axis"], 255, true);
         require(c.roll_axis != c.pitch_axis, "axes must differ");
         c.invert_roll = boolean(root["invert_roll"]);
         c.invert_pitch = boolean(root["invert_pitch"]);

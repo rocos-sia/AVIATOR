@@ -1,10 +1,8 @@
 # flight_gateway 启动时读取本文件；修改后重启生效。
-source: keyboard # joystick 或 keyboard；rs422 尚未实现
-# Linux evdev 路径，不是 /dev/input/js*。
-# keyboard 模式使用实际键盘的 evdev 路径（需读取权限），不要求后缀为 kbd。
-# 本机 CHERRY 复合设备的键盘接口被命名为 event-joystick，对应 /dev/input/event7。
-# device: /dev/input/by-id/usb-LiteStar_PXN-F16-event-joystick
-device: /dev/input/by-id/usb-CHERRY_MX_3.0S_Dongle-event-joystick
+source: joystick # joystick 同时启用摇杆和键盘；rs422 禁用两者（串口协议尚未实现）
+# SDL 摇杆选择：auto 自动选择第一个具备所需轴的设备，支持热插拔；或填从 0 开始的 SDL 设备索引。
+# 无摇杆时仍可使用键盘；键盘无需 device，须聚焦 flight_gateway 输入窗口。
+device: auto
 publish: tcp://127.0.0.1:5555
 subscribe: tcp://127.0.0.1:5556
 service: tcp://127.0.0.1:5559
@@ -12,13 +10,13 @@ service: tcp://127.0.0.1:5559
 core_session: ""
 # 空字符串使用 /tmp/flight_gateway-<uid>.lock。
 lock_file: ""
-# 摇杆专用 Linux ABS 事件代码：ABS_X=0，ABS_Y=1；keyboard 模式忽略。
+# SDL 摇杆轴索引（从 0 开始），默认 roll=0、pitch=1。
 roll_axis: 0
 pitch_axis: 1
 invert_roll: false
 invert_pitch: false
 # 键盘方向键：左/右 = roll -/+，上/下 = pitch -/+；反转参数同样生效。
-# 按住按实际经过时间累加，松开该轴回 0，相反方向同时按下也回 0。
+# 按住按实际经过时间累加，按下时接管对应轴，松开恢复摇杆值（无摇杆为 0）；相反方向同时按下回 0。
 # speed 为归一化行程/秒（正数）；limit 为归一化绝对位置上限 (0, 1]。
 # 以下默认从 0 到满行程需 1 秒；不依赖系统按键重复速度。
 keyboard:
@@ -28,8 +26,8 @@ keyboard:
   pitch_limit: 1.0
 input_timeout_ms: 100 # 1..100，设备检查有效期
 service_timeout_ms: 100 # 1..10000，超时结果未知，不自动重试
-# 按设备声明的 evdev 按键码升序对应按钮 1..11；none 表示禁用。
-# keyboard 模式对应主键盘 1..9、0、减号（不含数字小键盘）；长按只触发一次。
+# SDL 摇杆按钮索引 0..10 对应按钮 1..11；none 表示禁用。
+# 键盘同时可用，对应主键盘 1..9、0、减号（不含数字小键盘）；长按只触发一次。
 # 仅支持下面六种外部状态事件，可重复映射到其他按钮。
 buttons:
   - enter_standby # 1

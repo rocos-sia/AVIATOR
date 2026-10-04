@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace flight_gateway {
-// Button numbers are the first 11 advertised evdev key codes, in ascending order.
+// Button numbers index 11 adapter-supplied report codes (zero means unused).
 struct JoystickButtons {
     std::array<unsigned, 11> codes{};
     std::array<bool, 11> held{};
@@ -53,7 +53,7 @@ public:
         : sample_(sample), config_(config) {}
     void suppressHeld(unsigned code);
     void update(const input_event& event, std::uint64_t now_us);
-    // Call only after a successful EVIOCGKEY and a fully drained event queue.
+    // Call only after the input adapter has fully drained and checked its event queue.
     void deviceChecked(std::uint64_t now_us);
 private:
     void advance(std::uint64_t now_us);

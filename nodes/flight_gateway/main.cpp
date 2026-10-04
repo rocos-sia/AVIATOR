@@ -1,5 +1,6 @@
 #include "gateway.hpp"
 #include "config.hpp"
+#include "sdl_input.hpp"
 #include "service.hpp"
 #include "startup.hpp"
 #include "transport.hpp"
@@ -15,7 +16,6 @@
 #include <signal.h>
 #include <stdexcept>
 #include <sys/file.h>
-#include <sys/ioctl.h>
 #include <sys/signalfd.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -26,7 +26,7 @@ void require(bool condition, const std::string& reason) {
 }
 }
 int main(int argc, char** argv) {
-    int device = -1, signals_fd = -1, lock_fd = -1, result = 0;
+    int signals_fd = -1, lock_fd = -1, result = 0;
     const bool inline_output = isatty(STDOUT_FILENO);
     bool value_line = false;
     const auto finish_value_line = [&] {
@@ -36,14 +36,13 @@ int main(int argc, char** argv) {
         if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
             std::cout << "Usage: flight_gateway\n"
                          "Configuration: config/flight.yaml (installed: share/aviator/config/flight.yaml).\n"
-                         "Edit the YAML file for joystick/keyboard source, device, speeds and button mappings.\n"
+                         "Edit the YAML file for joystick/rs422 source, SDL device, speeds and button mappings.\n"
                          "Publishes at 50 Hz; restart after configuration changes.\n";
             return 0;
         }
         require(argc == 1, "startup options are not supported; edit config/flight.yaml");
         const auto config_path = flight_gateway::default_config_path();
         const auto config = flight_gateway::load_config(config_path);
-        const bool keyboard_mode = config.source == "keyboard";
         const auto& path = config.device;
         const auto& core_session = config.core_session;
         const auto& pub_endpoint = config.publish;
@@ -56,50 +55,6 @@ int main(int argc, char** argv) {
         flight_gateway::JoystickButtons buttons;
         buttons.operations = config.buttons;
         std::cout << "Configuration: " << config_path << std::endl;
-        input_absinfo roll{}, pitch{};
-        device = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-        require(device >= 0, "cannot open " + path + ": " + std::strerror(errno));
-        int clock_type = CLOCK_MONOTONIC;
-        require(ioctl(device, EVIOCSCLOCKID, &clock_type) == 0,
-                "device must support monotonic evdev timestamps: " + path);
-        if (!keyboard_mode) {
-            require(ioctl(device, EVIOCGABS(roll_axis), &roll) == 0 &&
-                        ioctl(device, EVIOCGABS(pitch_axis), &pitch) == 0,
-                    "selected absolute axes unavailable: " + path);
-            require(roll.minimum < roll.maximum && pitch.minimum < pitch.maximum,
-                    "invalid device axis ranges: " + path);
-        }
-        std::array<unsigned char, (KEY_MAX + 8) / 8> keys{}, held_keys{};
-        require(ioctl(device, EVIOCGBIT(EV_KEY, keys.size()), keys.data()) >= 0 &&
-                    ioctl(device, EVIOCGKEY(held_keys.size()), held_keys.data()) >= 0,
-                "cannot query input keys");
-        if (keyboard_mode) {
-            for (const auto code : flight_gateway::keyboard_arrows)
-                require(keys[code / 8] & (1u << (code % 8)),
-                        "selected device does not provide arrow keys: " + path);
-            buttons.codes = flight_gateway::keyboard_buttons;
-            for (unsigned i = 0; i < buttons.codes.size(); ++i) {
-                const auto code = buttons.codes[i];
-                require(buttons.operations[i].empty() || (keys[code / 8] & (1u << (code % 8))),
-                        "selected keyboard is missing mapped key: " + std::to_string(code));
-                buttons.held[i] = held_keys[code / 8] & (1u << (code % 8));
-                std::cout << "button=" << i + 1 << " evdev_code=" << code << " event="
-                          << (buttons.operations[i].empty() ? "none" : buttons.operations[i]) << '\n';
-            }
-        }
-        unsigned button_count = 0;
-        for (unsigned code = BTN_MISC; !keyboard_mode && code <= KEY_MAX && button_count < 11; ++code) {
-            if (!(keys[code / 8] & (1u << (code % 8))))
-                continue;
-            buttons.codes[button_count] = code;
-            buttons.held[button_count] = held_keys[code / 8] & (1u << (code % 8));
-            std::cout << "button=" << button_count + 1 << " evdev_code=" << code << " event="
-                      << (buttons.operations[button_count].empty()
-                              ? "none"
-                              : buttons.operations[button_count])
-                      << '\n';
-            ++button_count;
-        }
         sigset_t signals;
         sigemptyset(&signals); sigaddset(&signals, SIGINT); sigaddset(&signals, SIGTERM);
         const auto mask_error = pthread_sigmask(SIG_BLOCK, &signals, nullptr);
@@ -111,13 +66,13 @@ int main(int argc, char** argv) {
         require(lock_fd >= 0 && fstat(lock_fd, &info) == 0 && S_ISREG(info.st_mode) && info.st_uid == getuid(),
                 "cannot open owned regular lock file");
         require(flock(lock_fd, LOCK_EX | LOCK_NB) == 0, "another flight_gateway holds the lock");
+        // RS422 is reserved; reject before initializing any SDL device or window.
+        require(config.source == "joystick",
+                "RS422 mode not implemented; joystick and keyboard disabled");
+        flight_gateway::SdlInput input(config);
         flight_gateway::JoystickSample sample{
-            {roll_axis, roll.minimum, roll.maximum, roll.value, invert_roll},
-            {pitch_axis, pitch.minimum, pitch.maximum, pitch.value, invert_pitch}};
-        flight_gateway::KeyboardInput keyboard(sample, config.keyboard);
-        if (keyboard_mode)
-            for (const auto code : flight_gateway::keyboard_arrows)
-                if (held_keys[code / 8] & (1u << (code % 8))) keyboard.suppressHeld(code);
+            {roll_axis, -32768, 32767, 0, invert_roll},
+            {pitch_axis, -32768, 32767, 0, invert_pitch}};
         const auto session = aviator::new_instance_id(), clock = aviator::local_clock_id();
         flight_gateway::CoreFeedback feedback(core_session, clock);
         zmq::context_t context{1};
@@ -210,35 +165,15 @@ int main(int argc, char** argv) {
             const auto now = aviator::monotonic_us();
             const auto wait_ms = now >= next_publish ? 0 : (next_publish - now + 999) / 1000;
             zmq::pollitem_t items[]{{nullptr, signals_fd, ZMQ_POLLIN, 0},
-                                    {nullptr, device, ZMQ_POLLIN, 0},
                                     {sub.handle(), 0, ZMQ_POLLIN, 0},
                                     {service.handle(), 0, ZMQ_POLLIN, 0}};
-            zmq::poll(items, 4, std::chrono::milliseconds(wait_ms));
+            zmq::poll(items, 3, std::chrono::milliseconds(wait_ms));
             if (items[0].revents) { running = false; break; }
-            bool input_drained = true;
-            if (device >= 0 && items[1].revents) {
-                input_drained = false;
-                for (int i = 0; i < 128; ++i) {
-                    input_event event{};
-                    const auto n = read(device, &event, sizeof(event));
-                    if (n == sizeof(event)) {
-                        const auto event_now = aviator::monotonic_us();
-                        if (keyboard_mode) keyboard.update(event, event_now);
-                        else sample.update(event, event_now);
-                        for (auto index : buttons.update(event, event_now, !sample.failed))
-                            request_button(index);
-                    } else if (n < 0 && errno == EINTR)
-                        continue;
-                    else if (n < 0 && errno == EAGAIN) { input_drained = true; break; }
-                    else { sample.invalidate(); }
-                    if (sample.failed) {
-                        finish_value_line();
-                        std::cerr << "flight_gateway: input lost/corrupt; restart required\n";
-                        close(device); device = -1;
-                        break;
-                    }
-                }
-            }
+            std::vector<unsigned> pressed;
+            running = input.poll(sample, pressed);
+            if (!running) break;
+            for (const auto index : pressed)
+                if (sample.fresh(aviator::monotonic_us(), timeout_ms * 1000ULL)) request_button(index);
             for (int i = 0; i < 64; ++i) {
                 aviator::WireMessage wire;
                 const auto received = aviator::receive(sub, receive_state, wire, error);
@@ -321,44 +256,6 @@ int main(int argc, char** argv) {
                 last_service_ready = service_ready;
             }
             if (current >= next_publish) {
-                // Query kernel device availability every 20 ms. This is not a new hardware sample.
-                // Only renew the lease after draining events and completing their SYN_REPORT.
-                if (device >= 0 && !sample.failed && keyboard_mode) {
-                    std::array<unsigned char, (KEY_MAX + 8) / 8> current_keys{};
-                    if (ioctl(device, EVIOCGKEY(current_keys.size()), current_keys.data()) < 0) {
-                        sample.invalidate();
-                        finish_value_line();
-                        std::cerr << "flight_gateway: keyboard check failed: " << std::strerror(errno)
-                                  << "; restart required\n";
-                        close(device); device = -1;
-                    } else if (input_drained) {
-                        keyboard.deviceChecked(aviator::monotonic_us());
-                    }
-                } else if (device >= 0 && !sample.failed) {
-                    input_absinfo current_roll{}, current_pitch{};
-                    if (ioctl(device, EVIOCGABS(roll_axis), &current_roll) != 0 ||
-                        ioctl(device, EVIOCGABS(pitch_axis), &current_pitch) != 0) {
-                        sample.invalidate();
-                        finish_value_line();
-                        std::cerr << "flight_gateway: device check failed: " << std::strerror(errno)
-                                  << "; restart required\n";
-                        close(device); device = -1;
-                    } else if (current_roll.minimum != sample.roll.minimum ||
-                               current_roll.maximum != sample.roll.maximum ||
-                               current_pitch.minimum != sample.pitch.minimum ||
-                               current_pitch.maximum != sample.pitch.maximum ||
-                               current_roll.value < current_roll.minimum || current_roll.value > current_roll.maximum ||
-                               current_pitch.value < current_pitch.minimum || current_pitch.value > current_pitch.maximum) {
-                        sample.invalidate();
-                        finish_value_line();
-                        std::cerr << "flight_gateway: invalid/changed axis range; restart required\n";
-                        close(device); device = -1;
-                    } else if (input_drained) {
-                        const auto checked = aviator::monotonic_us();
-                        sample.initializePosition(current_roll.value, current_pitch.value, checked);
-                        sample.deviceChecked(checked);
-                    }
-                }
                 publish(aviator::monotonic_us());
                 next_publish += ((current - next_publish) / 20000 + 1) * 20000;
             }
@@ -370,7 +267,6 @@ int main(int argc, char** argv) {
         std::cerr << "flight_gateway: " << error.what() << '\n'; result = 1;
     }
     finish_value_line();
-    if (device >= 0) close(device);
     if (signals_fd >= 0) close(signals_fd);
     if (lock_fd >= 0) close(lock_fd);
     return result;
