@@ -24,7 +24,9 @@ public:
     aviator::Message handState(std::uint64_t now, const std::string& publisher);
     void setInitialWheel(double angle, double displacement);
     aviator::Message state(bool hand, std::uint64_t now);
-    aviator::Message detection(std::uint64_t now, bool captured, bool in_roi);
+    aviator::Message detection(std::uint64_t now, bool captured, bool in_roi,
+                               const mjData* snapshot = nullptr);
+    void setCameraId(const std::string& id);
     int cameraWidth() const { return camera_resolution_[0]; }
     int cameraHeight() const { return camera_resolution_[1]; }
     const Json& camera_command() const { return camera_command_; }
@@ -54,6 +56,7 @@ private:
     std::array<Json, 3> references_{Json(nullptr), Json(nullptr), Json(nullptr)};
     Json camera_command_ = Json::object();
     std::string session_, clock_;
+    std::string camera_id_ = "cockpit";
     std::array<std::uint64_t, 3> sequences_{};
     std::uint64_t frame_ = 0;
     aviator::Message envelope(aviator::Topic topic, int slot, std::uint64_t now, bool valid);

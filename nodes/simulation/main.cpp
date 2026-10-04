@@ -2,6 +2,8 @@
 #include "Viewer.hpp"
 #include "aviator/GraspTools.hpp"
 #include "camera.hpp"
+#include "camera_output.hpp"
+#include "camera_window.hpp"
 #include "device_server.hpp"
 #include "simulation.hpp"
 #include <atomic>
@@ -15,6 +17,8 @@ volatile std::sig_atomic_t stopping = 0;
 void stop(int) { stopping = 1; }
 void usage() {
     std::cout << "simulation [--config system.yaml] [--model path] [--headless] [--no-camera]\n"
+                 "  [--camera-config camera.yaml] [--camera-id cockpit] [--no-camera-window]\n"
+                 "  [--preview-endpoint endpoint|off] [--recording-config recording.yaml]\n"
                  "  [--duration seconds] [--pub-endpoint endpoint] [--sub-endpoint endpoint]\n"
                  "  [--control-epoch UUID] [--core-publisher id] [--origin-publisher id]\n"
                  "Arm services: system.yaml manipulator_service; same protocol as manipulator.\n"
@@ -25,9 +29,10 @@ void usage() {
 } // namespace
 int main(int argc, char** argv) try {
     auto file = aviator::defaultSystemConfig();
-    std::string model, pub_endpoint, sub_endpoint;
+    std::string model, pub_endpoint, sub_endpoint, camera_config, preview_endpoint, recording_config;
+    std::string camera_id = "cockpit";
     simulation::Authorization auth;
-    bool headless = false, no_camera = false;
+    bool headless = false, no_camera = false, camera_window = true;
     double duration = 0;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -43,11 +48,20 @@ int main(int argc, char** argv) try {
             no_camera = true;
             continue;
         }
+        if (arg == "--no-camera-window") { camera_window = false; continue; }
         if (++i == argc)
             throw std::runtime_error("Missing value for " + arg);
         const std::string value = argv[i];
         if (arg == "--config")
             file = value;
+        else if (arg == "--camera-config")
+            camera_config = value;
+        else if (arg == "--camera-id")
+            camera_id = value;
+        else if (arg == "--preview-endpoint")
+            preview_endpoint = value;
+        else if (arg == "--recording-config")
+            recording_config = value;
         else if (arg == "--model")
             model = value;
         else if (arg == "--pub-endpoint")
@@ -91,6 +105,7 @@ int main(int argc, char** argv) try {
     if (model.empty())
         model = settings.path("model").string();
     simulation::Simulation sim(model, auth, true);
+    sim.setCameraId(camera_id);
     sim.setInitialWheel(settings.initial_wheel.angle, settings.initial_wheel.displacement);
     auto grasp = YAML::LoadFile(settings.path("grasp").string());
     aviator::SimulationTools tools;
@@ -118,6 +133,18 @@ int main(int argc, char** argv) try {
     if (!headless && settings.robot["viewer"].as<bool>(true)) {
         viewer = std::make_unique<aviator::Viewer>(sim.model());
         glfwSwapInterval(0);
+    }
+    std::unique_ptr<simulation::CameraWindow> camera_view;
+    if (viewer && camera && camera_window)
+        camera_view = std::make_unique<simulation::CameraWindow>(sim.cameraWidth(), sim.cameraHeight(), viewer->window());
+    std::unique_ptr<simulation::CameraOutput> camera_output;
+    if (camera) {
+        if (camera_config.empty()) {
+            const auto adjacent = config.system.parent_path() / "camera.yaml";
+            if (std::filesystem::exists(adjacent)) camera_config = adjacent.string();
+        }
+        camera_output = std::make_unique<simulation::CameraOutput>(
+            simulation::previewSettings(camera_config, preview_endpoint), recording_config, camera_id);
     }
     aviator::MuJoCoDirectDataLink device(sim.model(), sim.data(), settings.path("urdf").string(),
                                          tools, [&] { sim.applyHands(aviator::monotonic_us()); });
@@ -188,10 +215,13 @@ int main(int argc, char** argv) try {
                     glfwMakeContextCurrent(nullptr);
                 const bool in_roi = camera && camera->capture(sim, device.physicsMutex());
                 aviator::Message detection;
-                {
+                if (camera) detection = camera->detection(in_roi);
+                else {
                     std::lock_guard<std::mutex> lock(*device.physicsMutex());
-                    detection = sim.detection(aviator::monotonic_us(), bool(camera), in_roi);
+                    detection = sim.detection(aviator::monotonic_us(), false, false);
                 }
+                if (camera_output) camera_output->submit(*camera, detection);
+                if (camera_view) camera_view->update(camera->rgb());
                 {
                     std::lock_guard<std::mutex> lock(detection_mutex);
                     latest_detection = std::move(detection);
@@ -202,6 +232,7 @@ int main(int argc, char** argv) try {
                 glfwMakeContextCurrent(viewer->window());
                 if (!viewer->draw(sim.data(), *device.physicsMutex()))
                     break;
+                if (camera_view) camera_view->draw();
                 next_view = aviator::monotonic_us() + 16667;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));

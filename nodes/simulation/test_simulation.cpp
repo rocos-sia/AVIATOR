@@ -20,7 +20,7 @@ aviator::Message command(Simulation& sim,aviator::Topic topic,std::uint64_t now,
     aviator::Message m; m.topic=topic;
     m.header={"1.0",sequence,aviator::utc_us(),now,sim.clock(),"aviator_core",core,true};
     if(topic==aviator::Topic::camera_command) {
-        m.body={{"camera_id","cockpit_camera"},{"target","YOKE"},{"tracking_enabled",true},{"roi",nullptr},{"min_confidence",.8}};
+        m.body={{"camera_id","cockpit"},{"target","YOKE"},{"tracking_enabled",true},{"roi",nullptr},{"min_confidence",.8}};
     } else {
         const bool hand=topic==aviator::Topic::hand_command;
         const char* group=hand?"hands":"arms";
@@ -125,6 +125,31 @@ void model_test(const std::string& path) {
     check(aviator::encode(lost,payload,error),"detection encodes");
     Simulation readonly(path);
     check(!readonly.command(m,now,error),"default has no authorization");
+    readonly.setInitialWheel(0, -.085);
+    auto autonomous = readonly.detection(now,true,true);
+    check(autonomous.header.valid && autonomous.body["camera_id"] == "cockpit",
+          "standalone camera starts tracking without control commands");
+    const auto pose = autonomous.body["pose"];
+    check(std::abs(pose["position"]["x"].get<double>()) < 1e-5 &&
+          std::abs(pose["position"]["y"].get<double>()) < 1e-5 &&
+          pose["position"]["z"].get<double>() > .6, "optical-frame pose centered, meters and forward");
+    check(readonly.detection(now,true,false).body["pose"].is_null(), "lost target clears pose");
+    std::unique_ptr<mjData, decltype(&mj_deleteData)> snapshot(mj_makeData(readonly.model()), mj_deleteData);
+    mj_copyData(snapshot.get(),readonly.model(),readonly.data());
+    const auto before = readonly.detection(now,true,true,snapshot.get());
+    readonly.setInitialWheel(.4,-.12);
+    const auto moved = readonly.detection(now,true,true);
+    const auto wheel = moved.body["steering_wheel"];
+    check(wheel["valid"] && std::abs(wheel["theta_rad"].get<double>() + .4) < 1e-12 &&
+          std::abs(wheel["translation_along_axis_m"].get<double>() - .035) < 1e-12,
+          "Monitor physical roll/pitch maps back to measured simulation joints");
+    const auto invalid_wheel = readonly.detection(now,true,false).body["steering_wheel"];
+    check(!invalid_wheel["valid"].get<bool>() && invalid_wheel["theta_rad"].is_null() &&
+          invalid_wheel["translation_along_axis_m"].is_null(), "invalid wheel observation clears values");
+    const auto after = readonly.detection(now,true,true,snapshot.get());
+    check(before.body["pose"] == after.body["pose"] && before.body["yoke"] == after.body["yoke"] &&
+          before.body["steering_wheel"] == after.body["steering_wheel"],
+          "detection remains tied to captured snapshot while physics advances");
 }
 void managed_hand_test(const std::string& path) {
     Simulation sim(path, {}, true);
@@ -217,7 +242,7 @@ void process_test(const char* executable,const char* path,bool camera) {
     std::ofstream(file) << config;
     const auto settings = aviator::loadMotionConfig(file);
     std::vector<std::string> args={executable,"--config",file.string(),"--headless","--model",path,"--duration","15",
-        "--control-epoch",epoch};
+        "--control-epoch",epoch,"--preview-endpoint","off"};
     if(!camera) args.push_back("--no-camera");
     std::vector<char*> argv; for(auto& a:args) argv.push_back(a.data()); argv.push_back(nullptr);
     pid_t pid; check(posix_spawn(&pid,executable,nullptr,nullptr,argv.data(),environ)==0,"spawn simulation");
@@ -265,7 +290,7 @@ void process_test(const char* executable,const char* path,bool camera) {
                     for(auto side:{"left","right"}) cmd.body["hands"][side]={{"drive_position_normalized",{.1,.1,.1,.1,.1,.1}}};
                     check(aviator::encode(cmd,payload,error),"encode hand command"); aviator::send(pub,"hand.command",payload);
                     cmd.topic=aviator::Topic::camera_command;
-                    cmd.body={{"camera_id","cockpit_camera"},{"target","YOKE"},{"tracking_enabled",true},{"roi",nullptr},{"min_confidence",.8}};
+                    cmd.body={{"camera_id","cockpit"},{"target","YOKE"},{"tracking_enabled",true},{"roi",nullptr},{"min_confidence",.8}};
                     check(aviator::encode(cmd,payload,error),"encode camera command"); aviator::send(pub,"camera.command",payload);
                 }
             }

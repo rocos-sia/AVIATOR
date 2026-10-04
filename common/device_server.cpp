@@ -600,7 +600,10 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
             const auto bytes = reply.dump();
             rep.send(zmq::buffer(bytes));
         }
-        for (int n = 0; n < 64; ++n) {
+        // Large command windows can keep the receive queue busy. Bound each batch
+        // so decoding cannot starve feedback publication and trigger its watchdog.
+        const auto receive_deadline = monotonic_us() + 2000;
+        for (int n = 0; n < 64 && (n == 0 || monotonic_us() < receive_deadline); ++n) {
             WireMessage wire;
             std::string error;
             auto received = receive(sub, receive_state, wire, error);

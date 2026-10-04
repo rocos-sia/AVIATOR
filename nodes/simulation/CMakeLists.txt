@@ -16,6 +16,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SIMULATION_EGL REQUIRED IMPORTED_TARGET egl)
 find_package(glfw3 3.3 REQUIRED)
+find_package(OpenGL REQUIRED)
 add_library(aviator_simulation_model simulation.cpp)
 target_include_directories(aviator_simulation_model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${simulation_mujoco_include})
 target_link_libraries(aviator_simulation_model PUBLIC aviator_runtime ${simulation_mujoco})
@@ -27,8 +28,18 @@ target_compile_definitions(aviator_simulation_device PUBLIC AVIATOR_HAVE_MUJOCO=
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(aviator_simulation_model PRIVATE $<$<CONFIG:Debug>:-O2>)
 endif()
-add_executable(simulation main.cpp camera.cpp Viewer.cpp)
-target_link_libraries(simulation PRIVATE aviator_simulation_model aviator_simulation_device glfw PkgConfig::SIMULATION_EGL)
+add_library(aviator_simulation_camera camera.cpp camera_output.cpp camera_window.cpp)
+target_link_libraries(aviator_simulation_camera PUBLIC aviator_simulation_model aviator_camera_recording
+  aviator_transport glfw PkgConfig::SIMULATION_EGL OpenGL::GL PRIVATE PkgConfig::AVIATOR_VIDEO)
+add_executable(simulation main.cpp Viewer.cpp)
+target_link_libraries(simulation PRIVATE aviator_simulation_camera aviator_simulation_device)
+# JSON templates from these units also participate in device protocol decoding.
+# Keep the camera-enabled Debug executable within the existing 50 ms watchdog.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  foreach(target simulation aviator_simulation_camera)
+    target_compile_options(${target} PRIVATE $<$<CONFIG:Debug>:-O2>)
+  endforeach()
+endif()
 install(TARGETS simulation RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/config/ DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/config)
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/urdf DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/models)
@@ -68,6 +79,14 @@ if(BUILD_TESTING)
         add_test(NAME simulation_apriltag COMMAND ${Python3_EXECUTABLE}
           ${PROJECT_SOURCE_DIR}/tests/mjcf_apriltag_test.py)
         set_tests_properties(simulation_apriltag PROPERTIES TIMEOUT 60 ENVIRONMENT "MUJOCO_GL=egl")
+        execute_process(COMMAND ${Python3_EXECUTABLE} -c "import zmq, yaml; from google.protobuf import message_factory; assert hasattr(message_factory, 'GetMessageClass')"
+          RESULT_VARIABLE SIMULATION_STREAM_PYTHON_DEPS OUTPUT_QUIET ERROR_QUIET)
+        if(SIMULATION_STREAM_PYTHON_DEPS EQUAL 0)
+          add_test(NAME simulation_camera_stream COMMAND ${Python3_EXECUTABLE}
+            ${PROJECT_SOURCE_DIR}/tests/simulation_camera_stream_test.py
+            $<TARGET_FILE:simulation> ${PROJECT_SOURCE_DIR})
+          set_tests_properties(simulation_camera_stream PROPERTIES TIMEOUT 60)
+        endif()
       endif()
     endif()
   endif()

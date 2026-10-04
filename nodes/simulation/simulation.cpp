@@ -93,7 +93,7 @@ bool Simulation::command(const aviator::Message& message, std::uint64_t now, std
                 }
             }
         } else {
-            require(b.at("camera_id") == "cockpit_camera" && b.at("target") == "YOKE", "unknown camera/target");
+            require(b.at("camera_id") == camera_id_ && b.at("target") == "YOKE", "unknown camera/target");
             require(b.at("tracking_enabled").is_boolean(), "tracking_enabled must be boolean");
             const double confidence = number(b.at("min_confidence"));
             require(confidence >= 0 && confidence <= 1, "bad confidence");
@@ -315,20 +315,55 @@ aviator::Message Simulation::state(bool hand, std::uint64_t now) {
     }
     out.body["accepted_command"] = references_[group]; return out;
 }
-aviator::Message Simulation::detection(std::uint64_t now, bool captured, bool in_roi) {
+void Simulation::setCameraId(const std::string& id) {
+    require(!id.empty() && id.size() <= 80 && id.find_first_not_of(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == std::string::npos,
+        "invalid camera id");
+    camera_id_ = id;
+}
+aviator::Message Simulation::detection(std::uint64_t now, bool captured, bool in_roi,
+                                      const mjData* snapshot) {
+    const auto* frame = snapshot ? snapshot : data();
     if (captured) ++frame_;
-    bool valid = captured && in_roi && guards_[2] && !guards_[2]->expired(now) &&
-        camera_command_.value("tracking_enabled", false);
+    // Standalone camera acquisition is active at startup, like nodes/camera.
+    // Once a command is accepted, preserve its tracking switch and watchdog.
+    const bool tracking = references_[2].is_null() || (guards_[2] && !guards_[2]->expired(now) &&
+        camera_command_.value("tracking_enabled", false));
+    bool valid = captured && in_roi && tracking;
     auto out = envelope(aviator::Topic::camera_detection, 2, now, valid);
-    out.body.update({{"camera_id", "cockpit_camera"}, {"frame_id", captured ? Json(frame_) : Json(nullptr)},
+    out.body.update({{"camera_id", camera_id_}, {"frame_id", captured ? Json(frame_) : Json(nullptr)},
         {"image_width", cameraWidth()}, {"image_height",cameraHeight()}, {"status", valid ? "TRACKING" : captured ? "SEARCHING" : "OFFLINE"},
         {"confidence", valid ? 1.0 : 0.0}, {"command_ref", references_[2]},
+        {"detector", "mujoco_ground_truth"}, {"pose", nullptr},
+        {"steering_wheel", {{"valid", valid}, {"reason", valid ? "" : "target_not_tracking"},
+            {"theta_rad", nullptr}, {"translation_along_axis_m", nullptr},
+            {"calibration_id", "mujoco_ground_truth"}}},
         {"yoke", {{"detected",valid}, {"roll",nullptr}, {"pitch",nullptr}}}});
     if (valid) {
+        const int camera = mj_name2id(model(), mjOBJ_CAMERA, "cockpit_apriltag");
+        const int tag = mj_name2id(model(), mjOBJ_SITE, "yoke_apriltag_center");
+        if (camera >= 0 && tag >= 0) {
+            // Target-to-camera transform, meters; optical axes right/down/forward.
+            mjtNum world_to_optical[9], rotation[9], offset[3], position[3], q[4];
+            mju_transpose(world_to_optical, frame->cam_xmat + 9*camera, 3, 3);
+            for (int i = 3; i < 9; ++i) world_to_optical[i] = -world_to_optical[i];
+            mju_sub3(offset, frame->site_xpos + 3*tag, frame->cam_xpos + 3*camera);
+            mju_mulMatVec3(position, world_to_optical, offset);
+            mju_mulMatMat(rotation, world_to_optical, frame->site_xmat + 9*tag, 3, 3, 3);
+            mju_mat2Quat(q, rotation);
+            out.body["pose"] = {{"position", {{"x",position[0]}, {"y",position[1]}, {"z",position[2]}}},
+                {"orientation", {{"qx",q[1]}, {"qy",q[2]}, {"qz",q[3]}, {"qw",q[0]}}}};
+            out.body["tag_id"] = 0;
+            out.body["target_frame"] = "yoke_apriltag_center";
+        }
+        // Inverse of Monitor's camera-to-model convention, using measured joints.
+        out.body["steering_wheel"]["theta_rad"] = -frame->qpos[model()->jnt_qposadr[roll_]];
+        out.body["steering_wheel"]["translation_along_axis_m"] =
+            -frame->qpos[model()->jnt_qposadr[pitch_]] - .085;
         // Synthetic calibration: model lower/upper joint limits map to -1/+1.
         for (const auto& entry : {std::pair<const char*,int>{"roll",roll_}, {"pitch",pitch_}}) {
             int j = entry.second; double lo=model()->jnt_range[2*j], hi=model()->jnt_range[2*j+1];
-            out.body["yoke"][entry.first] = std::clamp(2*(data()->qpos[model()->jnt_qposadr[j]]-lo)/(hi-lo)-1, -1.0, 1.0);
+            out.body["yoke"][entry.first] = std::clamp(2*(frame->qpos[model()->jnt_qposadr[j]]-lo)/(hi-lo)-1, -1.0, 1.0);
         }
     }
     return out;

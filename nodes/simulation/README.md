@@ -58,13 +58,60 @@ AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
 
 ## 相机
 
-仍发布 `publisher_id=simulation` 的 `camera.detection`。监控仿真相机时将
-`sources["camera.detection"]` 设为 `simulation`。默认使用 MJCF 的固定
-`cockpit_apriltag` 相机，图像尺寸读取其 `resolution`（当前 1280×800）；
-未声明尺寸的其他模型回退到 640×480。ROI 和 detection 图像尺寸同步采用该分辨率。
-这是 EGL 图像对应的轮盘真值检测，不做图像识别或遮挡判断。相机命令沿用显式 `--control-epoch`
-与 `--core-publisher` / `--origin-publisher` 授权；这些选项不影响臂、手授权。
-`--camera-timeout-ms` 缺省为 200；窗口视角与传感器相机独立。
+启动后自动采集并发布 `publisher_id=simulation`、`camera_id=cockpit` 的
+`camera.detection`，无需先发送 camera.command。业务总线仍是 topic + JSON 两帧，
+公共头、状态、置信度、图像尺寸、`frame_id`、归一化 `yoke` 均沿用 ZMQ 协议。
+`pose` 补充标签到相机光学坐标系的变换：位置单位 m，四元数字段
+`qx/qy/qz/qw`，相机 +X 向右、+Y 向下、+Z 向前。目标轴采用 MJCF 的
+`yoke_apriltag_center` site，`target_frame` 显式标明此坐标系。
+**检测仍为仿真真值**（`detector=mujoco_ground_truth`），不执行图像识别或遮挡判断；
+有效时 `confidence=1`，失效时 `pose`、`yoke.roll/pitch` 清空。
+同时发布 Monitor 使用的 `steering_wheel`：`theta_rad=-roll_input_joint`，
+`translation_along_axis_m=-pitch_input_joint-0.085`（rad / m），来自同帧关节真值；
+`calibration_id=mujoco_ground_truth`，目标失效时 `valid=false` 并清空物理量。
+
+默认使用 MJCF 的固定 `cockpit_apriltag` 相机，图像尺寸读取其 `resolution`
+（当前 1280×800）；未声明尺寸的其他模型回退到 640×480。ROI 和 detection 图像
+尺寸同步采用该分辨率。检测位姿、轮盘值、RGB 都来自同一次物理快照，
+`sample_mono_us` 在持有物理锁复制快照时记录，避免渲染期间物理推进导致错帧。
+该帧采用的命令、command_ref 和超时状态也在采集时固定，渲染期间的新命令作用于后续帧。
+需要控制 ROI/跟踪开关时，仍通过显式 `--control-epoch`、`--core-publisher`
+等选项授权；命令的 `camera_id` 应为 `cockpit` 或 `--camera-id` 指定的名称。
+首次接受命令后按命令控制检测，超时（`--camera-timeout-ms` 默认 200）转为
+SEARCHING；图像采集和图像通道继续工作。这些选项不影响臂、手授权。
+
+有桌面且启用主仿真窗口时，默认同时显示置顶、可拖动缩放的
+`D436 RGB - Simulation` 浮动窗口。画面保持原始宽高比；关闭窗口或在其中按
+Q/Esc 只关闭预览，不停止仿真和图像发送。主窗口与相机视角独立。
+`--no-camera-window` 只禁用浮动窗口；`--headless` 禁用两个窗口但仍采集和传图；
+`--no-camera` 停止所有相机图像并报告 OFFLINE。
+
+图像接口复用 `nodes/camera` 的格式，不将大图像塞进业务总线：
+
+| 通道 | 接口及默认行为 |
+| --- | --- |
+| 实时预览 | PUB bind `tcp://127.0.0.1:5561`；三帧 `camera.rgb.cockpit`、元数据 JSON、JPEG。默认启用，640×360 上限、15 fps 上限、质量 80；1280×800 等比例输出 576×360。 |
+| Logger 录制 | 指定 `--recording-config config/recording.yaml` 且 mode 为 raw/compressed 时，PUSH connect 5557；发送单帧 Protobuf `aviator.record.v1.CameraPacket`，内含全分辨率 RGB8 与内参。压缩/MCAP 由 Logger 完成。 |
+
+默认读取 system.yaml 同目录 camera.yaml 的 `preview` 段；缺少该文件时使用
+上述默认值。`--camera-config` 可指定路径，仿真只读取其 preview 段，采集内参和
+分辨率始终来自 MJCF。`--preview-endpoint <地址>` 覆盖绑定地址，`off` 关闭该通道。
+预览线程只保留最新待编码帧；录制队列受 recording.yaml 的字节预算约束，
+溢出/接收端缺席时计数丢帧，非阻塞发送。退出日志的 `queued-to-zmq` 不是落盘保证。
+当前只录 RGB；启用录制时要求匹配源 `record_depth: false`。
+
+检测、预览和录制共享 `publisher_id/session_id/camera_id/frame_id/sample_mono_us`，
+所有 RGB 均为左上角原点，窗口画面不叠加到传输图像中。
+Monitor 需同时设置 `sources["camera.detection"]` 和 `preview.publisher_id` 为
+`simulation`，`preview.camera_id` 为 `cockpit`。一键启动脚本已自动生成这些覆盖，
+并传入相机/录制配置，启动命令保持不变：
+
+```bash
+AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
+# 单独运行，启用两条图像通道：
+./build/debug/bin/simulation --config config/system.yaml \
+  --camera-config config/camera.yaml --recording-config config/recording.yaml
+```
 
 D436 相机固定在双臂底座安装件上方，朝向驾驶盘中位的 AprilTag。RGB 视场
 为 90°×65°，另提供 1280×720、87°×58° 的 `realsense_d436_depth`
@@ -85,6 +132,18 @@ cmake --build build/simulation-node --parallel 2
 ctest --test-dir build/simulation-node --output-on-failure -R simulation
 ```
 
-需要 libzmq、yaml-cpp、urdfdom、GLFW 和 EGL；MuJoCo 从仓库源码构建。
+需要 libzmq、yaml-cpp、urdfdom、GLFW、EGL、OpenGL 和工程已有 FFmpeg/Protobuf 依赖；MuJoCo 从仓库源码构建。
 完整工程的 `control_nodes_*`、`robot_state_machine_process` 和
 `managed_gateway_process` 测试均启动 simulation，不启动真实 manipulator。
+
+`AVIATOR_SIMULATION_TEST_EGL=ON` 可启用 EGL 集成测试。若 Python 环境安装了
+MuJoCo、NumPy、OpenCV aruco、pyzmq、PyYAML 和 protobuf，还会注册图像流测试。
+该测试使用隔离端口校验业务/预览/录制帧身份、JPEG 解码、RGB 方向、AprilTag
+投影和 Logger 断开后的持续采集。桌面浮动窗口可另行验证：
+
+```bash
+python3 tests/simulation_camera_stream_test.py build/debug/bin/simulation . --gui
+```
+
+`--gui` 测试需要 X11、xwininfo；传 `--output-dir /tmp/camera-test` 时保存接收图像
+和检测消息，桌面测试还用 ImageMagick 的 import 保存窗口截图。

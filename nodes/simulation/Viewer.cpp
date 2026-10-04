@@ -26,6 +26,7 @@ Viewer::Viewer(mjModel *model) : model_(model) {
                  "wheel/middle drag zoom | R reset view | Esc quit\n";
 }
 Viewer::~Viewer() {
+    glfwMakeContextCurrent(window_);
     mjr_freeContext(&context_); mjv_freeScene(&scene_);
     glfwDestroyWindow(window_); glfwTerminate();
 }

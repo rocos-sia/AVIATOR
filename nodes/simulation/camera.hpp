@@ -11,6 +11,9 @@ public:
     Camera(const Camera&) = delete;
     Camera& operator=(const Camera&) = delete;
     bool capture(Simulation& simulation, std::mutex* physics_mutex = nullptr);
+    const std::vector<unsigned char>& rgb() const { return rgb_; }
+    aviator::Message detection(bool in_roi) const;
+    const Json& calibration() const { return calibration_; }
 private:
     void cleanup();
     std::unique_ptr<mjData, decltype(&mj_deleteData)> snapshot_{nullptr, mj_deleteData};
@@ -22,6 +25,9 @@ private:
     mjvOption option_{};
     mjrContext render_{};
     int width_, height_;
+    std::uint64_t sample_time_ = 0;
+    Json calibration_;
+    aviator::Message detection_;
     std::vector<unsigned char> rgb_;
 };
 }

@@ -91,7 +91,7 @@ if ! $DRY_RUN; then
     commands=(setsid flock google-chrome-stable curl)
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
         "$AVIATOR_BIN/aviator_core_managed" "$AVIATOR_BIN/aviator_logger" "$MONITOR_BIN")
-    files=(config/system.yaml config/robot.yaml config/recording.yaml)
+    files=(config/system.yaml config/robot.yaml config/recording.yaml config/camera.yaml)
     if $SIMULATION; then
         executables+=("$AVIATOR_BIN/simulation")
     else
@@ -128,7 +128,9 @@ start bus "$AVIATOR_BIN/aviator_bus" --config config/system.yaml
 if $SIMULATION; then
     simulation_options=()
     $HEADLESS && simulation_options+=(--headless)
-    start simulation "$AVIATOR_BIN/simulation" --config config/system.yaml "${simulation_options[@]}"
+    start simulation "$AVIATOR_BIN/simulation" --config config/system.yaml \
+        --camera-config config/camera.yaml --recording-config config/recording.yaml \
+        --camera-id cockpit "${simulation_options[@]}"
 else
     start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config config/system.yaml
     start rh56ftp env PATH="$(dirname "$HAND_PYTHON"):$PATH" "$HAND_PYTHON" \
@@ -147,7 +149,8 @@ if $SIMULATION; then
         SIM_MONITOR_CONFIG='<日志目录>/monitor-simulation.yaml'
     else
         SIM_MONITOR_CONFIG="$LOG_DIR/monitor-simulation.yaml"
-        sed 's/camera.detection: "camera"/camera.detection: "simulation"/' config/monitor.yaml > "$SIM_MONITOR_CONFIG"
+        sed -e 's/camera.detection: "camera"/camera.detection: "simulation"/' \
+            -e 's/publisher_id: "camera"/publisher_id: "simulation"/' config/monitor.yaml > "$SIM_MONITOR_CONFIG"
     fi
     start monitor "$MONITOR_BIN" --config "$SIM_MONITOR_CONFIG"
 else

@@ -7,6 +7,8 @@
 // ./build/debug/bin/flight_gateway
 // 无窗口/GPU：simulation 添加 --headless --no-camera。
 // 一键仿真：AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
+// 仿真默认显示 D436 浮动预览，并发布 camera.detection 和 5561 JPEG 图像；一键启动同时接入 Logger 5557。
+// 单独运行需录图时添加 --recording-config config/recording.yaml；--no-camera-window 仅关浮动窗口。
 // 以下为真机启动流程：
 
 //1、启动bus

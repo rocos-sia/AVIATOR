@@ -1,6 +1,7 @@
 #include "camera.hpp"
 #include <EGL/eglext.h>
 #include <cmath>
+#include <algorithm>
 #include <stdexcept>
 
 namespace simulation {
@@ -64,6 +65,22 @@ void Camera::cleanup() {
     }
 }
 Camera::~Camera() { cleanup(); }
+aviator::Message Camera::detection(bool in_roi) const {
+    auto result = detection_;
+    result.header.timestamp = aviator::utc_us();
+    if (!in_roi) {
+        result.header.valid = false;
+        result.body["status"] = "SEARCHING";
+        result.body["confidence"] = 0.0;
+        result.body["pose"] = nullptr;
+        result.body["steering_wheel"].update({{"valid", false}, {"reason", "target_not_tracking"},
+            {"theta_rad", nullptr}, {"translation_along_axis_m", nullptr}});
+        result.body["yoke"] = {{"detected", false}, {"roll", nullptr}, {"pitch", nullptr}};
+        result.body.erase("tag_id");
+        result.body.erase("target_frame");
+    }
+    return result;
+}
 bool Camera::capture(Simulation& simulation, std::mutex* physics_mutex) {
     Json command;
     {
@@ -71,6 +88,10 @@ bool Camera::capture(Simulation& simulation, std::mutex* physics_mutex) {
         if (physics_mutex) lock = std::unique_lock<std::mutex>(*physics_mutex);
         mj_copyData(snapshot_.get(), simulation.model(), simulation.data());
         command = simulation.camera_command();
+        sample_time_ = aviator::monotonic_us();
+        // Snapshot the accepted command/reference and its watchdog at acquisition,
+        // too: commands arriving during rendering must not invalidate an older frame.
+        detection_ = simulation.detection(sample_time_, true, true, snapshot_.get());
     }
     if (!eglMakeCurrent(display_,surface_,surface_,context_)) throw std::runtime_error("EGL make current failed");
     struct ReleaseContext {
@@ -80,6 +101,20 @@ bool Camera::capture(Simulation& simulation, std::mutex* physics_mutex) {
     mjv_updateScene(simulation.model(),snapshot_.get(),&option_,nullptr,&camera_,mjCAT_ALL,&scene_);
     mjr_render({0,0,width_,height_},&scene_,&render_);
     mjr_readPixels(rgb_.data(),nullptr,{0,0,width_,height_},&render_);
+    // OpenGL reads bottom-up. All consumers (window, JPEG, Logger) receive RGB8
+    // with the same top-left origin as the real camera node.
+    const auto stride = width_ * 3;
+    for (int y = 0; y < height_/2; ++y)
+        std::swap_ranges(rgb_.begin() + y*stride, rgb_.begin() + (y+1)*stride,
+                         rgb_.begin() + (height_-1-y)*stride);
+    const auto lens = mjv_averageCamera(&scene_.camera[0], &scene_.camera[1]);
+    const double fh = lens.frustum_top - lens.frustum_bottom;
+    const double fw = lens.frustum_width > 0 ? 2*lens.frustum_width : fh*width_/height_;
+    calibration_ = {{"rgb", {{"serial", "simulation"}, {"width", width_}, {"height", height_},
+        {"fx", width_*lens.frustum_near/fw}, {"fy", height_*lens.frustum_near/fh},
+        {"ppx", width_*(.5-lens.frustum_center/fw)}, {"ppy", height_*lens.frustum_top/fh},
+        {"distortion_model", "none"}, {"coeffs", {0,0,0,0,0}},
+        {"to_color_rotation", {1,0,0,0,1,0,0,0,1}}, {"to_color_translation_m", {0,0,0}}}}};
     // Ground-truth candidate center projected into the original image coordinates.
     // This sensor deliberately does not claim image-based recognition/occlusion handling.
     mjvGLCamera c = mjv_averageCamera(&scene_.camera[0],&scene_.camera[1]);
