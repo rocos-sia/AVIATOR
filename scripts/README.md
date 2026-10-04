@@ -3,11 +3,12 @@
 ## 一键启动
 
 按 [启动流程](../docs/启动流程.txt) 启动 Bus、Manipulator（sudo）、Gateway、
-RH56FTP、Core、Camera、Monitor，打开全屏 Chrome，最后启动 Logger：
+RH56FTP、Core、Camera、Monitor，打开全屏 Chrome；指定 `--logger` 时最后启动 Logger：
 
 ```bash
 ./scripts/start_aviator.sh --dry-run
 ./scripts/start_aviator.sh
+./scripts/start_aviator.sh --logger  # 开启日志记录
 ```
 
 脚本可从任意目录调用。启动前检查文件，通过标准输入自动提交脚本内配置的 sudo 密码；
@@ -17,7 +18,9 @@ Manipulator 在独立会话内直接认证，停止时也直接认证，不依�
 节点退出会触发其余节点停止，浏览器保留打开。锁阻止该脚本重复运行；使用前应先停止手动启动的节点。
 启动顺序之间默认等待 2 秒（不代表设备已就绪），Monitor HTTP 就绪后打开浏览器。
 相机仍使用 `--show`，因此需要桌面显示环境。
-Logger 使用 `config/recording.yaml`，录制输出为仓库根目录的
+默认不开启 Logger，也不启用相机图像录制通道；各节点的运行诊断日志仍写入临时日志目录。
+真机或 `--simulation` 模式均可添加 `--logger` 开启记录。
+启用时 Logger 使用 `config/recording.yaml`，录制输出为仓库根目录的
 `recording_年月日_时分秒_纳秒.mcap`（北京时间，按 Logger 启动时间命名）；
 其运行日志保存在上述日志目录的 `logger.log`。
 

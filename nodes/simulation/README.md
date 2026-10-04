@@ -103,8 +103,9 @@ Q/Esc 只关闭预览，不停止仿真和图像发送。主窗口与相机视�
 检测、预览和录制共享 `publisher_id/session_id/camera_id/frame_id/sample_mono_us`，
 所有 RGB 均为左上角原点，窗口画面不叠加到传输图像中。
 Monitor 需同时设置 `sources["camera.detection"]` 和 `preview.publisher_id` 为
-`simulation`，`preview.camera_id` 为 `cockpit`。一键启动脚本已自动生成这些覆盖，
-并传入相机/录制配置，启动命令保持不变：
+`simulation`，`preview.camera_id` 为 `cockpit`。一键启动默认不开启 Logger；添加
+`--logger` 才启用记录及图像录制通道。脚本已自动生成这些 Monitor 覆盖，
+并按参数传入相机/录制配置：
 
 ```bash
 AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation

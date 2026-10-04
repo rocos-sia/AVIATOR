@@ -7,14 +7,17 @@ cd "$ROOT"
 DRY_RUN=false
 SIMULATION=false
 HEADLESS=false
+LOGGER=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
         --simulation) SIMULATION=true ;;
         --headless) HEADLESS=true ;;
+        --logger) LOGGER=true ;;
         -h|--help)
-            echo '用法: ./scripts/start_aviator.sh [--simulation] [--headless] [--dry-run]'
+            echo '用法: ./scripts/start_aviator.sh [--simulation] [--headless] [--logger] [--dry-run]'
             echo '默认启动 Rokae + RH56FTP；--simulation 使用单个仿真进程替代设备节点。'
+            echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '环境变量: AVIATOR_BIN, CONDA_ROOT, HAND_PYTHON, CAMERA_PYTHON, MONITOR_BIN, START_DELAY'
             exit 0 ;;
         *) echo "未知参数: $arg" >&2; exit 2 ;;
@@ -22,6 +25,10 @@ for arg in "$@"; do
 done
 $HEADLESS && ! $SIMULATION && { echo '--headless 仅适用于 --simulation' >&2; exit 2; }
 AVIATOR_BIN=${AVIATOR_BIN:-$ROOT/build/bin}
+recording_options=()
+if $LOGGER; then
+    recording_options+=(--recording-config config/recording.yaml)
+fi
 
 CONDA_ROOT=${CONDA_ROOT:-$HOME/miniconda3}
 HAND_PYTHON=${HAND_PYTHON:-$CONDA_ROOT/envs/rh56-pendant/bin/python3}
@@ -90,8 +97,12 @@ if ! $DRY_RUN; then
     [[ $EUID != 0 ]] || { echo '请以普通用户执行，脚本仅对 manipulator 使用 sudo。' >&2; exit 1; }
     commands=(setsid flock google-chrome-stable curl)
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
-        "$AVIATOR_BIN/aviator_core_managed" "$AVIATOR_BIN/aviator_logger" "$MONITOR_BIN")
-    files=(config/system.yaml config/robot.yaml config/recording.yaml config/camera.yaml)
+        "$AVIATOR_BIN/aviator_core_managed" "$MONITOR_BIN")
+    files=(config/system.yaml config/robot.yaml config/camera.yaml)
+    if $LOGGER; then
+        executables+=("$AVIATOR_BIN/aviator_logger")
+        files+=(config/recording.yaml)
+    fi
     if $SIMULATION; then
         executables+=("$AVIATOR_BIN/simulation")
     else
@@ -129,7 +140,7 @@ if $SIMULATION; then
     simulation_options=()
     $HEADLESS && simulation_options+=(--headless)
     start simulation "$AVIATOR_BIN/simulation" --config config/system.yaml \
-        --camera-config config/camera.yaml --recording-config config/recording.yaml \
+        --camera-config config/camera.yaml "${recording_options[@]}" \
         --camera-id cockpit "${simulation_options[@]}"
 else
     start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config config/system.yaml
@@ -141,7 +152,7 @@ start gateway "$AVIATOR_BIN/flight_gateway"
 start core "$AVIATOR_BIN/aviator_core_managed" --config config/system.yaml
 if ! $SIMULATION; then
     start camera env PATH="$(dirname "$CAMERA_PYTHON"):$PATH" "$CAMERA_PYTHON" \
-        nodes/camera/main.py --config config/camera.yaml --recording-config config/recording.yaml \
+        nodes/camera/main.py --config config/camera.yaml "${recording_options[@]}" \
         --camera-id cockpit --session "$SESSION" --show --print-pose
 fi
 if $SIMULATION; then
@@ -174,8 +185,10 @@ printf '启动 Chrome: google-chrome-stable --start-fullscreen http://127.0.0.1:
 if ! $DRY_RUN; then
     google-chrome-stable --start-fullscreen http://127.0.0.1:8081 >"$LOG_DIR/chrome.log" 2>&1 < /dev/null 9>&- &
 fi
-RECORDING_FILE="recording_$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S_%N).mcap"
-start logger "$AVIATOR_BIN/aviator_logger" --config config/recording.yaml --output "$RECORDING_FILE"
+if $LOGGER; then
+    RECORDING_FILE="recording_$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S_%N).mcap"
+    start logger "$AVIATOR_BIN/aviator_logger" --config config/recording.yaml --output "$RECORDING_FILE"
+fi
 $DRY_RUN && exit 0
 echo '所有节点已启动；保持此终端打开，按 Ctrl+C 停止。'
 while true; do
