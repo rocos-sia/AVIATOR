@@ -59,10 +59,20 @@ AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
 ## 相机
 
 仍发布 `publisher_id=simulation` 的 `camera.detection`。监控仿真相机时将
-`sources["camera.detection"]` 设为 `simulation`。这是 640×480 EGL 图像对应的
-轮盘真值检测，不做图像识别或遮挡判断。相机命令沿用显式 `--control-epoch`
+`sources["camera.detection"]` 设为 `simulation`。默认使用 MJCF 的固定
+`cockpit_apriltag` 相机，图像尺寸读取其 `resolution`（当前 1280×800）；
+未声明尺寸的其他模型回退到 640×480。ROI 和 detection 图像尺寸同步采用该分辨率。
+这是 EGL 图像对应的轮盘真值检测，不做图像识别或遮挡判断。相机命令沿用显式 `--control-epoch`
 与 `--core-publisher` / `--origin-publisher` 授权；这些选项不影响臂、手授权。
 `--camera-timeout-ms` 缺省为 200；窗口视角与传感器相机独立。
+
+D436 相机固定在双臂底座安装件上方，朝向驾驶盘中位的 AprilTag。RGB 视场
+为 90°×65°，另提供 1280×720、87°×58° 的 `realsense_d436_depth`
+理想深度视角；当前节点只采集 RGB，采集循环为 30 Hz。相机外壳使用 geom
+group 1，在主窗口可见，自身 RGB 渲染中排除，避免不透明 CAD 镜片遮挡光心。
+相机内参是官方标称视场推导值，不是实机标定值；未模拟畸变、主动双目噪声
+或深度流发布。模型来源、安装坐标和参数见
+[RealSense_D436/README.txt](../../models/meshes/RealSense_D436/README.txt)。
 
 ## 构建和测试
 

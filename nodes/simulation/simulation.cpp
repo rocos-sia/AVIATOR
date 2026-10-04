@@ -22,6 +22,11 @@ Simulation::Simulation(const std::string& path, const Authorization& auth, bool 
     model_.reset(mj_loadXML(path.c_str(), nullptr, error, sizeof(error)));
     if (!model_) throw std::runtime_error(error);
     auto* m = model();
+    const int camera = mj_name2id(m, mjOBJ_CAMERA, "cockpit_apriltag");
+    if (camera >= 0 && m->cam_resolution[2*camera] > 1 && m->cam_resolution[2*camera+1] > 1) {
+        camera_resolution_ = {m->cam_resolution[2*camera], m->cam_resolution[2*camera+1]};
+        require(cameraWidth() <= 8192 && cameraHeight() <= 8192, "camera resolution too large");
+    }
     require(m->nu == 0, "model must use external torque control (nu=0)");
     require(m->opt.timestep > 0 && m->opt.timestep <= .01, "invalid model timestep");
     require(!managed || std::abs(m->opt.timestep - .001) < 1e-12, "device protocol requires 1 ms physics timestep");
@@ -96,11 +101,11 @@ bool Simulation::command(const aviator::Message& message, std::uint64_t now, std
             if (!roi.is_null()) {
                 for (auto key : {"x", "y", "width", "height"}) {
                     require(roi.at(key).is_number_integer(), "ROI must contain integers");
-                    require(number(roi.at(key)) >= 0 && number(roi.at(key)) <= 640, "ROI out of range");
+                    require(number(roi.at(key)) >= 0, "ROI out of range");
                 }
                 require(number(roi.at("width")) > 0 && number(roi.at("height")) > 0 &&
-                    number(roi.at("x")) + number(roi.at("width")) <= 640 &&
-                    number(roi.at("y")) + number(roi.at("height")) <= 480, "ROI outside image");
+                    number(roi.at("x")) + number(roi.at("width")) <= cameraWidth() &&
+                    number(roi.at("y")) + number(roi.at("height")) <= cameraHeight(), "ROI outside image");
             }
         }
         if (!guards_[slot]->accept(message, now, error)) return false;
@@ -316,7 +321,7 @@ aviator::Message Simulation::detection(std::uint64_t now, bool captured, bool in
         camera_command_.value("tracking_enabled", false);
     auto out = envelope(aviator::Topic::camera_detection, 2, now, valid);
     out.body.update({{"camera_id", "cockpit_camera"}, {"frame_id", captured ? Json(frame_) : Json(nullptr)},
-        {"image_width", 640}, {"image_height",480}, {"status", valid ? "TRACKING" : captured ? "SEARCHING" : "OFFLINE"},
+        {"image_width", cameraWidth()}, {"image_height",cameraHeight()}, {"status", valid ? "TRACKING" : captured ? "SEARCHING" : "OFFLINE"},
         {"confidence", valid ? 1.0 : 0.0}, {"command_ref", references_[2]},
         {"yoke", {{"detected",valid}, {"roll",nullptr}, {"pitch",nullptr}}}});
     if (valid) {

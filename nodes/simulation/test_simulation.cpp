@@ -110,8 +110,17 @@ void model_test(const std::string& path) {
     auto lost=sim.detection(now+200000,true,true);
     check(!lost.header.valid && lost.body["yoke"]["roll"].is_null(),"camera timeout null target");
     check(sim.detection(now,false,false).body["frame_id"].is_null(),"offline no frame");
-    camera.header.sequence=2; camera.body["roi"]={{"x",639},{"y",0},{"width",2},{"height",1}};
+    camera.header.sequence=2; camera.body["roi"]={{"x",sim.cameraWidth()-1},{"y",0},{"width",2},{"height",1}};
     check(!sim.command(camera,now,error),"bad ROI rejected");
+    camera.body["roi"]={{"x",0},{"y",0},{"width",sim.cameraWidth()},{"height",sim.cameraHeight()}};
+    check(sim.command(camera,now,error),"full-resolution ROI accepted");
+    const auto dimensions = sim.detection(now,true,true).body;
+    check(dimensions["image_width"] == sim.cameraWidth() &&
+          dimensions["image_height"] == sim.cameraHeight(), "reported dimensions match renderer");
+    const int camera_id = mj_name2id(sim.model(), mjOBJ_CAMERA, "cockpit_apriltag");
+    if (camera_id >= 0 && sim.model()->cam_resolution[2*camera_id] > 1)
+        check(sim.cameraWidth() == sim.model()->cam_resolution[2*camera_id] &&
+              sim.cameraHeight() == sim.model()->cam_resolution[2*camera_id+1], "MJCF resolution selected");
     for(bool h:{false,true}) check(aviator::encode(sim.state(h,now),payload,error),"state encodes");
     check(aviator::encode(lost,payload,error),"detection encodes");
     Simulation readonly(path);

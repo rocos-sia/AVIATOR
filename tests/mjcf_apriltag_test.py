@@ -35,8 +35,14 @@ def main():
     pitch = model.joint("pitch_input_joint").id
     assert model.geom_bodyid[tag] == wheel
     assert model.geom_contype[tag] == model.geom_conaffinity[tag] == 0
-    width, height = 640, 480
-    focal = .5 * height / np.tan(np.deg2rad(model.cam_fovy[camera]) / 2)
+    width, height = map(int, model.cam_resolution[camera])
+    assert (width, height) == (1280, 800)
+    fx, fy = model.cam_intrinsic[camera, :2] / model.cam_sensorsize[camera] * [width, height]
+    fov = np.degrees(2 * np.arctan(np.array([width, height]) / (2 * np.array([fx, fy]))))
+    np.testing.assert_allclose(fov, [90, 65], atol=1e-4)
+    option = mj.MjvOption()
+    option.geomgroup[1] = 0  # Same housing exclusion as the production RGB camera.
+    max_center_offset = np.zeros(2)
     camera_pose = None
     # Black border is 80 mm wide; the full texture includes a 10 mm white margin.
     border = np.array([[-.04, -.04, .0005], [.04, -.04, .0005],
@@ -55,7 +61,7 @@ def main():
                 if camera_pose is None:
                     camera_pose = pose.copy()
                 np.testing.assert_allclose(pose, camera_pose, atol=1e-12)
-                renderer.update_scene(data, camera="cockpit_apriltag")
+                renderer.update_scene(data, camera="cockpit_apriltag", scene_option=option)
                 rgb = renderer.render()
                 corners, ids, _ = detector.detectMarkers(rgb)
                 if args.output_dir:
@@ -63,17 +69,25 @@ def main():
                                 cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
                 assert ids is not None and 0 in ids, (angle, displacement, ids)
                 observed = corners[list(ids.ravel()).index(0)].reshape(4, 2)
+                center = data.site_xpos[model.site("yoke_apriltag_center").id]
+                center_view = (center - data.cam_xpos[camera]) @ data.cam_xmat[camera].reshape(3, 3)
+                offset = np.array([-fx*center_view[0]/center_view[2], fy*center_view[1]/center_view[2]])
+                max_center_offset = np.maximum(max_center_offset, np.abs(offset))
+                # The mount is fixed. Keep the moving tag within the central 20% of each axis.
+                assert np.all(np.abs(offset) < .1*np.array([width, height])), offset
+                if abs(angle) < 1e-8 and displacement == -.085:
+                    np.testing.assert_allclose(offset, 0, atol=.01)
                 world = border @ data.geom_xmat[tag].reshape(3, 3).T + data.geom_xpos[tag]
                 view = (world - data.cam_xpos[camera]) @ data.cam_xmat[camera].reshape(3, 3)
-                projected = np.column_stack((width/2 - focal * view[:, 0]/view[:, 2],
-                                              height/2 + focal * view[:, 1]/view[:, 2]))
+                projected = np.column_stack((width/2 - fx * view[:, 0]/view[:, 2],
+                                              height/2 + fy * view[:, 1]/view[:, 2]))
                 # Catch incorrect texture scale/UV mapping as well as an undecodable mirror.
                 errors = np.linalg.norm(projected[:, None] - observed[None, :], axis=2)
                 assert np.max(np.min(errors, axis=1)) < 3, errors
                 board_world = board @ data.geom_xmat[tag].reshape(3, 3).T + data.geom_xpos[tag]
                 board_view = (board_world - data.cam_xpos[camera]) @ data.cam_xmat[camera].reshape(3, 3)
-                polygon = np.column_stack((width/2 - focal * board_view[:, 0]/board_view[:, 2],
-                                           height/2 + focal * board_view[:, 1]/board_view[:, 2]))
+                polygon = np.column_stack((width/2 - fx * board_view[:, 0]/board_view[:, 2],
+                                           height/2 + fy * board_view[:, 1]/board_view[:, 2]))
                 assert np.all((polygon > [0, 0]) & (polygon < [width, height])), polygon
                 mask = np.zeros((height, width), np.uint8)
                 cv2.fillConvexPoly(mask, np.rint(polygon).astype(np.int32), 1)
@@ -87,6 +101,7 @@ def main():
                 occluded = 1 - np.mean(visible[mask])
                 assert occluded <= .001, (angle, displacement, occluded)
                 print(f"PASS roll={angle:.5f}, pitch={displacement:.3f}: ID 0, 80 mm, board visible")
+    print(f"Max tag-center displacement from image center: {max_center_offset.round(2)} pixels")
     print(f"PASS 33 rendered poses on MuJoCo {mj.__version__}; camera fixed, tag follows wheel")
 
 

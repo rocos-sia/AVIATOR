@@ -21,10 +21,12 @@
   <visual>
     <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0" />
     <rgba haze="0.15 0.25 0.35 1" />
-    <global azimuth="-120" elevation="-20" />
+    <global azimuth="-120" elevation="-20" offwidth="1280" offheight="800" />
   </visual>
   <custom>
     <numeric name="viewer_camera" data="-0.4 0 0.1 2.5 130 -20" />
+    <!-- Maximum device rates; the simulation capture loop uses 30 Hz. -->
+    <numeric name="realsense_d436_max_fps" data="60 90" />
   </custom>
   <asset>
     <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072" />
@@ -34,6 +36,12 @@
     <material name="blue" rgba="0.2 0.2 0.8 1" />
     <material name="orange" rgba="1.0 0.5 0.0 1" />
     <material name="white" rgba="1 1 1 1" />
+    <!-- Official D436 xacro reuses d435.dae; converted to camera_link coordinates.
+         Attribution, pinned source revision and conversion: meshes/RealSense_D436. -->
+    <mesh name="realsense_d436_mesh_0" file="RealSense_D436/d436_visual_0.stl" maxhullvert="64" />
+    <mesh name="realsense_d436_mesh_1" file="RealSense_D436/d436_visual_1.stl" maxhullvert="64" />
+    <material name="realsense_aluminum" rgba="0.74902 0.74902 0.74902 1" specular="0.3" />
+    <material name="camera_bracket" rgba="0.25 0.27 0.30 1" specular="0.2" />
     <!-- Lossless PDF image extraction: docs/Apriltag80id0.pdf, tag36h11 ID 0.
          10x10 cells include a one-cell white margin; the black 8x8 square is 80 mm. -->
     <texture name="yoke_apriltag_texture" type="2d" file="../textures/apriltag_36h11_id0.png" />
@@ -163,8 +171,6 @@
   </asset>
   <worldbody>
     <light pos="0 0 1.5" dir="0 0 -1" directional="true" />
-    <!-- Fixed cockpit view, facing the rotating tag from the pilot side. -->
-    <camera name="cockpit_apriltag" pos="-0.85 0 0.22" xyaxes="0 -1 0 0.391 0 0.920" fovy="45" />
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" pos="0 0 -0.3" conaffinity="7" />
     <body name="aircraft">
       <inertial pos="0 0 0" mass="1.0" fullinertia="0.01 0.01 0.01 0.0 0.0 0.0" />
@@ -172,6 +178,29 @@
       <geom name="aircraft_collision_0" class="collision" mesh="aircraft_collision_0" pos="0 0 0" quat="1 0 0 0" />
       <geom name="aircraft_collision_1" class="collision" mesh="aircraft_collision_1" pos="0 0 0" quat="1 0 0 0" />
       <geom name="aircraft_collision_2" class="collision" mesh="aircraft_collision_2" pos="0 0 0" quat="1 0 0 0" />
+      <!-- D436 above the common arm-base bracket. Its top slopes upward 10 degrees along +X.
+           The bracket is a visual mounting approximation; camera dimensions and
+           nominal extrinsics follow the official _d436.urdf.xacro (Apache-2.0). -->
+      <body name="realsense_d436_support" pos="-0.91333 0 0">
+        <geom name="d436_mount_base" type="box" pos="-0.00086824 0 0.20831206" quat="0.996194698 0 -0.087155743 0" size="0.040 0.045 0.005" material="camera_bracket" contype="0" conaffinity="0" group="2" density="0" />
+        <geom name="d436_mount_post_0" type="cylinder" fromto="0 -0.035 0.2124 0 -0.035 0.310998307545" size="0.006" material="camera_bracket" contype="0" conaffinity="0" group="2" density="0" />
+        <geom name="d436_mount_post_1" type="cylinder" fromto="0 0.035 0.2124 0 0.035 0.312125154851" size="0.006" material="camera_bracket" contype="0" conaffinity="0" group="2" density="0" />
+        <body name="realsense_d436_bottom_screw_frame" pos="0 0 0.320" quat="0.986645827193 0.00386707314868 0.161102961088 -0.023683187198">
+          <geom name="d436_mount_plate" type="box" pos="0 0 -0.004" size="0.016 0.052 0.004" material="camera_bracket" contype="0" conaffinity="0" group="2" density="0" />
+          <!-- ROS camera_link: +X forward, +Y left, +Z up. -->
+          <body name="realsense_d436_link" pos="0.0106 0.0175 0.0125">
+            <!-- Group 1: visible in the viewer, hidden only in this camera's own
+                 render so the nominal optical centers can sit behind the glass. -->
+            <geom name="realsense_d436_visual_0" class="visual" group="1" mesh="realsense_d436_mesh_0" material="realsense_aluminum" />
+            <geom name="realsense_d436_visual_1" class="visual" group="1" mesh="realsense_d436_mesh_1" material="realsense_aluminum" />
+            <!-- Fixed pinhole cameras: MuJoCo right/up/back = ROS -Y/+Z/-X.
+                 Nominal FOV-derived intrinsics, not a device factory calibration.
+                 Normalized sensor units; only focal/sensor ratios are physical. -->
+            <camera name="cockpit_apriltag" pos="-0.00555 0.015 0" xyaxes="0 -1 0 0 0 1" resolution="1280 800" sensorsize="1.6 1" focal="0.8 0.784842788559" ipd="0" />
+            <camera name="realsense_d436_depth" pos="0 0 0" xyaxes="0 -1 0 0 0 1" resolution="1280 720" sensorsize="1.77777777778 1" focal="0.936693444694 0.902023877636" ipd="0" />
+          </body>
+        </body>
+      </body>
       <body name="steering_wheel" pos="0 0 0" quat="0.500048163397 0.49999999768 -0.499951836603 -0.49999999768">
         <joint name="roll_input_joint" type="hinge" axis="0 0 1" range="-0.87266 0.87266" damping="0.1" />
         <joint name="pitch_input_joint" type="slide" axis="0 0 1" range="-0.165 0" damping="1" />

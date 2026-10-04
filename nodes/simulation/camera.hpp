@@ -3,7 +3,7 @@
 #include <EGL/egl.h>
 #include <mutex>
 namespace simulation {
-// Independent, fixed 640x480 sensor. Viewer interactions never alter this camera.
+// Independent fixed sensor; resolution comes from MJCF. Viewer interactions never alter it.
 class Camera {
 public:
     explicit Camera(Simulation& simulation);
@@ -21,6 +21,7 @@ private:
     mjvCamera camera_{};
     mjvOption option_{};
     mjrContext render_{};
+    int width_, height_;
     std::vector<unsigned char> rgb_;
 };
 }

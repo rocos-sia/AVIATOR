@@ -4,7 +4,8 @@
 #include <stdexcept>
 
 namespace simulation {
-Camera::Camera(Simulation& simulation) : rgb_(640*480*3) {
+Camera::Camera(Simulation& simulation)
+    : width_(simulation.cameraWidth()), height_(simulation.cameraHeight()), rgb_(width_*height_*3) {
     try {
         // Mesa surfaceless EGL works on Linux without a desktop/X server.
         auto platform = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(eglGetProcAddress("eglGetPlatformDisplayEXT"));
@@ -19,7 +20,7 @@ Camera::Camera(Simulation& simulation) : rgb_(640*480*3) {
             EGL_RED_SIZE,8,EGL_GREEN_SIZE,8,EGL_BLUE_SIZE,8,EGL_DEPTH_SIZE,24,EGL_NONE};
         EGLConfig config; EGLint count=0;
         if (!eglChooseConfig(display_,attributes,&config,1,&count) || count != 1) throw std::runtime_error("EGL config unavailable");
-        const EGLint size[] = {EGL_WIDTH,640,EGL_HEIGHT,480,EGL_NONE};
+        const EGLint size[] = {EGL_WIDTH,width_,EGL_HEIGHT,height_,EGL_NONE};
         surface_ = eglCreatePbufferSurface(display_,config,size);
         context_ = eglCreateContext(display_,config,EGL_NO_CONTEXT,nullptr);
         if (surface_ == EGL_NO_SURFACE || context_ == EGL_NO_CONTEXT || !eglMakeCurrent(display_,surface_,surface_,context_))
@@ -28,7 +29,7 @@ Camera::Camera(Simulation& simulation) : rgb_(640*480*3) {
         auto* m = simulation.model();
         snapshot_.reset(mj_makeData(m));
         if (!snapshot_) throw std::runtime_error("Camera snapshot allocation failed");
-        m->vis.global.offwidth=640; m->vis.global.offheight=480;
+        m->vis.global.offwidth=width_; m->vis.global.offheight=height_;
         mjv_makeScene(m,&scene_,4000); mjr_makeContext(m,&render_,mjFONTSCALE_100);
         mjr_setBuffer(mjFB_OFFSCREEN,&render_);
         if (render_.currentBuffer != mjFB_OFFSCREEN) throw std::runtime_error("offscreen framebuffer unavailable");
@@ -41,6 +42,10 @@ Camera::Camera(Simulation& simulation) : rgb_(640*480*3) {
         if (tag_camera >= 0) {
             camera_.type = mjCAMERA_FIXED;
             camera_.fixedcamid = tag_camera;
+            // D436 optical centers are inside the case. Group 1 is its own
+            // opaque CAD housing, still visible in the independent viewer.
+            if (mj_name2id(m, mjOBJ_BODY, "realsense_d436_link") >= 0)
+                option_.geomgroup[1] = 0;
         }
         // EGL and GLFW/GLX must never both own this thread's current context.
         eglMakeCurrent(display_,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);
@@ -73,8 +78,8 @@ bool Camera::capture(Simulation& simulation, std::mutex* physics_mutex) {
         ~ReleaseContext() { eglMakeCurrent(display,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT); }
     } release{display_};
     mjv_updateScene(simulation.model(),snapshot_.get(),&option_,nullptr,&camera_,mjCAT_ALL,&scene_);
-    mjr_render({0,0,640,480},&scene_,&render_);
-    mjr_readPixels(rgb_.data(),nullptr,{0,0,640,480},&render_);
+    mjr_render({0,0,width_,height_},&scene_,&render_);
+    mjr_readPixels(rgb_.data(),nullptr,{0,0,width_,height_},&render_);
     // Ground-truth candidate center projected into the original image coordinates.
     // This sensor deliberately does not claim image-based recognition/occlusion handling.
     mjvGLCamera c = mjv_averageCamera(&scene_.camera[0],&scene_.camera[1]);
@@ -93,10 +98,12 @@ bool Camera::capture(Simulation& simulation, std::mutex* physics_mutex) {
     double depth=0,x=0,y=0;
     for(int i=0;i<3;++i) { depth+=offset[i]*c.forward[i]; x+=offset[i]*horizontal[i]; y+=offset[i]*c.up[i]; }
     if (depth <= c.frustum_near || depth >= c.frustum_far) return false;
-    const double height=c.frustum_top-c.frustum_bottom, width=height*640.0/480;
-    x=640*(.5+(x*c.frustum_near/depth-c.frustum_center)/width);
-    y=480*(1-(y*c.frustum_near/depth-c.frustum_bottom)/height);
-    if (!std::isfinite(x) || !std::isfinite(y) || x<0 || x>=640 || y<0 || y>=480) return false;
+    const double height=c.frustum_top-c.frustum_bottom;
+    // Explicit fx/fy intrinsics can produce a non-square-pixel frustum.
+    const double width=c.frustum_width > 0 ? 2*c.frustum_width : height*width_/height_;
+    x=width_*(.5+(x*c.frustum_near/depth-c.frustum_center)/width);
+    y=height_*(1-(y*c.frustum_near/depth-c.frustum_bottom)/height);
+    if (!std::isfinite(x) || !std::isfinite(y) || x<0 || x>=width_ || y<0 || y>=height_) return false;
     if (!command.contains("roi") || command.at("roi").is_null()) return true;
     const auto& roi=command.at("roi");
     double rx=roi.at("x"), ry=roi.at("y"), rw=roi.at("width"), rh=roi.at("height");

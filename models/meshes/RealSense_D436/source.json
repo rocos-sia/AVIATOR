@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/realsenseai/realsense-ros",
+  "commit": "9a11121700cb4780e273e34141f6402fe184321d",
+  "source_mesh": "realsense2_description/meshes/d435.dae",
+  "source_xacro": "realsense2_description/urdf/_d436.urdf.xacro",
+  "source_sha256": "42f3b66f47a1f8f425a2e4dc07c1d9c283183167d8441f520a15623d98f9bf78",
+  "conversion": "Triangles only; bake xacro visual rpy=(pi/2,0,pi/2), xyz=(0.0043,-0.0175,0), meters. Drop zero-area faces. No mesh simplification. Split into two STL parts to respect MuJoCo 200000-face STL limit.",
+  "license": "Apache-2.0",
+  "outputs_sha256": {
+    "d436_visual_0.stl": "2459a00cd7558ff9c5c6335b8303819baffecf9388ff51101f0b606f360d0add",
+    "d436_visual_1.stl": "b151296274e203bf40d265bcbccada9af9ca40bda596893cdb691fec6caf1cf6"
+  }
+}

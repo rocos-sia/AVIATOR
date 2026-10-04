@@ -25,6 +25,8 @@ public:
     void setInitialWheel(double angle, double displacement);
     aviator::Message state(bool hand, std::uint64_t now);
     aviator::Message detection(std::uint64_t now, bool captured, bool in_roi);
+    int cameraWidth() const { return camera_resolution_[0]; }
+    int cameraHeight() const { return camera_resolution_[1]; }
     const Json& camera_command() const { return camera_command_; }
     mjModel* model() const { return model_.get(); }
     mjData* data() const { return data_.get(); }
@@ -46,6 +48,7 @@ private:
     std::array<std::vector<Joint>, 2> arms_, hands_;
     std::array<int, 2> tcp_{};
     int roll_ = -1, pitch_ = -1;
+    std::array<int, 2> camera_resolution_{640, 480};
     std::array<std::unique_ptr<aviator::InputGuard>, 3> guards_;
     std::array<bool, 2> active_{};
     std::array<Json, 3> references_{Json(nullptr), Json(nullptr), Json(nullptr)};
