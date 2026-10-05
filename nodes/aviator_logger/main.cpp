@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "logger.hpp"
 #include "runtime.hpp"
 #include "startup.hpp"
@@ -9,7 +10,6 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
-#include <iostream>
 #include <limits>
 #include <pthread.h>
 #include <signal.h>
@@ -34,10 +34,11 @@ std::string default_output_path() {
 }
 
 void usage() {
-    std::cout << "Usage: aviator_logger [--config config/recording.yaml] [--output FILE] [--image-output FILE]\n"
-                 "                       [--subscribe tcp://127.0.0.1:5556] [--session LABEL]\n"
-                 "                       [--queue-bytes 16777216] [--receive-hwm 4096]\n"
-                 "Writes data and images to separate MCAP files; SIGINT/SIGTERM finalizes.\n";
+    aviator::Logger::info("Usage: aviator_logger [--config config/recording.yaml] [--output FILE] [--image-output "
+        "FILE]\n"
+        "                       [--subscribe tcp://127.0.0.1:5556] [--session LABEL]\n"
+        "                       [--queue-bytes 16777216] [--receive-hwm 4096]\n"
+        "Writes data and images to separate MCAP files; SIGINT/SIGTERM finalizes.");
 }
 
 // Log times are stored as UTC ns; render an ISO-8601 timestamp (ms) for stdout.
@@ -155,7 +156,7 @@ int main(int argc, char** argv) {
                          {"Exit", "Ctrl+C (drain + finalize)"}});
                 });
             } catch (const std::exception& error) {
-                std::cerr << "aviator_logger: " << error.what() << '\n';
+                aviator::Logger::error("aviator_logger: {}", error.what());
                 failed.store(true);
             }
             stop.store(true);
@@ -174,27 +175,22 @@ int main(int argc, char** argv) {
 
         if (failed.load())
             return 1;
-        std::cout << "recorded " << summary.messages << " messages across " << summary.topics.size()
-                  << " topic(s)" << '\n';
-        std::cout << "  data: " << summary.messages - summary.camera_messages << " messages -> "
-                  << summary.path << '\n';
+        aviator::Logger::info("recorded {} messages across {} topic(s)", summary.messages, summary.topics.size());
+        aviator::Logger::info("  data: {} messages -> {}", summary.messages - summary.camera_messages, summary.path);
         if (!summary.image_path.empty())
-            std::cout << "  images: " << summary.camera_messages << " messages -> "
-                      << summary.image_path << '\n';
+            aviator::Logger::info("  images: {} messages -> {}", summary.camera_messages, summary.image_path);
         for (const auto& [topic, stats] : summary.topics)
-            std::cout << "  " << topic << "  (" << stats.type << ")  " << stats.messages
-                      << " msgs\n";
+            aviator::Logger::info("  {}  ({})  {} msgs", topic, stats.type, stats.messages);
         if (summary.messages != 0)
-            std::cout << "  window (UTC): " << format_utc_ns(summary.start_log_ns) << " -> "
-                      << format_utc_ns(summary.end_log_ns) << '\n';
+            aviator::Logger::info("  window (UTC): {} -> {}",
+                format_utc_ns(summary.start_log_ns), format_utc_ns(summary.end_log_ns));
         if (summary.invalid || summary.rejected || summary.dropped)
-            std::cout << "  skipped: " << summary.invalid << " invalid, " << summary.rejected
-                      << " rejected, " << summary.dropped << " queue overflow\n";
-        std::cout << "  sequence gaps: " << summary.sequence_gaps
-                  << ", duplicate/reordered: " << summary.duplicate_or_reordered
-                  << "; completeness unverified (PUB/SUB)\n";
+            aviator::Logger::warn("  skipped: {} invalid, {} rejected, {} queue overflow",
+                summary.invalid, summary.rejected, summary.dropped);
+        aviator::Logger::info("  sequence gaps: {}, duplicate/reordered: {}; completeness unverified (PUB/SUB)",
+            summary.sequence_gaps, summary.duplicate_or_reordered);
     } catch (const std::exception& error) {
-        std::cerr << "aviator_logger: " << error.what() << '\n';
+        aviator::Logger::error("aviator_logger: {}", error.what());
         result = 1;
     }
     return result;

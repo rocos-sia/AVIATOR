@@ -1,7 +1,7 @@
+#include "Logger.hpp"
 #include "sdl_input.hpp"
 
 #include <algorithm>
-#include <iostream>
 #include <stdexcept>
 
 namespace flight_gateway {
@@ -79,16 +79,16 @@ void SdlInput::openJoystick() {
                 stick_buttons_.pending.fill(0);
                 for (unsigned b = 0; b < stick_buttons_.held.size(); ++b)
                     stick_buttons_.held[b] = SDL_JoystickGetButton(joystick_, b) != 0;
-                std::cout << "SDL joystick index=" << i << " name=" << SDL_JoystickName(joystick_)
-                          << " instance=" << SDL_JoystickInstanceID(joystick_) << std::endl;
+                aviator::Logger::info("SDL joystick index={} name={} instance={}",
+                    i, SDL_JoystickName(joystick_), SDL_JoystickInstanceID(joystick_));
                 return;
             }
             SDL_JoystickClose(candidate);
         }
         if (!automatic) break;
     }
-    std::cout << "SDL joystick unavailable (device=" << config_.device
-              << "); keyboard remains available in the input window" << std::endl;
+    aviator::Logger::warn("SDL joystick unavailable (device={}); keyboard remains available in the input window",
+        config_.device);
 }
 void SdlInput::resetKeyboard(std::uint64_t now) {
     // Release every direction, including suppressed keys, before accepting new input.

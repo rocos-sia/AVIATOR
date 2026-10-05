@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "gateway.hpp"
 #include "config.hpp"
 #include "sdl_input.hpp"
@@ -9,8 +10,6 @@
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
-#include <iostream>
-#include <iomanip>
 #include <memory>
 #include <pthread.h>
 #include <signal.h>
@@ -27,17 +26,12 @@ void require(bool condition, const std::string& reason) {
 }
 int main(int argc, char** argv) {
     int signals_fd = -1, lock_fd = -1, result = 0;
-    const bool inline_output = isatty(STDOUT_FILENO);
-    bool value_line = false;
-    const auto finish_value_line = [&] {
-        if (value_line) { std::cout << std::endl; value_line = false; }
-    };
     try {
         if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
-            std::cout << "Usage: flight_gateway\n"
-                         "Configuration: config/flight.yaml (installed: share/aviator/config/flight.yaml).\n"
-                         "Edit the YAML file for joystick/rs422 source, SDL device, speeds and button mappings.\n"
-                         "Publishes at 50 Hz; restart after configuration changes.\n";
+            aviator::Logger::info("Usage: flight_gateway\n"
+                "Configuration: config/flight.yaml (installed: share/aviator/config/flight.yaml).\n"
+                "Edit the YAML file for joystick/rs422 source, SDL device, speeds and button mappings.\n"
+                "Publishes at 50 Hz; restart after configuration changes.");
             return 0;
         }
         require(argc == 1, "startup options are not supported; edit config/flight.yaml");
@@ -54,7 +48,7 @@ int main(int argc, char** argv) {
         const auto invert_roll = config.invert_roll, invert_pitch = config.invert_pitch;
         flight_gateway::JoystickButtons buttons;
         buttons.operations = config.buttons;
-        std::cout << "Configuration: " << config_path << std::endl;
+        aviator::Logger::info("Configuration: {}", config_path);
         sigset_t signals;
         sigemptyset(&signals); sigaddset(&signals, SIGINT); sigaddset(&signals, SIGTERM);
         const auto mask_error = pthread_sigmask(SIG_BLOCK, &signals, nullptr);
@@ -80,8 +74,8 @@ int main(int argc, char** argv) {
         aviator::configure(pub); aviator::configure(sub);
         aviator::subscribe(sub, "flight.state");
         pub.connect(pub_endpoint); sub.connect(sub_endpoint);
-        std::cout << "STARTED input=" << config.source << " source=JOYSTICK session=" << session << " clock=" << clock
-                  << " feedback=WAITING" << std::endl;
+        aviator::Logger::info("STARTED input={} source=JOYSTICK session={} clock={} feedback=WAITING",
+            config.source, session, clock);
         aviator::print_startup(
             "flight_gateway",
             {{"Config", config_path},
@@ -102,18 +96,16 @@ int main(int argc, char** argv) {
         service.set(zmq::sockopt::maxmsgsize,
                     static_cast<std::int64_t>(aviator::max_payload_bytes));
         service.connect(service_endpoint);
-        std::cout << "Service DEALER connect=" << service_endpoint
-                  << " timeout_ms=" << service_timeout_ms << '\n';
+        aviator::Logger::info("Service DEALER connect={} timeout_ms={}", service_endpoint, service_timeout_ms);
         std::map<std::string, nlohmann::json> pending_requests;
         aviator::ReceiveState service_receiving;
         const auto request_button = [&](unsigned index) {
-            finish_value_line();
             if (buttons.operations[index].empty()) {
-                std::cout << "button=" << index + 1 << " unassigned\n";
+                aviator::Logger::info("button={} unassigned", index + 1);
                 return;
             }
             if (pending_requests.size() >= 11) {
-                std::cerr << "service pending limit; button request not sent\n";
+                aviator::Logger::warn("service pending limit; button request not sent");
                 return;
             }
             nlohmann::json parameters = {{"source", "JOYSTICK"}, {"button", index + 1}};
@@ -124,17 +116,18 @@ int main(int argc, char** argv) {
             // metadata is not part of the service envelope sent to Core.
             const bool sent = feedback.requestsReady(aviator::monotonic_us()) && aviator::send_service(service, request);
             if (feedback.session().empty())
-                std::cerr << "No valid Core feedback yet; button not sent, press again after service_ready=1\n";
+                aviator::Logger::warn("No valid Core feedback yet; button not sent, press again after service_ready=1");
             else if (!feedback.requestsReady(aviator::monotonic_us()))
-                std::cerr << "Core feedback stale or Gateway input not confirmed; button not sent, "
-                             "press again after service_ready=1\n";
+                aviator::Logger::warn(
+                    "Core feedback stale or Gateway input not confirmed; button not sent, press again after "
+                    "service_ready=1");
             auto record = request;
             record["gateway_observation"] = sent ? "QUEUED" : "NOT_SENT";
             if (!aviator::send(pub, aviator::service_request_topic, record.dump()))
-                std::cerr << "service request record not queued\n";
-            std::cout << "button=" << index + 1 << " operation=" << buttons.operations[index]
-                      << " request_id=" << request.at("request_id")
-                      << (sent ? " QUEUED" : " NOT_SENT") << '\n';
+                aviator::Logger::warn("service request record not queued");
+            aviator::Logger::info("button={} operation={} request_id={}{}",
+                index + 1, buttons.operations[index], request.at("request_id").dump(),
+                (sent ? " QUEUED" : " NOT_SENT"));
             if (sent)
                 pending_requests.emplace(request.at("request_id").get<std::string>(),
                                          std::move(request));
@@ -154,10 +147,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("encode: " + error);
             aviator::send(pub, "flight.command", payload);
             if (running && now >= next_print) {
-                std::cout << (inline_output ? "\r\033[2K" : "") << std::fixed << std::setprecision(4)
-                          << "roll=" << sample.roll_value << " pitch=" << sample.pitch_value;
-                if (inline_output) { std::cout << std::flush; value_line = true; }
-                else std::cout << std::endl;
+                aviator::Logger::info("roll={:.4f} pitch={:.4f}", sample.roll_value, sample.pitch_value);
                 next_print = now + 100000; // Limit console output to 10 Hz.
             }
         };
@@ -184,8 +174,7 @@ int main(int argc, char** argv) {
                     aviator::decode(wire.topic, wire.payload, state, error) &&
                     feedback.accept(state, aviator::monotonic_us(), error)) {
                     if (discovering) {
-                        finish_value_line();
-                        std::cout << "Received aviator_core startup marker=" << feedback.session() << std::endl;
+                        aviator::Logger::info("Received aviator_core startup marker={}", feedback.session());
                     }
                     system_state = state.body.at("system").at("state").get<std::string>();
                     feedback_error.clear();
@@ -201,8 +190,7 @@ int main(int argc, char** argv) {
                 if (received == aviator::ReceiveResult::empty)
                     break;
                 if (received == aviator::ReceiveResult::rejected) {
-                    finish_value_line();
-                    std::cerr << "invalid service reply: " << error << '\n';
+                    aviator::Logger::error("invalid service reply: {}", error);
                     continue;
                 }
                 if (reply.at("msg_type") != "ServiceReply")
@@ -210,16 +198,15 @@ int main(int argc, char** argv) {
                 // Preserve even late/unmatched replies for diagnosis; never change state locally.
                 aviator::send(pub, aviator::service_reply_topic, raw);
                 const auto it = pending_requests.find(reply.at("request_id").get<std::string>());
-                finish_value_line();
                 if (it == pending_requests.end() ||
                     !aviator::matches_service_reply(it->second, reply) ||
                     aviator::monotonic_us() -
                             it->second.at("issued_mono_us").get<std::uint64_t>() >=
                         service_timeout_ms * 1000ULL) {
-                    std::cerr << "late/unmatched service reply: " << reply.at("request_id") << '\n';
+                    aviator::Logger::warn("late/unmatched service reply: {}", reply.at("request_id").dump());
                     continue;
                 }
-                std::cout << "service reply=" << reply.dump() << '\n';
+                aviator::Logger::info("service reply={}", reply.dump());
                 pending_requests.erase(it);
             }
             const auto current = aviator::monotonic_us();
@@ -227,9 +214,7 @@ int main(int argc, char** argv) {
                 const auto& request = it->second;
                 if (current - request.at("issued_mono_us").get<std::uint64_t>() >=
                     service_timeout_ms * 1000ULL) {
-                    finish_value_line();
-                    std::cerr << "service timeout UNKNOWN request_id=" << it->first
-                              << "; no automatic retry\n";
+                    aviator::Logger::warn("service timeout UNKNOWN request_id={}; no automatic retry", it->first);
                     auto record = request;
                     record["gateway_observation"] = "TIMEOUT_UNKNOWN";
                     aviator::send(pub, aviator::service_request_topic, record.dump());
@@ -240,19 +225,16 @@ int main(int argc, char** argv) {
             if (!feedback.session().empty()) {
                 const auto status = feedback.expired(current) ? "STALE" : system_state;
                 if (status != last_status) {
-                    finish_value_line();
-                    std::cout << "feedback=" << status << std::endl;
+                    aviator::Logger::info("feedback={}", status);
                     if (status == "STALE")
-                        std::cerr << "No accepted Core feedback within 100 ms; last rejection="
-                                  << (feedback_error.empty() ? "none (check Core/bus publication)" : feedback_error)
-                                  << '\n';
+                        aviator::Logger::warn("No accepted Core feedback within 100 ms; last rejection={}",
+                            (feedback_error.empty() ? "none (check Core/bus publication)" : feedback_error));
                     last_status = status;
                 }
             }
             const bool service_ready = feedback.requestsReady(current);
             if (service_ready != last_service_ready) {
-                finish_value_line();
-                std::cout << "service_ready=" << service_ready << std::endl;
+                aviator::Logger::info("service_ready={}", static_cast<int>(service_ready));
                 last_service_ready = service_ready;
             }
             if (current >= next_publish) {
@@ -263,10 +245,8 @@ int main(int argc, char** argv) {
         sample.valid = false;
         publish(aviator::monotonic_us()); // Best effort; PUB/SUB has no delivery ACK.
     } catch (const std::exception& error) {
-        finish_value_line();
-        std::cerr << "flight_gateway: " << error.what() << '\n'; result = 1;
+        aviator::Logger::error("flight_gateway: {}", error.what()); result = 1;
     }
-    finish_value_line();
     if (signals_fd >= 0) close(signals_fd);
     if (lock_fd >= 0) close(lock_fd);
     return result;

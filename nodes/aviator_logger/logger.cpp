@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "logger.hpp"
 #include "arm_target_recorder.hpp"
 #include "runtime.hpp"
@@ -8,7 +9,6 @@
 #include <condition_variable>
 #include <deque>
 #include <exception>
-#include <iostream>
 #include <mutex>
 #include <set>
 #include <stdexcept>
@@ -54,14 +54,13 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
         try {
             CameraCompressor compressor(options.camera);
             if (options.camera.mode == "compressed")
-                std::cout << "aviator_logger: Camera encoder (startup probe): "
-                          << compressor.encoder_backend() << " ("
-                          << compressor.encoder_preset() << ")" << std::endl;
+                aviator::Logger::info("aviator_logger: Camera encoder (startup probe): {} ({})",
+                    compressor.encoder_backend(), compressor.encoder_preset());
             const auto receive_clock = local_clock_id();
             RecordingWriter recording(output, session, options.chunk_size_bytes,
                                       recording_config_json(config).dump());
             ArmTargetRecorder arm_targets(session);
-            std::cout << "aviator_logger: arm.command recording=" << options.arm_command_mode << std::endl;
+            aviator::Logger::info("aviator_logger: arm.command recording={}", options.arm_command_mode);
             std::unique_ptr<RecordingWriter> images;
             if (cameras)
                 images = std::make_unique<RecordingWriter>(
@@ -123,8 +122,7 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
                 } catch (const std::invalid_argument& error) {
                     ++invalid_camera;
                     if (invalid_camera == 1)
-                        std::cerr << "aviator_logger DEGRADED: invalid camera frame: "
-                                  << error.what() << '\n';
+                        aviator::Logger::warn("aviator_logger DEGRADED: invalid camera frame: {}", error.what());
                     continue;
                 }
                 frame.metadata["receive_mono_us"] = entry.mono_us;
@@ -136,10 +134,8 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
                         "encoded camera packet exceeds max_record_bytes; partial retained");
                 images->append_camera(topic, frame, entry.log_ns);
                 if (!streams.count(topic))
-                    std::cout << "aviator_logger: first image recorded -> " << topic
-                              << " encoding=" << frame.metadata.at("encoding")
-                              << " encoder=" << frame.metadata.value("encoder", "none")
-                              << std::endl;
+                    aviator::Logger::info("aviator_logger: first image recorded -> {} encoding={} encoder={}",
+                        topic, frame.metadata.at("encoding").dump(), frame.metadata.value("encoder", "none"));
                 streams.insert(topic);
             }
             if (receiver_failed)
@@ -170,9 +166,8 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
             if (images)
                 images->metadata("camera_recording", camera_metadata);
             if (degraded)
-                std::cerr << "aviator_logger DEGRADED: camera invalid=" << invalid_camera
-                          << " rejected=" << camera_rejected << " dropped=" << camera_dropped
-                          << " missing=" << missing.dump() << '\n';
+                aviator::Logger::warn("aviator_logger DEGRADED: camera invalid={} rejected={} dropped={} missing={}",
+                    invalid_camera, camera_rejected, camera_dropped, missing.dump());
             RecorderSummary image_summary;
             if (images)
                 image_summary = images->finish(camera_rejected + invalid_camera, camera_dropped);
@@ -225,8 +220,7 @@ RecorderSummary record_bus(const std::string& endpoint, const std::string& outpu
             if (entry.bytes() > limit - bytes) {
                 auto& count = image ? camera_dropped : dropped;
                 if (++count == 1)
-                    std::cerr << "aviator_logger DEGRADED: " << (image ? "camera" : "bus")
-                              << " queue overflow\n";
+                    aviator::Logger::warn("aviator_logger DEGRADED: {} queue overflow", (image ? "camera" : "bus"));
                 return;
             }
             bytes += entry.bytes();

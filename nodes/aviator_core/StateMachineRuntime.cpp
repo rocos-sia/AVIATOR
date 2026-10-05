@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "StateMachineRuntime.hpp"
 #include "ManagedGateway.hpp"
 #include "ManagedReadiness.hpp"
@@ -7,7 +8,6 @@
 #include "aviator/Kinematics.hpp"
 #include "aviator/RobotStateMachine.hpp"
 #include <deque>
-#include <iostream>
 #include <optional>
 #include <poll.h>
 #include <sstream>
@@ -20,7 +20,7 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
     if (gateway_options.enabled) gateway = std::make_unique<ManagedGateway>(config, gateway_options);
     auto link = std::make_unique<RemoteLink>(config);
     auto* connection = link.get();
-    std::cout << "Managed Core session=" << connection->session() << std::endl;
+    aviator::Logger::info("Managed Core session={}", connection->session());
     Aviator* instance = nullptr;
     bool revoked = true;
     std::string last_state;
@@ -50,7 +50,7 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
     options.heartbeat = [&] { connection->heartbeat(); };
     options.allow_motion = [&](bool allowed) { revoked = !allowed; connection->allowMotion(allowed); };
     options.request_brake = [&] {
-        std::cerr << "Software emergency latched in this process; physical brake adapter unavailable" << std::endl;
+        aviator::Logger::error("Software emergency latched in this process; physical brake adapter unavailable");
     };
     options.report = [&](const SystemStatus& status) {
         const auto& s = status.conditions;
@@ -67,15 +67,16 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
             {"brake_status", status.brake_requested ? "UNAVAILABLE" : "NOT_REQUESTED"}});
         if (last_state != status.state) {
             last_state = status.state;
-            std::cout << "system.state=" << last_state << " error=" << status.current_error << std::endl;
+            aviator::Logger::info("system.state={} error={}", last_state, status.current_error);
         }
     };
     Aviator robot(std::move(link), nullptr, nullptr, config.robot.string(), std::move(options));
     instance = &robot;
     robot.Init();
-    std::cout << "Managed Aviator: ENTER_STANDBY | GRASP_WHEEL | START_CONTROL | EXIT_CONTROL | LEAVE_WHEEL | RESET_ERROR\n"
-                 "status | emergency | quit\n";
-    if (!gateway) std::cout << "servo <angle_rad> <displacement_m> [v] (refresh <100 ms)\n";
+    aviator::Logger::info("Managed Aviator: ENTER_STANDBY | GRASP_WHEEL | START_CONTROL | EXIT_CONTROL | LEAVE_WHEEL "
+        "| RESET_ERROR\n"
+        "status | emergency | quit");
+    if (!gateway) aviator::Logger::info("servo <angle_rad> <displacement_m> [v] (refresh <100 ms)");
     std::string pending;
     uint64_t pending_mono = 0;
     std::deque<std::pair<std::string, uint64_t>> commands;
@@ -102,7 +103,7 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
                 else pending.push_back(buffer[i]);
             }
             if (pending.size() > 4096 || commands.size() > 64) {
-                pending.clear(); commands.clear(); std::cerr << "BUSY: console queue full\n";
+                pending.clear(); commands.clear(); aviator::Logger::warn("BUSY: console queue full");
             }
         }
         if (!commands.empty()) {
@@ -112,17 +113,19 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
             if (command == "quit") quit = true;
             else if (command == "emergency") robot.EmergencyStop("Local emergency input");
             else if (command == "status")
-                std::cout << "state=" << robot.GetSystemState() << " executor=" << robot.GetState() << std::endl;
+                aviator::Logger::info("state={} executor={}", robot.GetSystemState(), robot.GetState());
             else if (command == "servo") {
                 if (gateway) {
-                    std::cout << "REJECTED: gateway mode accepts flight.command targets only\n";
+                    aviator::Logger::warn("REJECTED: gateway mode accepts flight.command targets only");
                 } else {
                     double a, d, v = .5;
-                    if (!(line >> a >> d)) std::cout << "Invalid target\n";
+                    if (!(line >> a >> d)) aviator::Logger::warn("Invalid target");
                     else {
                         line >> std::ws;
-                        if ((!line.eof() && !(line >> v)) || (line >> extra)) std::cout << "Invalid target arguments\n";
-                        else if (!robot.ServoWheel(a, d, v, sample)) std::cout << "INVALID_STATE: inactive/stale/invalid target\n";
+                        if ((!line.eof() && !(line >> v)) || (line >> extra)) aviator::Logger::warn(
+                            "Invalid target arguments");
+                        else if (!robot.ServoWheel(a, d, v, sample)) aviator::Logger::warn(
+                            "INVALID_STATE: inactive/stale/invalid target");
                     }
                 }
             } else if (!command.empty()) {
@@ -134,13 +137,13 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
                 bool known = false;
                 for (const auto& [name, operation] : operations) if (command == name) {
                     known = true;
-                    if (line >> extra) std::cout << "INVALID_STATE: unexpected argument\n";
+                    if (line >> extra) aviator::Logger::warn("INVALID_STATE: unexpected argument");
                     else {
                         const auto reply = (robot.*operation)();
-                        std::cout << fsm::replyName(reply) << " " << robot.GetSystemState() << std::endl;
+                        aviator::Logger::info("{} {}", fsm::replyName(reply), robot.GetSystemState());
                     }
                 }
-                if (!known) std::cout << "INVALID_STATE: use the six FSM operations\n";
+                if (!known) aviator::Logger::warn("INVALID_STATE: use the six FSM operations");
             }
         }
         if (gateway && !quit && !interrupted) {

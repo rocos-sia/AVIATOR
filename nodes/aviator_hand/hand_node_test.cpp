@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 // Exercises the actual decoder/controller/driver with an in-memory CAN writer.
 // No SocketCAN interface is opened and no hardware command can be transmitted.
 #define INSPIRE_HAND_TESTING
@@ -403,14 +404,14 @@ int main(int argc, char** argv) {
                 }
             }
             check(saw_valid && saw_stop, "missing motion/stop coverage");
-            std::cout << "Python publisher wire accepted; motion and stop verified with mock CAN\n";
+            aviator::Logger::info("Python publisher wire accepted; motion and stop verified with mock CAN");
             return 0;
         }
         parsing(); targets_and_mapping(); watchdog_and_guard(); faults(); feedback_tests(); config_and_framing();
-        std::cout << "hand controller regression tests passed (mock CAN only)\n";
+        aviator::Logger::info("hand controller regression tests passed (mock CAN only)");
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "hand controller test: " << e.what() << '\n';
+        aviator::Logger::error("hand controller test: {}", e.what());
         return 1;
     }
 }

@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "aviator/Aviator.hpp"
 #include "aviator/CollisionChecker.hpp"
 #include "aviator/Kinematics.hpp"
@@ -8,7 +9,6 @@
 #include <chrono>
 #include <csignal>
 #include <exception>
-#include <iostream>
 #include <optional>
 #include <thread>
 #include <future>
@@ -18,9 +18,8 @@ static void interrupt(int) { interrupted = 1; }
 
 static void status(aviator::Aviator &robot) {
     const auto s = robot.GetStatus();
-    std::cout << "state=" << robot.GetState() << " angle=" << s.angle
-              << " displacement=" << s.displacement << " locked=" << s.locked
-              << " error=" << s.motion_error << " fault=" << s.fault << std::endl;
+    aviator::Logger::info("state={} angle={} displacement={} locked={} error={} fault={}",
+        robot.GetState(), s.angle, s.displacement, s.locked, s.motion_error, s.fault);
 }
 
 int main(int argc, char **argv) {
@@ -32,11 +31,11 @@ int main(int argc, char **argv) {
             if (arg == "--config" && i + 1 < argc) config = argv[++i];
             else if (arg == "--gateway-session" && i + 1 < argc) gateway_session = argv[++i];
             else if (arg == "--help") {
-                std::cout << "aviator_core_servo [--config <system.yaml>] [--gateway-session <ignored>]\n"
-                             "Session pinning is disabled; publisher, freshness and sequence checks remain.\n"
-                             "Enable, approach and lock, then follow flight_gateway JOYSTICK input.\n"
-                             "roll -> +/-0.87266 rad; pitch [-1,0,1] -> [-0.170,-0.085,0] m; v=1.\n"
-                             "Start bus, manipulator and flight_gateway first. Ctrl+C stops and disables.\n";
+                aviator::Logger::info("aviator_core_servo [--config <system.yaml>] [--gateway-session <ignored>]\n"
+                    "Session pinning is disabled; publisher, freshness and sequence checks remain.\n"
+                    "Enable, approach and lock, then follow flight_gateway JOYSTICK input.\n"
+                    "roll -> +/-0.87266 rad; pitch [-1,0,1] -> [-0.170,-0.085,0] m; v=1.\n"
+                    "Start bus, manipulator and flight_gateway first. Ctrl+C stops and disables.");
                 return 0;
             } else throw std::runtime_error("Unknown or incomplete option: " + arg);
         }
@@ -65,10 +64,10 @@ int main(int argc, char **argv) {
                 if (interrupted) throw std::runtime_error("Startup interrupted");
                 robot.enable();
                 if (interrupted) throw std::runtime_error("Startup interrupted");
-                std::cout << "DEMO approaching handles" << std::endl;
+                aviator::Logger::info("DEMO approaching handles");
                 robot.approachHandles();
                 status(robot);
-                std::cout << "robot.approachHandles() done" << std::endl;
+                aviator::Logger::info("robot.approachHandles() done");
                 if (interrupted) throw std::runtime_error("Startup interrupted");
                 robot.lockHandles();
                 status(robot);
@@ -97,7 +96,7 @@ int main(int argc, char **argv) {
             uint64_t next_servo = 0, next_print = 0;
             bool was_fresh = false;
             std::string last_state, input_error;
-            std::cout << "Waiting for flight.command from flight_gateway (no session authorization)" << std::endl;
+            aviator::Logger::info("Waiting for flight.command from flight_gateway (no session authorization)");
             while (!interrupted) {
                 connection->heartbeat();
                 // 原始事件时间保持不变；POSITION_HOLD 显式使用设备检查时间判定时效。
@@ -115,7 +114,7 @@ int main(int argc, char **argv) {
                         aviator::InputGuard candidate(policy);
                         if (!candidate.accept(message, aviator::monotonic_us(), error)) continue;
                         input = std::move(candidate);
-                        std::cout << "Received valid flight_gateway input" << std::endl;
+                        aviator::Logger::info("Received valid flight_gateway input");
                     } else if (!input->accept(message, aviator::monotonic_us(), error)) {
                         if (message.header.publisher_id == policy.publisher_id)
                             input_error = error;
@@ -129,10 +128,9 @@ int main(int argc, char **argv) {
                 const auto now = aviator::monotonic_us();
                 const bool fresh = input && !input->expired(now);
                 if (fresh != was_fresh) {
-                    if (fresh) std::cout << "Flight input: valid" << std::endl;
-                    else std::cout << "Flight input: stale/invalid; stop updating ServoWheel ("
-                                   << (input_error.empty() ? "gateway/device check timeout" : input_error)
-                                   << ")" << std::endl;
+                    if (fresh) aviator::Logger::info("Flight input: valid");
+                    else aviator::Logger::warn("Flight input: stale/invalid; stop updating ServoWheel ({})",
+                        (input_error.empty() ? "gateway/device check timeout" : input_error));
                     was_fresh = fresh;
                 }
                 const auto state = robot.GetState();
@@ -148,8 +146,7 @@ int main(int argc, char **argv) {
                     robot.servoWheel(angle, displacement, 1.0);
                     next_servo = now + period; // 不补发错过的周期。
                     if (now >= next_print) {
-                        std::cout << "Servo target angle=" << angle << " displacement=" << displacement
-                                  << " v=1" << std::endl;
+                        aviator::Logger::info("Servo target angle={} displacement={} v=1", angle, displacement);
                         next_print = now + 100000;
                     }
                 }
@@ -157,7 +154,7 @@ int main(int argc, char **argv) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
         } catch (const std::exception &e) {
-            std::cerr << "Execution failed: " << e.what() << std::endl;
+            aviator::Logger::error("Execution failed: {}", e.what());
             result = 1;
         }
         robot.stop();
@@ -174,7 +171,7 @@ int main(int argc, char **argv) {
         cleanup.get();
         return result;
     } catch (const std::exception &e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        aviator::Logger::error("Error: {}", e.what());
         return 1;
     }
 }

@@ -5,6 +5,15 @@
 camera.detection。也可用 --bind + --endpoint 直连发布端做独立测试。
 """
 
+# Shared logging module in source and installed share/aviator layouts.
+import sys as _log_sys
+from pathlib import Path as _LogPath
+_log_sys.path.insert(0, str(_LogPath(__file__).resolve().parents[1] / "common")
+                     if (_LogPath(__file__).resolve().parents[1] / "common").is_dir()
+                     else str(_LogPath(__file__).resolve().parents[2] / "common"))
+from aviator_logger import Logger
+
+
 import argparse
 import json
 import sys
@@ -59,7 +68,7 @@ def main(argv):
     else:
         sub.connect(args.endpoint)
 
-    print(f"detection_subscriber: topic={args.topic} endpoint={args.endpoint} bind={args.bind}")
+    Logger.info(f"detection_subscriber: topic={args.topic} endpoint={args.endpoint} bind={args.bind}")
 
     count = 0
     try:
@@ -70,7 +79,7 @@ def main(argv):
             data = json.loads(payload.decode("utf-8"))
 
             if data.get("msg_type") != "CameraDetection":
-                print(f"[skip] unexpected msg_type={data.get('msg_type')!r}", file=sys.stderr)
+                Logger.warn(f"[skip] unexpected msg_type={data.get('msg_type')!r}", file=sys.stderr)
                 continue
 
             count += 1
@@ -84,19 +93,19 @@ def main(argv):
             detector = data.get("detector", "unknown")
             tag = (f" tag_id={data['tag_id']} margin={data['decision_margin']:.1f}"
                    if "tag_id" in data and "decision_margin" in data else "")
-            print(f"[{count}] seq={seq} frame={fid} status={status} conf={conf:.3f} "
+            Logger.info(f"[{count}] seq={seq} frame={fid} status={status} conf={conf:.3f} "
                   f"valid={valid} detector={detector}{tag} "
                   f"sample_mono_us={sample} timestamp={stamp}")
-            print(f"        {fmt_pose(data.get('pose'))}")
-            print(f"        {fmt_steering_wheel(data.get('steering_wheel'))}")
+            Logger.info(f"        {fmt_pose(data.get('pose'))}")
+            Logger.info(f"        {fmt_steering_wheel(data.get('steering_wheel'))}")
             if args.raw:
-                print("        " + json.dumps(data, ensure_ascii=False))
+                Logger.info("        " + json.dumps(data, ensure_ascii=False))
     except KeyboardInterrupt:
         pass
     finally:
         sub.close()
         context.term()
-        print("detection_subscriber: stopped")
+        Logger.info("detection_subscriber: stopped")
 
 
 if __name__ == "__main__":

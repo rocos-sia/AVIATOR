@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "simulation.hpp"
 #include "transport.hpp"
 #include "motion.hpp"
@@ -5,7 +6,6 @@
 #include <fstream>
 #include <filesystem>
 #include <cmath>
-#include <iostream>
 #include <stdexcept>
 #include <thread>
 #include <future>
@@ -308,6 +308,6 @@ int main(int argc,char** argv) {
         if(argc==2) { model_test(argv[1]); managed_hand_test(argv[1]); }
         else if(argc==4) process_test(argv[1],argv[2],std::string(argv[3])=="camera");
         else throw std::runtime_error("invalid test arguments");
-        std::cout<<"simulation tests passed\n"; return 0;
-    } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
+        aviator::Logger::info("simulation tests passed"); return 0;
+    } catch(const std::exception& e) { aviator::Logger::error("{}", e.what()); return 1; }
 }

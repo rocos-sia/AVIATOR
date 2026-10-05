@@ -1,3 +1,8 @@
+aviator_add_test_executable(aviator_logging_test logging_test.cpp)
+target_link_libraries(aviator_logging_test PRIVATE aviator_logging)
+add_test(NAME logging COMMAND aviator_logging_test)
+set_tests_properties(logging PROPERTIES TIMEOUT 15)
+
 aviator_add_test_executable(aviator_communication_test communication_test.cpp)
 target_link_libraries(aviator_communication_test PRIVATE
   aviator_transport aviator_runtime)

@@ -28,7 +28,7 @@ AVIATOR/
 └── docs/           # 架构与迁移说明
 ```
 
-C++17，最低 CMake 3.22。通信库需要 libzmq、cppzmq 和 nlohmann/json；完整构建还包含机器人与示例依赖，详见 [构建说明](docs/构建系统说明.md)。默认编译所有已接入的节点、示例和测试，以及 vendored Coal、Pinocchio、PIN-IK、MuJoCo 依赖：
+C++17，最低 CMake 3.22。通信库需要 libzmq、cppzmq、nlohmann/json 和 spdlog（Ubuntu：`sudo apt install libspdlog-dev`）；完整构建还包含机器人与示例依赖，详见 [构建说明](docs/构建系统说明.md)。默认编译所有已接入的节点、示例和测试，以及 vendored Coal、Pinocchio、PIN-IK、MuJoCo 依赖：
 
 ```bash
 mkdir -p build

@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "startup.hpp"
 #include <yaml-cpp/yaml.h>
 #include "transport.hpp"
@@ -7,7 +8,6 @@
 #include <cstring>
 #include <fcntl.h>
 #include <future>
-#include <iostream>
 #include <pthread.h>
 #include <signal.h>
 #include <stdexcept>
@@ -18,10 +18,10 @@
 
 namespace {
 void usage() {
-    std::cout << "Usage: aviator_bus [--config system.yaml] [--input tcp://address:port]\n"
-                 "                   [--output tcp://address:port] [--lock-file path]\n"
-                 "Defaults: input tcp://127.0.0.1:5555, output tcp://127.0.0.1:5556\n"
-                 "SIGINT/SIGTERM stop the proxy. Use a separate lock file for replay.\n";
+    aviator::Logger::info("Usage: aviator_bus [--config system.yaml] [--input tcp://address:port]\n"
+        "                   [--output tcp://address:port] [--lock-file path]\n"
+        "Defaults: input tcp://127.0.0.1:5555, output tcp://127.0.0.1:5556\n"
+        "SIGINT/SIGTERM stop the proxy. Use a separate lock file for replay.");
 }
 }
 
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
         zmq::context_t context{1};
         auto proxy = std::async(std::launch::async, [&] {
             aviator::run_bus(context, input, output, [&] {
-                std::cout << "READY input=" << input << " output=" << output << std::endl;
+                aviator::Logger::info("READY input={} output={}", input, output);
                 aviator::print_startup("aviator_bus", {
                     {"XSUB bind", input + "  <- publishers connect here"},
                     {"XPUB bind", output + "  -> subscribers connect here"},
@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
         }
         proxy.get(); // Bind/proxy failure is reported, never mistaken for readiness.
     } catch (const std::exception& error) {
-        std::cerr << "aviator_bus: " << error.what() << '\n';
+        aviator::Logger::error("aviator_bus: {}", error.what());
         result = 1;
     }
     // Keep the file: unlinking a flock file can allow two different lock inodes.

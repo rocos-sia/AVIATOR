@@ -1,9 +1,38 @@
+#include "Logger.hpp"
+#include <cstring>
 #include "aviator/RobotStateMachine.hpp"
 #include <limits>
 #include <stdexcept>
 #include <utility>
 
 namespace aviator::fsm {
+namespace {
+const char* operationName(Operation op) {
+    switch (op) {
+    case Operation::enter_standby: return "ENTER_STANDBY";
+    case Operation::grasp_wheel: return "GRASP_WHEEL";
+    case Operation::start_control: return "START_CONTROL";
+    case Operation::exit_control: return "EXIT_CONTROL";
+    case Operation::leave_wheel: return "LEAVE_WHEEL";
+    case Operation::reset_error: return "RESET_ERROR";
+    }
+    return "UNKNOWN";
+}
+// Event-scoped observation covers early returns without changing the transition table.
+struct TransitionLog {
+    const RobotStateMachine& machine;
+    const char* event;
+    const char* before = machine.state();
+    ~TransitionLog() noexcept {
+        try {
+            if (std::strcmp(before, machine.state()) != 0)
+                Logger::info("Core FSM event={} state={} -> {} generation={} error={}",
+                    event, before, machine.state(), machine.generation(), machine.currentError());
+        } catch (...) {}
+    }
+};
+}
+
 RobotStateMachine::RobotStateMachine(Timeouts t) : timeouts_(t) {
     for (auto value : {t.initialize, t.grasp, t.release, t.home})
         if (!value || value > 3600000000ULL) throw std::invalid_argument("Task timeout must be 1us..1h");
@@ -29,6 +58,7 @@ void RobotStateMachine::deadline(std::uint64_t now) {
     deadline_ = now + duration;
 }
 void RobotStateMachine::boot(const Snapshot& s, std::uint64_t now) {
+    const TransitionLog transition{*this, "Boot"};
     supervise(s, now);
     if (machine_.process_event(Boot{})) deadline(now);
 }
@@ -51,9 +81,21 @@ void RobotStateMachine::supervise(const Snapshot& s, std::uint64_t now) {
         safetyLost("Required resource, authorization or control input lost");
 }
 Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t now) {
+    const TransitionLog transition{*this, operationName(op)};
+    const auto reply = [&](Reply result) {
+        const auto level = result == Reply::accepted || result == Reply::completed
+            ? spdlog::level::info : spdlog::level::warn;
+        Logger::log(level, "Core FSM operation={} reply={} state={} generation={} "
+            "ready={} settled={} executor_idle={} clear_of_wheel={} following_authorized={} "
+            "source_authorized={} input_ready={} release_authorized={} fault_cleared={}",
+            operationName(op), replyName(result), state(), generation(), s.ready, s.settled,
+            s.executor_idle, s.clear_of_wheel, s.following_authorized, s.source_authorized,
+            s.input_ready, s.release_authorized, s.fault_cleared);
+        return result;
+    };
     supervise(s, now); // Protection always precedes ordinary requests.
-    if (machine_.is(sml::state<EMERGENCY_STOP>)) return Reply::invalid_state;
-    if (context_.job != Job::none) return Reply::busy;
+    if (machine_.is(sml::state<EMERGENCY_STOP>)) return reply(Reply::invalid_state);
+    if (context_.job != Job::none) return reply(Reply::busy);
     bool accepted = false;
     switch (op) {
     case Operation::enter_standby: accepted = machine_.process_event(ENTER_STANDBY{}); break;
@@ -64,10 +106,10 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
     case Operation::reset_error: accepted = machine_.process_event(RESET_ERROR{}); break;
     }
     if (accepted) {
-        if (context_.job != Job::none) { deadline(now); return Reply::accepted; }
+        if (context_.job != Job::none) { deadline(now); return reply(Reply::accepted); }
         if (op == Operation::start_control) control_since_ = now;
         if (op == Operation::reset_error) error_.clear();
-        return Reply::completed;
+        return reply(Reply::completed);
     }
     const bool permitted =
         (machine_.is(sml::state<READY>) && op == Operation::enter_standby) ||
@@ -76,14 +118,19 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
             op == Operation::leave_wheel || op == Operation::enter_standby)) ||
         (machine_.is(sml::state<SAFE>) && (op == Operation::leave_wheel || op == Operation::enter_standby)) ||
         (machine_.is(sml::state<ERROR>) && op == Operation::reset_error);
-    if (!permitted) return Reply::invalid_state;
-    if (!s.executor_idle || !s.settled) return Reply::busy;
+    if (!permitted) return reply(Reply::invalid_state);
+    if (!s.executor_idle || !s.settled) return reply(Reply::busy);
     if (((machine_.is(sml::state<SAFE>) || machine_.is(sml::state<READY>)) && op == Operation::enter_standby && !s.clear_of_wheel) ||
-        (op == Operation::reset_error && !s.fault_cleared)) return Reply::invalid_state;
-    return Reply::capability_unavailable;
+        (op == Operation::reset_error && !s.fault_cleared)) return reply(Reply::invalid_state);
+    return reply(Reply::capability_unavailable);
 }
 void RobotStateMachine::done(std::uint64_t generation, const Snapshot& s) {
-    if (generation != context_.generation || context_.job == Job::none) return;
+    const TransitionLog transition{*this, "Done"};
+    if (generation != context_.generation || context_.job == Job::none) {
+        Logger::debug("Core FSM ignored completion generation={} active_generation={} job={}",
+            generation, context_.generation, static_cast<int>(context_.job));
+        return;
+    }
     snapshot(s);
     if (!s.emergency_known || s.emergency_latched) { emergency("Emergency during completion"); return; }
     if (!s.fault.empty()) { fault(s.fault); return; }
@@ -96,17 +143,33 @@ void RobotStateMachine::failed(std::uint64_t generation, const std::string& why)
     if (context_.job != Job::none && generation == context_.generation) fault(why);
 }
 void RobotStateMachine::fault(const std::string& why) {
+    const TransitionLog transition{*this, "Fault"};
+    if (error_ != why || !machine_.is(sml::state<ERROR>))
+        Logger::error("Core FSM fault state={} job={} generation={} deadline_us={} reason={}",
+            state(), static_cast<int>(context_.job), generation(), deadline_, why);
     error_ = last_error_ = why;
     machine_.process_event(Fault{}); // ERROR updates diagnostics only; no second stop.
 }
 void RobotStateMachine::safetyLost(const std::string& why) {
-    if (machine_.process_event(SafetyLost{})) error_ = last_error_ = why;
+    const TransitionLog transition{*this, "SafetyLost"};
+    if (machine_.process_event(SafetyLost{})) {
+        error_ = last_error_ = why;
+        Logger::warn("Core FSM safety lost reason={} ready={} following_authorized={} "
+            "source_authorized={} input_ready={}", why, context_.ready,
+            context_.following_authorized, context_.source_authorized, context_.input_ready);
+    }
 }
 void RobotStateMachine::emergency(const std::string& why) {
-    if (machine_.process_event(Emergency{})) error_ = last_error_ = why;
+    const TransitionLog transition{*this, "Emergency"};
+    if (machine_.process_event(Emergency{})) {
+        error_ = last_error_ = why;
+        Logger::critical("Core FSM emergency latched generation={} reason={}", generation(), why);
+    }
 }
 std::optional<Task> RobotStateMachine::takeTask() {
     if (!context_.pending_job) return std::nullopt;
+    Logger::info("Core FSM task dispatched job={} generation={} deadline_us={}",
+        static_cast<int>(context_.job), context_.generation, deadline_);
     context_.pending_job = false;
     return Task{context_.job, context_.generation, deadline_};
 }

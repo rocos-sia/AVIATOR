@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "DataLink_direct.hpp"
 #include "Viewer.hpp"
 #include "aviator/GraspTools.hpp"
@@ -9,22 +10,21 @@
 #include <atomic>
 #include <cmath>
 #include <future>
-#include <iostream>
 #include <thread>
 
 namespace {
 volatile std::sig_atomic_t stopping = 0;
 void stop(int) { stopping = 1; }
 void usage() {
-    std::cout << "simulation [--config system.yaml] [--model path] [--headless] [--no-camera]\n"
-                 "  [--camera-config camera.yaml] [--camera-id cockpit] [--no-camera-window]\n"
-                 "  [--preview-endpoint endpoint|off] [--recording-config recording.yaml]\n"
-                 "  [--duration seconds] [--pub-endpoint endpoint] [--sub-endpoint endpoint]\n"
-                 "  [--control-epoch UUID] [--core-publisher id] [--origin-publisher id]\n"
-                 "Arm services: system.yaml manipulator_service; same protocol as manipulator.\n"
-                 "Arm authorization is installed by Core's authorize service.\n"
-                 "Hands bind publisher/epoch on first valid command, like rh56ftp_hand.\n"
-                 "--control-epoch applies to legacy camera command authorization only.\n";
+    aviator::Logger::info("simulation [--config system.yaml] [--model path] [--headless] [--no-camera]\n"
+        "  [--camera-config camera.yaml] [--camera-id cockpit] [--no-camera-window]\n"
+        "  [--preview-endpoint endpoint|off] [--recording-config recording.yaml]\n"
+        "  [--duration seconds] [--pub-endpoint endpoint] [--sub-endpoint endpoint]\n"
+        "  [--control-epoch UUID] [--core-publisher id] [--origin-publisher id]\n"
+        "Arm services: system.yaml manipulator_service; same protocol as manipulator.\n"
+        "Arm authorization is installed by Core's authorize service.\n"
+        "Hands bind publisher/epoch on first valid command, like rh56ftp_hand.\n"
+        "--control-epoch applies to legacy camera command authorization only.");
 }
 } // namespace
 int main(int argc, char** argv) try {
@@ -162,8 +162,7 @@ int main(int argc, char** argv) try {
         if (!ok) {
             static uint64_t last_report = 0;
             if (now - last_report >= 1000000) {
-                std::cerr << "Rejected " << aviator::topic_name(message.topic) << ": " << error
-                          << '\n';
+                aviator::Logger::warn("Rejected {}: {}", aviator::topic_name(message.topic), error);
                 last_report = now;
             }
         }
@@ -200,7 +199,7 @@ int main(int argc, char** argv) try {
     };
     std::signal(SIGINT, stop);
     std::signal(SIGTERM, stop);
-    std::cout << "Simulation model=" << model << " hands=" << hand_publisher << std::endl;
+    aviator::Logger::info("Simulation model={} hands={}", model, hand_publisher);
     // Networking/lifecycle and physics continue while EGL/GLFW renders on the main thread.
     auto server = std::async(std::launch::async, [&] {
         return aviator::runDeviceServer(device, config, settings, options, stopping);
@@ -247,9 +246,9 @@ int main(int argc, char** argv) try {
 } catch (const zmq::error_t& e) {
     if (stopping && e.num() == EINTR)
         return 0;
-    std::cerr << "simulation: " << e.what() << '\n';
+    aviator::Logger::error("simulation: {}", e.what());
     return 1;
 } catch (const std::exception& e) {
-    std::cerr << "simulation: " << e.what() << '\n';
+    aviator::Logger::error("simulation: {}", e.what());
     return 1;
 }

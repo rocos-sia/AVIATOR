@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 // hand_node.cpp — SocketCAN control node for the Inspire robotic hand (因时手).
 //
 // Subscribes to `hand.command` on the AVIATOR ZMQ bus and drives both hands over
@@ -25,7 +26,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -381,12 +381,11 @@ public:
             can_right_.open(cfg_.right_interface);
             can_left_.open(cfg_.left_interface);
         } catch (const std::exception& e) {
-            std::cerr << "CAN open failed: " << e.what() << "\n";
-            std::cerr << "  bring the interfaces up first, e.g.:\n"
-                      << "  sudo ip link set " << cfg_.right_interface
-                      << " up type can bitrate 500000\n"
-                      << "  sudo ip link set " << cfg_.left_interface
-                      << " up type can bitrate 500000\n";
+            aviator::Logger::error("CAN open failed: {}", e.what());
+            aviator::Logger::error("  bring the interfaces up first, e.g.:\n"
+                "  sudo ip link set {} up type can bitrate 500000\n"
+                "  sudo ip link set {} up type can bitrate 500000",
+                cfg_.right_interface, cfg_.left_interface);
             return 1;
         }
         InspireHand hand_right(can_right_);
@@ -397,7 +396,7 @@ public:
         const int result = run_safely(right, left, [&] { control_loop(right, left); });
         can_right_.close();
         can_left_.close();
-        std::cout << "inspire_hand: stopped\n";
+        aviator::Logger::info("inspire_hand: stopped");
         return result;
     }
 
@@ -409,10 +408,10 @@ private:
         try {
             loop();
         } catch (const std::exception& e) {
-            std::cerr << "inspire_hand: runtime failure: " << e.what() << '\n';
+            aviator::Logger::error("inspire_hand: runtime failure: {}", e.what());
             result = 1;
         } catch (...) {
-            std::cerr << "inspire_hand: unknown runtime failure\n";
+            aviator::Logger::error("inspire_hand: unknown runtime failure");
             result = 1;
         }
         last_valid_ = false;
@@ -448,19 +447,14 @@ private:
         pub.set(zmq::sockopt::sndtimeo, 0);
         pub.connect(cfg_.publish_endpoint);
 
-        std::cout << "inspire_hand: right=" << cfg_.right_interface
-                  << "(id " << cfg_.right_id << ")"
-                  << " left=" << cfg_.left_interface
-                  << "(id " << cfg_.left_id << ")\n";
-        std::cout << "inspire_hand: sub=" << cfg_.subscribe_endpoint
-                  << " pub=" << cfg_.publish_endpoint
-                  << " publisher_id=" << cfg_.publisher_id << "\n";
-        std::cout << "inspire_hand: session=" << session_id_
-                  << " clock=" << clock_id_ << "\n";
+        aviator::Logger::info("inspire_hand: right={}(id {}) left={}(id {})",
+            cfg_.right_interface, cfg_.right_id, cfg_.left_interface, cfg_.left_id);
+        aviator::Logger::info("inspire_hand: sub={} pub={} publisher_id={}",
+            cfg_.subscribe_endpoint, cfg_.publish_endpoint, cfg_.publisher_id);
+        aviator::Logger::info("inspire_hand: session={} clock={}", session_id_, clock_id_);
 
-        std::cout << "inspire_hand: feedback=" << cfg_.feedback_rate_hz
-                  << " Hz timeout=" << cfg_.feedback_timeout_us / 1000
-                  << " ms feedback_only=" << (feedback_only_ ? "true" : "false") << std::endl;
+        aviator::Logger::info("inspire_hand: feedback={} Hz timeout={} ms feedback_only={}",
+            cfg_.feedback_rate_hz, cfg_.feedback_timeout_us / 1000, (feedback_only_ ? "true" : "false"));
         InspireHand feedback_right(can_right_), feedback_left(can_left_);
         std::uint64_t state_seq = 0;
         auto last_state = Clock::now();
@@ -510,7 +504,7 @@ private:
 
     void check_watchdog(InspireAction& right, InspireAction& left, std::uint64_t now) {
         if (last_valid_ && guard_.expired(now, cfg_.timeout_us)) {
-            std::cerr << "inspire_hand: command timeout -> safe pose\n";
+            aviator::Logger::warn("inspire_hand: command timeout -> safe pose");
             apply_safe(right, left);
         }
     }
@@ -538,17 +532,17 @@ private:
         HandCommand cmd;
         std::string error;
         if (!decode_hand_command(topic, payload, cmd, error)) {
-            std::cerr << "inspire_hand: reject decode: " << error << "\n";
+            aviator::Logger::warn("inspire_hand: reject decode: {}", error);
             return;
         }
         if (!mode_supported(cmd.mode)) {
-            std::cerr << "inspire_hand: reject unsupported mode=" << cmd.mode << "\n";
+            aviator::Logger::warn("inspire_hand: reject unsupported mode={}", cmd.mode);
             return;
         }
 
         std::vector<int> raw_right, raw_left;
         if (cmd.valid && !prepare_command(cmd, raw_right, raw_left, error)) {
-            std::cerr << "inspire_hand: reject targets: " << error << '\n';
+            aviator::Logger::warn("inspire_hand: reject targets: {}", error);
             return;
         }
         auto candidate = guard_;
@@ -556,7 +550,7 @@ private:
         const auto verdict = candidate.accept(cmd, now, cfg_.timeout_us, clock_id_, why);
         if (verdict != Guard::Verdict::accept) {
             if (verdict != Guard::Verdict::reject_old)
-                std::cerr << "inspire_hand: reject " << why << '\n';
+                aviator::Logger::warn("inspire_hand: reject {}", why);
             return;
         }
         if (!cmd.valid) {
@@ -619,9 +613,8 @@ private:
                     (action->*setters[i])(cfg_.safe_pose[i]);
                 } catch (const std::exception& e) {
                     ok = false;
-                    std::cerr << "inspire_hand: safe pose failed on "
-                              << (action == &right ? "right" : "left") << " channel " << i
-                              << ": " << e.what() << '\n';
+                    aviator::Logger::error("inspire_hand: safe pose failed on {} channel {}: {}",
+                        (action == &right ? "right" : "left"), i, e.what());
                 }
             }
         return ok;
@@ -756,14 +749,14 @@ int main(int argc, char** argv) {
         } else if (arg == "--check-config") {
             check_config = true;
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "usage: " << executable.filename().string()
-                      << " [--config <yaml>] [--feedback-only] [--check-config]\n"
-                      << "  --feedback-only: read positions and publish state; no control or safe-pose writes\n"
-                      << "  --check-config: validate and print configuration without opening CAN or ZMQ\n"
-                      << "  default config: " << default_hand_config(executable).string() << '\n';
+            aviator::Logger::info("usage: {} [--config <yaml>] [--feedback-only] [--check-config]\n"
+                "  --feedback-only: read positions and publish state; no control or safe-pose writes\n"
+                "  --check-config: validate and print configuration without opening CAN or ZMQ\n"
+                "  default config: {}",
+                executable.filename().string(), default_hand_config(executable).string());
             return 0;
         } else {
-            std::cerr << "unknown arg: " << arg << "\n";
+            aviator::Logger::error("unknown arg: {}", arg);
             return 2;
         }
     }
@@ -776,18 +769,18 @@ int main(int argc, char** argv) {
     try {
         cfg = load_config(config_path);
     } catch (const std::exception& e) {
-        std::cerr << "config load failed (" << config_path << "): " << e.what() << "\n";
+        aviator::Logger::error("config load failed ({}): {}", config_path, e.what());
         return 1;
     }
 
     if (check_config) {
-        std::cout << Json{{"config", std::filesystem::absolute(config_path).lexically_normal().string()},
+        aviator::Logger::output("{}", Json{{"config", std::filesystem::absolute(config_path).lexically_normal().string()},
                           {"right_interface", cfg.right_interface}, {"right_id", cfg.right_id},
                           {"left_interface", cfg.left_interface}, {"left_id", cfg.left_id},
                           {"publisher_id", cfg.publisher_id},
                           {"subscribe_endpoint", cfg.subscribe_endpoint},
                           {"publish_endpoint", cfg.publish_endpoint},
-                          {"feedback_only", feedback_only}}.dump(2) << '\n';
+                          {"feedback_only", feedback_only}}.dump(2));
         return 0;
     }
 
@@ -795,7 +788,7 @@ int main(int argc, char** argv) {
         HandNode node(std::move(cfg), feedback_only);
         return node.run();
     } catch (const std::exception& e) {
-        std::cerr << "inspire_hand: startup failed: " << e.what() << '\n';
+        aviator::Logger::error("inspire_hand: startup failed: {}", e.what());
         return 1;
     }
 }

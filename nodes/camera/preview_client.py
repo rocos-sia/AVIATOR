@@ -1,4 +1,13 @@
 """Independent latest-only JPEG PUB for the read-only monitor, never Logger PULL."""
+
+# Shared logging module in source and installed share/aviator layouts.
+import sys as _log_sys
+from pathlib import Path as _LogPath
+_log_sys.path.insert(0, str(_LogPath(__file__).resolve().parents[1] / "common")
+                     if (_LogPath(__file__).resolve().parents[1] / "common").is_dir()
+                     else str(_LogPath(__file__).resolve().parents[2] / "common"))
+from aviator_logger import Logger
+
 import json
 import sys
 import threading
@@ -88,7 +97,7 @@ class PreviewClient:
                     pass  # Optional previews may drop; acquisition/recording continues.
         except Exception as error:
             self.error = error
-            print(f"camera RGB preview disabled: {error}", file=sys.stderr)
+            Logger.warn(f"camera RGB preview disabled: {error}", file=sys.stderr)
         finally:
             pub.close()
             context.term()

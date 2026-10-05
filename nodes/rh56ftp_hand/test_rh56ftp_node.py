@@ -402,7 +402,7 @@ class NodeTests(unittest.TestCase):
     @staticmethod
     def diagnostic_records(output):
         return [json.loads(line.split("rh56ftp_hand: ", 1)[1])
-                for line in output.getvalue().splitlines() if line.startswith("rh56ftp_hand: {")]
+                for line in output.getvalue().splitlines() if "rh56ftp_hand: {" in line]
 
     def test_feedback_diagnostics_identify_stale_side_and_recovery(self):
         node, links = self.make_node()

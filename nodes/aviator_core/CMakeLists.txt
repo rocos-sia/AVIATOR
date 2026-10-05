@@ -6,7 +6,7 @@ if(NOT TARGET sml::sml)
 endif()
 add_library(aviator_robot_state_machine STATIC RobotStateMachine.cpp)
 target_include_directories(aviator_robot_state_machine PUBLIC include)
-target_link_libraries(aviator_robot_state_machine PUBLIC sml::sml)
+target_link_libraries(aviator_robot_state_machine PUBLIC sml::sml aviator_logging)
 # The offline FSM executable deliberately has no robotics/transport dependency.
 add_executable(aviator_core_sml main_sml.cpp)
 target_link_libraries(aviator_core_sml PRIVATE aviator_robot_state_machine)

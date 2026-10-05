@@ -1,8 +1,8 @@
+#include "Logger.hpp"
 #include "aviator/GraspTools.hpp"
 #include "aviator/backend.hpp"
 #include "device_server.hpp"
 #include <cmath>
-#include <iostream>
 using namespace aviator;
 namespace {
 volatile std::sig_atomic_t interrupted = 0;
@@ -27,8 +27,7 @@ int main(int argc, char** argv) try {
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--help") {
-            std::cout
-                << "manipulator [--config system.yaml]\nRokae hardware only; starts disabled.\n";
+            aviator::Logger::info("manipulator [--config system.yaml]\nRokae hardware only; starts disabled.");
             return 0;
         }
         if (arg == "--config" && i + 1 < argc)
@@ -57,12 +56,16 @@ int main(int argc, char** argv) try {
     require(stiffness.size() == 7, "Seven stiffness values required");
     std::copy(stiffness.begin(), stiffness.end(), rk.joint_stiffness.begin());
 
+    Logger::info("Manipulator starting config={} left_ip={} right_ip={} grasp_mode={} (disabled)",
+        file.string(), rk.left_ip, rk.right_ip, rk.grasp_mode);
     auto device = makeRokaeDataLink(path("urdf").string(), rk, geometry);
     device->setWheelReference(settings.initial_wheel.angle, settings.initial_wheel.displacement);
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
-    return runDeviceServer(*device, config, settings, {}, interrupted);
+    const int result = runDeviceServer(*device, config, settings, {}, interrupted);
+    Logger::info("Manipulator stopped result={}", result);
+    return result;
 } catch (const std::exception& e) {
-    std::cerr << "manipulator: " << e.what() << '\n';
+    aviator::Logger::error("manipulator: {}", e.what());
     return 1;
 }

@@ -1,5 +1,14 @@
 """Optional camera diagnostics. Drawing uses a copy of the recording frame."""
 
+# Shared logging module in source and installed share/aviator layouts.
+import sys as _log_sys
+from pathlib import Path as _LogPath
+_log_sys.path.insert(0, str(_LogPath(__file__).resolve().parents[1] / "common")
+                     if (_LogPath(__file__).resolve().parents[1] / "common").is_dir()
+                     else str(_LogPath(__file__).resolve().parents[2] / "common"))
+from aviator_logger import Logger
+
+
 import math
 import os
 import shutil
@@ -103,13 +112,13 @@ class CameraVisualization:
     def _print_diagnostics(self, lines):
         if not sys.stdout.isatty():
             # Keep redirected logs readable, without cursor escape sequences.
-            print(" | ".join(lines), flush=True)
+            Logger.info(" | ".join(lines), flush=True)
             return
         columns = max(1, shutil.get_terminal_size().columns - 1)
         # A fixed-height panel and clipped lines avoid wrapping into extra rows.
         prefix = f"\x1b[{self._terminal_lines}F" if self._terminal_lines else ""
-        sys.stdout.write(prefix + "".join("\x1b[2K" + line[:columns] + "\n" for line in lines))
-        sys.stdout.flush()
+        Logger.output(prefix + "".join("\x1b[2K" + line[:columns] + "\n" for line in lines),
+                      end="", flush=True)
         self._terminal_lines = len(lines)
 
     def check_available(self):

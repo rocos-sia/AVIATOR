@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "assets.hpp"
 #include "monitor.hpp"
 #include "page.hpp"
@@ -17,7 +18,6 @@
 #include <cstring>
 #include <fcntl.h>
 #include <functional>
-#include <iostream>
 #include <map>
 #include <poll.h>
 #include <pthread.h>
@@ -235,16 +235,13 @@ int main(int argc, char** argv) {
         for (int i = 1; i < argc; ++i) {
             const std::string key = argv[i];
             if (key == "--help" || key == "-h") {
-                std::cout << "Usage: aviator_monitor [--bind 0.0.0.0] [--port 8081]\n"
-                             "  [--subscribe tcp://127.0.0.1:5556]\n"
-                             "  [--config monitor.yaml] [--model-root MODELS] [--preview "
-                             "tcp://127.0.0.1:5561|off]\n"
-                             "Monitoring and live configuration Web UI; HTTP listens on all IPv4 "
-                             "interfaces by "
-                             "default.\n"
-                             "Open http://<server-LAN-IP>:PORT/ from another computer; use "
-                             "--bind 127.0.0.1 for local-only access.\n"
-                             "SIGINT/SIGTERM to stop.\n";
+                aviator::Logger::info("Usage: aviator_monitor [--bind 0.0.0.0] [--port 8081]\n"
+                    "  [--subscribe tcp://127.0.0.1:5556]\n"
+                    "  [--config monitor.yaml] [--model-root MODELS] [--preview tcp://127.0.0.1:5561|off]\n"
+                    "Monitoring and live configuration Web UI; HTTP listens on all IPv4 interfaces by default.\n"
+                    "Open http://<server-LAN-IP>:PORT/ from another computer; use --bind 127.0.0.1 for "
+                    "local-only access.\n"
+                    "SIGINT/SIGTERM to stop.");
                 return 0;
             }
             if (++i == argc)
@@ -359,7 +356,7 @@ int main(int argc, char** argv) {
                     }
                 }
             } catch (const std::exception& error) {
-                std::cerr << "monitor receiver: " << error.what() << '\n';
+                aviator::Logger::error("monitor receiver: {}", error.what());
                 stop.store(true);
             }
         });
@@ -378,11 +375,10 @@ int main(int argc, char** argv) {
         const auto local_url = "http://" +
                                (bind_address == "0.0.0.0" ? "127.0.0.1" : bind_address) + ":" +
                                std::to_string(port) + "/";
-        std::cout << "aviator_monitor 已启动，HTTP 监听：" << listen_url << '\n'
-                  << "本机浏览器打开：" << local_url << '\n';
+        aviator::Logger::info("aviator_monitor 已启动，HTTP 监听：{}\n本机浏览器打开：{}", listen_url, local_url);
         if (bind_address == "0.0.0.0")
-            std::cout << "局域网浏览器打开：http://<本机局域网IP>:" << port << "/\n";
-        std::cout << "subscribe=" << endpoint << std::endl;
+            aviator::Logger::info("局域网浏览器打开：http://<本机局域网IP>:{}/", port);
+        aviator::Logger::info("subscribe={}", endpoint);
         aviator::print_startup(
             "aviator_monitor",
             {{"HTTP listen", listen_url},
@@ -462,7 +458,7 @@ int main(int argc, char** argv) {
         }
         return 1; // Receiver failure must not leave a healthy-looking service running.
     } catch (const std::exception& error) {
-        std::cerr << "aviator_monitor: " << error.what() << '\n';
+        aviator::Logger::error("aviator_monitor: {}", error.what());
         return 1;
     }
 }

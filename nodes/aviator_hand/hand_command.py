@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """Manual hand.command publisher. Run on the same host as inspire_hand_node."""
 
+# Shared logging module in source and installed share/aviator layouts.
+import sys as _log_sys
+from pathlib import Path as _LogPath
+_log_sys.path.insert(0, str(_LogPath(__file__).resolve().parents[1] / "common")
+                     if (_LogPath(__file__).resolve().parents[1] / "common").is_dir()
+                     else str(_LogPath(__file__).resolve().parents[2] / "common"))
+from aviator_logger import Logger
+
+
 import argparse
 import os
 import json
@@ -89,7 +98,7 @@ def read_input(lines):
 def run(args, targets):
     commands = Commands()
     if args.dry_run:
-        print(json.dumps(commands.message(targets), ensure_ascii=False, indent=2))
+        Logger.output(json.dumps(commands.message(targets), ensure_ascii=False, indent=2))
         return 0
     try:
         import zmq
@@ -122,16 +131,16 @@ def run(args, targets):
     try:
         pub.connect(args.endpoint)
         sub.connect(args.state_endpoint)
-        print(f"PUB {args.endpoint}; state {args.state_endpoint}", flush=True)
-        print(f"session={commands.session}\nclock={commands.clock}", flush=True)
-        print("首次使用需启动控制模式手节点；本程序重启会生成新 control_epoch，需重启手节点重新授权。", flush=True)
+        Logger.info(f"PUB {args.endpoint}; state {args.state_endpoint}", flush=True)
+        Logger.info(f"session={commands.session}\nclock={commands.clock}", flush=True)
+        Logger.info("首次使用需启动控制模式手节点；本程序重启会生成新 control_epoch，需重启手节点重新授权。", flush=True)
         # Allow subscriptions to propagate before sending any command.
         time.sleep(0.5)
         if args.interactive:
-            print(HELP, flush=True)
+            Logger.info(HELP, flush=True)
             threading.Thread(target=read_input, args=(lines,), daemon=True).start()
         if targets is not None:
-            print(f"目标 left={targets['left']} right={targets['right']}", flush=True)
+            Logger.info(f"目标 left={targets['left']} right={targets['right']}", flush=True)
         start = time.monotonic()
         active_since = start if targets is not None else None
         last_ack = None
@@ -150,23 +159,23 @@ def run(args, targets):
             if line in ("quit", "q", "exit"):
                 return 0
             if line == "help":
-                print(HELP, flush=True)
+                Logger.info(HELP, flush=True)
             elif line == "stop":
                 release()
                 targets = None
                 active_since = last_ack = None
-                print("已发送安全姿态请求；再次运动请先指定 both。", flush=True)
+                Logger.info("已发送安全姿态请求；再次运动请先指定 both。", flush=True)
             elif line:
                 try:
                     updated = update_targets(line, targets)
                 except ValueError as exc:
-                    print(f"输入错误：{exc}", flush=True)
+                    Logger.info(f"输入错误：{exc}", flush=True)
                 else:
                     if targets is None:
                         active_since = now
                         last_ack = None
                     targets = updated
-                    print(f"目标 left={targets['left']} right={targets['right']}", flush=True)
+                    Logger.info(f"目标 left={targets['left']} right={targets['right']}", flush=True)
 
             if targets is not None and now >= next_send:
                 send(targets)
@@ -197,7 +206,7 @@ def run(args, targets):
                     last_ack = now
                     if now - last_status >= 1:
                         hands = state.get("hands") or {}
-                        print(f"已接受 seq={accepted.get('sequence')} 实际位置 "
+                        Logger.info(f"已接受 seq={accepted.get('sequence')} 实际位置 "
                               f"left={hands.get('left', {}).get('drive_position_raw')} "
                               f"right={hands.get('right', {}).get('drive_position_raw')} "
                               f"反馈有效={state.get('valid')}", flush=True)
@@ -249,7 +258,7 @@ def main():
     try:
         return run(args, targets)
     except (RuntimeError, OSError) as exc:
-        print(f"hand_command: {exc}", file=sys.stderr)
+        Logger.error(f"hand_command: {exc}", file=sys.stderr)
         return 1
 
 

@@ -1,3 +1,12 @@
+find_package(spdlog REQUIRED CONFIG)
+add_library(aviator_logging INTERFACE)
+target_compile_features(aviator_logging INTERFACE cxx_std_17)
+target_include_directories(aviator_logging INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  $<INSTALL_INTERFACE:include/aviator>)
+target_link_libraries(aviator_logging INTERFACE spdlog::spdlog)
+install(FILES Logger.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/aviator)
+
 find_package(Threads REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED CONFIG)
 find_path(AVIATOR_ZMQ_INCLUDE_DIR zmq.h REQUIRED)
@@ -13,7 +22,7 @@ target_compile_features(aviator_protocol PUBLIC cxx_std_17)
 target_include_directories(aviator_protocol PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<INSTALL_INTERFACE:include/aviator>)
-target_link_libraries(aviator_protocol PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(aviator_protocol PUBLIC nlohmann_json::nlohmann_json aviator_logging)
 
 add_library(aviator_transport transport.cpp)
 target_compile_features(aviator_transport PUBLIC cxx_std_17)
@@ -73,3 +82,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(${target} PRIVATE $<$<CONFIG:Debug>:-O2>)
   endforeach()
 endif()
+
+# Small ctypes bridge: Python nodes need no third-party Python logging package.
+add_library(aviator_logging_python SHARED logger_bridge.cpp)
+target_link_libraries(aviator_logging_python PRIVATE aviator_logging)
+install(TARGETS aviator_logging_python LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(FILES aviator_logger.py DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/common COMPONENT aviator_hand)

@@ -1,9 +1,10 @@
+#include "Logger.hpp"
 #include "rokae_sdk.hpp"
 #include <rokae/utility.h>
 #include <rokae/robot.h>
 #include <stdexcept>
 #include <vector>
-#include <iostream>
+#include <sstream>
 #include <mutex>
 #include <cmath>
 #include <algorithm>
@@ -48,15 +49,15 @@ public:
         const std::string prefix = "[Rokae " + endpoint + "] ";
         auto printState = [&](const char *name, auto state, const std::error_code &ec,
                               std::initializer_list<const char *> labels) {
-            std::cerr << prefix << name << '=';
-            if (ec) std::cerr << "query failed: " << ec.message() << " [" << ec.category().name() << ':' << ec.value() << ']';
-            else {
+            if (ec) {
+                aviator::Logger::error("{}{} query failed: {} [{}:{}]", prefix, name,
+                                       ec.message(), ec.category().name(), ec.value());
+            } else {
                 const int value = static_cast<int>(state);
-                if (value >= 0 && static_cast<size_t>(value) < labels.size()) std::cerr << *(labels.begin() + value);
-                else std::cerr << "unknown";
-                std::cerr << '(' << value << ')';
+                const char* label = value >= 0 && static_cast<size_t>(value) < labels.size()
+                    ? *(labels.begin() + value) : "unknown";
+                aviator::Logger::error("{}{}={}({})", prefix, name, label, value);
             }
-            std::cerr << std::endl;
         };
         std::error_code ec;
         const auto power = robot.powerState(ec);
@@ -72,24 +73,25 @@ public:
         ec.clear();
         const auto logs = robot.queryControllerLog(10, {rokae::LogInfo::warning, rokae::LogInfo::error}, ec);
         if (ec) {
-            std::cerr << prefix << "queryControllerLog failed: " << ec.message()
-                      << " [" << ec.category().name() << ':' << ec.value() << ']' << std::endl;
+            aviator::Logger::error("{}queryControllerLog failed: {} [{}:{}]",
+                prefix, ec.message(), ec.category().name(), ec.value());
             return;
         }
-        std::cerr << prefix << "Recent controller warnings/errors (may include older events): " << logs.size() << std::endl;
+        aviator::Logger::error("{}Recent controller warnings/errors (may include older events): {}",
+            prefix, logs.size());
         for (const auto &log : logs)
-            std::cerr << prefix << "controller_log id=" << log.id << " time=" << log.timestamp
-                      << " content=" << log.content << " repair=" << log.repair << std::endl;
+            aviator::Logger::error("{}controller_log id={} time={} content={} repair={}",
+                prefix, log.id, log.timestamp, log.content, log.repair);
     }
     void stop() {
         std::exception_ptr error;
         auto attempt = [&](const char *action, auto fn) {
             try { fn(); }
             catch (const std::exception &e) {
-                std::cerr << "[Rokae " << endpoint << "] " << action << ": " << e.what() << std::endl;
+                aviator::Logger::error("[Rokae {}] {}: {}", endpoint, action, e.what());
                 if (!error) error = std::current_exception();
             } catch (...) {
-                std::cerr << "[Rokae " << endpoint << "] " << action << ": unknown exception" << std::endl;
+                aviator::Logger::error("[Rokae {}] {}: unknown exception", endpoint, action);
                 if (!error) error = std::current_exception();
             }
         };
@@ -106,7 +108,7 @@ public:
         if (!timing_reported && callbacks.load() > 0) {
             timing_reported = true;
             // 只在停止周期线程后输出；不在实时回调中打印。
-            std::cerr << "[Rokae " << endpoint << "] " << timing() << std::endl;
+            aviator::Logger::error("[Rokae {}] {}", endpoint, timing());
         }
         if (error) std::rethrow_exception(error);
     }
@@ -209,7 +211,7 @@ void RokaeArm::prepare() {
         check(ec, stage);
         s.prepared = true;
     } catch (...) {
-        std::cerr << "[Rokae " << s.endpoint << "] prepare stage=" << stage << std::endl;
+        aviator::Logger::info("[Rokae {}] prepare stage={}", s.endpoint, stage);
         auto error = std::current_exception();
         try { s.stop(); } catch (...) {}
         std::rethrow_exception(error);
@@ -285,10 +287,10 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
         for (double q : initial_position)
             if (!std::isfinite(q)) throw std::runtime_error("Nonfinite startup joint position");
         initialize_target(initial_position);
-        std::cerr << "[Rokae " << s.endpoint << "] initial_position_rad source="
-                  << (realtime_position ? "jointPos_m" : "jointPos fallback") << ':';
-        for (double q : initial_position) std::cerr << ' ' << q;
-        std::cerr << std::endl;
+        std::ostringstream position;
+        for (double q : initial_position) position << ' ' << q;
+        aviator::Logger::info("[Rokae {}] initial_position_rad source={}:{}", s.endpoint,
+            realtime_position ? "jointPos_m" : "jointPos fallback", position.str());
 
         s.moving = true;
         stage = "startMove(jointImpedance)";
@@ -299,11 +301,12 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
     } catch (...) {
         auto error = std::current_exception();
         try { std::rethrow_exception(error); }
-        catch (const std::exception &e) { std::cerr << "[Rokae " << s.endpoint << "] start stage=" << stage << ": " << e.what() << std::endl; }
-        catch (...) { std::cerr << "[Rokae " << s.endpoint << "] start stage=" << stage << ": unknown exception" << std::endl; }
+        catch (const std::exception &e) { aviator::Logger::error("[Rokae {}] start stage={}: {}",
+            s.endpoint, stage, e.what()); }
+        catch (...) { aviator::Logger::error("[Rokae {}] start stage={}: unknown exception", s.endpoint, stage); }
         if (std::string(stage) == "startMove(jointImpedance)") {
             try { s.printStartFailure(); }
-            catch (...) { std::cerr << "[Rokae " << s.endpoint << "] Controller diagnostics unavailable" << std::endl; }
+            catch (...) { aviator::Logger::error("[Rokae {}] Controller diagnostics unavailable", s.endpoint); }
         }
         try { s.stop(); } catch (...) {}
         std::rethrow_exception(error);

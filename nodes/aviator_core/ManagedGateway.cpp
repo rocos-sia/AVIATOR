@@ -1,6 +1,6 @@
+#include "Logger.hpp"
 #include "ManagedGateway.hpp"
 #include <algorithm>
-#include <iostream>
 
 namespace aviator {
 ManagedGateway::ManagedGateway(const MotionConfig& config, const ManagedGatewayOptions& options) {
@@ -23,8 +23,8 @@ ManagedGateway::ManagedGateway(const MotionConfig& config, const ManagedGatewayO
     router_.set(zmq::sockopt::maxmsgsize, static_cast<int64_t>(max_payload_bytes));
     router_.set(zmq::sockopt::router_mandatory, 1);
     router_.bind(options.endpoint);
-    std::cout << "Managed Gateway ROUTER bind=" << options.endpoint
-              << " source=flight_gateway (no session authorization)" << std::endl;
+    aviator::Logger::info("Managed Gateway ROUTER bind={} source=flight_gateway (no session authorization)",
+        options.endpoint);
 }
 
 void ManagedGateway::receiveInput() {
@@ -42,7 +42,7 @@ void ManagedGateway::receiveInput() {
             if (!candidate.accept(message, monotonic_us(), error)) continue;
             policy_ = std::move(candidate_policy);
             input_ = std::move(candidate);
-            std::cout << "Received valid flight_gateway input" << std::endl;
+            aviator::Logger::info("Received valid flight_gateway input");
         } else if (!input_->accept(message, monotonic_us(), error)) continue;
         effective_sample_ = message.header.sample_mono_us;
         if (message.body.contains("input_state")) {
@@ -56,13 +56,19 @@ void ManagedGateway::receiveInput() {
     }
     const bool current = fresh();
     if (current != was_fresh_) {
-        std::cout << "Managed flight input: " << (current ? "valid" : "stale/invalid") << std::endl;
+        aviator::Logger::log(current ? spdlog::level::info : spdlog::level::warn,
+            "Managed flight input={} sample_mono_us={} timeout_us={}",
+            current ? "valid" : "stale/invalid", effective_sample_, policy_.timeout_us);
         was_fresh_ = current;
     }
 }
 
 Json ManagedGateway::request(Aviator& robot, const std::string& session, const Json& req) {
     const auto reply = [&](const std::string& status, const std::string& reason, uint64_t error = 0) {
+        Logger::log(status == "REJECTED" ? spdlog::level::warn : spdlog::level::info,
+            "Core service request_id={} operation={} status={} state={} reason={}",
+            req.at("request_id").dump(), req.at("operation").dump(), status,
+            robot.GetSystemState(), reason);
         return make_service_reply(req, "aviator_core", session, status, error,
             {{"reason", reason}, {"state", robot.GetSystemState()},
              {"expected_clock_id", policy_.clock_id},
@@ -106,8 +112,7 @@ Json ManagedGateway::request(Aviator& robot, const std::string& session, const J
         const bool completed = result == fsm::Reply::completed;
         entry->second.reply = reply(accepted ? "ACCEPTED" : completed ? "COMPLETED" : "REJECTED",
                                     fsm::replyName(result), accepted || completed ? 0 : 1);
-        std::cout << "Gateway " << op << " " << fsm::replyName(result)
-                  << " " << robot.GetSystemState() << std::endl;
+        aviator::Logger::info("Gateway {} {} {}", op, fsm::replyName(result), robot.GetSystemState());
         break;
     }
     return entry->second.reply;
@@ -133,7 +138,7 @@ void ManagedGateway::receiveRequests(Aviator& robot, const std::string& session)
             if (router_.send(zmq::buffer(route_), zmq::send_flags::sndmore | zmq::send_flags::dontwait))
                 router_.send(zmq::buffer(response), zmq::send_flags::dontwait);
         } catch (const std::exception& e) {
-            std::cerr << "Gateway service rejected/undelivered: " << e.what() << '\n';
+            aviator::Logger::warn("Gateway service rejected/undelivered: {}", e.what());
         }
     }
 }

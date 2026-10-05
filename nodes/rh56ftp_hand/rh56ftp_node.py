@@ -6,6 +6,15 @@ node only uses its non-tactile ``read_state`` path and publishes the result as
 AVIATOR ``hand.state`` messages.  One RH56FTP device can be used as the right
 hand; pass ``--left-host`` as well when two devices are present.
 """
+
+# Shared logging module in source and installed share/aviator layouts.
+import sys as _log_sys
+from pathlib import Path as _LogPath
+_log_sys.path.insert(0, str(_LogPath(__file__).resolve().parents[1] / "common")
+                     if (_LogPath(__file__).resolve().parents[1] / "common").is_dir()
+                     else str(_LogPath(__file__).resolve().parents[2] / "common"))
+from aviator_logger import Logger
+
 import argparse
 import json
 import math
@@ -207,7 +216,9 @@ class DiagnosticLog:
                 record["reason"] = reason
             if suppressed:
                 record["suppressed"] = suppressed
-            print("rh56ftp_hand: " + json.dumps(record, ensure_ascii=False, allow_nan=False),
+            emit = (Logger.error if event.endswith("_failed") else
+                    Logger.info if event in ("health", "feedback_status_changed") else Logger.warn)
+            emit("rh56ftp_hand: " + json.dumps(record, ensure_ascii=False, allow_nan=False),
                   file=sys.stderr, flush=True)
 
 
@@ -1093,5 +1104,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (RuntimeError, OSError, ValueError) as exc:
-        print(f"rh56ftp_hand: {exc}", file=sys.stderr)
+        Logger.error(f"rh56ftp_hand: {exc}", file=sys.stderr)
         raise SystemExit(1)

@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """RealSense fiducial node: publish detections and send raw frames to Logger."""
 
+# Shared logging module in source and installed share/aviator layouts.
+import sys as _log_sys
+from pathlib import Path as _LogPath
+_log_sys.path.insert(0, str(_LogPath(__file__).resolve().parents[1] / "common")
+                     if (_LogPath(__file__).resolve().parents[1] / "common").is_dir()
+                     else str(_LogPath(__file__).resolve().parents[2] / "common"))
+from aviator_logger import Logger
+
+
 import argparse
 import hashlib
 import json
@@ -100,12 +109,12 @@ def resolve_device(context, model, serial):
             name = d.get_info(rs.camera_info.name)
             if model.lower() in name.lower():
                 chosen = d.get_info(rs.camera_info.serial_number)
-                print(f"aviator_camera: 按型号 {model!r} 选中 {name} ({chosen})")
+                Logger.info(f"aviator_camera: 按型号 {model!r} 选中 {name} ({chosen})")
                 return chosen
         present = [d.get_info(rs.camera_info.name) for d in devices]
         raise RuntimeError(f"未找到型号包含 {model!r} 的设备；已连接: {present}")
     chosen = devices[0].get_info(rs.camera_info.serial_number)
-    print(f"aviator_camera: 未指定型号/序列号，使用第一台 "
+    Logger.info(f"aviator_camera: 未指定型号/序列号，使用第一台 "
           f"{devices[0].get_info(rs.camera_info.name)} ({chosen})")
     return chosen
 
@@ -344,18 +353,18 @@ def main(argv):
         if started:
             pipeline.stop()
         raise
-    print(f"aviator_camera: {device_name} ({device_serial}) {width}x{height}@{fps}")
-    print(f"aviator_camera: detector={detector.kind} settings={detector_settings}")
-    print(f"aviator_camera: endpoint={args.endpoint} bind={args.bind}")
-    print(f"aviator_camera: steering_wheel_calibration={steering_wheel.path} "
+    Logger.info(f"aviator_camera: {device_name} ({device_serial}) {width}x{height}@{fps}")
+    Logger.info(f"aviator_camera: detector={detector.kind} settings={detector_settings}")
+    Logger.info(f"aviator_camera: endpoint={args.endpoint} bind={args.bind}")
+    Logger.info(f"aviator_camera: steering_wheel_calibration={steering_wheel.path} "
           f"enabled={steering_wheel.enabled}")
-    print(f"aviator_camera: show={visual.show} print_pose={visual.print_pose} "
+    Logger.info(f"aviator_camera: show={visual.show} print_pose={visual.print_pose} "
           f"pose_print_interval={visual.interval}s")
-    print(f"aviator_camera: session={session} clock={clock} warmup_s={warmup_s} "
+    Logger.info(f"aviator_camera: session={session} clock={clock} warmup_s={warmup_s} "
           f"recording={'enabled' if recorder.enabled else 'disabled'} "
           f"record_depth={recorder.record_depth}")
 
-    print(f"aviator_camera: RGB preview={preview.endpoint if preview.enabled else 'disabled'}")
+    Logger.info(f"aviator_camera: RGB preview={preview.endpoint if preview.enabled else 'disabled'}")
     warmup_until = monotonic_us() + int(warmup_s * 1e6)
     sequence = 0
     frame_id = 0
@@ -382,7 +391,7 @@ def main(argv):
                         record_sources.append(
                             ("depth", depth_frame, np.asanyarray(depth_frame.get_data())))
                     else:
-                        print("aviator_camera DEGRADED: missing depth frame", file=sys.stderr)
+                        Logger.warn("aviator_camera DEGRADED: missing depth frame", file=sys.stderr)
                 for stream, sensor_frame, pixels in record_sources:
                     metadata, data = make_record_frame(
                         args.camera_id, session, clock, config_id, frame_id,
@@ -424,7 +433,7 @@ def main(argv):
             pub.close()
             context.term()
             signal.signal(signal.SIGTERM, old_sigterm)
-            print("aviator_camera: stopped")
+            Logger.info("aviator_camera: stopped")
 
 
 if __name__ == "__main__":

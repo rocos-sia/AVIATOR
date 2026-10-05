@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "camera_output.hpp"
 #include "transport.hpp"
 #include <yaml-cpp/yaml.h>
@@ -8,7 +9,6 @@ extern "C" {
 }
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 #include <stdexcept>
 
 namespace simulation {
@@ -126,10 +126,9 @@ CameraOutput::CameraOutput(PreviewSettings preview, const std::string& recording
         thread_.join();
         throw;
     }
-    std::cout << "Camera images: preview=" << (preview_.enabled ? preview_.endpoint : "off")
-              << " recording="
-              << (recording_.mode != "disabled" ? recording_.record_endpoint : "off")
-              << " camera_id=" << camera_id_ << '\n';
+    aviator::Logger::info("Camera images: preview={} recording={} camera_id={}",
+        (preview_.enabled ? preview_.endpoint : "off"),
+        (recording_.mode != "disabled" ? recording_.record_endpoint : "off"), camera_id_);
 }
 CameraOutput::~CameraOutput() {
     {
@@ -144,7 +143,7 @@ CameraOutput::~CameraOutput() {
     if (thread_.joinable())
         thread_.join();
     if (recording_.mode != "disabled")
-        std::cout << "Camera recording: queued-to-zmq=" << sent_ << " dropped=" << dropped_ << '\n';
+        aviator::Logger::info("Camera recording: queued-to-zmq={} dropped={}", sent_, dropped_);
 }
 void CameraOutput::submit(const Camera& camera, const aviator::Message& detection) {
     if (!thread_.joinable() || failed_)
@@ -275,7 +274,7 @@ void CameraOutput::run(std::promise<void>& ready) {
             try {
                 throw;
             } catch (const std::exception& e) {
-                std::cerr << "Camera image transmission disabled: " << e.what() << '\n';
+                aviator::Logger::error("Camera image transmission disabled: {}", e.what());
             }
         }
     }

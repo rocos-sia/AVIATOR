@@ -4,6 +4,15 @@ CameraPacket protobuf encoding has two length-delimited fields (see checked-in
 .proto); no generated Python bindings or image Base64 conversion are needed.
 Logger owns codec selection. This module never touches the business PUB socket.
 """
+
+# Shared logging module in source and installed share/aviator layouts.
+import sys as _log_sys
+from pathlib import Path as _LogPath
+_log_sys.path.insert(0, str(_LogPath(__file__).resolve().parents[1] / "common")
+                     if (_LogPath(__file__).resolve().parents[1] / "common").is_dir()
+                     else str(_LogPath(__file__).resolve().parents[2] / "common"))
+from aviator_logger import Logger
+
 import json
 import queue
 import threading
@@ -113,6 +122,6 @@ class RecordingClient:
         if self._thread:
             self._thread.join()
         if self.enabled:
-            print(f"camera recording: queued-to-zmq={self.sent}, dropped={self.dropped}")
+            Logger.info(f"camera recording: queued-to-zmq={self.sent}, dropped={self.dropped}")
             if self.error:
                 raise RuntimeError("camera recording sender failed") from self.error

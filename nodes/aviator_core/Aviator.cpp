@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "aviator/Aviator.hpp"
 #include "ServoPlanner.hpp"
 #include "aviator/Kinematics.hpp"
@@ -13,7 +14,6 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
-#include <iostream>
 #include <iomanip>
 #include <sstream>
 #include <mutex>
@@ -79,8 +79,7 @@ class Aviator::Impl {
         // 加载配置
         YAML::Node config = YAML::LoadFile(config_file_);
         collision_check_enabled_ = config["collision_check_enabled"].as<bool>(true);
-        std::cout << "Planning collision checks: "
-                  << (collision_check_enabled_ ? "enabled" : "disabled") << std::endl;
+        aviator::Logger::info("Planning collision checks: {}", (collision_check_enabled_ ? "enabled" : "disabled"));
 
         home_position_tolerance_ = config["home_position_tolerance"].as<double>(0.02);
         require(std::isfinite(home_position_tolerance_) && home_position_tolerance_ > 0 && home_position_tolerance_ <= 0.15,
@@ -524,7 +523,11 @@ class Aviator::Impl {
     }
 
     std::string GetState() const { std::lock_guard<std::mutex> lock(status_mutex_); return state_; }
-    void setState(const std::string &value) { std::lock_guard<std::mutex> lock(status_mutex_); state_ = value; }
+    void setState(const std::string &value) {
+        std::lock_guard<std::mutex> lock(status_mutex_);
+        if (state_ != value) aviator::Logger::info("Core executor from={} to={}", state_, value);
+        state_ = value;
+    }
 
   private:
     struct Sample {
@@ -546,6 +549,8 @@ class Aviator::Impl {
 
     void setMotionError(const std::string &error) {
         std::lock_guard<std::mutex> lock(status_mutex_);
+        if (!error.empty() && motion_error_ != error)
+            aviator::Logger::error("Core executor state={} motion failed: {}", state_, error);
         motion_error_ = error;
     }
 
@@ -633,6 +638,8 @@ class Aviator::Impl {
             std::lock_guard<std::mutex> mailbox(servo_mutex_);
             std::lock_guard<std::mutex> status(status_mutex_);
             servo_active_ = false;
+            if (state_ != next_state)
+                aviator::Logger::info("Core Servo from={} to={} reason={}", state_, next_state, motion_error_);
             state_ = next_state;
             control.unlock();
         }

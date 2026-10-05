@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "aviator/Aviator.hpp"
 #include "aviator/Kinematics.hpp"
 #include "aviator/CollisionChecker.hpp"
@@ -9,7 +10,6 @@
 #include <unistd.h>
 #include <yaml-cpp/yaml.h>
 #include <filesystem>
-#include <iostream>
 #include <memory>
 #include <thread>
 #include <future>
@@ -34,9 +34,9 @@ int main(int argc, char **argv) {
             else if (arg == "--headless") {} // Window belongs to manipulator.
             else if (arg == "--config" && i + 1 < argc) config = argv[++i];
             else if (arg == "--help") {
-                std::cout << "aviator_core [--config <system.yaml>] [--demo | --servo-demo]\n"
-                             "Offline state-machine testing: use aviator_core_sml.\n"
-                             "Start aviator_bus and manipulator first. Backend is configured in robot.yaml.\n";
+                aviator::Logger::info("aviator_core [--config <system.yaml>] [--demo | --servo-demo]\n"
+                    "Offline state-machine testing: use aviator_core_sml.\n"
+                    "Start aviator_bus and manipulator first. Backend is configured in robot.yaml.");
                 return 0;
             } else throw std::runtime_error("Unknown or incomplete option: " + arg);
         }
@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
         robot.init();
         std::signal(SIGINT, interrupt);
         std::signal(SIGTERM, interrupt);
-        std::cout << "Core connected through ZMQ | config: " << settings.system << std::endl;
+        aviator::Logger::info("Core connected through ZMQ | config: {}", settings.system.string());
         std::atomic<bool> exit{false}, task_done{false};
         int result = 0;
         // 阻塞动作在工作线程执行，主线程维护任务心跳并处理退出。
@@ -56,13 +56,13 @@ int main(int argc, char **argv) {
             try {
                 if (demo || servo_demo) {
                     robot.enable();
-                    std::cout << "DEMO approaching handles" << std::endl;
+                    aviator::Logger::info("DEMO approaching handles");
                     robot.approachHandles();
                     status(robot);
-                    std::cout << "robot.approachHandles() done" << std::endl;
+                    aviator::Logger::info("robot.approachHandles() done");
                     robot.lockHandles();
                     status(robot);
-                    std::cout << "robot.lockHandles() done" << std::endl;
+                    aviator::Logger::info("robot.lockHandles() done");
                     if (demo) {
                         // 每行依次为：转角 rad、推拉 m、速度倍率 v。
                         for (const auto target : {std::array<double, 3>{.87266, 0, .8},
@@ -71,8 +71,7 @@ int main(int argc, char **argv) {
                                                   {0, -.170, .8},
                                                   {0, 0, .8}}) {
                             if (exit) break;
-                            std::cout << "DEMO target angle=" << target[0]
-                                      << " displacement=" << target[1] << std::endl;
+                            aviator::Logger::info("DEMO target angle={} displacement={}", target[0], target[1]);
                             robot.moveWheel(target[0], target[1], target[2]);
                             status(robot);
                         }
@@ -98,12 +97,12 @@ int main(int argc, char **argv) {
 
                     robot.unlockHandles();
                     robot.disable();
-                    std::cout << "Demo completed" << std::endl;
+                    aviator::Logger::info("Demo completed");
                 } else {
                     interactive(robot, exit);
                 }
             } catch (const std::exception &e) {
-                std::cerr << "Execution failed: " << e.what() << std::endl;
+                aviator::Logger::error("Execution failed: {}", e.what());
                 robot.stop(); result = 1;
             }
             exit = true;
@@ -127,26 +126,25 @@ int main(int argc, char **argv) {
                 connection->heartbeat();
             cleanup.get();
         } catch (const std::exception& e) {
-            std::cerr << "Shutdown: " << e.what() << std::endl;
+            aviator::Logger::error("Shutdown: {}", e.what());
         }
         return result;
     } catch (const std::exception &e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        aviator::Logger::error("Error: {}", e.what());
         return 1;
     }
 }
 
 static void status(aviator::Aviator &robot) {
     const auto s = robot.GetStatus();
-    std::cout << "state=" << robot.GetState() << " angle=" << s.angle
-              << " displacement=" << s.displacement << " locked=" << s.locked
-              << " mode=" << (s.open_loop ? "open_loop" : "simulation")
-              << " error=" << s.motion_error << " fault=" << s.fault << std::endl;
+    aviator::Logger::info("state={} angle={} displacement={} locked={} mode={} error={} fault={}",
+        robot.GetState(), s.angle, s.displacement, s.locked, (s.open_loop ? "open_loop" : "simulation"),
+        s.motion_error, s.fault);
 }
 
 static void interactive(aviator::Aviator &robot, std::atomic<bool> &exit) {
-    std::cout << "enable | disable | approach | lock | unlock | reset | status | stop | quit\n"
-                 "wheel/servo <angle_rad> <displacement_m> [v=0.5]\n";
+    aviator::Logger::info("enable | disable | approach | lock | unlock | reset | status | stop | quit\n"
+        "wheel/servo <angle_rad> <displacement_m> [v=0.5]");
     std::atomic<bool> busy{false};
     std::thread action;
     std::string pending;
@@ -204,14 +202,14 @@ static void interactive(aviator::Aviator &robot, std::atomic<bool> &exit) {
                     else if (command == "unlock") robot.unlockHandles();
                     else if (command == "reset") robot.resetFault();
                     else if (command == "wheel") robot.moveWheel(angle, displacement, v);
-                    std::cout << "[ok] " << robot.GetState() << std::endl;
+                    aviator::Logger::info("[ok] {}", robot.GetState());
                 } catch (const std::exception &e) {
-                    std::cerr << "[error] " << e.what() << std::endl;
+                    aviator::Logger::error("[error] {}", e.what());
                 }
                 busy = false;
             });
         } catch (const std::exception &e) {
-            std::cerr << "[error] " << e.what() << std::endl;
+            aviator::Logger::error("[error] {}", e.what());
         }
     }
     if (exit) robot.stop();

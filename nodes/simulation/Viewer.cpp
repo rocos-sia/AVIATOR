@@ -1,5 +1,5 @@
+#include "Logger.hpp"
 #include "Viewer.hpp"
-#include <iostream>
 #include <stdexcept>
 
 namespace aviator {
@@ -22,8 +22,8 @@ Viewer::Viewer(mjModel *model) : model_(model) {
     glfwSetScrollCallback(window_, scroll);
     glfwSetKeyCallback(window_, key);
     glfwSetWindowFocusCallback(window_, focus);
-    std::cout << "Camera: left drag rotate | right drag pan | Shift changes drag axis | "
-                 "wheel/middle drag zoom | R reset view | Esc quit\n";
+    aviator::Logger::info("Camera: left drag rotate | right drag pan | Shift changes drag axis | wheel/middle drag "
+        "zoom | R reset view | Esc quit");
 }
 Viewer::~Viewer() {
     glfwMakeContextCurrent(window_);

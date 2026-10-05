@@ -1,7 +1,7 @@
+#include "Logger.hpp"
 #include "device_server.hpp"
 #include <atomic>
 #include <cmath>
-#include <iostream>
 #include <map>
 #include <thread>
 using namespace aviator;
@@ -352,7 +352,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
             } catch (const std::exception& stop_error) {
                 state.error += "; " + std::string(stop_error.what());
             }
-            std::cerr << "manipulator: " << state.error << std::endl;
+            Logger::error("manipulator: {}", state.error);
             if (!key.empty()) {
                 std::lock_guard<std::mutex> lock(shared.mutex);
                 auto& record = shared.operations.at(key);
@@ -371,7 +371,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
         stop();
         disable();
     } catch (const std::exception& e) {
-        std::cerr << "manipulator shutdown: " << e.what() << '\n';
+        Logger::error("manipulator shutdown: {}", e.what());
     }
 }
 } // namespace
@@ -418,8 +418,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
     ReceiveState receive_state;
     std::unique_ptr<InputGuard> guard;
     uint64_t seq = 0, next = 0, rejected = 0;
-    std::cout << "READY " << options.name << " session=" << session << " service=" << config.service
-              << std::endl;
+    Logger::info("READY {} session={} service={}", options.name, session, config.service);
     while (!interrupted) {
         DeviceState state;
         ArmFeedback feedback;
@@ -642,7 +641,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
             } catch (const std::exception& e) {
                 ++rejected;
                 if (rejected < 5)
-                    std::cerr << "Rejected arm.command: " << e.what() << '\n';
+                    Logger::warn("Rejected arm.command: {}", e.what());
             }
         }
         const auto now = monotonic_us();

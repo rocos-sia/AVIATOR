@@ -1,3 +1,4 @@
+#include "Logger.hpp"
 #include "aviator/RobotStateMachine.hpp"
 #include <charconv>
 #include <iostream>
@@ -39,17 +40,23 @@ const char* jobName(fsm::Job job) {
     }
 }
 void help() {
-    std::cout << "aviator_core_sml [--demo | --help]\n"
+    aviator::Logger::info("aviator_core_sml [--demo | --help]\n"
         "OFFLINE ONLY: no config, safety file, ZMQ, robot or hand connection.\n"
         "Actual SML transitions; all guards/actions/time below are simulated.\n"
         "ENTER_STANDBY | GRASP_WHEEL | START_CONTROL | EXIT_CONTROL | LEAVE_WHEEL | RESET_ERROR\n"
-        "done: complete current mock task | fail: fail current task | late_done: replay last task completion\n"
+        "done: complete current mock task | fail: fail current task | late_done: replay last task "
+        "completion\n"
         "fault | safety_lost | emergency: inject a simulated event\n"
         "set <guard> <0|1>: change a mock guard and immediately supervise\n"
         "advance <milliseconds>: advance virtual time (0..3600000); no real sleep\n"
-        "status | help | quit\nGuards:";
-    for (const auto& [name, unused] : fields) std::cout << ' ' << name;
-    std::cout << "\nBoot starts INITIALIZING; enter done to finish mock initialization into READY; ENTER_STANDBY then done simulates home.\n";
+        "status | help | quit\n"
+        "Guards:");
+    std::ostringstream names;
+    for (const auto& [name, unused] : fields) names << ' ' << name;
+    aviator::Logger::info("Guards:{}", names.str());
+    aviator::Logger::info("\n"
+        "Boot starts INITIALIZING; enter done to finish mock initialization into READY; "
+        "ENTER_STANDBY then done simulates home.");
 }
 
 // Only the real transition table is shared with Core. No Aviator/RemoteLink object
@@ -100,15 +107,15 @@ public:
         const std::string before = machine_.state();
         ++now_;
         for (const auto& [name, op] : operations) if (command == name) {
-            std::cout << "[guards] "; guards();
+            aviator::Logger::info("[guards] "); guards();
             const auto reply = machine_.request(op, snapshot_, now_);
-            std::cout << "[reply] " << name << ' ' << fsm::replyName(reply) << '\n';
+            aviator::Logger::info("[reply] {} {}", name, fsm::replyName(reply));
             effects(command, before);
             return true;
         }
         if (command == "done" || command == "fail") {
             if (!active_) {
-                std::cout << "[mock] no active task\n";
+                aviator::Logger::info("[mock] no active task");
             } else {
                 const auto task = *active_;
                 last_task_ = task;
@@ -123,7 +130,7 @@ public:
             }
         } else if (command == "late_done") {
             if (last_task_) machine_.done(last_task_->generation, snapshot_);
-            else std::cout << "[mock] no previous task\n";
+            else aviator::Logger::info("[mock] no previous task");
         } else if (command == "fault") machine_.fault("Injected mock fault");
         else if (command == "safety_lost") machine_.safetyLost("Injected mock safety loss");
         else if (command == "emergency") machine_.emergency("Injected mock emergency");
@@ -134,31 +141,31 @@ public:
     const char* state() const { return machine_.state(); }
 private:
     void guards() const {
-        for (const auto& [name, member] : fields) std::cout << name << '=' << snapshot_.*member << ' ';
-        std::cout << '\n';
+        std::ostringstream values;
+        for (const auto& [name, member] : fields) values << name << '=' << snapshot_.*member << ' ';
+        aviator::Logger::info("guards: {}", values.str());
     }
     void status() const {
-        std::cout << "state=" << machine_.state() << " accepts_control=" << machine_.acceptsControl()
-                  << " time_us=" << now_ << " job=" << jobName(machine_.job())
-                  << " generation=" << machine_.generation() << " error=" << machine_.currentError()
-                  << " last_error=" << machine_.lastError() << '\n';
+        aviator::Logger::info("state={} accepts_control={} time_us={} job={} generation={} error={} last_error={}",
+            machine_.state(), static_cast<int>(machine_.acceptsControl()), now_, jobName(machine_.job()), machine_.generation(),
+            machine_.currentError(), machine_.lastError());
         guards();
     }
     void effects(const std::string& event, const std::string& before) {
-        std::cout << "[event] " << event << ": " << before << " -> " << machine_.state() << '\n';
+        aviator::Logger::info("[event] {}: {} -> {}", event, before, machine_.state());
         if (machine_.takeStop()) {
             if (active_) last_task_ = active_;
             active_.reset();
             snapshot_.executor_idle = snapshot_.settled = true;
-            std::cout << "[mock] stop/cancel acknowledged; no device action\n";
+            aviator::Logger::info("[mock] stop/cancel acknowledged; no device action");
         }
-        if (machine_.takeBrake()) std::cout << "[mock] brake requested; no hardware, NOT confirmed\n";
+        if (machine_.takeBrake()) aviator::Logger::info("[mock] brake requested; no hardware, NOT confirmed");
         if (auto task = machine_.takeTask()) {
             active_ = task;
             snapshot_.executor_idle = snapshot_.settled = false;
             if (task->job == fsm::Job::grasp) snapshot_.clear_of_wheel = false;
-            std::cout << "[mock] action=" << jobName(task->job) << " generation=" << task->generation
-                      << " deadline_us=" << task->deadline << "; waiting for done/fail\n";
+            aviator::Logger::info("[mock] action={} generation={} deadline_us={}; waiting for done/fail",
+                jobName(task->job), task->generation, task->deadline);
         }
         status();
     }
@@ -174,7 +181,7 @@ int main(int argc, char** argv) try {
     if (argc == 2 && std::string(argv[1]) == "--help") { help(); return 0; }
     if (argc == 2 && std::string(argv[1]) == "--demo") demo = true;
     else if (argc != 1) throw std::runtime_error("Only --demo/--help are supported; this executable is offline only");
-    std::cout << "OFFLINE SML TEST: simulated guards, executor and clock; no device connections.\n";
+    aviator::Logger::info("OFFLINE SML TEST: simulated guards, executor and clock; no device connections.");
     OfflineRuntime runtime;
     if (demo) {
         const std::pair<const char*, const char*> sequence[] = {
@@ -185,13 +192,13 @@ int main(int argc, char** argv) try {
             runtime.command(command);
             if (std::string(runtime.state()) != expected) throw std::runtime_error("Unexpected demo state");
         }
-        std::cout << "PASS offline FSM cycle\n";
+        aviator::Logger::info("PASS offline FSM cycle");
     } else {
         help();
         for (std::string line; std::getline(std::cin, line) && runtime.command(line);) {}
     }
     return 0;
 } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << '\n';
+    aviator::Logger::error("Error: {}", e.what());
     return 1;
 }

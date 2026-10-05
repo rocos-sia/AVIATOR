@@ -8,7 +8,7 @@
 | `aviator_transport` / `transport.hpp/.cpp` | socket 选项、订阅、两帧非阻塞收发；异常多帧有界排空；XSUB/XPUB 阻塞代理；生产与回放端点常量。 |
 | `aviator_runtime` / `runtime.hpp/.cpp` | UTC/单调时钟、Linux 启动时钟域、文本启动标记与请求/epoch UUID；按发布者授权的 InputGuard；序号、原始年龄、origin 和 epoch 检查；非实时 LatestMailbox。 |
 
-依赖为 libzmq、仓库 `cppzmq-4.11.0`、nlohmann/json ≥3.10、Threads。通信层与 YAML、机器人 SDK、运动学、日志存储无依赖。
+依赖为 libzmq、仓库 `cppzmq-4.11.0`、nlohmann/json ≥3.10、spdlog、Threads。通信层与 YAML、机器人 SDK、运动学、日志存储无依赖。
 
 ## 使用方式
 
@@ -92,3 +92,37 @@ Message 的 body 保留 JSON，完整业务 Schema 与各业务强类型模型�
 该库将 MCAP 实现封装在单个翻译单元，公共头文件不暴露 MCAP 类型；安装规则包含库与头文件。当前为 Linux 文件系统实现。具体映射、统计和持久化边界见 [Logger 说明](../nodes/aviator_logger/README.md)。
 
 `aviator_camera_recording` 提供录制 YAML 校验、CameraPacket Protobuf 信封和图像编码。`RecordingWriter::append_camera()` 保存已校验帧；网络输入必须先调用 `parse_camera_frame()` / `validate_camera_frame()`。`CameraCompressor` 仅用于非实时单线程，输出 RGB 视频或无损 Zstd 深度；调用方负责字节预算。详见 [实现说明](../docs/Logger配置与图像记录实现说明.md)。
+
+## 终端日志
+
+Ubuntu 安装 `sudo apt install libspdlog-dev`；CMake 使用 `find_package(spdlog REQUIRED CONFIG)`。
+`aviator_logging` 提供 header-only 的 `Logger.hpp`，通信 target 已传递链接该依赖。
+
+```cpp
+#include "Logger.hpp"
+
+// 在启动工作线程前配置；不调用 configure 时默认同步、info 级别。
+aviator::Logger::configure(false); // true 启用异步
+aviator::Logger::info("Core state={} generation={}", state, generation);
+aviator::Logger::warn("Input stale: age_us={}", age_us);
+aviator::Logger::error("Operation {} failed: {}", operation, reason);
+aviator::Logger::set_level(spdlog::level::debug);
+```
+
+提供 `trace/debug/info/warn/error/critical/log/flush`，使用 spdlog 的 `{}` 格式。
+日志包含时间（毫秒）、线程和等级；info 输出到 stdout，warning/error/critical 输出到 stderr。
+终端自动区分等级颜色，重定向到文件时不插入颜色码。`Logger::output` 专供 JSON 等机器可读输出，不添加前缀。
+异步使用独立的 8192 条队列和一个线程，队列满时阻塞以保留日志；退出或重新配置时排空旧队列。
+`flush()` 在异步模式下提交刷新请求，不作为等待屏障。避免在实时回调或持锁的高频路径中增加日志。
+
+Python 节点使用 `common/aviator_logger.py` 的 `Logger`，优先通过 CMake 构建的
+`aviator_logging_python` 桥接相同 spdlog 后端；支持 `Logger.configure(async_mode=True)`。
+可用 `AVIATOR_LOGGING_LIBRARY=/absolute/path/libaviator_logging_python.so` 选择构建产物。
+未构建 C++ 库的独立 Python 部署保留同步标准库回退，不额外要求 Python 包；异步模式必须有桥接库。
+现有 `--dry-run`、`--check-config` 等 JSON 输出保持原格式。
+
+日志侧重事件和原因：Core 状态切换输出 event、前后状态、generation 和 error；操作请求输出
+reply 和相关就绪条件；任务派发输出 deadline_us；故障、安全条件丢失及急停使用相应等级。
+相同故障重复上报不重复打印，过期任务完成放在 debug。沿用
+[Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) 的可读性和局部一致性原则，
+不改状态转换表、控制条件和协议数据。
