@@ -19,10 +19,10 @@ using SimulationTools = std::array<SimulationTool, 2>;
 
 // MuJoCo 直接访问的 DataLink 实现（单进程，无 IPC）。
 //
-// 物理语义与原 rocos_mujoco 仿真器保持一致：
-//  * MJCF 没有 actuator（nu == 0）。位置伺服通过 qfrc_applied 施加
-//    "重力前馈 + 比例力矩" 实现，对应原 MujocoSimulator::applyControl 的 CSP 分支，
-//    并按原实现在无内置 actuator 时补上关节阻尼抑制超调。
+// 关节阻抗控制：
+//  * MJCF 没有 actuator（nu == 0），qfrc_applied 提供动力学偏置补偿和 K(q_target-q)。
+//    K 使用 robot.yaml 的 rokae.joint_stiffness，两臂共用七轴参数。
+//    阻尼通过 MuJoCo dof_damping 隐式积分，随 sqrt(K) 缩放。
 //  * 抓取 weld 的运行时开关在 mjData::eq_active；mjModel::eq_active0 只是
 //    mj_resetData 使用的初始值，运行期修改它不会生效。
 //  * 必须显式载入 aviator_home keyframe（默认 qpos 全零不是可用姿态）。
@@ -34,7 +34,8 @@ using SimulationTools = std::array<SimulationTool, 2>;
 class MuJoCoDirectDataLink final : public DataLink {
   public:
     MuJoCoDirectDataLink(mjModel* model, mjData* data, const std::string& urdf_path,
-                         const SimulationTools& tools, std::function<void()> before_step = {});
+                         const SimulationTools& tools, const std::array<double, 7>& joint_stiffness,
+                         std::function<void()> before_step = {});
     ~MuJoCoDirectDataLink() override;
 
     ArmFeedback armFeedback() const override;
@@ -122,6 +123,7 @@ class MuJoCoDirectDataLink final : public DataLink {
     std::chrono::steady_clock::time_point next_tick_;
 
     std::array<double, 2> elbow_range_{{1e100, -1e100}};
+    std::array<double, 7> joint_stiffness_{};
     std::array<double, 14> original_damping_{};
 };
 

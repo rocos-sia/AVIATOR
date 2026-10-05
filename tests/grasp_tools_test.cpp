@@ -262,7 +262,8 @@ int main(int argc, char **argv) try {
         sim_tools[side].quaternion = {q.w(), q.x(), q.y(), q.z()};
     }
     auto device = std::make_unique<MuJoCoDirectDataLink>(model.get(), data.get(),
-                               (root / "models/urdf/aviator.urdf").string(), sim_tools);
+                               (root / "models/urdf/aviator.urdf").string(), sim_tools,
+                               config["rokae"]["joint_stiffness"].as<std::array<double, 7>>());
     device->setRealTime(false);
     std::lock_guard<std::mutex> lock(*device->physicsMutex());
     // Physics may have advanced a tick, so restore the known test posture under its lock.

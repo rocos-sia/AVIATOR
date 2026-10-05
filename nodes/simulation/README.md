@@ -56,6 +56,18 @@ AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
 - `lock` / `unlock` 同时切换抓取 weld；仿真测得轮盘位形放在
   `wheel_measurement`，与 `wheel_reference` 分开。
 
+## 关节柔顺性
+
+双臂共用 `robot.yaml` 中 `rokae.joint_stiffness` 的七轴刚度（Nm/rad），
+使用动力学偏置补偿加 `K(q_target-q)` 力矩，允许接触外力造成关节偏移。
+MuJoCo 隐式积分的附加阻尼为 `80*sqrt(K/1000)` Nm·s/rad，并保留 MJCF 原有被动阻尼。
+默认前四轴为 500、末三轴为 50；修改后重启仿真生效。
+该控制律用于近似关节阻抗，不是 Rokae 内部控制器的精确复现。
+手柄已有局部软接触参数；`lock` 的 weld 行为仍按原流程执行。
+`tests/mjcf_grasp_contact_test.py --grip-inset 0.0025` 可在不修改标定目标的情况下，
+验证实际手柄间距缩小 5 mm 时的无 weld 接触抓握。
+此测试不代表任意间距误差均可适应；缩小 10 mm 的额外检查仍出现右手中指过深穿入。
+
 ## 相机
 
 启动后自动采集并发布 `publisher_id=simulation`、`camera_id=cockpit` 的

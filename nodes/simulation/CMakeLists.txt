@@ -60,6 +60,8 @@ if(BUILD_TESTING)
     if(SIMULATION_CONTACT_PYTHON_DEPS EQUAL 0)
       add_test(NAME simulation_grasp_contact COMMAND ${Python3_EXECUTABLE}
         ${PROJECT_SOURCE_DIR}/tests/mjcf_grasp_contact_test.py)
+      add_test(NAME simulation_grasp_contact_offset COMMAND ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/mjcf_grasp_contact_test.py --grip-inset 0.0025)
       set_tests_properties(simulation_grasp_contact PROPERTIES TIMEOUT 60)
     endif()
   endif()

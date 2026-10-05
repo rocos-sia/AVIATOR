@@ -53,13 +53,22 @@ def solve_pose(model, data, joints, body, position, orientation, seed):
     raise AssertionError(f"Grasp IK did not converge: {error}")
 
 
-def run(path, report_only=False):
+def run(path, report_only=False, grip_inset=0.0):
     print(f"MuJoCo {mj.__version__}: {path}")
     grasp = json.loads((ROOT / "config/grasp.json").read_text())
     posture = json.loads((ROOT / "config/posture.json").read_text())
     hand = yaml.safe_load((ROOT / "config/system.yaml").read_text())["core_hand"]
-    initial = yaml.safe_load((ROOT / "config/robot.yaml").read_text())["wheel_initial"]
+    robot = yaml.safe_load((ROOT / "config/robot.yaml").read_text())
+    initial = robot["wheel_initial"]
+    stiffness = np.tile(robot["rokae"]["joint_stiffness"], 2)
     model = mj.MjModel.from_xml_path(str(path.resolve()))
+    # Move only physical grip proxies inward; IK/calibrated grasp targets stay fixed.
+    assert np.isfinite(grip_inset) and 0 <= grip_inset < .02
+    for side in SIDES:
+        grip = model.geom(f"steering_wheel_{side}_grip").id
+        model.geom_pos[grip, 0] += grip_inset if side == "left" else -grip_inset
+    if grip_inset:
+        print(f"Grip spacing reduced by {2 * grip_inset * 1000:.1f} mm")
     data = mj.MjData(model)
     mj.mj_resetDataKeyframe(model, data, model.key("aviator_home").id)
     data.qpos[model.joint("roll_input_joint").qposadr] = initial["angle"]
@@ -102,7 +111,7 @@ def run(path, report_only=False):
     assert all(t is not None and t < 1 for t in triggers)
     data.qpos[:] = start_qpos
     mj.mj_forward(model, data)
-    model.dof_damping[av] += 80
+    model.dof_damping[av] += 80 * np.sqrt(stiffness / 1000)
     model.dof_damping[hv] += .15
     low = model.jnt_range[hands, 0]
     span = np.diff(model.jnt_range[hands], axis=1).ravel()
@@ -115,7 +124,7 @@ def run(path, report_only=False):
         progress = np.array([smooth((t - start) / (1 - start)) for start in triggers])
         normalized = opened + progress[:, None] * (closed - opened)
         hand_target = low + (1 - normalized.ravel()) * span
-        data.qfrc_applied[av] = data.qfrc_bias[av] + 1000 * (arm_target - data.qpos[aq])
+        data.qfrc_applied[av] = data.qfrc_bias[av] + stiffness * (arm_target - data.qpos[aq])
         data.qfrc_applied[hv] = np.clip(data.qfrc_bias[hv] + 3 * (hand_target - data.qpos[hq]), -1, 1)
         mj.mj_step(model, data)
     mj.mj_forward(model, data)
@@ -141,7 +150,11 @@ def run(path, report_only=False):
             mj.mj_contactForce(model, data, contact_id, force)
             if force[0] <= .01:
                 continue
-            depths.append(max(0, -contact.dist) * 1000)
+            depth_mm = max(0, -contact.dist) * 1000
+            depths.append(depth_mm)
+            if depth_mm > 8:
+                print(f"Deep contact: {model.geom(a).name} / {model.geom(b).name}, "
+                      f"depth={depth_mm:.2f} mm, normal_force={force[0]:.2f} N")
             if "thumb" in name:
                 thumbs.append(normal.copy())
             elif any(f"_{finger}_" in name for finger in ("index", "middle", "ring", "little")):
@@ -165,5 +178,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, default=ROOT / "models/mjcf/aviator.xml")
     parser.add_argument("--report-only", action="store_true", help="Report an old model without failing closure checks")
+    parser.add_argument("--grip-inset", type=float, default=0.0,
+                        help="Move each physical handle inward by this many metres; keep calibration unchanged")
     args = parser.parse_args()
-    run(args.model, args.report_only)
+    run(args.model, args.report_only, args.grip_inset)

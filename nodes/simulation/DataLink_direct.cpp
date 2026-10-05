@@ -19,13 +19,10 @@ void require(bool ok, const std::string &message) {
         fail(message);
 }
 
-// 位置伺服增益，与原 rocos_mujoco::MujocoSimulator 保持一致：
-//   KP_ = 1000.0 [Nm/rad]     比例增益
-//   KD_ = 80.0   [Nm/(rad/s)] 关节阻尼
-// 原仿真器在关节没有内置 actuator 时会把这部分阻尼叠加到 dof_damping 上；缺少它会
-// 使关节欠阻尼，跟踪过程中冲过关节限位（表现为 J2 越过 95° 后绕到 445°）。
-constexpr double kPositionGain = 1000.0;
-constexpr double kJointDamping = 80.0;
+// Scale damping with sqrt(K) relative to the previous gains. Damping is
+// integrated implicitly by MuJoCo; softer wrists must not retain damping=80.
+constexpr double kReferenceStiffness = 1000.0;
+constexpr double kReferenceDamping = 80.0;
 
 // 非实时模式下允许物理线程领先控制器的步数。
 //
@@ -37,13 +34,19 @@ constexpr uint64_t kLockstepLead = 0;
 
 MuJoCoDirectDataLink::MuJoCoDirectDataLink(mjModel *model, mjData *data,
                                            const std::string &urdf_path,
-                                           const SimulationTools &tools, std::function<void()> before_step)
-    : before_step_(std::move(before_step)), model_(model), data_(data) {
+                                           const SimulationTools &tools, const std::array<double, 7> &joint_stiffness,
+                                           std::function<void()> before_step)
+    : before_step_(std::move(before_step)), model_(model), data_(data),
+      joint_stiffness_(joint_stiffness) {
     require(model_ != nullptr && data_ != nullptr, "MuJoCo model/data cannot be null");
     require(model_->nu == 0,
             "Expected a torque-driven MJCF without actuators (nu == 0), got nu = " +
                 std::to_string(model_->nu));
 
+    for (size_t j = 0; j < joint_stiffness_.size(); ++j)
+        require(std::isfinite(joint_stiffness_[j]) && joint_stiffness_[j] > 0 &&
+                    joint_stiffness_[j] <= (j < 4 ? 3000 : 300),
+                "Invalid joint stiffness for axis " + std::to_string(j + 1));
     initJointMapping(urdf_path);
 
     // 抓取 site 与 weld 约束
@@ -99,11 +102,11 @@ MuJoCoDirectDataLink::MuJoCoDirectDataLink(mjModel *model, mjData *data,
     // 计算一次正向动力学，使 qfrc_bias 在第一次步进前就有效
     mj_forward(model_, data_);
 
-    // 补上关节阻尼：MJCF 没有内置 actuator，原仿真器同样在无 actuator 时把 KD_
-    // 叠加到 joint damping，用于抑制位置伺服的超调（否则会冲过关节限位）。
+    // Add stable implicit damping while retaining the MJCF passive damping.
     for (int i = 0; i < 14; ++i) {
         original_damping_[i] = model_->dof_damping[joint_dof_adr_[i]];
-        model_->dof_damping[joint_dof_adr_[i]] += kJointDamping;
+        model_->dof_damping[joint_dof_adr_[i]] +=
+            kReferenceDamping * std::sqrt(joint_stiffness_[i % 7] / kReferenceStiffness);
     }
 
     // 目标与保持位形都对齐到当前位形（keyframe 载入后的姿态）
@@ -193,15 +196,14 @@ void MuJoCoDirectDataLink::physicsLoop() {
                 continue; // re-evaluate the lockstep predicate after a mode change
         }
 
-        // 施加位置伺服力矩：重力前馈 + 比例力矩，对应原仿真器的 CSP 分支。
-        // MJCF 没有 actuator，只能通过 qfrc_applied 驱动；阻尼由关节本身的
-        // dof_damping（构造时已补上 kJointDamping）提供。
+        // Joint impedance: bias compensation + K(q_target-q) - D*qvel.
+        // The damping term is applied implicitly through dof_damping.
         for (int i = 0; i < 14; ++i) {
             const int dof = joint_dof_adr_[i];
             const int qpos = joint_qpos_adr_[i];
             const double setpoint = enabled_[i / 7] ? target_[i] : hold_[i];
             data_->qfrc_applied[dof] =
-                data_->qfrc_bias[dof] + kPositionGain * (setpoint - data_->qpos[qpos]);
+                data_->qfrc_bias[dof] + joint_stiffness_[i % 7] * (setpoint - data_->qpos[qpos]);
         }
 
         // 推进物理一步。原架构里这属于仿真器进程，单进程内由本线程承担，

@@ -146,8 +146,9 @@ int main(int argc, char** argv) try {
         camera_output = std::make_unique<simulation::CameraOutput>(
             simulation::previewSettings(camera_config, preview_endpoint), recording_config, camera_id);
     }
+    const auto joint_stiffness = settings.robot["rokae"]["joint_stiffness"].as<std::array<double, 7>>();
     aviator::MuJoCoDirectDataLink device(sim.model(), sim.data(), settings.path("urdf").string(),
-                                         tools, [&] { sim.applyHands(aviator::monotonic_us()); });
+                                         tools, joint_stiffness, [&] { sim.applyHands(aviator::monotonic_us()); });
     aviator::DeviceServerOptions options;
     options.name = "simulation";
     options.tcp_frames = {"aircraft", "aircraft"};
