@@ -57,6 +57,57 @@ struct Device : DataLink {
         q = v.back().q; now += v.size() * .001;
     }
 };
+// Check collision behavior independently of the real model's initial contacts.
+void collisionModelRegression(const fs::path &dir) {
+    const auto path = dir / "collision.urdf";
+    std::ofstream out(path);
+    const std::string sphere =
+        "<collision><geometry><sphere radius='0.1'/></geometry></collision>";
+    out << "<robot name='collision_fixture'><link name='aircraft'>" << sphere << "</link>";
+    for (int side = 0; side < 2; ++side) {
+        const std::string prefix = std::string("AR5-5_07") + (side ? "R" : "L") + "-W4C4A2";
+        std::string parent = "aircraft";
+        for (int j = 1; j <= 7; ++j) {
+            const auto link = prefix + "_link" + std::to_string(j);
+            out << "<link name='" << link << "'>" << (j >= 6 ? sphere : "") << "</link>"
+                << "<joint name='" << prefix << "_joint_" << j << "' type='prismatic'>"
+                << "<parent link='" << parent << "'/><child link='" << link << "'/>"
+                << "<origin xyz='" << (j == 1 ? (side ? 2 : -2) : 0) << " 0 0'/>"
+                << "<axis xyz='1 0 0'/><limit lower='-10' upper='10' effort='1' velocity='1'/>"
+                << "</joint>";
+            parent = link;
+        }
+    }
+    // An extra moving joint exercises complete models with more than 16 DOFs.
+    out << "<link name='finger'>" << sphere << "</link>"
+        << "<joint name='finger_joint' type='revolute'><parent link='AR5-5_07R-W4C4A2_link7'/>"
+        << "<child link='finger'/><origin xyz='0 1 0'/><axis xyz='0 0 1'/>"
+        << "<limit lower='-1' upper='1' effort='1' velocity='1'/></joint>"
+        << "<link name='dummy'/><link name='wheel'>" << sphere << "</link>"
+        << "<joint name='roll_input_joint' type='revolute'><parent link='aircraft'/>"
+        << "<child link='dummy'/><origin xyz='0 4 0'/><axis xyz='0 0 1'/>"
+        << "<limit lower='-3' upper='3' effort='1' velocity='1'/></joint>"
+        << "<joint name='pitch_input_joint' type='prismatic'><parent link='dummy'/>"
+        << "<child link='wheel'/><axis xyz='0 1 0'/>"
+        << "<limit lower='-10' upper='10' effort='1' velocity='1'/></joint></robot>";
+    out.close();
+    auto checker = makePinocchioCollisionChecker(path.string());
+    std::array<double, 14> q{};
+    checker->check(q, 0, 0); // Coincident adjacent link6/link7 are intentional.
+    const auto mustCollide = [&](double wheel) {
+        bool collided = false;
+        try { checker->check(q, 0, wheel); }
+        catch (const std::runtime_error &e) {
+            collided = std::string(e.what()).find("Planned collision:") == 0;
+        }
+        check(collided, "Collision checker missed nonadjacent geometry");
+    };
+    q[6] = 2; mustCollide(0); // Left arm against aircraft.
+    q[6] = 4; mustCollide(0); // Left arm against right arm.
+    q[6] = 0; mustCollide(-4); // Wheel against aircraft; no legacy SRDF exclusion.
+    checker->check(q, 0, 0); // Clear previous collision results on the next call.
+}
+
 int main(int argc, char **argv) try {
     check(argc == 2, "Expected project root");
     const fs::path root = argv[1];
@@ -190,10 +241,9 @@ int main(int argc, char **argv) try {
         check(core.GetState() == "ENABLED", "Unlatched approached hands could not be opened");
         core.disable();
     }
-    // Geometry is configured before device threads start; exercise the actual collision loader.
-    const auto collision = root / "models/urdf/aviator_collision.urdf";
-    makePinocchioCollisionChecker(collision.string(), (root / "models/urdf/aviator_collision.srdf").string(),
-                                 GraspCylinder{}, geometry.tools);
+    collisionModelRegression(dir);
+    // Load complete geometry without a legacy collision URDF or SRDF.
+    makePinocchioCollisionChecker((root / "models/urdf/aviator.urdf").string());
 #ifdef AVIATOR_HAVE_MUJOCO
     char error[1024]{};
     std::unique_ptr<mjModel, decltype(&mj_deleteModel)> model(

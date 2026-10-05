@@ -238,7 +238,7 @@ int main(int argc, char **argv) {
         system["manipulator_service"] = service;
         system["robot"] = "robot.yaml";
         auto robot = YAML::LoadFile((source / "config/robot.yaml").string());
-        for (const auto *key : {"model", "urdf", "collision_urdf", "grasp", "posture"})
+        for (const auto *key : {"model", "urdf", "grasp", "posture"})
             robot[key] = fs::weakly_canonical(source / "config" / robot[key].as<std::string>()).string();
         const auto posture = YAML::LoadFile(robot["posture"].as<std::string>());
         const auto j2 = posture["joint2_limits_deg"].as<std::vector<double>>();

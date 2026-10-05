@@ -179,16 +179,7 @@ class Aviator::Impl {
             kinematics_ = makePinIkKinematics(urdf, ik_lo, ik_hi);
         }
         if (collision_check_enabled_ && !collision_checker_) {
-            std::string collision_urdf = resolvePath(config, "collision_urdf", config_dir);
-            std::string srdf = collision_urdf;
-            const auto dot = srdf.find_last_of('.');
-            if (dot != std::string::npos)
-                srdf = srdf.substr(0, dot) + ".srdf";
-
-            GraspCylinder cylinder;
-            cylinder.radius = grasp["tool"]["radius"].as<double>(0.028);
-            cylinder.length = grasp["tool"]["length"].as<double>(0.060);
-            collision_checker_ = makePinocchioCollisionChecker(collision_urdf, srdf, cylinder, tools_);
+            collision_checker_ = makePinocchioCollisionChecker(resolvePath(config, "urdf", config_dir));
         }
 
         last_target_ = measured();

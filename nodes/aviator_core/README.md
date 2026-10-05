@@ -475,3 +475,12 @@ wheel_initial:
 直接调用 `moveWheel/servoWheel` 的位移参数仍是绝对位置。`main.cpp --demo/--servo-demo` 中写明的目标值保持原样（目标 0 仍会移到零位）；改变的是抓取起始位形。
 
 修改初值后需重启 Manipulator 和 Core；使用手节点/Gateway 时按控制 epoch 授权流程一起重启。启动日志显示 `Manipulator initial wheel`，READY/STANDBY/抓取前可检查 `wheel_reference.displacement=-0.085`。启动前真机轮盘应处于所声明的位形，这不是轮盘位置测量。
+
+### 统一 URDF 的碰撞检查
+
+Core 的运动学与碰撞检查均读取 `robot.yaml` 的 `urdf`（默认 `models/urdf/aviator.urdf`），
+不再读取 `collision_urdf`、旧碰撞 URDF 或 SRDF，也不再要求法兰抓握圆柱。
+碰撞几何使用完整 URDF 的 `<collision>`，排除固定连接及直接相邻连杆的碰撞对；
+旧模型对轮盘轴承、腕部壳体和抓握圆柱的额外排除不再沿用。
+当前检查接口只传入双臂与轮盘位置，其余关节（包括手指）按 URDF 零位检查，
+尚不能检查实际手指开合过程。`collision_check_enabled` 控制是否启用此检查。

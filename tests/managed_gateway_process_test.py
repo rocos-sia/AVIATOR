@@ -29,7 +29,7 @@ def main():
     config = yaml.safe_load((root / "config/system.yaml").read_text())
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot.update(viewer=False, settle_duration=.15)
-    for key in ("model", "urdf", "collision_urdf", "grasp", "posture"):
+    for key in ("model", "urdf", "grasp", "posture"):
         robot[key] = str((root / "config" / robot[key]).resolve())
     endpoints = [f"tcp://127.0.0.1:{port()}" for _ in range(4)]
     assert len(set(endpoints)) == 4

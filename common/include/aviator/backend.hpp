@@ -8,13 +8,6 @@
 
 namespace aviator {
 
-// 抓取工具圆柱的期望尺寸，与 config/grasp.json 一致。
-// 碰撞后端用它和碰撞 URDF 中实际的圆柱对比，防止两侧配置漂移。
-struct GraspCylinder {
-    double radius = 0.028; // m
-    double length = 0.060; // m
-};
-
 // 抓取几何，全部来自 config/grasp.json，由算法层解析后传给后端，
 // 避免后端各自重复读取配置导致漂移。
 //
@@ -50,11 +43,8 @@ std::unique_ptr<DataLink> makeRokaeDataLink(const std::string &urdf_path,
 std::unique_ptr<Kinematics> makePinIkKinematics(const std::string &urdf_path, double joint2_min,
                                                  double joint2_max);
 
-// Pinocchio + hpp-fcl/coal 碰撞后端。
-// 碰撞 URDF 由 scripts/generate_aviator.py 导出（分片凸网格 + 圆柱工具 + SRDF 排除对）。
-std::unique_ptr<CollisionChecker> makePinocchioCollisionChecker(const std::string &urdf_path,
-                                                               const std::string &srdf_path,
-                                                               const GraspCylinder &cylinder,
-                                                               const std::array<pinocchio::SE3, 2> &tools);
+// Pinocchio + coal collision geometry from the complete URDF; no SRDF required.
+// Arms/wheel are supplied by check(); other joints remain at URDF zero pose.
+std::unique_ptr<CollisionChecker> makePinocchioCollisionChecker(const std::string &urdf_path);
 
 } // namespace aviator
