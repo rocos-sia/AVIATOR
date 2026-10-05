@@ -133,6 +133,7 @@ if ! $DRY_RUN; then
     SESSION=$(cat "$SESSION_FILE")
 else
     SESSION='<读取 /tmp/aviator_session.uuid；不存在时生成 UUID>'
+    LOG_DIR='<本次运行日志目录>'
 fi
 
 start bus "$AVIATOR_BIN/aviator_bus" --config config/system.yaml
@@ -163,9 +164,9 @@ if $SIMULATION; then
         sed -e 's/camera.detection: "camera"/camera.detection: "simulation"/' \
             -e 's/publisher_id: "camera"/publisher_id: "simulation"/' config/monitor.yaml > "$SIM_MONITOR_CONFIG"
     fi
-    start monitor "$MONITOR_BIN" --config "$SIM_MONITOR_CONFIG"
+    start monitor "$MONITOR_BIN" --config "$SIM_MONITOR_CONFIG" --log-dir "$LOG_DIR"
 else
-    start monitor "$MONITOR_BIN"
+    start monitor "$MONITOR_BIN" --log-dir "$LOG_DIR"
 fi
 
 if ! $DRY_RUN; then

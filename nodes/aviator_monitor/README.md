@@ -31,9 +31,22 @@ GCC/Clang 的 Debug 构建保留调试符号，并对 Monitor 启用 `-O2`。`CO
 | `--config` | 源码或安装目录的 `monitor.yaml` | 监测专用 YAML 配置；部分字段覆盖默认值。 |
 | `--model-root` | 源码或安装目录的 `models/` | 包含 `urdf/aviator.urdf` 和 `meshes/` 的目录。 |
 | `--preview` | 配置中的 `tcp://127.0.0.1:5561` | 独立 Camera JPEG PUB 地址；`off` 禁用订阅。 |
+| `--log-dir` | 未配置 | 本次运行的节点 `.log` 目录；一键启动脚本自动传入。 |
 | `--help` | — | 显示帮助。 |
 
 源码构建默认读取 [config/monitor.yaml](../../config/monitor.yaml)；安装后优先使用可执行文件相邻的 `../share/aviator/monitor/` 资源。模型与前端文件通过精确资源清单提供，不开放任意文件读取。
+
+## 节点日志
+
+使用 `scripts/start_aviator.sh` 启动时，脚本通过 `--log-dir` 将本次运行的临时目录传给 Monitor（包括仿真模式）。单独启动可指定 `aviator_monitor --log-dir /tmp/aviator-start.XXXXXXXX`；未指定时日志页显示配置提示。
+
+“日志”页左侧列出该目录下的普通 `.log` 文件，按文件名排序并自动发现后续启动的节点；右侧显示选中文件。页面可见时每 1 秒重新读取目录与选中文件，切换节点立即加载，离开页面或浏览器进入后台时暂停查询。支持跟随最新内容，也可取消勾选后手动滚动。
+
+日志级别筛选为精确匹配，支持 trace、debug、info、warn / warning、error、critical。识别 AVIATOR 的 `[时间] [logger] [级别]` 及 spdlog 默认 `[时间] [级别]` 前缀，移除 ANSI 颜色码；无标记的外部软件输出、多行消息中没有前缀的续行均按 info 处理。日志以纯文本展示。
+
+每次最多读取文件末尾 512 KiB，并显示其中最新 2000 行；超限时提示截断，级别筛选作用于此窗口。原始文件保留完整日志。文件清空、替换或删除会在后续刷新中反映；读取失败时保留当前内容并提示可能过期。Monitor 仅暴露指定目录中直接包含的普通 `.log` 文件，不跟随文件符号链接，不接受目录穿越路径。
+
+`GET /api/logs` 返回 `{configured, directory, files: [{name, node}]}`；`GET /api/logs?file=<URL编码文件名>` 返回 `{name, entries: [{level, text}], truncated, max_bytes, max_lines}`。未配置目录时文件列表为空；无效文件名返回 400，不可读文件或目录返回 503。
 
 ## 动态配置
 
@@ -147,7 +160,8 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 | overview.cpp / config.cpp | 类型化概览、侧级时效、来源筛选、单位与标定映射。 |
 | preview.cpp / preview_receiver.hpp | JPEG 身份、尺寸、时效与有界帧缓存，以及可动态切换的独立图像 SUB。 |
 | assets.cpp | URDF/mesh 精确资源清单与原有 Cessna 路径别名。 |
-| index.html / web/ | 三个 Tab、配置表单与 YAML 编辑、浏览器生命周期和 Three.js 视口。 |
+| logs.cpp / logs.hpp | 本次运行日志列表、有界文件读取与级别识别。 |
+| index.html / web/ | 四个 Tab、配置表单与 YAML 编辑、浏览器生命周期和 Three.js 视口。 |
 
 查询接口使用 GET：`/`、`/api/state`、`/api/message?id=N`、`/api/overview`、`/api/model-manifest`、`/api/camera/latest`、`/api/camera/frame/{token}`，以及清单中的 `/assets/` 和 `/models/` 文件。概览 schema_version=1，包含 Monitor 会话/快照版本，每部分保留独立来源、当前值、状态、年龄及剩余有效时间。
 
@@ -197,3 +211,12 @@ node tests/monitor_remote_model_browser_test.cjs
 ```
 
 该测试使用映射到本机的远程 HTTP 域名，在 2 MiB/s、40 ms 延迟下加载完整 URDF/STL，检查资源全部来自同一 HTTP 服务、模型几何完整和状态查询正常，并保存截图。`monitor_http` 另对大网格延迟读取超过 2 s，校验响应长度与 SHA-256，防止慢链路下载被截断。
+
+日志页浏览器验证（无需设备）：
+
+```bash
+AVIATOR_PLAYWRIGHT=/absolute/path/to/node_modules/playwright-core \
+node tests/monitor_logs_browser_test.cjs build/bin/aviator_monitor
+```
+
+测试覆盖节点切换、精确级别筛选、无级别输出、HTML 纯文本显示、每秒刷新、日志清空、后启动节点发现、文件删除、跟随开关、后台停止轮询及桌面/窄屏布局。`monitor_http` 同时覆盖日志级别解析、ANSI 颜色、文件替换、读取上限、非法 UTF-8、中文文件名和路径访问限制。

@@ -1,5 +1,6 @@
 #include "Logger.hpp"
 #include "assets.hpp"
+#include "logs.hpp"
 #include "monitor.hpp"
 #include "page.hpp"
 #include "preview.hpp"
@@ -103,7 +104,7 @@ bool request_ready(Client& client) {
     return client.request.size() >= client.body_start + size;
 }
 void response(Client& client, monitor::State& state, monitor::Preview& preview,
-              const monitor::Assets& assets, const std::string& clock,
+              const monitor::Assets& assets, const monitor::Logs& logs, const std::string& clock,
               const std::function<monitor::Json(const monitor::Json*)>& configuration) {
     std::istringstream line(client.request.substr(0, client.request.find("\r\n")));
     std::string method, path, version, extra;
@@ -158,6 +159,18 @@ void response(Client& client, monitor::State& state, monitor::Preview& preview,
     } else if (path == "/" || path == "/index.html") {
         body = monitor_page;
         type = "text/html; charset=utf-8";
+    } else if (path == "/api/logs" || path.rfind("/api/logs?file=", 0) == 0) {
+        try {
+            const auto data = path == "/api/logs" ? logs.list() : logs.read(path.substr(15));
+            // External software may emit bytes that are not valid UTF-8.
+            body = data.dump(-1, ' ', false, monitor::Json::error_handler_t::replace);
+        } catch (const std::invalid_argument& error) {
+            status = "400 Bad Request";
+            body = monitor::Json{{"error", error.what()}}.dump();
+        } catch (const std::exception&) {
+            status = "503 Service Unavailable";
+            body = monitor::Json{{"error", "日志目录或文件不可读，请检查 --log-dir 和文件权限。"}}.dump();
+        }
     } else if (path == "/api/model-manifest") {
         body = assets.manifest.dump();
     } else if (path == "/api/overview") {
@@ -217,7 +230,7 @@ int main(int argc, char** argv) {
     try {
         unsigned port = 8081;
         std::string bind_address = "0.0.0.0";
-        std::string endpoint = aviator::subscribe_endpoint, config_path, preview_endpoint;
+        std::string endpoint = aviator::subscribe_endpoint, config_path, preview_endpoint, log_directory;
         namespace fs = std::filesystem;
         const auto deployed =
             fs::weakly_canonical(fs::path("/proc/self/exe")).parent_path().parent_path() /
@@ -236,7 +249,7 @@ int main(int argc, char** argv) {
             const std::string key = argv[i];
             if (key == "--help" || key == "-h") {
                 aviator::Logger::info("Usage: aviator_monitor [--bind 0.0.0.0] [--port 8081]\n"
-                    "  [--subscribe tcp://127.0.0.1:5556]\n"
+                    "  [--subscribe tcp://127.0.0.1:5556] [--log-dir DIRECTORY]\n"
                     "  [--config monitor.yaml] [--model-root MODELS] [--preview tcp://127.0.0.1:5561|off]\n"
                     "Monitoring and live configuration Web UI; HTTP listens on all IPv4 interfaces by default.\n"
                     "Open http://<server-LAN-IP>:PORT/ from another computer; use --bind 127.0.0.1 for "
@@ -254,6 +267,8 @@ int main(int argc, char** argv) {
                 endpoint = argv[i];
             else if (key == "--config")
                 config_path = argv[i];
+            else if (key == "--log-dir")
+                log_directory = argv[i];
             else if (key == "--model-root")
                 model_root = argv[i];
             else if (key == "--preview") {
@@ -284,6 +299,7 @@ int main(int argc, char** argv) {
         if (bind(server.value, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0 ||
             listen(server.value, 8) < 0)
             throw std::runtime_error(std::strerror(errno));
+        const monitor::Logs logs(log_directory);
         monitor::State state;
         state.config = monitor::load_config(config_path);
         if (preview_override)
@@ -439,7 +455,7 @@ int main(int argc, char** argv) {
                         complete = true;
                     }
                     if (complete)
-                        response(client, state, preview, assets, clock, configuration);
+                        response(client, state, preview, assets, logs, clock, configuration);
                 }
                 if (!client.response.empty()) {
                     const auto n =

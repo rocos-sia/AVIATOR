@@ -25,7 +25,7 @@ std::string content(const fs::path& path) {
 }
 } // namespace
 Assets::Assets(const fs::path& web, const fs::path& models, const Json& config) {
-    for (auto* name : {"app.js", "settings.js", "viewer.js", "vendor.js", "style.css"}) {
+    for (auto* name : {"app.js", "logs.js", "settings.js", "viewer.js", "vendor.js", "style.css"}) {
         files_["/assets/" + std::string(name)] = {
             web / name, std::string(name).find(".css") != std::string::npos
                             ? "text/css; charset=utf-8"

@@ -12,6 +12,8 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
+import os
 
 
 def free_port():
@@ -56,7 +58,8 @@ def until(predicate, timeout=4):
 
 try:
     web = subprocess.Popen([sys.argv[1], '--port', str(port), '--subscribe', endpoint,
-                            '--preview', 'off', '--config', str(config_path)],
+                            '--preview', 'off', '--config', str(config_path),
+                            '--log-dir', temporary.name],
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     children.append(web)
     until(lambda: fetch('/'))
@@ -83,6 +86,61 @@ try:
             raise AssertionError('request should fail')
         except urllib.error.HTTPError as error:
             assert error.code == expected
+    assert b'tab-logs' in fetch('/') and b'/api/logs' in fetch('/assets/logs.js')
+    assert json.loads(fetch('/api/logs'))['files'] == []
+    log = pathlib.Path(temporary.name) / 'core.log'
+    stamp = '[2026-10-05 12:34:56.123]'
+    log.write_text(''.join(f'{stamp} [aviator] [{level}] [thread 1] message\n'
+                           for level in ['trace', 'debug', 'info', 'warning', 'error', 'critical']) +
+                   f'{stamp} [warning] default spdlog\n' +
+                   f'{stamp} [aviator] [\x1b[31merror\x1b[0m] coloured\n' +
+                   'external software [error] is message text\n' +
+                   '<script>alert(1)</script>\n', encoding='utf-8')
+    def read_log(name='core.log'):
+        return json.loads(fetch('/api/logs?file=' + urllib.parse.quote(name, safe='')))
+    result = read_log()
+    assert [entry['level'] for entry in result['entries']] == [
+        'trace', 'debug', 'info', 'warn', 'error', 'critical', 'warn', 'error', 'info', 'info']
+    assert '\x1b' not in result['entries'][7]['text']
+    assert not result['truncated']
+    with log.open('ab') as stream:
+        stream.write(b'new output\ninvalid utf8: \xff\npartial')
+    assert read_log()['entries'][-1]['text'] == 'partial'
+    assert '\ufffd' in read_log()['entries'][-2]['text']
+    with log.open('a') as stream:
+        stream.write(' completed\n')
+    assert read_log()['entries'][-1]['text'] == 'partial completed'
+    log.write_text('')
+    assert read_log()['entries'] == []
+    log.write_text('reset after truncation\n')
+    assert len(read_log()['entries']) == 1
+    replacement = pathlib.Path(temporary.name) / 'replacement'
+    replacement.write_text('rotated\n')
+    replacement.replace(log)
+    assert read_log()['entries'][0]['text'] == 'rotated'
+    log.write_text(''.join(f'line {i}\n' for i in range(2500)))
+    result = read_log()
+    assert result['truncated'] and len(result['entries']) == 2000
+    assert result['entries'][0]['text'] == 'line 500'
+    log.write_text('x' * (600 * 1024) + '\nlatest\n')
+    result = read_log()
+    assert result['truncated'] and result['entries'] == [{'level': 'info', 'text': 'latest'}]
+    named = pathlib.Path(temporary.name) / '相机 output.log'
+    named.write_text('camera output\n')
+    assert read_log(named.name)['entries'][0]['level'] == 'info'
+    (pathlib.Path(temporary.name) / 'linked.log').symlink_to(config_path)
+    os.mkfifo(pathlib.Path(temporary.name) / 'pipe.log')
+    assert [f['name'] for f in json.loads(fetch('/api/logs'))['files']] == ['core.log', named.name]
+    for name, expected in [('../monitor.yaml', 400), ('../core.log', 400),
+                           ('/tmp/outside.log', 400), ('bad\x00.log', 400),
+                           ('linked.log', 503), ('pipe.log', 503), ('missing.log', 503)]:
+        try:
+            read_log(name)
+            raise AssertionError('unsafe or missing log should fail')
+        except urllib.error.HTTPError as error:
+            assert error.code == expected
+    named.unlink()
+    assert len(json.loads(fetch('/api/logs'))['files']) == 1
     assert b'tab-settings' in fetch('/') and b'config-save' in fetch('/')
     assert b'/api/config' in fetch('/assets/settings.js')
     settings = json.loads(fetch('/api/config'))
@@ -209,6 +267,7 @@ try:
         until(lambda: fetch('/', origin=f'http://{address}:{port}'))
         restored = json.loads(fetch('/api/config', origin=f'http://{address}:{port}'))
         assert restored['config'] == settings['config']
+        assert not json.loads(fetch('/api/logs', origin=f'http://{address}:{port}'))['configured']
         with socket.socket() as sock:
             sock.settimeout(1)
             assert sock.connect_ex((excluded, port)) != 0, '--bind must restrict the listener'
