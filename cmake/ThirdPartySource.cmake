@@ -56,7 +56,9 @@ function(aviator_add_third_party_source name)
             -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
             -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
             -DCMAKE_INSTALL_PREFIX=${AVIATOR_DEPS_DIR}
+            -DCMAKE_INSTALL_BINDIR=bin
             -DCMAKE_INSTALL_LIBDIR=lib
+            -DCMAKE_INSTALL_INCLUDEDIR=include
             "-DCMAKE_PREFIX_PATH=${dependency_prefixes}"
             -DCMAKE_INSTALL_RPATH=$ORIGIN
             -DCMAKE_INSTALL_RPATH_USE_LINK_PATH=OFF
@@ -67,7 +69,8 @@ function(aviator_add_third_party_source name)
             -DBUILD_TESTING=OFF
             ${ARG_CMAKE_ARGS}
         BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel ${AVIATOR_DEPENDENCY_JOBS}
-            COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
+            # Override stale/default prefixes in the dependency's install scripts.
+            COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR> --prefix "${AVIATOR_DEPS_DIR}"
         INSTALL_COMMAND ""
         BUILD_ALWAYS ON
         BUILD_BYPRODUCTS ${outputs}
@@ -79,4 +82,3 @@ function(aviator_add_third_party_source name)
 
     add_dependencies(aviator_third_party_all third_party_${name})
 endfunction()
-

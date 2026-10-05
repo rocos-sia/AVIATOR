@@ -26,6 +26,8 @@
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/release/dist",
+        "AVIATOR_DEPS_DIR": "${sourceDir}/build/release/third_party/install",
         "CMAKE_C_COMPILER": "/usr/bin/gcc",
         "CMAKE_CXX_COMPILER": "/usr/bin/g++",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",

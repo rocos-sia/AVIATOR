@@ -17,6 +17,11 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 include(CTest)
+# Keep the default installation local even when xCoreSDK is disabled.
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/dist" CACHE PATH
+        "Install path prefix" FORCE)
+endif()
 include(GNUInstallDirs)
 
 # Output directories
