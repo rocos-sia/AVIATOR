@@ -6,8 +6,8 @@ install(PROGRAMS rh56ftp_node.py
 install(FILES README.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/rh56ftp_hand)
 install(FILES
-  ${PROJECT_SOURCE_DIR}/RH56FTP/python/pendant/__init__.py
-  ${PROJECT_SOURCE_DIR}/RH56FTP/python/pendant/handlink.py
+  ${PROJECT_SOURCE_DIR}/third_party/RH56FTP/python/pendant/__init__.py
+  ${PROJECT_SOURCE_DIR}/third_party/RH56FTP/python/pendant/handlink.py
   DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/rh56ftp_hand/pendant)
 
 if(BUILD_TESTING AND Python3_Interpreter_FOUND)

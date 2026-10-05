@@ -43,7 +43,7 @@ UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[
 def _pendant_import_path() -> None:
     """Make the source tree and an installed sibling package importable."""
     here = Path(__file__).resolve().parent
-    candidates = (here, here.parent.parent / "RH56FTP" / "python")
+    candidates = (here, here.parent.parent / "third_party" / "RH56FTP" / "python")
     for candidate in candidates:
         if (candidate / "pendant" / "handlink.py").is_file():
             value = str(candidate)
@@ -57,7 +57,7 @@ def load_handlink():
     try:
         from pendant.handlink import HAND_IP, HAND_PORT, HandLink
     except ImportError as exc:  # pragma: no cover - depends on deployment env
-        raise RuntimeError("需要 pymodbus，并且 RH56FTP/python/pendant 可导入") from exc
+        raise RuntimeError("需要 pymodbus，并且 third_party/RH56FTP/python/pendant 可导入") from exc
     return HAND_IP, HAND_PORT, HandLink
 
 

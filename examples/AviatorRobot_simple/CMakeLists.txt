@@ -127,20 +127,6 @@ if(AVIATOR_WITH_SIMULATION)
 endif()
 
 #------------------------------------------------------------------------------
-# Assets (config and models)
-#------------------------------------------------------------------------------
-add_custom_target(aviator_assets ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/config"
-        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/model"
-        "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/model"
-)
-
-add_dependencies(aviator aviator_assets)
-
-#------------------------------------------------------------------------------
 # Installation
 #------------------------------------------------------------------------------
 install(TARGETS aviator aviator_control

@@ -3,7 +3,7 @@
 从 AVIATOR 仓库根目录创建并激活环境：
 
 ```bash
-conda env create -f RH56FTP/python/pendant/environment.yml
+conda env create -f third_party/RH56FTP/python/pendant/environment.yml
 conda activate rh56-pendant
 ```
 
@@ -14,19 +14,19 @@ conda activate rh56-pendant
 无硬件时使用模拟数据，验证状态表、触觉热力图和控制滑条：
 
 ```bash
-python RH56FTP/run_pendant.py --mock
+python third_party/RH56FTP/run_pendant.py --mock
 ```
 
 连接实机（默认 `192.168.11.210:6000`）：
 
 ```bash
-python RH56FTP/run_pendant.py
+python third_party/RH56FTP/run_pendant.py
 ```
 
 指定地址和端口：
 
 ```bash
-python RH56FTP/run_pendant.py --host 192.168.11.210 --port 6000
+python third_party/RH56FTP/run_pendant.py --host 192.168.11.210 --port 6000
 ```
 
 启动器也支持使用绝对路径，从任意目录启动。

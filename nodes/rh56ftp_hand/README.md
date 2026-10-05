@@ -1,6 +1,6 @@
 # rh56ftp_hand — RH56FTP Modbus TCP ZMQ 节点
 
-这个节点与 `aviator_hand` 并列运行，复用 `RH56FTP/python/pendant/handlink.py` 的
+这个节点与 `aviator_hand` 并列运行，复用 `third_party/RH56FTP/python/pendant/handlink.py` 的
 Modbus 寄存器实现，将 RH56FTP 接入 AVIATOR 的两帧 ZMQ 总线：
 
 - 订阅 `hand.command`，支持 `NORMALIZED_POSITION` 和 `GRASP_SETPOINT`；

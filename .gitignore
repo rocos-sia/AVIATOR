@@ -37,7 +37,7 @@ AviatorRobot_simple/build
 *.TXT
 /outputs/hand_mount_check
 /hil-serl/data/aviator
-/RH56FTP/ROS1/inspire_hand_485/inspire_hand/build
-/RH56FTP/ROS2/inspire_hand_485_ros2/inspire_hand/src/log
-/RH56FTP/ROS2/inspire_hand_485_ros2/inspire_hand/src/serial-foxy/build
+/third_party/RH56FTP/ROS1/inspire_hand_485/inspire_hand/build
+/third_party/RH56FTP/ROS2/inspire_hand_485_ros2/inspire_hand/src/log
+/third_party/RH56FTP/ROS2/inspire_hand_485_ros2/inspire_hand/src/serial-foxy/build
 /_rokae_log_

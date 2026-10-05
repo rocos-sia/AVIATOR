@@ -16,7 +16,8 @@ for arg in "$@"; do
         --logger) LOGGER=true ;;
         -h|--help)
             echo '用法: ./scripts/start_aviator.sh [--simulation] [--headless] [--logger] [--dry-run]'
-            echo '默认启动 Rokae + RH56FTP；--simulation 使用单个仿真进程替代设备节点。'
+            echo '默认启动 Rokae + RH56FTP，加载 config/system.yaml。'
+            echo '--simulation 使用单个仿真进程替代设备节点，加载 config/system-simulation.yaml。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '环境变量: AVIATOR_BIN, CONDA_ROOT, HAND_PYTHON, CAMERA_PYTHON, MONITOR_BIN, START_DELAY'
             exit 0 ;;
@@ -24,6 +25,10 @@ for arg in "$@"; do
     esac
 done
 $HEADLESS && ! $SIMULATION && { echo '--headless 仅适用于 --simulation' >&2; exit 2; }
+SYSTEM_CONFIG=config/system.yaml
+if $SIMULATION; then
+    SYSTEM_CONFIG=config/system-simulation.yaml
+fi
 AVIATOR_BIN=${AVIATOR_BIN:-$ROOT/build/bin}
 recording_options=()
 if $LOGGER; then
@@ -98,7 +103,7 @@ if ! $DRY_RUN; then
     commands=(setsid flock google-chrome-stable curl)
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
         "$AVIATOR_BIN/aviator_core_managed" "$MONITOR_BIN")
-    files=(config/system.yaml config/robot.yaml config/camera.yaml)
+    files=("$SYSTEM_CONFIG" config/robot.yaml config/camera.yaml)
     if $LOGGER; then
         executables+=("$AVIATOR_BIN/aviator_logger")
         files+=(config/recording.yaml)
@@ -136,21 +141,21 @@ else
     LOG_DIR='<本次运行日志目录>'
 fi
 
-start bus "$AVIATOR_BIN/aviator_bus" --config config/system.yaml
+start bus "$AVIATOR_BIN/aviator_bus" --config "$SYSTEM_CONFIG"
 if $SIMULATION; then
     simulation_options=()
     $HEADLESS && simulation_options+=(--headless)
-    start simulation "$AVIATOR_BIN/simulation" --config config/system.yaml \
+    start simulation "$AVIATOR_BIN/simulation" --config "$SYSTEM_CONFIG" \
         --camera-config config/camera.yaml "${recording_options[@]}" \
         --camera-id cockpit "${simulation_options[@]}"
 else
-    start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config config/system.yaml
+    start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config "$SYSTEM_CONFIG"
     start rh56ftp env PATH="$(dirname "$HAND_PYTHON"):$PATH" "$HAND_PYTHON" \
         nodes/rh56ftp_hand/rh56ftp_node.py --right-host 192.168.21.210 \
         --left-host 192.168.11.210 --speed 500 --force 500
 fi
 start gateway "$AVIATOR_BIN/flight_gateway"
-start core "$AVIATOR_BIN/aviator_core_managed" --config config/system.yaml
+start core "$AVIATOR_BIN/aviator_core_managed" --config "$SYSTEM_CONFIG"
 if ! $SIMULATION; then
     start camera env PATH="$(dirname "$CAMERA_PYTHON"):$PATH" "$CAMERA_PYTHON" \
         nodes/camera/main.py --config config/camera.yaml "${recording_options[@]}" \

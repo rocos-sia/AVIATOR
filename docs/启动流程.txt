@@ -1,9 +1,10 @@
 // 真机：manipulator（Rokae）+ rh56ftp_hand；仿真：只启动 simulation 替代这两个节点。
-// robot.yaml 不再配置 backend，Core 使用相同的 system.yaml 和设备协议。
+// robot.yaml 不再配置 backend，真机使用 system.yaml，仿真使用 system-simulation.yaml；设备协议相同。
+// 一键脚本按 --simulation 自动选择配置；仿真 command/origin 超时为 100/200 ms，真机为 50/100 ms。
 // 仿真各终端启动（不要同时启动真机设备节点）：
-// ./build/debug/bin/aviator_bus --config config/system.yaml
-// ./build/debug/bin/simulation --config config/system.yaml
-// ./build/debug/bin/aviator_core_managed --config config/system.yaml
+// ./build/debug/bin/aviator_bus --config config/system-simulation.yaml
+// ./build/debug/bin/simulation --config config/system-simulation.yaml
+// ./build/debug/bin/aviator_core_managed --config config/system-simulation.yaml
 // ./build/debug/bin/flight_gateway
 // 无窗口/GPU：simulation 添加 --headless --no-camera。
 // 一键仿真：AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation

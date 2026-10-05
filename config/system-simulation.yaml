@@ -1,0 +1,29 @@
+# Simulation-only configuration; paths are relative to this file.
+# Wider watchdog limits allow scheduling jitter on slower simulation hosts.
+robot: robot.yaml
+config_id: aviator-control-v1
+bus:
+  publish: tcp://127.0.0.1:5555
+  subscribe: tcp://127.0.0.1:5556
+manipulator_service: tcp://127.0.0.1:5558
+command_timeout_ms: 200
+origin_timeout_ms: 400
+# Arm command/state: 100 Hz. Local dual-arm execution: 1 ms.
+# local.task is the explicitly enabled Core task supervisor, not a FlightCommand.
+
+# Core -> hand device. The hardware hand node and simulation expose the same interface.
+core_hand:
+  enabled: true
+  # publisher_id: inspire_hand
+  publisher_id: rh56ftp_hand
+  completion_timeout_ms: 5000
+  feedback_timeout_ms: 500
+  open_tolerance: 1.0
+  # Order: thumb rotation, thumb flexion, index, middle, ring, pinky. Range [0,1].
+  open:
+    left: [0, 1, 1, 1, 1, 1]
+    right: [0, 1, 1, 1, 1, 1]
+  # User-selected close targets; keep thumb rotation first.
+  close:
+    left: [0.5, 0, 0, 0, 0, 0]
+    right: [0.5, 0, 0, 0, 0, 0]

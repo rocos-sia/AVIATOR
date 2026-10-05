@@ -138,7 +138,6 @@ int main(int argc, char** argv) {
         std::string feedback_error;
         bool last_service_ready = false;
         bool running = true;
-        std::uint64_t next_print = 0;
         const auto publish = [&](std::uint64_t now) {
             require(sequence < aviator::max_json_integer, "sequence exhausted; restart required");
             auto message = flight_gateway::command(sample, session, clock, ++sequence, now,
@@ -146,10 +145,6 @@ int main(int argc, char** argv) {
             if (!aviator::encode(message, payload, error))
                 throw std::runtime_error("encode: " + error);
             aviator::send(pub, "flight.command", payload);
-            if (running && now >= next_print) {
-                aviator::Logger::info("roll={:.4f} pitch={:.4f}", sample.roll_value, sample.pitch_value);
-                next_print = now + 100000; // Limit console output to 10 Hz.
-            }
         };
         while (running) {
             const auto now = aviator::monotonic_us();
