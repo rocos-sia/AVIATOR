@@ -71,6 +71,9 @@ try:
     assert json.loads(fetch('/api/state'))['streams'] == []
     assert b'AVIATOR' in fetch('/') and b'textContent' in fetch('/assets/app.js')
     assert len(json.loads(fetch('/api/overview'))['publishers']) == 7
+    resources = json.loads(fetch('/api/system'))
+    assert resources['uptime_seconds'] > 0 and resources['memory']['total_bytes'] > 0
+    assert b'tab-resources' in fetch('/') and b'/api/system' in fetch('/assets/system.js')
     manifest = json.loads(fetch('/api/model-manifest'))
     assert manifest['resource_errors'] == []
     assert b'<robot' in fetch(manifest['model_url'])

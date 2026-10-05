@@ -1,4 +1,5 @@
 import './settings.js';
+import './system.js';
 import {setLogsVisible} from './logs.js';
 const $ = id => document.getElementById(id);
 const text = (id, value) => { $(id).textContent = value ?? '—'; };
@@ -40,7 +41,7 @@ function sourceKey(g) {
 function setTab(next) {
   tab = next;
   setLogsVisible(next === 'logs');
-  for (const name of ['overview','messages','logs','settings']) {
+  for (const name of ['overview','messages','resources','logs','settings']) {
     $(name).hidden = name !== next;
     $(`tab-${name}`).setAttribute('aria-selected', String(name === next));
     $(`tab-${name}`).tabIndex = name === next ? 0 : -1;
@@ -49,11 +50,11 @@ function setTab(next) {
   if (next === 'messages' && latestState && !pausedAt) renderMessages(latestState);
   if (next === 'overview') cameraRefresh();
 }
-for (const name of ['overview','messages','logs','settings']) {
+for (const name of ['overview','messages','resources','logs','settings']) {
   $(`tab-${name}`).onclick = () => setTab(name);
   $(`tab-${name}`).onkeydown = event => {
     if (['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) {
-      event.preventDefault(); const tabs = ['overview','messages','logs','settings'];
+      event.preventDefault(); const tabs = ['overview','messages','resources','logs','settings'];
       const index = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length-1 :
         (tabs.indexOf(name) + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
       const next = tabs[index];
@@ -135,6 +136,7 @@ function renderOverview() {
   const sys = live(overview?.system) ? overview.system.current : null;
   text('system', sys?.state ?? (online ? labels[stateOf(overview?.system)] : '状态未知'));
   text('source', sys?.control_source); text('errors', sys ? `${sys.current_error_code ?? '—'} / ${sys.last_error_code ?? '—'}` : '—');
+  for (const id of ['system','source','errors']) $(id).title = $(id).textContent;
   text('connection', online ? '监控服务在线' : '监控服务不可用');
   $('connection').className = `badge ${online ? 'FRESH' : 'STALE'}`;
   text('notice', !online ? '连接中断 · 保留画面为旧快照' :

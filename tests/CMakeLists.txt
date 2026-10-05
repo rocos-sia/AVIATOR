@@ -59,6 +59,11 @@ target_link_libraries(aviator_monitor_config_test PRIVATE aviator_monitor_state)
 add_test(NAME monitor_config COMMAND aviator_monitor_config_test)
 set_tests_properties(monitor_config PROPERTIES TIMEOUT 5)
 
+aviator_add_test_executable(aviator_monitor_system_test monitor_system_test.cpp)
+target_link_libraries(aviator_monitor_system_test PRIVATE aviator_monitor_state)
+add_test(NAME monitor_system COMMAND aviator_monitor_system_test)
+set_tests_properties(monitor_system PROPERTIES TIMEOUT 5)
+
 aviator_add_test_executable(aviator_monitor_test monitor_test.cpp)
 target_include_directories(aviator_monitor_test PRIVATE ../nodes/aviator_monitor)
 target_link_libraries(aviator_monitor_test PRIVATE aviator_monitor_state)

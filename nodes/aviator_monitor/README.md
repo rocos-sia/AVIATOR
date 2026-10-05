@@ -1,6 +1,6 @@
 # aviator_monitor（监测与动态配置 Web UI）
 
-只读系统监测：C++17 节点订阅 ZMQ，浏览器通过本地 HTTP 查看。页面包含“直观监测”“系统消息”和“配置”三个 Tab，视觉依据 [双 Tab 设计方案](../../docs/AVIATOR_Monitor双Tab界面设计方案.md)。没有控制发布接口，不发送 REQ/REP 操作。
+只读系统监测：C++17 节点订阅 ZMQ，浏览器通过本地 HTTP 查看。页面包含“直观监测”“系统消息”“系统状态”“日志”和“配置”五个 Tab，视觉依据 [双 Tab 设计方案](../../docs/AVIATOR_Monitor双Tab界面设计方案.md)。没有控制发布接口，不发送 REQ/REP 操作。
 
 ## 构建与启动
 
@@ -35,6 +35,14 @@ GCC/Clang 的 Debug 构建保留调试符号，并对 Monitor 启用 `-O2`。`CO
 | `--help` | — | 显示帮助。 |
 
 源码构建默认读取 [config/monitor.yaml](../../config/monitor.yaml)；安装后优先使用可执行文件相邻的 `../share/aviator/monitor/` 资源。模型与前端文件通过精确资源清单提供，不开放任意文件读取。
+
+## 系统资源监测
+
+状态栏显示运行 Monitor 的 Linux 主机自开机以来的时间（天 / 时:分:秒），旁边的“程序运行”显示自 `aviator_monitor` 进程启动以来的时长，刷新网页不会重置。状态栏各项预留固定宽度，数字采用等宽数字显示，避免内容变化带动相邻项移动。直观监测顶部以图标显示 CPU、内存占用百分比，硬盘读写及网络收发速率。
+
+“系统状态”页位于“日志”之前，按 CPU（总计及各逻辑核）、内存与交换空间、硬盘、网络分区展示最近 60 秒曲线。每秒通过 `GET /api/system` 读取一次，浏览器在后台时暂停，返回后保留时间缺口；断连时当前值显示 `—`，历史曲线标为旧快照。
+
+后端直接读取 `/proc`，所有客户端共享一秒采样缓存，不增加依赖或采样线程。CPU 和 I/O 使用相邻计数差值，内存使用 `MemTotal - MemAvailable`；磁盘统计 `/sys/block/<设备>/device` 存在的整盘硬件设备，排除分区及 dm/md/loop 重复计数；网络合计所有非回环接口（包含虚拟接口，桥接场景可能重复计量）。速率按 B/s、KiB/s、MiB/s 自动显示。首个速率样本、计数器重置或不可读指标显示 `—`，不伪装成零。
 
 ## 节点日志
 
@@ -160,10 +168,11 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 | overview.cpp / config.cpp | 类型化概览、侧级时效、来源筛选、单位与标定映射。 |
 | preview.cpp / preview_receiver.hpp | JPEG 身份、尺寸、时效与有界帧缓存，以及可动态切换的独立图像 SUB。 |
 | assets.cpp | URDF/mesh 精确资源清单与原有 Cessna 路径别名。 |
+| system.cpp / system.hpp | Linux 主机运行时间和资源采样、一秒共享缓存。 |
 | logs.cpp / logs.hpp | 本次运行日志列表、有界文件读取与级别识别。 |
-| index.html / web/ | 四个 Tab、配置表单与 YAML 编辑、浏览器生命周期和 Three.js 视口。 |
+| index.html / web/ | 五个 Tab、配置表单与 YAML 编辑、浏览器生命周期和 Three.js 视口。 |
 
-查询接口使用 GET：`/`、`/api/state`、`/api/message?id=N`、`/api/overview`、`/api/model-manifest`、`/api/camera/latest`、`/api/camera/frame/{token}`，以及清单中的 `/assets/` 和 `/models/` 文件。概览 schema_version=1，包含 Monitor 会话/快照版本，每部分保留独立来源、当前值、状态、年龄及剩余有效时间。
+查询接口使用 GET：`/`、`/api/state`、`/api/message?id=N`、`/api/overview`、`/api/system`、`/api/model-manifest`、`/api/camera/latest`、`/api/camera/frame/{token}`，以及清单中的 `/assets/` 和 `/models/` 文件。概览 schema_version=1，包含 Monitor 会话/快照版本，每部分保留独立来源、当前值、状态、年龄及剩余有效时间。
 
 概览最多 50 Hz，以满足 50 ms 机械臂显示时效；消息表摘要 10 Hz；RGB 最高 15 Hz；三维目标约 30 fps，受部署硬件影响。每条轮询链路不重叠请求；本地时效持续推进，按请求耗时保守扣减有效期。视口/数值不等待图像加载。
 
@@ -174,7 +183,7 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 ## 验证
 
 ```bash
-cmake --build build/communication --target aviator_monitor_test aviator_monitor_overview_test aviator_monitor_config_test aviator_monitor_preview_receiver_test --parallel
+cmake --build build/communication --target aviator_monitor_system_test aviator_monitor_test aviator_monitor_overview_test aviator_monitor_config_test aviator_monitor_preview_receiver_test --parallel
 ctest --test-dir build/communication -R '^monitor_' --output-on-failure
 python nodes/camera/test_preview.py
 python nodes/camera/test_camera.py
@@ -220,3 +229,12 @@ node tests/monitor_logs_browser_test.cjs build/bin/aviator_monitor
 ```
 
 测试覆盖节点切换、精确级别筛选、无级别输出、HTML 纯文本显示、每秒刷新、日志清空、后启动节点发现、文件删除、跟随开关、后台停止轮询及桌面/窄屏布局。`monitor_http` 同时覆盖日志级别解析、ANSI 颜色、文件替换、读取上限、非法 UTF-8、中文文件名和路径访问限制。
+
+系统状态浏览器验证（Node ≥18，无需设备）：
+
+```bash
+AVIATOR_PLAYWRIGHT=/absolute/path/to/node_modules/playwright-core \
+node tests/monitor_system_browser_test.cjs build/bin/aviator_monitor
+```
+
+测试覆盖资源数值、开机运行时间、Tab 顺序与键盘切换、每秒刷新、历史曲线、断连恢复及窄屏布局。`monitor_system` 使用固定计数器验证 CPU、内存、磁盘和网络计算，以及首次采样、计数器重置和指标缺失。

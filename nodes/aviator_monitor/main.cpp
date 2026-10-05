@@ -7,6 +7,7 @@
 #include "preview_receiver.hpp"
 #include "runtime.hpp"
 #include "startup.hpp"
+#include "system.hpp"
 #include "transport.hpp"
 #include <filesystem>
 
@@ -104,7 +105,8 @@ bool request_ready(Client& client) {
     return client.request.size() >= client.body_start + size;
 }
 void response(Client& client, monitor::State& state, monitor::Preview& preview,
-              const monitor::Assets& assets, const monitor::Logs& logs, const std::string& clock,
+              const monitor::Assets& assets, const monitor::Logs& logs, monitor::SystemStats& system,
+              const std::string& clock,
               const std::function<monitor::Json(const monitor::Json*)>& configuration) {
     std::istringstream line(client.request.substr(0, client.request.find("\r\n")));
     std::string method, path, version, extra;
@@ -171,6 +173,8 @@ void response(Client& client, monitor::State& state, monitor::Preview& preview,
             status = "503 Service Unavailable";
             body = monitor::Json{{"error", "日志目录或文件不可读，请检查 --log-dir 和文件权限。"}}.dump();
         }
+    } else if (path == "/api/system") {
+        body = system.snapshot(aviator::monotonic_us()).dump();
     } else if (path == "/api/model-manifest") {
         body = assets.manifest.dump();
     } else if (path == "/api/overview") {
@@ -228,6 +232,7 @@ void response(Client& client, monitor::State& state, monitor::Preview& preview,
 } // namespace
 int main(int argc, char** argv) {
     try {
+        monitor::SystemStats system;
         unsigned port = 8081;
         std::string bind_address = "0.0.0.0";
         std::string endpoint = aviator::subscribe_endpoint, config_path, preview_endpoint, log_directory;
@@ -455,7 +460,7 @@ int main(int argc, char** argv) {
                         complete = true;
                     }
                     if (complete)
-                        response(client, state, preview, assets, logs, clock, configuration);
+                        response(client, state, preview, assets, logs, system, clock, configuration);
                 }
                 if (!client.response.empty()) {
                     const auto n =

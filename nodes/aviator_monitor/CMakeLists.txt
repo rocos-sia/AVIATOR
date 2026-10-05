@@ -3,7 +3,7 @@ find_package(yaml-cpp REQUIRED)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/index.html" MONITOR_HTML)
 configure_file(page.hpp.in generated/page.hpp @ONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS index.html)
-add_library(aviator_monitor_state monitor.cpp overview.cpp config.cpp preview.cpp assets.cpp logs.cpp)
+add_library(aviator_monitor_state monitor.cpp overview.cpp config.cpp preview.cpp assets.cpp logs.cpp system.cpp)
 target_include_directories(aviator_monitor_state PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(aviator_monitor_state PUBLIC cxx_std_17)
 target_link_libraries(aviator_monitor_state PUBLIC aviator_service aviator_transport aviator_runtime Threads::Threads yaml-cpp)
@@ -26,7 +26,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   endforeach()
 endif()
 install(TARGETS aviator_monitor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES web/app.js web/logs.js web/settings.js web/viewer.js web/vendor.js web/style.css web/THIRD_PARTY_NOTICES.md
+install(FILES web/app.js web/system.js web/logs.js web/settings.js web/viewer.js web/vendor.js web/style.css web/THIRD_PARTY_NOTICES.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/monitor/web)
 install(FILES ${PROJECT_SOURCE_DIR}/config/monitor.yaml DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/monitor)
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/urdf ${PROJECT_SOURCE_DIR}/models/meshes
