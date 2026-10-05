@@ -191,13 +191,13 @@ int main(int argc, char **argv) try {
         core.disable();
     }
     // Geometry is configured before device threads start; exercise the actual collision loader.
-    const auto collision = root / "models/control/aviator_collision.urdf";
-    makePinocchioCollisionChecker(collision.string(), (root / "models/control/aviator_collision.srdf").string(),
+    const auto collision = root / "models/urdf/aviator_collision.urdf";
+    makePinocchioCollisionChecker(collision.string(), (root / "models/urdf/aviator_collision.srdf").string(),
                                  GraspCylinder{}, geometry.tools);
 #ifdef AVIATOR_HAVE_MUJOCO
     char error[1024]{};
     std::unique_ptr<mjModel, decltype(&mj_deleteModel)> model(
-        mj_loadXML((root / "models/control/aviator.xml").c_str(), nullptr, error, sizeof(error)), mj_deleteModel);
+        mj_loadXML((root / "models/mjcf/aviator.xml").c_str(), nullptr, error, sizeof(error)), mj_deleteModel);
     check(bool(model), error);
     std::unique_ptr<mjData, decltype(&mj_deleteData)> data(mj_makeData(model.get()), mj_deleteData);
     mj_resetDataKeyframe(model.get(), data.get(), mj_name2id(model.get(), mjOBJ_KEY, "aviator_home"));

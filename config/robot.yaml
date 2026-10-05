@@ -25,12 +25,10 @@ rokae:
   right_local_ip: 192.168.2.100
 
 # 控制用 URDF：包含双臂运动链、物理关节限位及 14 个驱动的硬件映射。
-# urdf: ../models/control/aviator_control.urdf
 urdf: ../models/urdf/aviator.urdf
-# 离线轨迹检查使用的 Pinocchio 碰撞 URDF（由 scripts/generate_aviator.py 导出，
-# 分片凸网格 + 圆柱/胶囊工具 + SRDF 排除对），用于碰撞检查。
-# 模型资源位于 AVIATOR/models/control，路径仅相对本配置解析。
-collision_urdf: ../models/control/aviator_collision.urdf
+# 离线轨迹检查使用专用的简化碰撞 URDF，保留分片凸网格、抓握圆柱和 SRDF 排除对。
+# URDF/SRDF 统一位于 models/urdf，网格位于 models/meshes；路径相对本配置解析。
+collision_urdf: ../models/urdf/aviator_collision.urdf
 # Core 规划碰撞检查，仿真/真机共用；省略时默认 true。
 # false 跳过所有规划碰撞检查（含自碰撞、双臂互碰和环境碰撞），不加载碰撞模型。
 # 关节位置限位、通信超时和 SDK 故障检查仍生效；不改变控制器自身保护。

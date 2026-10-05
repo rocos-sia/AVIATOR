@@ -22,14 +22,14 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="../meshes/aircraft.STL" scale="1 1 1"/>
+        <mesh filename="../meshes/Cessna/aircraft.STL" scale="1 1 1"/>
       </geometry>
       <material name="orange"/>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="../meshes/aircraft.STL" scale="1 1 1"/>
+        <mesh filename="../meshes/Cessna/aircraft.STL" scale="1 1 1"/>
       </geometry>
     </collision>
     <inertial>
@@ -62,14 +62,14 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="../meshes/steering_wheel.STL" scale="1 1 1"/>
+        <mesh filename="../meshes/Cessna/steering_wheel.STL" scale="1 1 1"/>
       </geometry>
       <material name="blue"/>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="steering_wheel.STL" scale="1 1 1"/>
+        <mesh filename="../meshes/Cessna/steering_wheel.STL" scale="1 1 1"/>
       </geometry>
     </collision>
     <inertial>

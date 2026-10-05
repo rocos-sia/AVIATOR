@@ -25,7 +25,8 @@ add_executable(aviator_core_managed main_managed.cpp StateMachineRuntime.cpp Man
 target_link_libraries(aviator_core_managed PRIVATE aviator_core_control aviator_service)
 install(TARGETS aviator_core aviator_core_servo aviator_core_managed RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/config/ DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/config)
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/control DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/models)
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/urdf ${PROJECT_SOURCE_DIR}/models/meshes
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/models)
 
 # Keep network serialization within the device watchdog in Debug, retaining symbols.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

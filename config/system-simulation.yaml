@@ -6,8 +6,8 @@ bus:
   publish: tcp://127.0.0.1:5555
   subscribe: tcp://127.0.0.1:5556
 manipulator_service: tcp://127.0.0.1:5558
-command_timeout_ms: 200
-origin_timeout_ms: 400
+command_timeout_ms: 100
+origin_timeout_ms: 200
 # Arm command/state: 100 Hz. Local dual-arm execution: 1 ms.
 # local.task is the explicitly enabled Core task supervisor, not a FlightCommand.
 
