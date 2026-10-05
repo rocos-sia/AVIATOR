@@ -12,6 +12,11 @@ constexpr std::array<SDL_Scancode, 11> buttons{
     SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4,
     SDL_SCANCODE_5, SDL_SCANCODE_6, SDL_SCANCODE_7, SDL_SCANCODE_8,
     SDL_SCANCODE_9, SDL_SCANCODE_0, SDL_SCANCODE_MINUS};
+// Physical scancodes keep keypad digits usable with Num Lock on or off.
+constexpr std::array<SDL_Scancode, 11> keypad_buttons{
+    SDL_SCANCODE_KP_1, SDL_SCANCODE_KP_2, SDL_SCANCODE_KP_3, SDL_SCANCODE_KP_4,
+    SDL_SCANCODE_KP_5, SDL_SCANCODE_KP_6, SDL_SCANCODE_KP_7, SDL_SCANCODE_KP_8,
+    SDL_SCANCODE_KP_9, SDL_SCANCODE_KP_0, SDL_SCANCODE_KP_MINUS};
 // Internal compatibility reports only; no evdev device is opened or queried.
 input_event report(unsigned type, unsigned code, int value, std::uint64_t now) {
     input_event event{};
@@ -25,8 +30,8 @@ JoystickSample sample(const Config& c) {
             {c.pitch_axis, -32768, 32767, 0, c.invert_pitch}};
 }
 }
-SdlInput::SdlInput(const Config& config)
-    : config_(config), stick_(sample(config)), keys_(sample(config)),
+SdlInput::SdlInput(const Config& config, std::function<std::uint64_t()> clock)
+    : config_(config), clock_(std::move(clock)), stick_(sample(config)), keys_(sample(config)),
       keyboard_(keys_, config.keyboard) {
     if (config.source != "joystick")
         throw std::runtime_error("RS422 mode not implemented; joystick and keyboard disabled");
@@ -45,12 +50,13 @@ SdlInput::SdlInput(const Config& config)
         SDL_Quit();
         throw std::runtime_error("SDL input window failed: " + error);
     }
-    key_buttons_.codes = keyboard_buttons;
+    key_buttons_.codes = keypad_buttons_.codes = keyboard_buttons;
     for (unsigned i = 0; i < stick_buttons_.codes.size(); ++i)
         stick_buttons_.codes[i] = i + 1;
     SDL_PumpEvents();
     focused_ = (SDL_GetWindowFlags(window_) & SDL_WINDOW_INPUT_FOCUS) != 0;
-    resetKeyboard(aviator::monotonic_us());
+    unfocused_since_ = clock_();
+    resetKeyboard(unfocused_since_);
     openJoystick();
     try { help_->show(window_, focused_, joystick_ && SDL_JoystickGetAttached(joystick_)); }
     catch (...) {
@@ -97,11 +103,14 @@ void SdlInput::resetKeyboard(std::uint64_t now) {
     keyboard_.update(report(EV_SYN, SYN_REPORT, 0, now), now);
     arrows_.fill(false);
     key_buttons_.pending.fill(0);
+    keypad_buttons_.pending.fill(0);
     const auto* state = SDL_GetKeyboardState(nullptr);
     for (unsigned i = 0; i < arrows.size(); ++i)
         if (state[arrows[i]]) keyboard_.suppressHeld(keyboard_arrows[i]);
-    for (unsigned i = 0; i < buttons.size(); ++i)
+    for (unsigned i = 0; i < buttons.size(); ++i) {
         key_buttons_.held[i] = state[buttons[i]] != 0;
+        keypad_buttons_.held[i] = state[keypad_buttons[i]] != 0;
+    }
 }
 bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
     pressed.clear();
@@ -109,15 +118,24 @@ bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
     bool drained = false, repaint = false;
     for (unsigned n = 0; n < 128; ++n) {
         if (!SDL_PollEvent(&event)) { drained = true; break; }
-        const auto now = aviator::monotonic_us();
+        const auto now = clock_();
         if (event.type == SDL_QUIT || (event.type == SDL_WINDOWEVENT &&
             event.window.event == SDL_WINDOWEVENT_CLOSE)) return false;
         if (event.type == SDL_WINDOWEVENT) repaint = true;
         if (event.type == SDL_WINDOWEVENT &&
             (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
              event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)) {
-            focused_ = event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED;
-            resetKeyboard(now);
+            const bool focused = event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED;
+            if (focused != focused_) {
+                focused_ = focused;
+                if (!focused_) {
+                    unfocused_since_ = now;
+                    aviator::Logger::warn("Keyboard focus lost: holding target; keyboard input expires after 5 minutes");
+                } else {
+                    aviator::Logger::info("Keyboard focus restored; if Core entered SAFE, use the displayed recovery steps");
+                }
+                resetKeyboard(now);
+            }
         }
         if (event.type == SDL_JOYDEVICEREMOVED && joystick_ &&
             event.jdevice.which == SDL_JoystickInstanceID(joystick_)) {
@@ -136,15 +154,30 @@ bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
             if (event.key.repeat || (down && !recent)) continue;
             for (unsigned i = 0; i < arrows.size(); ++i) {
                 if (event.key.keysym.scancode != arrows[i]) continue;
+                if (down && !keyboard_active_[i / 2])
+                    keyboard_.setAxis(i / 2, i < 2 ? output.roll_value : output.pitch_value);
+                if (down) keyboard_active_[i / 2] = true;
                 // Use receipt time for integration; queued stale presses never start motion.
                 keyboard_.update(report(EV_KEY, keyboard_arrows[i], down, now), now);
                 keyboard_.update(report(EV_SYN, SYN_REPORT, 0, now), now);
                 arrows_[i] = down;
             }
+            if (event.key.keysym.scancode == SDL_SCANCODE_0 ||
+                event.key.keysym.scancode == SDL_SCANCODE_KP_0) {
+                keyboard_.update(report(EV_KEY, KEY_0, down, now), now);
+                keyboard_.update(report(EV_SYN, SYN_REPORT, 0, now), now);
+                if (down) {
+                    keyboard_active_.fill(true);
+                    arrows_.fill(false);
+                }
+            }
             for (unsigned i = 0; i < buttons.size(); ++i) {
-                if (event.key.keysym.scancode != buttons[i]) continue;
-                key_buttons_.update(report(EV_KEY, keyboard_buttons[i], down, stamp), now, true);
-                const auto hits = key_buttons_.update(report(EV_SYN, SYN_REPORT, 0, stamp), now, true);
+                if (!keyboard_buttons[i]) continue;
+                auto* source = event.key.keysym.scancode == buttons[i] ? &key_buttons_ :
+                               event.key.keysym.scancode == keypad_buttons[i] ? &keypad_buttons_ : nullptr;
+                if (!source) continue;
+                source->update(report(EV_KEY, keyboard_buttons[i], down, stamp), now, true);
+                const auto hits = source->update(report(EV_SYN, SYN_REPORT, 0, stamp), now, true);
                 pressed.insert(pressed.end(), hits.begin(), hits.end());
             }
         }
@@ -157,14 +190,22 @@ bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
             pressed.insert(pressed.end(), hits.begin(), hits.end());
         }
     }
-    help_->show(window_, focused_, joystick_ && SDL_JoystickGetAttached(joystick_), repaint);
+    const auto checked = clock_();
+    const bool expired = !focused_ && checked >= unfocused_since_ &&
+                         checked - unfocused_since_ >= focus_timeout_us;
+    if (expired && !focus_expired_ && !(joystick_ && SDL_JoystickGetAttached(joystick_)))
+        aviator::Logger::warn("Keyboard unfocused for 5 minutes: input invalid; Core CONTROL will enter SAFE");
+    focus_expired_ = expired;
+    help_->show(window_, focused_, joystick_ && SDL_JoystickGetAttached(joystick_), repaint, expired);
     if (!drained) return true; // Do not renew the lease while input events are queued.
-    const auto now = aviator::monotonic_us();
+    const auto now = clock_();
     const bool attached = joystick_ && SDL_JoystickGetAttached(joystick_);
     if (attached) {
         const int roll = SDL_JoystickGetAxis(joystick_, config_.roll_axis);
         const int pitch = SDL_JoystickGetAxis(joystick_, config_.pitch_axis);
         stick_.initializePosition(roll, pitch, now);
+        if (roll != stick_.roll.value && !arrows_[0] && !arrows_[1]) keyboard_active_[0] = false;
+        if (pitch != stick_.pitch.value && !arrows_[2] && !arrows_[3]) keyboard_active_[1] = false;
         if (roll != stick_.roll.value || pitch != stick_.pitch.value) {
             stick_.update(report(EV_ABS, config_.roll_axis, roll, now), now);
             stick_.update(report(EV_ABS, config_.pitch_axis, pitch, now), now);
@@ -174,13 +215,13 @@ bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
     }
     keyboard_.deviceChecked(now);
     output = attached ? stick_ : keys_;
-    if (focused_ && (arrows_[0] || arrows_[1])) {
+    if (!expired && keyboard_active_[0]) {
         output.roll_value = keys_.roll_value;
     }
-    if (focused_ && (arrows_[2] || arrows_[3])) {
+    if (!expired && keyboard_active_[1]) {
         output.pitch_value = keys_.pitch_value;
     }
-    output.device_connected = attached || focused_;
+    output.device_connected = attached || !expired;
     output.valid = output.device_connected && !output.failed;
     // The merged software target is sampled after this SDL pump, including source changes.
     output.sample_us = output.checked_us = now;

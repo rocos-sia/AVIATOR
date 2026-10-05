@@ -48,14 +48,18 @@ int main() {
         check(k.sample.roll_value == 0.75 && k.sample.pitch_value == -0.5,
               "holding without repeat reaches configured limits");
         k.key(KEY_RIGHT, 0);
-        check(k.sample.roll_value == 0 && k.sample.pitch_value == -0.5,
-              "release centers only the released axis");
+        check(k.sample.roll_value == 0.75 && k.sample.pitch_value == -0.5,
+              "release holds the last position");
         k.key(KEY_DOWN, 1);
-        check(k.sample.pitch_value == 0, "opposing directions center");
-        k.tick(); check(k.sample.pitch_value == 0, "opposing keys remain centered");
+        check(k.sample.pitch_value == -0.5, "opposing directions hold");
+        k.tick(); check(k.sample.pitch_value == -0.5, "opposing keys remain stationary");
         k.key(KEY_UP, 0); k.tick();
-        check(near(k.sample.pitch_value, 0.04), "remaining direction ramps from zero");
-        k.key(KEY_DOWN, 0); k.key(KEY_LEFT, 1); k.tick();
+        check(near(k.sample.pitch_value, -0.46), "remaining direction resumes from held target");
+        k.key(KEY_DOWN, 0);
+        check(k.key(KEY_0, 1).empty(), "zero must not send a state request");
+        k.key(KEY_0, 0); k.tick();
+        check(k.sample.roll_value == 0 && k.sample.pitch_value == 0, "zero returns both targets to origin");
+        k.key(KEY_LEFT, 1); k.tick();
         check(near(k.sample.roll_value, -0.01), "left is negative");
         k.sample.roll.inverted = true; k.sample.pitch.inverted = true;
         k.key(KEY_DOWN, 1); k.tick();
@@ -72,6 +76,7 @@ int main() {
         check(guard.accept(message, k.now, error), "existing Core accepts keyboard commands");
         for (unsigned i = 0; i < flight_gateway::keyboard_buttons.size(); ++i) {
             const auto code = flight_gateway::keyboard_buttons[i];
+            if (!code) continue;
             const auto pressed = k.key(code, 1);
             check(pressed == std::vector<unsigned>{i}, "number key maps to button index");
             check(k.key(code, 2).empty() && k.key(code, 1).empty(), "repeat cannot retrigger request");
@@ -79,6 +84,10 @@ int main() {
             check(k.key(code, 1) == std::vector<unsigned>{i}, "new press retriggers");
             k.key(code, 0);
         }
+        k.key(KEY_0, 1); k.tick();
+        check(k.sample.roll_value == 0 && k.sample.pitch_value == 0, "zero stops already held arrows");
+        k.key(KEY_LEFT, 2); k.tick();
+        check(k.sample.roll_value == 0, "held arrow cannot undo zero without release");
         Keyboard startup;
         startup.input.suppressHeld(KEY_RIGHT); startup.buttons.held[0] = true;
         startup.key(KEY_RIGHT, 2); startup.tick();

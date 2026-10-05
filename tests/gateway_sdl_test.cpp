@@ -15,6 +15,7 @@ void key(SDL_Scancode code, bool down, bool repeat = false) {
     event.type = down ? SDL_KEYDOWN : SDL_KEYUP;
     event.key.keysym.scancode = code;
     event.key.repeat = repeat;
+    event.key.keysym.mod = SDL_GetModState();
     check(SDL_PushEvent(&event) == 1, "push key");
 }
 }
@@ -29,29 +30,73 @@ int main() {
         config.source = "joystick"; config.device = "auto";
         config.roll_axis = 0; config.pitch_axis = 1;
         config.keyboard.roll_speed = 10;
-        flight_gateway::SdlInput input(config);
+        auto now = aviator::monotonic_us();
+        flight_gateway::SdlInput input(config, [&] { return now; });
         flight_gateway::JoystickSample sample{{0, -32768, 32767, 0}, {1, -32768, 32767, 0}};
         std::vector<unsigned> pressed;
         auto poll = [&] { check(input.poll(sample, pressed), "unexpected quit"); };
         focus(true); poll();
-        check(sample.fresh(aviator::monotonic_us(), 100000) && sample.roll_value == 0,
-              "keyboard-only startup");
-        key(SDL_SCANCODE_RIGHT, true); poll(); SDL_Delay(20); poll();
+        check(sample.fresh(now, 100000) && sample.roll_value == 0, "keyboard-only startup");
+        key(SDL_SCANCODE_RIGHT, true); poll(); now += 20000; poll();
         check(sample.roll_value > 0, "SDL keyboard ramps");
         key(SDL_SCANCODE_RIGHT, false); poll();
-        check(sample.roll_value == 0, "keyboard release centers without joystick");
+        const auto held = sample.roll_value;
+        now += 20000; poll();
+        check(sample.roll_value == held, "release retains keyboard position");
         key(SDL_SCANCODE_1, true); poll();
         check(pressed == std::vector<unsigned>{0}, "SDL keyboard button mapping");
-        key(SDL_SCANCODE_1, true, true); poll();
-        check(pressed.empty(), "SDL repeat suppressed");
+        key(SDL_SCANCODE_1, true, true); poll(); check(pressed.empty(), "SDL repeat suppressed");
         key(SDL_SCANCODE_1, false); poll();
-        key(SDL_SCANCODE_RIGHT, true); poll(); SDL_Delay(20); poll();
+        key(SDL_SCANCODE_RIGHT, true); poll(); now += 20000; poll();
         focus(false); poll();
-        check(!sample.valid && sample.roll_value == 0, "focus loss clears held keys and invalidates keyboard-only input");
-        key(SDL_SCANCODE_1, true); poll();
-        check(pressed.empty(), "background keyboard disabled");
+        const auto unfocused = sample.roll_value;
+        check(sample.valid && unfocused > held, "focus loss holds a valid target");
+        key(SDL_SCANCODE_1, true); poll(); check(pressed.empty(), "background keyboard disabled");
+        now += 299999999; poll();
+        check(sample.valid && sample.roll_value == unfocused, "5 minute grace holds without accumulating");
+        focus(false); poll(); // Repeated notifications must not renew the grace period.
+        now += 1; poll();
+        check(!sample.valid && !sample.device_connected, "5 minute boundary invalidates keyboard input");
         focus(true); poll();
-        check(sample.valid && sample.roll_value == 0, "focus regain does not restore held direction");
+        check(sample.valid && sample.roll_value == unfocused, "focus regain retains target, not held keys");
+        now += 20000; poll(); check(sample.roll_value == unfocused, "no automatic accumulation after focus regain");
+        // A new focus loss gets a full grace period.
+        focus(false); poll(); now += 20000; poll(); check(sample.valid, "focus timer resets on genuine regain");
+        focus(true); poll();
+        key(SDL_SCANCODE_0, true); poll();
+        check(pressed.empty() && sample.roll_value == 0 && sample.pitch_value == 0, "zero is local recenter, not button 10");
+        key(SDL_SCANCODE_0, false); poll();
+
+        const std::array<SDL_Scancode, 10> keypad{
+            SDL_SCANCODE_KP_1, SDL_SCANCODE_KP_2, SDL_SCANCODE_KP_3, SDL_SCANCODE_KP_4,
+            SDL_SCANCODE_KP_5, SDL_SCANCODE_KP_6, SDL_SCANCODE_KP_7, SDL_SCANCODE_KP_8,
+            SDL_SCANCODE_KP_9, SDL_SCANCODE_KP_MINUS};
+        for (const auto mod : {KMOD_NONE, KMOD_NUM}) {
+            SDL_SetModState(mod);
+            for (unsigned i = 0; i < keypad.size(); ++i) {
+                key(keypad[i], true); poll();
+                check(pressed == std::vector<unsigned>{i == 9 ? 10u : i}, "keypad maps with either Num Lock state");
+                key(keypad[i], true, true); poll(); check(pressed.empty(), "keypad repeat suppressed");
+                key(keypad[i], false); poll(); check(pressed.empty(), "keypad release sends no request");
+            }
+            now += 20000; poll();
+            check(sample.roll_value == 0 && sample.pitch_value == 0, "keypad navigation legends do not move axes");
+            key(SDL_SCANCODE_RIGHT, true); poll(); now += 20000; poll();
+            check(sample.roll_value > 0, "prepare nonzero keypad reset target");
+            key(SDL_SCANCODE_KP_0, true); poll();
+            check(sample.roll_value == 0 && sample.pitch_value == 0 && pressed.empty(), "keypad zero recenters without service request");
+            now += 20000; poll(); check(sample.roll_value == 0, "keypad zero stops held arrows");
+            key(SDL_SCANCODE_KP_0, false); key(SDL_SCANCODE_RIGHT, false); poll();
+        }
+        // Releasing one physical key must not clear another physical key's held state.
+        key(SDL_SCANCODE_1, true); poll(); check(pressed == std::vector<unsigned>{0}, "main digit press");
+        key(SDL_SCANCODE_KP_1, true); poll(); check(pressed == std::vector<unsigned>{0}, "independent keypad press");
+        key(SDL_SCANCODE_KP_1, false); poll();
+        key(SDL_SCANCODE_1, true); poll(); check(pressed.empty(), "keypad release cannot retrigger held main digit");
+        key(SDL_SCANCODE_1, false); poll();
+        focus(false); poll(); key(SDL_SCANCODE_KP_2, true); poll();
+        check(pressed.empty(), "background keypad input ignored");
+        focus(true); poll(); key(SDL_SCANCODE_KP_2, false); poll();
 
         const int device = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_FLIGHT_STICK, 2, 11, 0);
         check(device >= 0, "attach virtual joystick");
@@ -60,34 +105,31 @@ int main() {
         poll();
         check(SDL_JoystickSetVirtualAxis(joystick, 0, 32767) == 0 &&
               SDL_JoystickSetVirtualAxis(joystick, 1, -32768) == 0, "set virtual axes");
-        poll();
-        check(sample.roll_value == 1 && sample.pitch_value == -1, "SDL joystick normalization");
-        key(SDL_SCANCODE_LEFT, true); poll(); SDL_Delay(20); poll();
-        check(sample.roll_value < 0 && sample.pitch_value == -1, "keyboard overrides only its active axis");
+        poll(); check(sample.roll_value == 1 && sample.pitch_value == -1, "joystick movement takes over axes");
+        key(SDL_SCANCODE_LEFT, true); poll(); now += 20000; poll();
+        check(sample.roll_value > 0 && sample.roll_value < 1 && sample.pitch_value == -1,
+              "keyboard accumulates from current joystick target on its axis");
         const auto keyboard_stamp = sample.sample_us;
         key(SDL_SCANCODE_LEFT, false); poll();
-        check(sample.roll_value == 1 && sample.sample_us >= keyboard_stamp,
-              "release restores joystick without regressing protocol timestamp");
+        const auto keyboard_target = sample.roll_value;
+        now += 20000; poll();
+        check(sample.roll_value == keyboard_target && sample.sample_us >= keyboard_stamp,
+              "release holds target even with a stationary joystick");
         key(SDL_SCANCODE_LEFT, true); key(SDL_SCANCODE_RIGHT, true); poll();
-        check(sample.roll_value == 0, "opposing keys override joystick with zero");
+        now += 20000; poll(); check(sample.roll_value == keyboard_target, "opposing keys hold target");
         focus(false); poll();
-        check(sample.valid && sample.roll_value == 1, "joystick remains active in background");
+        now += 300000000; poll();
+        check(sample.valid && sample.roll_value == 1, "joystick remains available after keyboard focus timeout");
         SDL_JoystickSetVirtualButton(joystick, 0, 1); poll();
         check(pressed == std::vector<unsigned>{0}, "SDL joystick button mapping");
         poll(); check(pressed.empty(), "held joystick button does not repeat");
         SDL_JoystickClose(joystick);
-        check(SDL_JoystickDetachVirtual(device) == 0, "detach virtual joystick");
-        poll();
-        check(!sample.valid && !sample.device_connected, "disconnect with unfocused keyboard invalidates input");
-        focus(true); poll();
-        check(sample.valid && sample.roll_value == 0 && sample.pitch_value == 0,
-              "keyboard remains available after joystick removal");
-        check(SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_FLIGHT_STICK, 2, 11, 0) >= 0,
-              "replace joystick");
-        poll(); focus(false); poll();
-        check(sample.valid, "replacement joystick selected without config change");
-        SDL_Event quit{}; quit.type = SDL_QUIT;
-        SDL_PushEvent(&quit);
+        check(SDL_JoystickDetachVirtual(device) == 0, "detach virtual joystick"); poll();
+        check(!sample.valid && !sample.device_connected, "disconnect after focus timeout invalidates input");
+        focus(true); poll(); check(sample.valid, "keyboard remains available after joystick removal");
+        check(SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_FLIGHT_STICK, 2, 11, 0) >= 0, "replace joystick");
+        poll(); focus(false); poll(); check(sample.valid, "replacement joystick selected without config change");
+        SDL_Event quit{}; quit.type = SDL_QUIT; SDL_PushEvent(&quit);
         check(!input.poll(sample, pressed), "window quit stops input");
         std::cout << "SDL gateway tests passed\n";
     } catch (const std::exception& error) {

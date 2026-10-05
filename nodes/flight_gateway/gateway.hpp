@@ -46,12 +46,13 @@ struct JoystickSample {
 // Keyboard emulates the existing normalized JOYSTICK protocol for Core compatibility.
 inline constexpr std::array<unsigned, 4> keyboard_arrows{KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN};
 inline constexpr std::array<unsigned, 11> keyboard_buttons{
-    KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0, KEY_MINUS};
+    KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, 0, KEY_MINUS};
 class KeyboardInput {
 public:
     KeyboardInput(JoystickSample& sample, const KeyboardConfig& config)
         : sample_(sample), config_(config) {}
     void suppressHeld(unsigned code);
+    void setAxis(unsigned axis, double value);
     void update(const input_event& event, std::uint64_t now_us);
     // Call only after the input adapter has fully drained and checked its event queue.
     void deviceChecked(std::uint64_t now_us);
@@ -61,6 +62,7 @@ private:
     KeyboardConfig config_;
     std::array<bool, 4> held_{}, pending_{}, suppressed_{};
     double roll_ = 0, pitch_ = 0;
+    bool center_pending_ = false;
     std::uint64_t integrated_us_ = 0, event_us_ = 0;
 };
 

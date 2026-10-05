@@ -118,15 +118,21 @@ void KeyboardInput::suppressHeld(unsigned code) {
     for (unsigned i = 0; i < keyboard_arrows.size(); ++i)
         if (keyboard_arrows[i] == code) suppressed_[i] = true;
 }
+void KeyboardInput::setAxis(unsigned axis, double value) {
+    if (axis == 0)
+        roll_ = std::clamp(sample_.roll.inverted ? -value : value, -config_.roll_limit, config_.roll_limit);
+    else
+        pitch_ = std::clamp(sample_.pitch.inverted ? -value : value, -config_.pitch_limit, config_.pitch_limit);
+}
 void KeyboardInput::advance(std::uint64_t now) {
     if (integrated_us_ && now > integrated_us_) {
         const double dt = (now - integrated_us_) / 1000000.0;
         const int roll_direction = int(held_[1]) - int(held_[0]);
         const int pitch_direction = int(held_[3]) - int(held_[2]);
         roll_ = roll_direction ? std::clamp(roll_ + roll_direction * config_.roll_speed * dt,
-                                           -config_.roll_limit, config_.roll_limit) : 0;
+                                           -config_.roll_limit, config_.roll_limit) : roll_;
         pitch_ = pitch_direction ? std::clamp(pitch_ + pitch_direction * config_.pitch_speed * dt,
-                                             -config_.pitch_limit, config_.pitch_limit) : 0;
+                                             -config_.pitch_limit, config_.pitch_limit) : pitch_;
     }
     integrated_us_ = std::max(integrated_us_, now);
 }
@@ -148,6 +154,7 @@ void KeyboardInput::update(const input_event& event, std::uint64_t now) {
     if (event.type == EV_KEY) {
         if (event.value < 0 || event.value > 2) { sample_.invalidate(); return; }
         sample_.report_pending = true;
+        if (event.code == KEY_0 && event.value == 1) center_pending_ = true;
         for (unsigned i = 0; i < keyboard_arrows.size(); ++i) {
             if (event.code != keyboard_arrows[i]) continue;
             if (event.value == 0) { suppressed_[i] = false; pending_[i] = false; }
@@ -156,11 +163,13 @@ void KeyboardInput::update(const input_event& event, std::uint64_t now) {
         return;
     }
     advance(time);
-    // Releasing an axis or pressing opposing keys centers it at the complete report.
-    if (pending_[0] == pending_[1] ||
-        int(pending_[1]) - int(pending_[0]) != int(held_[1]) - int(held_[0])) roll_ = 0;
-    if (pending_[2] == pending_[3] ||
-        int(pending_[3]) - int(pending_[2]) != int(held_[3]) - int(held_[2])) pitch_ = 0;
+    if (center_pending_) {
+        roll_ = pitch_ = 0;
+        for (unsigned i = 0; i < held_.size(); ++i)
+            suppressed_[i] = suppressed_[i] || held_[i] || pending_[i];
+        pending_.fill(false);
+        center_pending_ = false;
+    }
     held_ = pending_;
     sample_.report_pending = false;
 }
