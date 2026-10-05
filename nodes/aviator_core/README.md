@@ -323,6 +323,8 @@ quit
 
 Servo 预填充至少 80 ms，随后持续追加不可改写的样本，Core 队列上限 250 ms；正常提前量约 80～100 ms（周期大于 20 ms 时可到 130 ms）。ZMQ 每帧最多 81 个原始 1 ms 样本，附带 q/dq/ddq，公共 JSON 报文上限为 128 KiB；Manipulator 不再对 Servo 做 2 ms 线性插值，两臂共用执行游标。窗口包含反馈游标前的 4 个历史点，实际未来余量还需扣除反馈与传输延迟；50 ms 命令 watchdog 保持不变。缓冲耗尽、通信超时、限位或 SDK 故障仍会停止并报错，不能重复旧点伪装成正常执行。RT 回调不做 IK、Ruckig 或 JSON 编解码。
 
+持续 Servo 的 `first_tick` / `total_ticks` 是累计的 1 ms 索引，不受普通预规划轨迹的 3,600,000 tick（一小时）长度预算限制，因此不会在连续运行一小时或 24 小时时因累计索引被拒收。内存仍由滚动窗口和 Core 队列限制，线上的整数仍受 uint53 精确范围约束。`motion_protocol` 回归覆盖 1、24、48 小时边界前后的窗口及结束条件；`control_nodes_servo_window` 验证大累计长度经实际总线进入仿真执行器后仍能执行、停止并触发原有看门狗。这些加速边界测试不等同于真机连续 24 小时稳定性测试。
+
 Managed 进入 SAFE 等保护状态时，RemoteLink 撤销普通轨迹发布并异步请求设备本地停止，期间继续接收反馈和更新 Core 心跳。Servo 的取消会退出补窗/排空等待，设备确认停止后保持当前指令；输入恢复不会自动重新授权。正常 EXIT_CONTROL 仍使用规划器减速。更新窗口协议后需同时重编译并重启 Core、Manipulator、Bus，以及读取 arm.command 的相关节点。
 
 `robot.yaml` 新增 `wheel_angular_acceleration`、`wheel_linear_acceleration`、`wheel_angular_jerk`、`wheel_linear_jerk`。Servo 继续按 `wheel_*_speed` 及这些轮盘加速度/jerk 参数规划；移除关节动态上限检查不代表生成的关节轨迹满足原动态上限。Rokae 后端按 URDF 速度限制的单周期防跳变检查和控制器自身保护仍保留。正常 Stop/输入超时在已提交的短缓冲之后按 Ruckig 速度模式减速至零，再保持最终位置；完成制动需要时间。通信或规划故障走后端独立制动，此时不承诺正常规划的 C2 衔接。C2 指规划曲线，真实机械臂仍受离散采样、RT 调度、阻抗刚度和负载影响。

@@ -86,6 +86,49 @@ int main() {
         for (size_t k = 0; k < stream.count; ++k)
             check(restored.frames[k].q == stream.frames[k].q && restored.frames[k].dq == stream.frames[k].dq &&
                   restored.frames[k].ddq == stream.frames[k].ddq, "Servo samples changed in transport");
+        // Exercise rolling windows on both sides of the old one-hour limit and
+        // the 24/48-hour marks without a wall-clock soak or millions of frames.
+        for (uint64_t boundary : {3600000ULL, 86400000ULL, 172800000ULL}) {
+            for (uint64_t total = boundary - 1; total <= boundary + 1; ++total) {
+                auto long_stream = stream;
+                long_stream.total = total;
+                long_stream.first = total - (long_stream.count - 1);
+                auto message = sm;
+                message.body = encodeWindow(long_stream, session, epoch);
+                message.body["config_id"] = std::string(64, 'a');
+                check(encode(message, payload, error), error.c_str());
+                Message roundtrip;
+                check(decode("arm.command", payload, roundtrip, error), error.c_str());
+                const auto window = decodeWindow(roundtrip, lo, hi, speed);
+                check(window.streaming && window.first == long_stream.first && window.total == total &&
+                          window.count == servo_window_points, "Long-running Servo tick range changed");
+                check(window.frames.back().q == long_stream.frames.back().q &&
+                          window.frames.back().dq == long_stream.frames.back().dq &&
+                          window.frames.back().ddq == long_stream.frames.back().ddq,
+                      "Long-running Servo samples changed");
+                auto invalid = roundtrip;
+                invalid.body["first_tick"] = total - servo_window_points + 2;
+                rejected([&] { decodeWindow(invalid, lo, hi, speed); });
+                invalid = roundtrip;
+                invalid.body["finished"] = true;
+                rejected([&] { decodeWindow(invalid, lo, hi, speed); }); // Must finish at rest.
+                for (const char* side : {"left", "right"}) {
+                    auto& last = invalid.body["arms"][side]["points"].back();
+                    last["joint_velocity"] = std::array<double, 7>{};
+                    last["joint_acceleration"] = std::array<double, 7>{};
+                }
+                check(decodeWindow(invalid, lo, hi, speed).finished, "Long-running Servo cannot finish");
+            }
+        }
+        // The bounded, preplanned trajectory budget and uint53 wire range remain enforced.
+        auto finite = decoded;
+        finite.body["total_ticks"] = 3600000;
+        check(!decodeWindow(finite, lo, hi, speed).streaming, "Finite trajectory boundary rejected");
+        finite.body["total_ticks"] = 3600002;
+        rejected([&] { decodeWindow(finite, lo, hi, speed); });
+        auto oversized = wire;
+        oversized.body["total_ticks"] = max_json_integer + 1;
+        rejected([&] { decodeWindow(oversized, lo, hi, speed); });
         for (auto message : {decoded, wire}) {
             auto& points = message.body["arms"]["left"]["points"];
             points.push_back(points.back());

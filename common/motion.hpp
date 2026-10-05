@@ -31,6 +31,8 @@ Json callService(zmq::context_t &, const MotionConfig &, const Json &request);
 inline constexpr size_t servo_window_points = 81;
 struct TrajectoryWindow {
     bool streaming = false, finished = false;
+    // Streaming first/total are cumulative 1 ms indices across rolling windows;
+    // only finite, preplanned trajectories have a one-hour total-tick budget.
     uint64_t id = 0, first = 0, total = 0, count = 0, sequence = 0;
     uint64_t sample = 0, origin_sample = 0, start = 0;
     std::array<JointFrame, servo_window_points> frames{};

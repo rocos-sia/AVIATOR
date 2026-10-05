@@ -114,7 +114,7 @@ void servoWindowTest(zmq::context_t& ctx, zmq::socket_t& sub, const MotionConfig
     usleep(200000); // Establish PUB/SUB before enable starts its first-command deadline.
     auto initial = callService(ctx, config, serviceRequest(client, "enable", params)).at("target").get<Joints>();
     ReceiveState receiver;
-    uint64_t cursor = 0, sequence = 0, last_sample = 0, accepted = 0, trajectory_id = 1;
+    uint64_t cursor = 0, sequence = 0, last_sample = 0, accepted = 0, trajectory_id = 1, total = 10000;
     Json state;
     auto read = [&](bool allow_fault = false) {
         WireMessage wire;
@@ -137,7 +137,7 @@ void servoWindowTest(zmq::context_t& ctx, zmq::socket_t& sub, const MotionConfig
         // Match Core's four history ticks; cursor also carries real feedback/bus delay.
         w.first = cursor > 4 ? cursor - 4 : 0;
         w.count = servo_window_points;
-        w.total = 10000;
+        w.total = total;
         w.sequence = ++sequence;
         w.sample = w.origin_sample = w.start = monotonic_us();
         last_sample = w.sample;
@@ -167,6 +167,17 @@ void servoWindowTest(zmq::context_t& ctx, zmq::socket_t& sub, const MotionConfig
     publish();
     for (int i = 0; i < 10; ++i) { usleep(10000); read(); publish(); }
     check(cursor > before + 100, "Servo failed to resume continuously after 42 ms gap");
+    // Advertise long horizons through the real bus/decoder/executor and verify
+    // they do not interrupt accepted commands. Large rolling first_tick values
+    // are covered by motion_protocol; this is not a wall-clock soak test.
+    for (uint64_t horizon : {3600001ULL, 86400001ULL, 172800001ULL}) {
+        total = horizon;
+        const auto previous_cursor = cursor, previous_sequence = sequence;
+        for (int i = 0; i < 10; ++i) { read(); publish(); usleep(10000); }
+        read();
+        check(accepted > previous_sequence && cursor > previous_cursor + 50,
+              "Long-running Servo horizon stopped accepted commands/execution");
+    }
     initial = callService(ctx, config, serviceRequest(client, "stop", params)).at("target").get<Joints>();
     const auto stopped_at = monotonic_us();
     while (monotonic_us() - stopped_at < 1200000) {
@@ -199,7 +210,7 @@ void servoWindowTest(zmq::context_t& ctx, zmq::socket_t& sub, const MotionConfig
             check(age >= 50000 && age < 70000, "Watchdog trigger moved outside 50..70 ms");
             if (state["arms"]["left"]["enabled"].get<bool>() ||
                 state["arms"]["right"]["enabled"].get<bool>()) continue;
-            std::cout << "PASS Servo window: 81 points via bus, 42 ms gap/resume, explicit stop/hold/restart, watchdog age=" << age << " us\n";
+            std::cout << "PASS Servo window: 81 points via bus, 42 ms gap/resume, 1/24/48-hour horizons, explicit stop/hold/restart, watchdog age=" << age << " us\n";
             return;
         }
         usleep(1000);

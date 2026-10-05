@@ -213,8 +213,12 @@ TrajectoryWindow decodeWindow(const Message &m, const Joints &lo, const Joints &
     w.sequence = m.header.sequence;
     w.sample = m.header.sample_mono_us;
     w.origin_sample = integer(b.at("origin").at("sample_mono_us"));
-    require(w.id > 0 && w.total >= 2 && w.total <= 3600000 && w.first <= w.total && w.first % stride == 0 &&
-                w.total % stride == 0,
+    // Streaming total is a cumulative tick index, not an allocated trajectory
+    // length. Its storage is bounded by the window point count below; applying
+    // the finite trajectory's one-hour budget stops a healthy continuous Servo.
+    // integer() still bounds every wire index to the exact uint53 range.
+    require(w.id > 0 && w.total >= 2 && (w.streaming || w.total <= 3600000) &&
+                w.first <= w.total && w.first % stride == 0 && w.total % stride == 0,
             "Trajectory range exceeds budget or tick grid");
     for (int side = 0; side < 2; ++side) {
         const auto &points = b.at("arms").at(side ? "right" : "left").at("points");
