@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <limits>
 #include <pthread.h>
 #include <signal.h>
@@ -30,7 +31,9 @@ std::string default_output_path() {
     char suffix[24];
     std::snprintf(suffix, sizeof(suffix), "_%06lld.mcap",
                   static_cast<long long>(elapsed % 1'000'000));
-    return std::string(buffer) + suffix;
+    const auto directory = std::filesystem::path(AVIATOR_PROJECT_ROOT) / "logs";
+    std::filesystem::create_directories(directory);
+    return (directory / (std::string(buffer) + suffix)).string();
 }
 
 void usage() {
@@ -38,7 +41,8 @@ void usage() {
         "FILE]\n"
         "                       [--subscribe tcp://127.0.0.1:5556] [--session LABEL]\n"
         "                       [--queue-bytes 16777216] [--receive-hwm 4096]\n"
-        "Writes data and images to separate MCAP files; SIGINT/SIGTERM finalizes.");
+        "Writes data and images to separate MCAP files; SIGINT/SIGTERM finalizes.\n"
+        "Default output directory: " AVIATOR_PROJECT_ROOT "/logs (created automatically).");
 }
 
 // Log times are stored as UTC ns; render an ISO-8601 timestamp (ms) for stdout.
@@ -75,7 +79,7 @@ int main(int argc, char** argv) {
                 ++i;
         }
         std::string endpoint = config.subscribe_endpoint;
-        std::string output = config.output.empty() ? default_output_path() : config.output;
+        std::string output = config.output;
         std::string session = aviator::new_instance_id();
         aviator::RecorderOptions options = config.options;
         for (int i = 1; i < argc; ++i) {
@@ -121,6 +125,8 @@ int main(int argc, char** argv) {
         if (endpoint.rfind("tcp://", 0) != 0)
             throw std::runtime_error("subscription must use TCP");
 
+        if (output.empty())
+            output = default_output_path();
         aviator::validate_recording_config({endpoint, output, options});
 
         // Block signals before spawning threads; no handler touches ZMQ or C++ objects.

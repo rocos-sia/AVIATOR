@@ -192,7 +192,8 @@ if ! $DRY_RUN; then
     google-chrome-stable --start-fullscreen http://127.0.0.1:8081 >"$LOG_DIR/chrome.log" 2>&1 < /dev/null 9>&- &
 fi
 if $LOGGER; then
-    RECORDING_FILE="recording_$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S_%N).mcap"
+    if ! $DRY_RUN; then mkdir -p "$ROOT/logs"; fi
+    RECORDING_FILE="$ROOT/logs/recording_$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S_%N).mcap"
     start logger "$AVIATOR_BIN/aviator_logger" --config config/recording.yaml --output "$RECORDING_FILE"
 fi
 $DRY_RUN && exit 0

@@ -14,7 +14,7 @@ ctest --test-dir build/communication --output-on-failure
 
 ./build/communication/bin/aviator_bus
 # 另一个终端，工作目录为仓库根目录
-./build/communication/bin/aviator_logger --config config/recording.yaml --output recording.mcap
+./build/communication/bin/aviator_logger --config config/recording.yaml
 ```
 
 仓库示例配置使用 `camera.mode: "compressed"`、`codec: h264`、`encoder: software`，适合本机无显卡环境（不传配置时仍默认禁用图像）。启用 `raw` 或 `compressed` 后，相机端也需接入记录入口。例如在已配置 RealSense/OpenCV 环境的另一个终端：
@@ -34,7 +34,7 @@ Python 相机节点不是 Logger 的运行依赖。相机在推理前提交图�
 | 参数 | 默认值 / 含义 |
 | --- | --- |
 | `--config` | 不自动查找；读取指定 YAML。 |
-| `--output` | 自动生成 `aviator_YYYY-MM-DD_HH-MM-SS_ffffff.mcap`（本地时间，末尾为六位微秒，无 UUID）；覆盖 `output.path`。父目录须存在。 |
+| `--output` | 默认在项目根目录的 `logs/` 下自动生成 `aviator_YYYY-MM-DD_HH-MM-SS_ffffff.mcap`（本地时间，末尾为六位微秒，无 UUID），自动创建 `logs/`，不依赖启动工作目录。项目根目录为构建时的源码根目录。显式指定时覆盖 `output.path`，父目录须存在。 |
 | `--image-output` | 覆盖 `output.image_path`；未设置时由数据路径派生，例如 `data.mcap` → `data.images.mcap`。仅图像启用时创建。 |
 | `--subscribe` | `tcp://127.0.0.1:5556`；覆盖 `bus.subscribe_endpoint`。 |
 | `--session` | 普通文本启动标记，Logger 记录会话与源会话分开，无需手动设置。 |

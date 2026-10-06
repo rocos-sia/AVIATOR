@@ -15,7 +15,7 @@ bus:
 
 output:
   image_path: ""                    # 空：数据文件同目录 <数据文件名>.images.mcap
-  path: ""                          # 空字符串：使用本地启动时间（含微秒）的自动文件名，无 UUID
+  path: ""                          # 空：项目根目录 logs/ 下自动命名（本地启动时间含微秒），自动创建目录
   # 下列是 MCAP 容器层设置，不是图像编码设置。
   # 三种模式均使用 none，保证 raw 确实不压缩，也避免重复压缩编码图像。
   chunk_compression: "none"
