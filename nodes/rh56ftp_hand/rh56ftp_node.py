@@ -221,6 +221,7 @@ class DiagnosticLog:
             "hold_feedback_unavailable": "反馈不可用，暂停握持调节",
             "hold_monitor_started": "弯曲通道已进入保持监测",
             "hold_monitor_stopped": "弯曲通道执行运动，暂停长期负载监测",
+            "holding_position_drift": "保持位置发生偏移",
             "release_step_incomplete": "减载单步未到位，停止后观察负载，仍超限则在预算内重试",
             "fault_safe_pose_applied": "握持故障仍锁存，已发送安全张开目标（拇指侧摆 500，其余五路 1000）",
             "device_error": "设备故障", "reject command": "指令被拒绝",
@@ -269,6 +270,11 @@ class DiagnosticLog:
                                    ("min_force", "最低保持力"), ("temperature_limit", "温度上限")):
                     add(label, policy.get(key))
             parts.append("数值为寄存器刻度；配置不代表设备读回")
+        elif event == "holding_position_drift":
+            for key, label in (("held_raw", "记录保持位置"), ("actual_raw", "当前位置"),
+                               ("hold_drift_raw", "位置偏移"), ("applied_raw", "最近成功写入目标"),
+                               ("current_raw", "电流"), ("force_raw", "力"), ("steps", "减载步数")):
+                add(label, fields.get(key))
         elif event == "hold_phase_changed":
             for key, label in (("actual_raw", "当前位置"), ("release_target_raw", "减载目标"),
                                ("steps", "减载步数")):
@@ -325,6 +331,8 @@ class DiagnosticLog:
                 ("command_timeout_ms", "指令超时阈值(ms)"), ("sequence", "指令序号"),
                 ("accepted_sequence", "已接受序号"), ("frame_count", "消息帧数"), ("dropped", "累计丢弃"),
                 ("actual_raw", "当前位置"), ("requested_raw", "请求位置"),
+                ("held_raw", "记录保持位置"), ("hold_drift_raw", "位置偏移"),
+                ("applied_raw", "最近成功写入目标"),
                 ("target_raw", "写入目标"), ("previous_target_raw", "上次写入目标"),
                 ("release_target_raw", "减载目标"), ("steps", "减载步数"),
                 ("current_raw", "电流"), ("current_register_raw", "电流原始字"),
@@ -904,6 +912,8 @@ class Rh56FtpNode:
             "phase": channel.phase, "requested_raw": requested_raw, "actual_raw": actual,
             "position_error_raw": actual - requested_raw if actual is not None and requested_raw is not None else None,
             "held_raw": channel.held_raw, "release_target_raw": channel.release_target,
+            "hold_drift_raw": actual - channel.held_raw if actual is not None and channel.held_raw is not None else None,
+            "applied_raw": self._angle_applied.get(side, [None] * 6)[index],
             "release_retry_target_raw": channel.release_retry_target,
             "release_origin_raw": channel.release_origin, "release_from_raw": channel.release_from,
             "next_release_raw": (max(actual, channel.release_retry_target)
@@ -1068,6 +1078,12 @@ class Rh56FtpNode:
                     continue
 
                 if c.held_raw is not None:
+                    # Diagnostic only: STOP is not a promise of physical self-locking.
+                    # Record drift before a later low-force fault opens the whole hand.
+                    if abs(actual - c.held_raw) > self.closing_motion_raw:
+                        self.diag.emit("holding_position_drift", key=f"hold_drift:{side}:{index}",
+                                       **self._hold_context(side, index, c, now,
+                                                            requested[side][index], snapshots[side]))
                     c.low_force_since_us = (c.low_force_since_us or stamp) if force < policy.min_force[index] else 0
                     if c.low_force_since_us and stamp - c.low_force_since_us >= policy.overload_ms * 1000:
                         return fail(side, index, "insufficient holding force")

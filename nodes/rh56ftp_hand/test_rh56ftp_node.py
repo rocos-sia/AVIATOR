@@ -160,6 +160,19 @@ class ConsoleLogTests(unittest.TestCase):
         self.assertEqual(text.count("左手 反馈已恢复"), 1)
         self.assertNotIn("health", text)
 
+    def test_hold_drift_console_shows_stop_target_and_throttles_repeats(self):
+        log = module.DiagnosticLog()
+        output = io.StringIO()
+        with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=1000000):
+            for _ in range(3):
+                log.emit("holding_position_drift", key="hold_drift:right:2", side="right", channel_name="index",
+                         held_raw=218, actual_raw=800, hold_drift_raw=582, applied_raw=-1,
+                         current_raw=0, force_raw=27, steps=0)
+        self.assertEqual(len(output.getvalue().splitlines()), 1)
+        for expected in ("[warning]", "右手食指 保持位置发生偏移", "记录保持位置=218", "当前位置=800",
+                         "位置偏移=582", "最近成功写入目标=-1", "力=27", "减载步数=0"):
+            self.assertIn(expected, output.getvalue())
+
     def test_cli_default_and_json_opt_in(self):
         for args, expected in (([], "text"), (["--log-format", "json"], "json")):
             with patch.object(module, "load_handlink", return_value=("right", 6000, FakeLink)), \
@@ -1118,6 +1131,30 @@ class AdaptiveHoldTests(unittest.TestCase):
             self.tick(node, currents=[10, 150, 10, 10, 10, 10])
         self.assertEqual(node.closing_holds["left"][1].release_target, 405)
 
+    def test_hold_drift_precedes_low_force_fault_without_software_open_command(self):
+        node, links = self.make_node(min_force=50, overload_ms=1000)
+        positions = {"left": [400] * 6, "right": [400, 400, 218, 400, 400, 400]}
+        for _ in range(4):
+            self.tick(node, positions=positions)
+        before = len(links["right"].writes)
+        positions["right"][2] = 800
+        # Drift can occur while the load is still above the low-force threshold.
+        self.tick(node, positions=positions)
+        events = [c.kwargs for c in node.diag.emit.call_args_list if c.args[0] == "holding_position_drift"]
+        self.assertEqual((events[0]["held_raw"], events[0]["actual_raw"], events[0]["hold_drift_raw"]), (218, 800, 582))
+        self.assertEqual(events[0]["applied_raw"], -1)
+        self.assertEqual(node.hold_control_error, "")
+        self.assertEqual(len(links["right"].writes), before)
+        forces = {"left": [100] * 6, "right": [100, 100, 27, 100, 100, 100]}
+        for _ in range(50):
+            self.tick(node, positions=positions, forces=forces)
+        self.assertEqual(node.hold_control_error, "")
+        self.assertEqual(node.closing_holds["right"][2].steps, 0)
+        self.tick(node, positions=positions, forces=forces)
+        self.assertIn("insufficient holding force", node.hold_control_error)
+        node.supervise(now=node.clock_now + node.command_timeout_us)
+        self.assertEqual(node._angle_applied["right"], [500, 1000, 1000, 1000, 1000, 1000])
+
     def test_grasp_motion_skips_hold_limits_even_when_other_fingers_are_held(self):
         node, _ = self.make_node(close_timeout_ms=10000)
         for step in range(15):
@@ -1379,20 +1416,27 @@ class AdaptiveHoldTests(unittest.TestCase):
         self.assertEqual(node._angle_applied["left"], [-1] * 6)
         self.assertIn("write failed", node.hold_control_error)
 
-    def test_repository_configuration_enables_hold_with_temperature_default(self):
+    def test_repository_configuration_loads_configured_temperature(self):
+        import yaml
+        config = SCRIPT.parents[2] / "config/rh56ftp_hand.yaml"
+        temperature = yaml.safe_load(config.read_text())["hold_control"]["temperature_limit"]
+        limits = tuple(temperature) if isinstance(temperature, list) else (temperature,) * 6
         with patch.object(module, "load_handlink", return_value=("fake", 6000, FakeLink)), \
                 patch.object(module, "run_node", return_value=0) as run:
-            module.main(["--config", str(SCRIPT.parents[2] / "config/rh56ftp_hand.yaml")])
+            module.main(["--config", str(config)])
         node = run.call_args.args[0]
         self.assertTrue(node.hold_control.enabled)
-        self.assertEqual(node.hold_control.temperature_limit, (50,) * 6)
+        self.assertEqual(node.hold_control.temperature_limit, limits)
         node.clock_now = 1000000
         node.diag.emit = Mock()
         node.closing_hold_us = 60000
         self.hold(node)
-        self.tick(node, temps=[49] * 6)
+        below = [limit - 1 for limit in limits]
+        self.tick(node, temps=below)
         self.assertEqual(node.hold_control_error, "")
-        self.tick(node, temps=[49, 50, 49, 49, 49, 49])
+        reached = below.copy()
+        reached[1] = limits[1]
+        self.tick(node, temps=reached)
         self.assertIn("temperature limit reached", node.hold_control_error)
         self.assertFalse(node.make_state(node.clock_now)["valid"])
 
