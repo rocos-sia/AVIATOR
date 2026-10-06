@@ -25,17 +25,22 @@ import sys
 import threading
 import time
 import os
+import traceback
 from collections import deque
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 
 MAX_JSON_INTEGER = (1 << 53) - 1
 SIDES = ("left", "right")
+CHANNEL_NAMES = ("thumb_rotation", "thumb_bend", "index", "middle", "ring", "little")
+DEVICE_ERRORS = ((1, "stall"), (2, "overtemperature"), (4, "overcurrent"),
+                 (8, "motor_error"), (16, "communication_error"))
 DEFAULT_SAFE_POSE = (1.0,) * 6
 DEFAULT_SPEED = 500
 DEFAULT_FORCE = 500
+POSITION_FORCE_PROTECTION_MODE = 0
 DEFAULT_STATE_HZ = 1000.0 / 60.0
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
@@ -216,8 +221,9 @@ class DiagnosticLog:
                 record["reason"] = reason
             if suppressed:
                 record["suppressed"] = suppressed
-            emit = (Logger.error if event.endswith("_failed") else
-                    Logger.info if event in ("health", "feedback_status_changed") else Logger.warn)
+            emit = (Logger.error if event.endswith("_failed") or event == "device_error" else
+                    Logger.info if event in ("health", "feedback_status_changed", "configuration", "hold_phase_changed")
+                    else Logger.warn)
             emit("rh56ftp_hand: " + json.dumps(record, ensure_ascii=False, allow_nan=False),
                   file=sys.stderr, flush=True)
 
@@ -256,6 +262,74 @@ class ClosingHold:
     feedback_errors: int = 0
     samples: deque[tuple[int, int]] = field(default_factory=deque)
     held_raw: int | None = None
+    close_since_us: int = 0
+    phase: str = "tracking"
+    monitor_sample_us: int = 0
+    overload_since_us: int = 0
+    low_force_since_us: int = 0
+    release_target: int | None = None
+    release_from: int = 0
+    release_origin: int | None = None
+    steps: int = 0
+    adjust_started_us: int = 0
+    phase_started_us: int = 0
+
+
+@dataclass
+class HoldControl:
+    enabled: bool = False
+    current_limit: Any = 100
+    force_limit: Any = 300
+    min_force: Any = 50
+    temperature_limit: Any = 50
+    close_timeout_ms: int = 30000
+    overload_ms: int = 1000
+    recovery_ratio: float = .8
+    release_step_raw: int = 5
+    release_tolerance_raw: int = 2
+    max_release_raw: int = 30
+    max_steps: int = 6
+    move_timeout_ms: int = 2000
+    settle_ms: int = 2000
+    adjust_timeout_ms: int = 60000
+
+    @classmethod
+    def parse(cls, values: Any) -> "HoldControl":
+        if not isinstance(values, dict):
+            raise ValueError("hold_control must be a mapping")
+        unknown = set(values) - set(cls.__dataclass_fields__)
+        if unknown:
+            raise ValueError(f"unknown hold_control fields: {sorted(unknown, key=str)}; "
+                             "use current_limit, force_limit, min_force, temperature_limit in raw register counts")
+        policy = cls(**values)
+        if type(policy.enabled) is not bool:
+            raise ValueError("hold_control.enabled must be boolean")
+        for name, maximum in (("current_limit", 2000), ("force_limit", 3000),
+                              ("min_force", 3000), ("temperature_limit", 100)):
+            value = getattr(policy, name)
+            limits = value if isinstance(value, list) else [value] * 6
+            if len(limits) != 6 or any(type(v) is not int or not 0 <= v <= maximum for v in limits):
+                raise ValueError(f"hold_control.{name} requires a scalar or six integer register counts "
+                                 f"in [0,{maximum}]; got {value!r}")
+            setattr(policy, name, tuple(limits))
+        for name in ("close_timeout_ms", "overload_ms", "move_timeout_ms", "settle_ms", "adjust_timeout_ms",
+                     "release_step_raw", "max_release_raw", "max_steps"):
+            value = getattr(policy, name)
+            maximum = 3600000 if name.endswith("_ms") else 1000
+            if type(value) is not int or not 0 < value <= maximum:
+                raise ValueError(f"hold_control.{name} must be an integer in [1,{maximum}]")
+        if (type(policy.release_tolerance_raw) is not int or
+                not 0 <= policy.release_tolerance_raw < policy.release_step_raw or
+                policy.release_step_raw > policy.max_release_raw):
+            raise ValueError("hold_control requires tolerance < step <= max_release_raw")
+        if (type(policy.recovery_ratio) not in (int, float) or
+                not math.isfinite(policy.recovery_ratio) or not 0 < policy.recovery_ratio < 1):
+            raise ValueError("hold_control.recovery_ratio must be in (0,1)")
+        if policy.min_force is not None and policy.force_limit is not None and any(
+                minimum >= maximum * policy.recovery_ratio
+                for minimum, maximum in zip(policy.min_force, policy.force_limit)):
+            raise ValueError("hold_control.min_force must be below the force recovery threshold")
+        return policy
 
 
 @dataclass
@@ -317,7 +391,8 @@ class Rh56FtpNode:
                  session_id: str | None = None, read_links: dict[str, Any] | None = None,
                  speed: int = DEFAULT_SPEED, force: int = DEFAULT_FORCE,
                  diagnostic_interval_s: float = 1.0,
-                 closing_hold_ms: int = 5000, closing_motion_raw: int = 10):
+                 closing_hold_ms: int = 5000, closing_motion_raw: int = 10,
+                 hold_control: dict[str, Any] | None = None):
         if set(links) != set(SIDES) or not any(links.values()):
             raise ValueError("at least one left/right RH56FTP link is required")
         if command_timeout_ms <= 0 or feedback_timeout_ms <= 0:
@@ -350,6 +425,8 @@ class Rh56FtpNode:
         self.requested_targets: dict[str, list[float]] = {side: [] for side in SIDES}
         self.closing_hold_us = closing_hold_ms * 1000
         self.closing_motion_raw = closing_motion_raw
+        self.hold_control = HoldControl.parse(hold_control if hold_control is not None else {})
+        self.hold_control_error = ""
         self.closing_holds = {side: [ClosingHold() for _ in range(6)] for side in SIDES}
         self.command_valid = False
         self.state_sequence = 0
@@ -375,9 +452,18 @@ class Rh56FtpNode:
         self.reader_timing: dict[str, Any] = {"phase": "not_started", "cycles": 0}
 
     def connect(self) -> None:
+        self.hold_control_error = ""
         self._settings_applied.clear()
         self._angle_applied.clear()
         self._reset_closing_holds()
+        self.diag.emit("configuration", throttle_us=0, publisher=self.publisher_id, session=self.session_id,
+                       configured_mode=POSITION_FORCE_PROTECTION_MODE, speed_raw=self.speed, force_raw=self.force,
+                       feedback_timeout_ms=self.feedback_timeout_us / 1000,
+                       command_timeout_ms=self.command_timeout_us / 1000,
+                       closing_hold_ms=self.closing_hold_us / 1000, closing_motion_raw=self.closing_motion_raw,
+                       hold_control=asdict(self.hold_control),
+                       endpoints={side: {"host": getattr(link, "host", None), "port": getattr(link, "port", None)}
+                                  for side, link in self.links.items() if link is not None})
         seen: set[int] = set()
         entries = list(self.links.items()) + list(self.read_links.items())
         for side, link in entries:
@@ -483,7 +569,9 @@ class Rh56FtpNode:
                 snapshot.errors += 1
                 self.diag.emit("feedback_read_failed", key=f"read_failed:{side}", side=side,
                                reason=f"{type(exc).__name__}: {exc}", reads=snapshot.reads,
-                               errors=snapshot.errors, feedback_age_ms=age_ms(monotonic_us(), snapshot.sample_mono_us))
+                               errors=snapshot.errors, feedback_age_ms=age_ms(monotonic_us(), snapshot.sample_mono_us),
+                               host=getattr(link, "host", None), port=getattr(link, "port", None),
+                               duration_ms=age_ms(finished, started), traceback=traceback.format_exc(limit=8))
             finally:
                 snapshot.read_finished_us = finished or monotonic_us()
                 snapshot.read_duration_ms = age_ms(snapshot.read_finished_us, snapshot.read_started_us) or 0
@@ -511,7 +599,11 @@ class Rh56FtpNode:
             self.last_write_error = f"{side} {phase}: {type(exc).__name__}: {exc}"
             self.diag.emit("modbus_write_failed", key=f"write_failed:{side}", side=side, phase=phase,
                            target_raw=target_raw, duration_ms=age_ms(monotonic_us(), started),
-                           reason=self.last_write_error)
+                           reason=self.last_write_error, host=getattr(self.links[side], "host", None),
+                           port=getattr(self.links[side], "port", None),
+                           writes=stats["calls"], write_errors=stats["errors"],
+                           previous_target_raw=self._angle_applied.get(side),
+                           traceback=traceback.format_exc(limit=8))
             raise
         finally:
             stats["phase"] = phase
@@ -529,9 +621,13 @@ class Rh56FtpNode:
         for side, link in self.links.items():
             if link is not None and side not in self._settings_applied:
                 try:
+                    # Both bus modes produce angle targets. Manual §2.6.20:
+                    # mode 0 stops at the angle/force limit; mode 1 regulates
+                    # force instead. Restore mode 0 before changing force, even
+                    # when a previous node left the device in force control.
+                    self._write_call(side, "mode", lambda: link.write_mode_set([POSITION_FORCE_PROTECTION_MODE] * 6))
                     self._write_call(side, "speed", lambda: link.write_speed_set([self.speed] * 6))
                     self._write_call(side, "force", lambda: link.write_force_set([self.force] * 6))
-                    self._write_call(side, "mode", lambda: link.write_mode_set([1] * 6))
                 except Exception as exc:
                     raise RuntimeError(f"{side} speed/force/mode setup failed: {exc}") from exc
                 self._settings_applied.add(side)
@@ -575,7 +671,8 @@ class Rh56FtpNode:
             measured = self._canonical_state(snapshot.data) if snapshot.data is not None else None
             actual = measured["drive_position_raw"] if measured and measured["drive_position_normalized"] else None
             fresh = snapshot.fresh(now, self.feedback_timeout_us) and not snapshot.error and actual is not None
-            channels = [ClosingHold()]  # Thumb rotation is never constrained.
+            # Rotation is monitored, but never automatically unloaded.
+            channels = [replace(self.closing_holds[side][0]) if self.hold_control.enabled else ClosingHold()]
             for index in range(1, 6):
                 target = requested[side][index]
                 previous = self.closing_holds[side][index]
@@ -617,13 +714,204 @@ class Rh56FtpNode:
                             channel.samples.popleft()
                         if stamp - channel.samples[0][0] >= self.closing_hold_us:
                             positions = [value for _, value in channel.samples]
-                            if max(positions) - min(positions) <= self.closing_motion_raw:
+                            contact = (not self.hold_control.enabled or
+                                       abs(measured["force"][index]) >= self.hold_control.min_force[index])
+                            if max(positions) - min(positions) <= self.closing_motion_raw and contact:
                                 channel.held_raw = position
+                                channel.phase = "holding"
+                                channel.overload_since_us = channel.low_force_since_us = 0
                                 effective[side][index] = -1
                     channel.last_sample_us = stamp
                 channels.append(channel)
             pending[side] = channels
         return effective, pending
+
+    def _hold_context(self, side: str, index: int, channel: ClosingHold, now: int,
+                      requested_raw: int | None = None, snapshot: Snapshot | None = None) -> dict[str, Any]:
+        """Capture the pre-fault decision, before changing phase or clearing timers."""
+        snapshot = self.snapshots[side] if snapshot is None else snapshot
+        measured = self._canonical_state(snapshot.data) if snapshot.data else {}
+        value = lambda key: measured[key][index] if key in measured else None
+        actual = value("drive_position_raw")
+        code = value("error_codes")
+        return {
+            "side": side, "channel": index, "channel_name": CHANNEL_NAMES[index],
+            "host": getattr(self.links[side], "host", None), "port": getattr(self.links[side], "port", None),
+            "phase": channel.phase, "requested_raw": requested_raw, "actual_raw": actual,
+            "position_error_raw": actual - requested_raw if actual is not None and requested_raw is not None else None,
+            "held_raw": channel.held_raw, "release_target_raw": channel.release_target,
+            "release_origin_raw": channel.release_origin, "release_from_raw": channel.release_from,
+            "next_release_raw": actual + self.hold_control.release_step_raw if actual is not None else None,
+            "steps": channel.steps,
+            "current_raw": value("current"), "current_register_raw": value("current_register_raw"),
+            "current_abs_raw": abs(value("current")) if value("current") is not None else None,
+            "force_raw": value("force"),
+            "force_abs_raw": abs(value("force")) if value("force") is not None else None,
+            "temperature_c": value("temperature"), "error_code": code,
+            "error_names": [name for bit, name in DEVICE_ERRORS if code is not None and int(code) & bit],
+            "status_code": value("status_codes"), "sample_mono_us": snapshot.sample_mono_us,
+            "feedback_age_ms": age_ms(now, snapshot.sample_mono_us),
+            "read_errors": snapshot.errors, "last_read_error": snapshot.error,
+            "closing_age_ms": age_ms(now, channel.close_since_us),
+            "overload_age_ms": age_ms(now, channel.overload_since_us),
+            "low_force_age_ms": age_ms(now, channel.low_force_since_us),
+            "phase_age_ms": age_ms(now, channel.phase_started_us),
+            "adjustment_age_ms": age_ms(now, channel.adjust_started_us),
+            "limits": {name: (values[index] if isinstance(values, tuple) else values)
+                       for name, values in asdict(self.hold_control).items()},
+        }
+
+    def _holding_targets(self, effective: dict[str, list[int]], pending: dict[str, list[ClosingHold]],
+                         requested: dict[str, list[int]], now: int) -> dict[str, list[int]]:
+        """Bounded unloading in the command thread; commit pending only after successful writes."""
+        policy = self.hold_control
+        if not policy.enabled:
+            return effective
+        stopped = {side: [-1] * 6 for side in SIDES}
+        snapshots = dict(self.snapshots)
+
+        def fail(side: str, index: int, reason: str) -> dict[str, list[int]]:
+            self.hold_control_error = f"{side}[{index}]: {reason}"
+            self.diag.emit("hold_control_failed", throttle_us=0, reason=self.hold_control_error,
+                           **self._hold_context(side, index, pending[side][index], now,
+                                                requested[side][index], snapshots[side]),
+                           command=self.command_context(now))
+            for channels in pending.values():
+                for c in channels:
+                    c.phase, c.release_target = "failed", None
+            return stopped
+
+        if self.hold_control_error:
+            for channels in pending.values():
+                for c in channels:
+                    c.phase, c.release_target = "failed", None
+            return stopped
+        measurements = {}
+        for side, link in self.links.items():
+            if link is None:
+                continue
+            snapshot = snapshots[side]
+            if not snapshot.fresh(now, self.feedback_timeout_us) or snapshot.error:
+                self.diag.emit("hold_feedback_unavailable", key=f"hold_feedback:{side}",
+                               reason=snapshot.error or "missing/stale/future feedback", side=side,
+                               feedback_age_ms=age_ms(now, snapshot.sample_mono_us),
+                               feedback_timeout_ms=self.feedback_timeout_us / 1000,
+                               reader=self.reader_diagnostics(now))
+                # No motion decisions from old feedback. A previous release must not resume.
+                for channels in pending.values():
+                    for c in channels:
+                        c.overload_since_us = c.low_force_since_us = c.monitor_sample_us = c.close_since_us = 0
+                        if c.held_raw is not None:
+                            c.phase, c.release_target = "holding", None
+                return stopped
+            measured = self._canonical_state(snapshot.data)
+            if not measured["drive_position_normalized"]:
+                return fail(side, 0, "invalid position feedback")
+            measurements[side] = (measured, snapshot.sample_mono_us)
+            for index in range(6):
+                if measured["error_codes"][index]:
+                    return fail(side, index, f"device error {measured['error_codes'][index]}")
+                if not (abs(measured["current"][index]) <= 2000 and
+                        abs(measured["force"][index]) <= 4000 and
+                        0 <= measured["temperature"][index] <= 100):
+                    return fail(side, index, "invalid load feedback")
+
+        # Long-term holding limits do not apply while the hand is still executing
+        # the grasp/open command. A side is ready once rotation has reached its
+        # target and all bending fingers are held or at their requested positions.
+        hold_ready = {
+            side: any(c.held_raw is not None for c in pending[side][1:]) and
+                  all(c.held_raw is not None or
+                      abs(measured["drive_position_raw"][i] - requested[side][i]) <= self.closing_motion_raw
+                      for i, c in enumerate(pending[side]))
+            for side, (measured, _) in measurements.items()
+        }
+
+        busy = any(c.phase in ("moving", "settling") for channels in pending.values() for c in channels)
+        for side, (measured, stamp) in measurements.items():
+            for index, c in enumerate(pending[side]):
+                actual = measured["drive_position_raw"][index]
+                force = abs(measured["force"][index])
+                current = abs(measured["current"][index])
+                new_sample = stamp != c.monitor_sample_us
+                if not c.monitor_sample_us or stamp < c.monitor_sample_us or \
+                        stamp - c.monitor_sample_us >= self.feedback_timeout_us:
+                    c.overload_since_us = c.low_force_since_us = c.close_since_us = 0
+                if new_sample:
+                    c.monitor_sample_us = stamp
+
+                if new_sample and c.held_raw is None and index > 0:
+                    closing = actual - requested[side][index] > self.closing_motion_raw
+                    c.close_since_us = (c.close_since_us or stamp) if closing else 0
+                    if c.close_since_us and stamp - c.close_since_us >= policy.close_timeout_ms * 1000:
+                        return fail(side, index, "closing timeout without stable contact")
+                if not hold_ready[side]:
+                    # Movement loads must not carry over into the holding timer.
+                    c.overload_since_us = c.low_force_since_us = 0
+                    if c.phase in ("moving", "settling"):
+                        c.phase, c.release_target = "holding", None
+                    continue
+                if measured["temperature"][index] >= policy.temperature_limit[index]:
+                    return fail(side, index, "temperature limit reached")
+
+                if c.phase in ("moving", "settling") and now - c.adjust_started_us >= policy.adjust_timeout_ms * 1000:
+                    return fail(side, index, "adjustment time budget exhausted")
+
+                if c.phase == "moving":
+                    effective[side][index] = c.release_target
+                    if new_sample and stamp > c.phase_started_us and actual > c.release_from and \
+                            abs(actual - c.release_target) <= policy.release_tolerance_raw:
+                        c.held_raw = actual
+                        c.phase, c.phase_started_us = "settling", now
+                        c.release_target = None
+                        effective[side][index] = -1
+                    elif now - c.phase_started_us >= policy.move_timeout_ms * 1000:
+                        return fail(side, index, "release motion timeout")
+                    continue
+                if c.phase == "settling":
+                    if not new_sample or stamp - c.phase_started_us < policy.settle_ms * 1000:
+                        continue
+                    c.phase = "holding"
+                    c.overload_since_us = c.low_force_since_us = 0
+                if not new_sample:
+                    continue
+
+                if c.held_raw is not None:
+                    c.low_force_since_us = (c.low_force_since_us or stamp) if force < policy.min_force[index] else 0
+                    if c.low_force_since_us and stamp - c.low_force_since_us >= policy.overload_ms * 1000:
+                        return fail(side, index, "insufficient holding force")
+
+                overloaded = current > policy.current_limit[index] or (
+                    (index == 0 or c.held_raw is not None) and force > policy.force_limit[index])
+                recovered = current <= policy.current_limit[index] * policy.recovery_ratio and \
+                    force <= policy.force_limit[index] * policy.recovery_ratio
+                if overloaded:
+                    c.overload_since_us = c.overload_since_us or stamp
+                elif recovered:
+                    c.overload_since_us = 0
+                if not c.overload_since_us or stamp - c.overload_since_us < policy.overload_ms * 1000:
+                    continue
+                # An explicit opening command has priority over ordinary unloading.
+                if c.held_raw is None:
+                    if index > 0 and requested[side][index] >= actual:
+                        continue
+                    return fail(side, index, "persistent load outside adaptive hold")
+                if busy:
+                    continue
+                origin = c.held_raw if c.release_origin is None else c.release_origin
+                target = actual + policy.release_step_raw
+                if c.steps >= policy.max_steps or target > min(1000, origin + policy.max_release_raw):
+                    return fail(side, index, "release step/distance budget exhausted")
+                if c.adjust_started_us and now - c.adjust_started_us >= policy.adjust_timeout_ms * 1000:
+                    return fail(side, index, "adjustment time budget exhausted")
+                c.phase, c.phase_started_us = "moving", now
+                c.release_origin, c.release_from, c.release_target = origin, actual, target
+                c.adjust_started_us = c.adjust_started_us or now
+                c.steps += 1
+                c.overload_since_us = c.low_force_since_us = 0
+                effective[side][index] = target
+                busy = True
+        return effective
 
     def command_context(self, now: int, command: dict[str, Any] | None = None) -> dict[str, Any]:
         context = {
@@ -685,14 +973,36 @@ class Rh56FtpNode:
                 raw_by_side[side] = normalized_to_raw(values)
             requested = raw_by_side
             raw_by_side, pending_holds = self._closing_targets(requested, now)
-            self._write_targets(raw_by_side)
+            raw_by_side = self._holding_targets(raw_by_side, pending_holds, requested, now)
+            try:
+                self._write_targets(raw_by_side)
+            except Exception:
+                # One hand may already have moved before the other write failed.
+                # Never retry from a new actual position without accounting for that step.
+                if self.hold_control.enabled and not self.hold_control_error:
+                    self.hold_control_error = "Modbus write failed during hold control"
+                    self.diag.emit("hold_control_failed", reason=self.hold_control_error,
+                                   last_write_error=self.last_write_error, requested_raw=requested,
+                                   attempted_raw=raw_by_side, applied_raw=dict(self._angle_applied),
+                                   command=self.command_context(now, command), traceback=traceback.format_exc(limit=8))
+                raise
             # Failed writes must not acknowledge or latch a new held position.
+            if self.hold_control.enabled:
+                for side in SIDES:
+                    for index, channel in enumerate(pending_holds[side]):
+                        if channel.phase != self.closing_holds[side][index].phase:
+                            self.diag.emit("hold_phase_changed", key=f"hold_phase:{side}:{index}", throttle_us=0,
+                                           previous_phase=self.closing_holds[side][index].phase,
+                                           **self._hold_context(side, index, channel, now, requested[side][index]))
             self.closing_holds = pending_holds
             self.requested_targets = {side: [value / 1000.0 for value in requested[side]] for side in SIDES}
-            self.last_targets = {
-                side: [(pending_holds[side][i].held_raw if value == -1 else value) / 1000.0
-                       for i, value in enumerate(raw_by_side[side])] for side in SIDES
-            }
+            for side in SIDES:
+                data = self.snapshots[side].data
+                actual = self._canonical_state(data)["drive_position_raw"] if data else [None] * 6
+                positions = [value if value != -1 else pending_holds[side][i].held_raw
+                             if pending_holds[side][i].held_raw is not None else actual[i]
+                             for i, value in enumerate(raw_by_side[side])]
+                self.last_targets[side] = [v / 1000.0 for v in positions] if all(v is not None for v in positions) else []
             self.command_valid = True
             self._safe_applied = False
             self._safe_required = False
@@ -721,6 +1031,12 @@ class Rh56FtpNode:
     @staticmethod
     def _canonical_state(data: dict[str, Any]) -> dict[str, Any]:
         angle = rh_to_canonical(data["angle"])
+        # Modbus returns uint16 words. Firmware reports signed current (e.g.
+        # 0xFF80 == -128); the vendor C++ example also casts CURRENT to int16_t.
+        # Accept an already decoded backend too, without wrapping invalid values.
+        current_register = rh_to_canonical(data["current"])
+        current = [v - 65536 if type(v) is int and 32768 <= v <= 65535 else v
+                   for v in current_register]
         valid_position = all(isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1000
                              for v in angle)
         normalized = [float(v) / 1000.0 for v in angle] if valid_position else []
@@ -729,7 +1045,9 @@ class Rh56FtpNode:
             "drive_position_raw": angle,
             "drive_position_normalized": normalized,
             "force": rh_to_canonical(data["force"]),
-            "current": rh_to_canonical(data["current"]),
+            "current": current,
+            "current_register_raw": [v + 65536 if type(v) is int and -32768 <= v < 0 else v
+                                     for v in current_register],
             "error_codes": rh_to_canonical(data["err"]),
             "status_codes": rh_to_canonical(data["status"]),
             "temperature": rh_to_canonical(data["temp"]),
@@ -749,7 +1067,8 @@ class Rh56FtpNode:
             fresh = link is not None and snapshot.fresh(now, self.feedback_timeout_us)
             if fresh:
                 measured = self._canonical_state(snapshot.data or {})
-                measurement_valid = bool(measured["drive_position_normalized"])
+                measurement_valid = bool(measured["drive_position_normalized"]) and not (
+                    self.hold_control.enabled and snapshot.error)
                 if link is not None:
                     configured_fresh.append(measurement_valid)
                 error_codes = measured["error_codes"]
@@ -763,6 +1082,7 @@ class Rh56FtpNode:
                     "angle": measured["angle_raw"],
                     "force": measured["force"],
                     "current": measured["current"],
+                    "current_register_raw": measured["current_register_raw"],
                     "err": measured["error_codes"],
                     "error": measured["error_codes"],
                     "status_code": measured["status_codes"],
@@ -798,6 +1118,7 @@ class Rh56FtpNode:
                     "angle": [],
                     "force": [],
                     "current": [],
+                    "current_register_raw": [],
                     "err": [],
                     "error": [],
                     "status_code": [],
@@ -830,6 +1151,8 @@ class Rh56FtpNode:
             hand["closing_hold_position_normalized"] = [
                 channel.held_raw / 1000.0 if channel.held_raw is not None else None
                 for channel in self.closing_holds[side]]
+            hand["hold_control"] = [{"phase": c.phase, "steps": c.steps, "release_target_raw": c.release_target}
+                                    for c in self.closing_holds[side]]
         accepted = None
         if self.guard.authorized:
             accepted = {
@@ -848,7 +1171,8 @@ class Rh56FtpNode:
             "clock_id": self.clock_id,
             "publisher_id": self.publisher_id,
             "session_id": self.session_id,
-            "valid": bool(configured_fresh) and all(configured_fresh),
+            "valid": bool(configured_fresh) and all(configured_fresh) and not self.hold_control_error,
+            "hold_control_error": self.hold_control_error,
             "command_valid": self.command_valid,
             "feedback_only": self.feedback_only,
             "hands": hands,
@@ -860,8 +1184,10 @@ class Rh56FtpNode:
         if self._feedback_wait_started_us is None:
             self._feedback_wait_started_us = now
         details = {}
-        abnormal = bool(self.last_write_error or self.last_command_error or
+        abnormal = bool(self.hold_control_error or self.last_write_error or self.last_command_error or
                         self.last_command_duration_ms >= self.command_timeout_us / 2000)
+        abnormal |= self.hold_control.enabled and any(
+            c.held_raw is not None for channels in self.closing_holds.values() for c in channels)
         for side in SIDES:
             hand = state["hands"][side]
             snapshot = self.snapshots[side]
@@ -872,6 +1198,8 @@ class Rh56FtpNode:
                 invalid_reason = "no_feedback"
             elif not hand["feedback_available"]:
                 invalid_reason = "feedback_timestamp_expired_or_future"
+            elif snapshot.error:
+                invalid_reason = "feedback_read_error"
             elif not hand["valid"]:
                 invalid_reason = "angle_register_out_of_range"
             details[side] = {
@@ -895,7 +1223,20 @@ class Rh56FtpNode:
                 "requested_target": self.requested_targets[side],
                 "closing_hold_active": hand["closing_hold_active"],
                 "angle_raw": hand["angle_raw"], "error_codes": hand["error_codes"],
+                "current": hand["current"], "force": hand["force"], "temperature": hand["temperature"],
+                "current_register_raw": hand["current_register_raw"],
+                "hold_control": hand["hold_control"],
             }
+            if any(hand["error_codes"]):
+                self.diag.emit("device_error", key=f"device_error:{side}", reason=str(hand["error_codes"]),
+                               side=side, host=details[side]["host"], port=details[side]["port"],
+                               channels=[{"channel": i, "channel_name": CHANNEL_NAMES[i], "code": code,
+                                          "error_names": [name for bit, name in DEVICE_ERRORS if int(code) & bit],
+                                          "unknown_bits": int(code) & ~31,
+                                          "current_raw": hand["current"][i], "force_raw": hand["force"][i],
+                                          "current_register_raw": hand["current_register_raw"][i],
+                                          "temperature_c": hand["temperature"][i], "actual_raw": hand["angle_raw"][i]}
+                                         for i, code in enumerate(hand["error_codes"]) if code])
             # A first sample still in flight is normal during reader startup.
             feedback_invalid = not hand["valid"] and (snapshot.data is not None or bool(snapshot.error) or
                 now - self._feedback_wait_started_us >= self.feedback_timeout_us)
@@ -915,6 +1256,7 @@ class Rh56FtpNode:
             self._next_diagnostic_us = now + self.diagnostic_interval_us
             self.diag.emit("health", throttle_us=0, state_sequence=state["sequence"],
                            state_valid=state["valid"], command_valid=self.command_valid,
+                           hold_control_error=self.hold_control_error,
                            feedback_only=self.feedback_only, received=self.command_received,
                            accepted=self.command_accepted, rejected=self.command_rejected,
                            receive_age_ms=age_ms(now, self.last_received_us),
@@ -1054,7 +1396,7 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, help="YAML 配置文件（speed、force）；显式命令行参数优先")
+    parser.add_argument("--config", type=Path, help="YAML 配置文件（speed、force、hold_control）；显式命令行参数优先")
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5556", help="hand.command SUB connects to bus egress")
     parser.add_argument("--state-endpoint", default="tcp://127.0.0.1:5555", help="hand.state PUB connects to bus ingress")
     parser.add_argument("--right-host", default=None)
@@ -1085,8 +1427,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             import yaml
             settings = yaml.safe_load(args.config.read_text(encoding="utf-8"))
-            if not isinstance(settings, dict) or set(settings) - {"speed", "force"}:
-                raise ValueError("配置必须为仅包含 speed、force 的映射")
+            if not isinstance(settings, dict) or set(settings) - {"speed", "force", "hold_control"}:
+                raise ValueError("配置必须为仅包含 speed、force、hold_control 的映射")
+            HoldControl.parse(settings.get("hold_control", {}))
         except ImportError:
             parser.error("读取 --config 需要 PyYAML")
         except (OSError, ValueError, yaml.YAMLError) as exc:
@@ -1128,7 +1471,8 @@ def main(argv: list[str] | None = None) -> int:
                        feedback_timeout_ms=args.feedback_timeout_ms,
                        feedback_only=args.feedback_only, speed=args.speed, force=args.force,
                        diagnostic_interval_s=args.diagnostic_interval_s,
-                       closing_hold_ms=args.closing_hold_ms, closing_motion_raw=args.closing_motion_raw)
+                       closing_hold_ms=args.closing_hold_ms, closing_motion_raw=args.closing_motion_raw,
+                       hold_control=settings.get("hold_control"))
     return run_node(node, args.endpoint, args.state_endpoint, args.state_hz)
 
 
