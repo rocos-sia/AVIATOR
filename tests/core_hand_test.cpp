@@ -54,11 +54,14 @@ int main(int argc, char** argv) {
         check(h.command(now + 20000, now + 20000, session).has_value(), "hold publication missing");
         h.request(false, now + 30000);
         auto opening = *h.command(now + 30000, now + 30000, session);
+        for (const char* side : {"left", "right"})
+            check(opening.body["hands"][side]["drive_position_normalized"] == Json({.5,1,1,1,1,1}),
+                  "default opening must keep thumb rotation at register 500");
         auto old_ack = feedback(command, now + 30000, 2);
         h.receive(old_ack, now + 30000, session);
         check(!h.complete(now + 30000), "old target acknowledgement completed new target");
         auto pending = feedback(opening, now + 30001, 3);
-        pending.body["hands"]["left"]["drive_position_normalized"][0] = .5;
+        pending.body["hands"]["left"]["drive_position_normalized"][0] = 0;
         h.receive(pending, now + 30001, session); check(!h.complete(now + 30001), "open completed before actual position");
         auto opened = feedback(opening, now + 40000, 4);
         h.receive(opened, now + 40000, session); check(h.complete(now + 40000), "open did not complete");
@@ -110,8 +113,8 @@ int main(int argc, char** argv) {
                 partial = *moving.command(t, t, session);
                 const double left = partial.body["hands"]["left"]["drive_position_normalized"][0];
                 const double right = partial.body["hands"]["right"]["drive_position_normalized"][0];
-                check(std::abs(left - (1 - .1*double(dt)/1000000)) < 1e-12, "left interpolation");
-                check(std::abs(right - (1 - .7*double(dt)/2000000)) < 1e-12, "right interpolation");
+                check(std::abs(left - (.5 + .4*double(dt)/1000000)) < 1e-12, "left interpolation");
+                check(std::abs(right - (.5 - .2*double(dt)/2000000)) < 1e-12, "right interpolation");
                 moving.receive(feedback(partial, t + 1, ++sequence), t + 1, session);
                 check(!moving.complete(t + 1) && moving.fault(t + 1).empty(), "partial trajectory completed/timed out");
             }

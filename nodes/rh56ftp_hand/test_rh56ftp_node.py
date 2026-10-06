@@ -327,7 +327,7 @@ class NodeTests(unittest.TestCase):
         self.assertIsNotNone(node.closing_holds["left"][1].held_raw)
         with patch("sys.stderr", io.StringIO()):
             node.supervise(now=node.clock_now + node.command_timeout_us)
-        self.assertEqual(links["left"].writes[-1], [1000] * 6)
+        self.assertEqual(links["left"].writes[-1], [1000, 1000, 1000, 1000, 1000, 500])
         self.assertFalse(any(c.held_raw is not None for c in node.closing_holds["left"]))
 
     def test_command_gap_resets_but_changing_closing_target_keeps_stall_window(self):
@@ -362,7 +362,7 @@ class NodeTests(unittest.TestCase):
             self.assertEqual(link.events, [("mode", [0] * 6),
                                            ("speed", [500] * 6),
                                            ("force", [500] * 6),
-                                           ("angle", [1000] * 6)])
+                                           ("angle", [1000, 1000, 1000, 1000, 1000, 500])])
         node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
         node.supervise(now=node.clock_now + node.command_timeout_us)
         node._safe_pose()  # Exit pose uses the same settings.
@@ -381,7 +381,7 @@ class NodeTests(unittest.TestCase):
         links["right"].fail_force = False
         node.supervise(now=node.clock_now)
         for link in links.values():
-            self.assertEqual(link.writes, [[1000] * 6])
+            self.assertEqual(link.writes, [[1000, 1000, 1000, 1000, 1000, 500]])
             self.assertIn(("force", [500] * 6), link.setting_writes)
 
     def test_angle_control_recovers_from_previous_force_mode(self):
@@ -416,17 +416,17 @@ class NodeTests(unittest.TestCase):
                 node = module.Rh56FtpNode(links, clock_id="test-clock", force=1200)
                 node.clock_now = 1000000
 
-                def assert_position(position):
+                def assert_position(position, thumb_rotation=None):
                     node.read_states(now=node.clock_now)
                     state = node.make_state(now=node.clock_now)
                     for side in module.SIDES:
                         self.assertTrue(state["hands"][side]["valid"])
                         self.assertEqual(state["hands"][side]["drive_position_normalized"],
-                                         [position] * 6)
+                                         [position if thumb_rotation is None else thumb_rotation] + [position] * 5)
 
                 node.connect()
                 node._safe_pose()
-                assert_position(1)
+                assert_position(1, thumb_rotation=.5)
                 for sequence, position in enumerate((.2, .8, .3), start=1):
                     msg = command(node, sequence=sequence)
                     msg["mode"] = mode
@@ -440,7 +440,7 @@ class NodeTests(unittest.TestCase):
                 with patch("sys.stderr", io.StringIO()):
                     node.clock_now += node.command_timeout_us
                     node.supervise(now=node.clock_now)
-                assert_position(1)
+                assert_position(1, thumb_rotation=.5)
                 self.assertFalse(node.command_valid)
                 for link in links.values():
                     self.assertEqual(link.setting_writes,
@@ -576,7 +576,7 @@ class NodeTests(unittest.TestCase):
         node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
         node.supervise(now=node.clock_now + node.command_timeout_us)
         self.assertFalse(node.command_valid)
-        self.assertEqual(links["left"].writes[-1], [1000] * 6)
+        self.assertEqual(links["left"].writes[-1], [1000, 1000, 1000, 1000, 1000, 500])
 
     def test_failed_safe_pose_is_retried(self):
         node, links = self.make_node()
@@ -994,6 +994,76 @@ class AdaptiveHoldTests(unittest.TestCase):
                   if c.phase == "moving"]
         self.assertEqual(active, [("left", 1)])
 
+    def test_logged_partial_release_stops_observes_then_increases_target(self):
+        node, _ = self.make_node(force_limit=300)
+        positions = {"left": [400] * 6, "right": [400, 63, 400, 400, 400, 400]}
+        forces = {"left": [100] * 6, "right": [100, 472, 100, 100, 100, 100]}
+        for _ in range(7):
+            self.tick(node, positions=positions, forces=forces, currents=[0] * 6)
+        c = node.closing_holds["right"][1]
+        self.assertEqual((c.phase, c.release_target, c.steps), ("moving", 68, 1))
+        positions["right"][1] = 64
+        forces["right"][1] = 454
+        for _ in range(6):
+            self.tick(node, positions=positions, forces=forces, currents=[0] * 6)
+        c = node.closing_holds["right"][1]
+        self.assertEqual(node.hold_control_error, "")
+        self.assertEqual((c.phase, c.release_retry_target, c.steps), ("settling", 68, 1))
+        self.assertEqual(node._angle_applied["right"][1], -1)
+        self.assertTrue(node.make_state(node.clock_now)["valid"])
+        # Repeated old samples cannot complete observation or restart unloading.
+        self.tick(node, refresh=False)
+        self.assertEqual(node.closing_holds["right"][1].phase, "settling")
+        for _ in range(5):
+            self.tick(node, positions=positions, forces=forces, currents=[0] * 6)
+        self.assertEqual(node.closing_holds["right"][1].release_target, 73)
+        self.assertEqual(node.closing_holds["right"][1].steps, 2)
+        positions["right"][1] = 73
+        forces["right"][1] = 200
+        for _ in range(8):
+            self.tick(node, positions=positions, forces=forces, currents=[0] * 6)
+        c = node.closing_holds["right"][1]
+        self.assertEqual((c.phase, c.steps, c.release_retry_target), ("holding", 2, None))
+        self.assertEqual(node.hold_control_error, "")
+
+    def test_motionless_release_retries_are_bounded_by_steps_and_distance(self):
+        for limits in (dict(max_steps=3), dict(max_release_raw=15)):
+            with self.subTest(limits=limits):
+                node, _ = self.make_node(**limits)
+                self.hold(node)
+                forces = {"left": [100, 600, 100, 100, 100, 100], "right": [100] * 6}
+                for _ in range(50):
+                    self.tick(node, forces=forces)
+                    if node.hold_control_error:
+                        break
+                self.assertIn("release step/distance budget exhausted", node.hold_control_error)
+                attempted = [c.kwargs["release_target_raw"] for c in node.diag.emit.call_args_list
+                             if c.args[0] == "hold_phase_changed" and c.kwargs["phase"] == "moving"]
+                self.assertEqual(attempted, [405, 410, 415])
+                self.assertEqual(node._angle_applied["left"], [-1] * 6)
+                node.supervise(now=node.clock_now + node.command_timeout_us)
+                self.assertEqual(node._angle_applied["left"], [500, 1000, 1000, 1000, 1000, 1000])
+
+    def test_incomplete_release_recovered_load_does_not_retry(self):
+        node, _ = self.make_node()
+        self.hold(node)
+        self.overload(node)
+        for _ in range(15):
+            self.tick(node)  # Position remains short, but the load has recovered.
+        c = node.closing_holds["left"][1]
+        self.assertEqual((c.phase, c.steps, c.release_retry_target), ("holding", 1, None))
+        self.assertEqual(node.hold_control_error, "")
+
+    def test_release_unexpected_direction_or_overshoot_still_fails(self):
+        for actual in (397, 408):
+            with self.subTest(actual=actual):
+                node, _ = self.make_node()
+                self.hold(node)
+                self.overload(node)
+                for _ in range(6):
+                    self.tick(node, positions=[400, actual, 400, 400, 400, 400])
+                self.assertIn("release motion outside expected range", node.hold_control_error)
+
     def test_hysteresis_and_duplicate_samples(self):
         node, _ = self.make_node()
         self.hold(node)
@@ -1008,13 +1078,13 @@ class AdaptiveHoldTests(unittest.TestCase):
             self.tick(node, forces=[100, 450, 100, 100, 100, 100])
         self.assertEqual(node.closing_holds["left"][1].steps, 1)
 
-    def test_release_timeout_and_fault_latch(self):
-        node, links = self.make_node()
+    def test_adjustment_timeout_and_fault_latch(self):
+        node, links = self.make_node(adjust_timeout_ms=120)
         self.hold(node)
         self.overload(node)
         for _ in range(6):
             self.tick(node)
-        self.assertIn("release motion timeout", node.hold_control_error)
+        self.assertIn("adjustment time budget exhausted", node.hold_control_error)
         state = node.make_state(node.clock_now)
         self.assertFalse(state["valid"])
         self.assertEqual(state["hold_control_error"], node.hold_control_error)
@@ -1023,7 +1093,7 @@ class AdaptiveHoldTests(unittest.TestCase):
         self.assertEqual(node._angle_applied["left"], [-1] * 6)
         # Protective opening does not clear the fault or resume normal grasping.
         self.tick(node, valid=False)
-        self.assertEqual(node._angle_applied["left"], [1000] * 6)
+        self.assertEqual(node._angle_applied["left"], [500, 1000, 1000, 1000, 1000, 1000])
         self.assertTrue(node.hold_control_error)
         node.connect()
         self.assertEqual(node.hold_control_error, "")
@@ -1109,8 +1179,8 @@ class AdaptiveHoldTests(unittest.TestCase):
                 else:
                     node._safe_pose()  # run_node's shutdown path uses the same method.
                 for side, link in links.items():
-                    self.assertEqual(node._angle_applied[side], [1000] * 6)
-                    self.assertEqual(link.writes[-1], [1000] * 6)
+                    self.assertEqual(node._angle_applied[side], [500, 1000, 1000, 1000, 1000, 1000])
+                    self.assertEqual(link.writes[-1], [1000, 1000, 1000, 1000, 1000, 500])
                     self.assertTrue(all(c.held_raw is None for c in node.closing_holds[side]))
                 self.assertFalse(node.command_valid)
                 self.assertIn("device error 32", node.hold_control_error)
@@ -1126,7 +1196,7 @@ class AdaptiveHoldTests(unittest.TestCase):
         links["left"].fail_writes = False
         node.supervise(now=node.clock_now + node.command_timeout_us + 1)
         self.assertTrue(node._safe_applied)
-        self.assertEqual(node._angle_applied, {side: [1000] * 6 for side in module.SIDES})
+        self.assertEqual(node._angle_applied, {side: [500, 1000, 1000, 1000, 1000, 1000] for side in module.SIDES})
 
     def test_device_fault_is_still_reported_during_grasp_motion(self):
         node, _ = self.make_node()
@@ -1352,7 +1422,7 @@ class AdaptiveHoldTests(unittest.TestCase):
         self.assertEqual(node.closing_holds["left"][1].release_target, 405)
 
     def test_failure_log_captures_pre_fault_state_and_limits(self):
-        node, _ = self.make_node()
+        node, _ = self.make_node(adjust_timeout_ms=120)
         self.hold(node)
         self.overload(node)
         for _ in range(6):

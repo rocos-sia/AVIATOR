@@ -363,7 +363,9 @@ Managed 进入 SAFE 等保护状态时，RemoteLink 撤销普通轨迹发布并�
 `aviator_core`（交互、Demo）与 `aviator_core_servo` 共用 `RemoteLink` 的手部控制。
 配置位于 [`config/system.yaml`](../../config/system.yaml) 的 `core_hand`，手节点仍读取
 [`config/inspire_hand.yaml`](../../config/inspire_hand.yaml)。两者需连接同一个 Bus，运行在同一主机。
-当前源码配置启用真实手控制，双手张开为 `[0,1,1,1,1,1]`，闭合为用户指定的 `[0.3,0,0,0,0,0]`。
+当前源码配置启用真实手控制，双手张开为 `[0.5,1,1,1,1,1]`，闭合为 `[0.5,0,0,0,0,0]`。
+初始化、复位和松开共用 `core_hand.open`；其中侧摆 `0.5` 对应寄存器 `500`。
+真机、仿真配置以及未显式配置 `open` 时的程序默认值均使用此张开姿态。
 六路顺序为拇指旋转、拇指弯曲、食指、中指、无名指、小指。配置使用 0～1，手节点转换为 CAN 0～1000。
 
 ```yaml
@@ -374,8 +376,8 @@ core_hand:
   feedback_timeout_ms: 500
   open_tolerance: 0.03
   open:
-    left: [1, 1, 1, 1, 1, 1]
-    right: [1, 1, 1, 1, 1, 1]
+    left: [0.5, 1, 1, 1, 1, 1]
+    right: [0.5, 1, 1, 1, 1, 1]
   close:
     left: [0, 0, 0, 0, 0, 0]
     right: [0, 0, 0, 0, 0, 0]

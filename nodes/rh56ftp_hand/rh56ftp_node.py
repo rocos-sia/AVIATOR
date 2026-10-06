@@ -37,7 +37,8 @@ SIDES = ("left", "right")
 CHANNEL_NAMES = ("thumb_rotation", "thumb_bend", "index", "middle", "ring", "little")
 DEVICE_ERRORS = ((1, "stall"), (2, "overtemperature"), (4, "overcurrent"),
                  (8, "motor_error"), (16, "communication_error"))
-DEFAULT_SAFE_POSE = (1.0,) * 6
+# AVIATOR order: keep thumb rotation at the handle-clearance position; open bends.
+DEFAULT_SAFE_POSE = (0.5, 1.0, 1.0, 1.0, 1.0, 1.0)
 DEFAULT_SPEED = 500
 DEFAULT_FORCE = 500
 POSITION_FORCE_PROTECTION_MODE = 0
@@ -220,7 +221,8 @@ class DiagnosticLog:
             "hold_feedback_unavailable": "反馈不可用，暂停握持调节",
             "hold_monitor_started": "弯曲通道已进入保持监测",
             "hold_monitor_stopped": "弯曲通道执行运动，暂停长期负载监测",
-            "fault_safe_pose_applied": "握持故障仍锁存，已发送全部张开目标（六路 1000）",
+            "release_step_incomplete": "减载单步未到位，停止后观察负载，仍超限则在预算内重试",
+            "fault_safe_pose_applied": "握持故障仍锁存，已发送安全张开目标（拇指侧摆 500，其余五路 1000）",
             "device_error": "设备故障", "reject command": "指令被拒绝",
             "command_ignored": "仅反馈模式，忽略运动指令",
             "command_watchdog_expired": "指令超时，准备执行安全姿态",
@@ -234,7 +236,7 @@ class DiagnosticLog:
             "invalid_wire_message": "收到无效总线消息",
         }
         phases = {"tracking": "执行运动指令", "holding": "保持当前位置",
-                  "moving": "负载过高，开始减载", "settling": "减载到位，等待稳定", "failed": "故障"}
+            "moving": "负载过高，开始减载", "settling": "减载停止，等待稳定", "failed": "故障"}
         sides = {"left": "左手", "right": "右手"}
         channels = dict(zip(CHANNEL_NAMES, ("拇指侧摆", "拇指弯曲", "食指", "中指", "无名指", "小指")))
         title = phases.get(fields.get("phase"), "握持阶段变化") if event == "hold_phase_changed" else titles.get(event, event)
@@ -301,6 +303,7 @@ class DiagnosticLog:
                 "invalid position feedback": "位置反馈无效", "insufficient holding force": "保持力持续不足",
                 "closing timeout without stable contact": "闭合超时，未形成稳定接触",
                 "release motion timeout": "减载运动超时", "adjustment time budget exhausted": "累计调节超时",
+                "release motion outside expected range": "减载位移方向异常或越过目标范围",
                 "release step/distance budget exhausted": "减载步数或距离达到上限",
                 "persistent load outside adaptive hold": "不可自动减载的通道持续过载",
                 "missing/stale/future feedback": "反馈缺失、过期或时间戳超前",
@@ -421,6 +424,7 @@ class ClosingHold:
     overload_since_us: int = 0
     low_force_since_us: int = 0
     release_target: int | None = None
+    release_retry_target: int | None = None
     release_from: int = 0
     release_origin: int | None = None
     steps: int = 0
@@ -900,8 +904,11 @@ class Rh56FtpNode:
             "phase": channel.phase, "requested_raw": requested_raw, "actual_raw": actual,
             "position_error_raw": actual - requested_raw if actual is not None and requested_raw is not None else None,
             "held_raw": channel.held_raw, "release_target_raw": channel.release_target,
+            "release_retry_target_raw": channel.release_retry_target,
             "release_origin_raw": channel.release_origin, "release_from_raw": channel.release_from,
-            "next_release_raw": actual + self.hold_control.release_step_raw if actual is not None else None,
+            "next_release_raw": (max(actual, channel.release_retry_target)
+                                 if channel.release_retry_target is not None else actual) + self.hold_control.release_step_raw
+                                if actual is not None else None,
             "steps": channel.steps,
             "current_raw": value("current"), "current_register_raw": value("current_register_raw"),
             "current_abs_raw": abs(value("current")) if value("current") is not None else None,
@@ -1033,10 +1040,24 @@ class Rh56FtpNode:
                             abs(actual - c.release_target) <= policy.release_tolerance_raw:
                         c.held_raw = actual
                         c.phase, c.phase_started_us = "settling", now
-                        c.release_target = None
+                        c.release_target = c.release_retry_target = None
                         effective[side][index] = -1
                     elif now - c.phase_started_us >= policy.move_timeout_ms * 1000:
-                        return fail(side, index, "release motion timeout")
+                        # A small position step may remain short of its target.
+                        # Stop before observing/retrying; keep the attempted target
+                        # so the next bounded attempt can overcome a small deadband.
+                        if actual < c.release_from - policy.release_tolerance_raw or \
+                                actual > c.release_target + policy.release_tolerance_raw:
+                            return fail(side, index, "release motion outside expected range")
+                        c.release_retry_target = c.release_target
+                        self.diag.emit("release_step_incomplete", key=f"release_incomplete:{side}:{index}",
+                                       throttle_us=0, **self._hold_context(side, index, c, now,
+                                                                         requested[side][index], snapshots[side]))
+                        c.held_raw = actual
+                        c.phase, c.phase_started_us = "settling", now
+                        c.release_target = None
+                        c.overload_since_us = c.low_force_since_us = 0
+                        effective[side][index] = -1
                     continue
                 if c.phase == "settling":
                     if not new_sample or stamp - c.phase_started_us < policy.settle_ms * 1000:
@@ -1059,6 +1080,7 @@ class Rh56FtpNode:
                     c.overload_since_us = c.overload_since_us or stamp
                 elif recovered:
                     c.overload_since_us = 0
+                    c.release_retry_target = None
                 if not c.overload_since_us or stamp - c.overload_since_us < policy.overload_ms * 1000:
                     continue
                 # An explicit opening command has priority over ordinary unloading.
@@ -1069,7 +1091,10 @@ class Rh56FtpNode:
                 if busy:
                     continue
                 origin = c.held_raw if c.release_origin is None else c.release_origin
-                target = actual + policy.release_step_raw
+                # Following an incomplete step, retry beyond the previous target
+                # rather than repeatedly commanding the same ineffective position.
+                base = max(actual, c.release_retry_target) if c.release_retry_target is not None else actual
+                target = base + policy.release_step_raw
                 if c.steps >= policy.max_steps or target > min(1000, origin + policy.max_release_raw):
                     return fail(side, index, "release step/distance budget exhausted")
                 if c.adjust_started_us and now - c.adjust_started_us >= policy.adjust_timeout_ms * 1000:

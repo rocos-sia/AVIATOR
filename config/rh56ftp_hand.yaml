@@ -18,10 +18,10 @@ hold_control:
   close_timeout_ms: 30000      # 仍有闭合残差且未确认稳定接触的最长时间
   overload_ms: 1000            # 电流/力持续超限或保持力不足的确认时间
   recovery_ratio: 0.8
-  release_step_raw: 5          # 从实测位置向张开方向调整的寄存器刻度
+  release_step_raw: 5          # 正常从实测位置递增；未到位重试时从上次目标与实测位置的较大值递增
   release_tolerance_raw: 2
   max_release_raw: 30          # 相对首次保持位置的最大松开量
   max_steps: 6
-  move_timeout_ms: 2000
+  move_timeout_ms: 2000        # 单步期限；未到位先停止观察，仍超限才在原预算内重试
   settle_ms: 2000
   adjust_timeout_ms: 60000

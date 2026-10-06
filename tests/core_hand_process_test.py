@@ -53,7 +53,7 @@ core_hand:
         seq = 0
         enabled = locked = False
         ack = dict(publisher_id='', session_id='', sequence=0, sample_mono_us=0)
-        targets = dict(left=[1]*6, right=[1]*6)
+        targets = dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1])
         actual = dict(left=[0.2]*6, right=[0.2]*6)
         last_change = next_state = locked_at = last_arm = 0
         first_open = close_seen = unlock_seen = aggregate_seen = False
@@ -87,7 +87,7 @@ core_hand:
                                       q=[0]*14, target=[0]*14, speed=[1]*14)
                     elif op == 'authorize': result = dict(control_epoch=str(uuid.uuid4()))
                     elif op == 'enable':
-                        assert actual == dict(left=[1]*6, right=[1]*6), 'arm enabled before actual opening'
+                        assert actual == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]), 'arm enabled before actual opening'
                         enabled = True
                         result = dict(target=[0]*14)
                     elif op == 'disable': enabled = False
@@ -96,7 +96,7 @@ core_hand:
                         locked = True
                         locked_at = now
                     elif op == 'unlock':
-                        assert actual == dict(left=[1]*6, right=[1]*6), 'software unlock before actual opening'
+                        assert actual == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]), 'software unlock before actual opening'
                         locked = False
                     elif op == 'stop': result = dict(target=[0]*14)
                     else: raise AssertionError(op)
@@ -132,15 +132,16 @@ core_hand:
                         last_change = now
                     targets = incoming
                     if mode == 'synchronized' and trajectory_at and not unlock_seen:
-                        if targets == dict(left=[1]*6, right=[1]*6) and close_seen:
+                        if targets == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]) and close_seen:
                             unlock_seen = True
                         else:
-                            for side, initial, final, start in (('left', 1, .9, 300), ('right', 1, .3, 100)):
+                            for side, initial, final, start in (('left', .5, .9, 300), ('right', .5, .3, 100)):
                                 u = max(0, (reported_cursor-start)/(1000-start))
                                 progress = u*u*u*(10+u*(-15+6*u))
                                 # The hand target must never advance beyond the reported arm cursor.
-                                assert targets[side][0] >= initial + progress*(final-initial) - 1e-9, (reported_cursor, targets)
-                            partial_seen |= .9 < targets['left'][0] < 1
+                                commanded_progress = (targets[side][0] - initial) / (final - initial)
+                                assert -1e-9 <= commanded_progress <= progress + 1e-9, (reported_cursor, targets)
+                            partial_seen |= .5 < targets['left'][0] < .9
                             close_seen |= targets['left'][0] == .9
                             if cursor == 400 and now - trajectory_at > .48:
                                 stalled_targets.append(dict(targets))
@@ -148,7 +149,7 @@ core_hand:
                         assert targets['right'][0] == .3
                         close_seen = True
                     else:
-                        assert targets == dict(left=[1]*6, right=[1]*6)
+                        assert targets == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1])
                         if close_seen: unlock_seen = True
                         first_open = True
                     ack = {key: message[key] for key in ack}
