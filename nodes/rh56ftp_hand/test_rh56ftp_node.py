@@ -97,6 +97,75 @@ def private_node(ingress, egress):
                      "--endpoint", egress, "--state-endpoint", ingress])
 
 
+class ConsoleLogTests(unittest.TestCase):
+    def test_default_text_hides_health_and_reports_faults_with_repeat_count(self):
+        log = module.DiagnosticLog()
+        output = io.StringIO()
+        clock = [1000000]
+        with patch("sys.stderr", output), patch.object(module, "monotonic_us", side_effect=lambda: clock[0]):
+            log.emit("health", throttle_us=0, hands={"left": {"valid": True}})
+            self.assertEqual(output.getvalue(), "")
+            for offset in (0, 1000000, 9000000, 10000000):
+                clock[0] = 1000000 + offset
+                log.emit("feedback_read_failed", side="left", reason="TCP timeout", host="192.168.11.210", port=6000)
+            # A different error must not wait for the repeat interval.
+            log.emit("feedback_read_failed", side="left", reason="connection reset")
+        lines = output.getvalue().splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertIn("左手 读取反馈失败", lines[0])
+        self.assertIn("[error]", lines[0])
+        self.assertIn("192.168.11.210:6000", lines[0])
+        self.assertIn("期间省略同类日志=2", lines[1])
+        self.assertIn("connection reset", lines[2])
+        self.assertNotIn('"event"', output.getvalue())
+
+    def test_device_error_and_unloading_are_readable(self):
+        log = module.DiagnosticLog()
+        output = io.StringIO()
+        with patch("sys.stderr", output):
+            log.emit("device_error", side="right", channels=[{
+                "channel_name": "thumb_rotation", "code": 37,
+                "error_names": ["stall", "overcurrent"], "unknown_bits": 32,
+                "current_raw": -128, "force_raw": 301, "temperature_c": 40}])
+            log.emit("hold_phase_changed", side="left", channel_name="index", phase="moving",
+                     actual_raw=400, release_target_raw=405, steps=1, current_raw=128, force_raw=301,
+                     limits={"current_limit": 100, "force_limit": 300})
+            log.emit("hold_control_failed", side="left", channel_name="index",
+                     reason="temperature limit reached", temperature_c=50, limits={"temperature_limit": 50})
+        text = output.getvalue()
+        for expected in ("右手 设备故障", "拇指侧摆: 堵转、过流、未知故障位 32", "电流=-128",
+                         "左手食指 负载过高，开始减载", "减载目标=405", "电流上限=100",
+                         "温度达到上限", "温度上限=50", "[warning]", "[error]"):
+            self.assertIn(expected, text)
+
+    def test_feedback_failure_and_recovery_print_once(self):
+        node, links = NodeTests().make_node()
+        node.diag = module.DiagnosticLog()
+        output = io.StringIO()
+        with patch("sys.stderr", output):
+            node.read_states(now=node.clock_now)
+            node.report_diagnostics(node.make_state(node.clock_now), node.clock_now)
+            self.assertEqual(output.getvalue(), "")
+            with patch.object(links["left"], "read_state", side_effect=RuntimeError("TCP timeout")):
+                node.read_states(now=node.clock_now)
+            node.report_diagnostics(node.make_state(node.clock_now), node.clock_now)
+            node.report_diagnostics(node.make_state(node.clock_now), node.clock_now)
+            node.read_states(now=node.clock_now + 1)
+            node.report_diagnostics(node.make_state(node.clock_now + 1), node.clock_now + 1)
+            node.report_diagnostics(node.make_state(node.clock_now + 1), node.clock_now + 1)
+        text = output.getvalue()
+        self.assertEqual(text.count("左手 反馈异常"), 1)
+        self.assertEqual(text.count("左手 反馈已恢复"), 1)
+        self.assertNotIn("health", text)
+
+    def test_cli_default_and_json_opt_in(self):
+        for args, expected in (([], "text"), (["--log-format", "json"], "json")):
+            with patch.object(module, "load_handlink", return_value=("right", 6000, FakeLink)), \
+                    patch.object(module, "run_node", return_value=0) as run:
+                module.main(args)
+            self.assertEqual(run.call_args.args[0].diag.log_format, expected)
+
+
 class NodeTests(unittest.TestCase):
     def test_text_instance_restart_keeps_sequence_and_epoch_checks(self):
         node, _ = self.make_node()
@@ -120,7 +189,7 @@ class NodeTests(unittest.TestCase):
     def make_node(self):
         links = {"left": FakeLink(), "right": FakeLink()}
         node = module.Rh56FtpNode(links, clock_id="test-clock",
-                                   session_id="33333333-3333-4333-8333-333333333333")
+                                   session_id="33333333-3333-4333-8333-333333333333", log_format="json")
         node.clock_now = 1000000
         return node, links
 
@@ -618,7 +687,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(health["ack_write_age_ms"], 0)
 
     def test_repeated_diagnostics_are_throttled_with_suppressed_count(self):
-        log = module.DiagnosticLog()
+        log = module.DiagnosticLog("json")
         output = io.StringIO()
         with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=1000000):
             for _ in range(3):
@@ -1224,7 +1293,7 @@ class AdaptiveHoldTests(unittest.TestCase):
 
     def test_device_error_is_decoded_and_throttled_even_when_disabled(self):
         node, _ = self.make_node(enabled=False)
-        node.diag = module.DiagnosticLog()
+        node.diag = module.DiagnosticLog("json")
         output = io.StringIO()
         with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=node.clock_now):
             self.tick(node, errors=[5, 0, 0, 0, 0, 0])
@@ -1237,6 +1306,18 @@ class AdaptiveHoldTests(unittest.TestCase):
         self.assertEqual(channel["error_names"], ["stall", "overcurrent"])
         self.assertEqual((channel["current_raw"], channel["force_raw"], channel["temperature_c"]), (10, 100, 35))
         self.assertIn("[error]", output.getvalue())
+
+    def test_normal_holding_has_no_periodic_health_output_in_either_format(self):
+        node, _ = self.make_node()
+        self.hold(node)
+        for log_format in ("text", "json"):
+            node.diag = module.DiagnosticLog(log_format)
+            output = io.StringIO()
+            with patch("sys.stderr", output):
+                for _ in range(10):
+                    self.tick(node)
+                    node.report_diagnostics(node.make_state(node.clock_now), node.clock_now)
+            self.assertEqual(output.getvalue(), "")
 
 
 if __name__ == "__main__":

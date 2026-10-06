@@ -200,14 +200,148 @@ def normalized_to_raw(values: list[float]) -> list[int]:
 
 
 class DiagnosticLog:
-    """Bound repeated faults while keeping reader/main-thread lines intact."""
+    """Concise console events, with opt-in structured troubleshooting output."""
 
-    def __init__(self):
+    def __init__(self, log_format: str = "text"):
+        if log_format not in ("text", "json"):
+            raise ValueError("log_format must be text or json")
+        self.log_format = log_format
         self._lock = threading.Lock()
         self._events: dict[str, tuple[int, str, int]] = {}
 
+    @staticmethod
+    def _text(event: str, reason: str, fields: dict[str, Any]) -> str:
+        titles = {
+            "configuration": "启动配置", "feedback_status_changed": "反馈异常",
+            "feedback_recovered": "反馈已恢复",
+            "modbus_connect_failed": "设备连接失败", "feedback_read_failed": "读取反馈失败",
+            "modbus_write_failed": "写入设备失败", "feedback_reader_failed": "反馈线程退出",
+            "hold_control_failed": "握持保护触发，已锁存故障并请求保持当前位置",
+            "hold_feedback_unavailable": "反馈不可用，暂停握持调节",
+            "device_error": "设备故障", "reject command": "指令被拒绝",
+            "command_ignored": "仅反馈模式，忽略运动指令",
+            "command_watchdog_expired": "指令超时，准备执行安全姿态",
+            "safe_pose_failed": "安全姿态写入失败", "startup_safe_pose_failed": "启动安全姿态写入失败",
+            "shutdown_safe_pose_failed": "退出安全姿态写入失败",
+            "feedback_poll_gap": "反馈轮询延迟", "feedback_read_slow": "反馈读取耗时过长",
+            "feedback_sample_timestamp_offset": "反馈采集耗时过长",
+            "modbus_write_slow": "设备写入耗时过长", "command_processing_slow": "指令处理耗时过长",
+            "command_batch_slow": "批量指令处理耗时过长", "state_publish_gap": "状态发布间隔过长",
+            "state_publish_dropped": "状态发送队列已满，丢弃本次状态",
+            "invalid_wire_message": "收到无效总线消息",
+        }
+        phases = {"tracking": "执行运动指令", "holding": "保持当前位置",
+                  "moving": "负载过高，开始减载", "settling": "减载到位，等待稳定", "failed": "故障"}
+        sides = {"left": "左手", "right": "右手"}
+        channels = dict(zip(CHANNEL_NAMES, ("拇指侧摆", "拇指弯曲", "食指", "中指", "无名指", "小指")))
+        title = phases.get(fields.get("phase"), "握持阶段变化") if event == "hold_phase_changed" else titles.get(event, event)
+        location = sides.get(fields.get("side"), "") + channels.get(fields.get("channel_name"), "")
+        parts = [f"{location} {title}".strip()]
+
+        def value_text(value):
+            if isinstance(value, (list, tuple)):
+                if value and all(v == value[0] for v in value):
+                    return f"{value[0]}（全部通道）"
+                return "/".join(str(v) for v in value)
+            return str(value).replace("\n", " | ")
+
+        def add(label, value):
+            if value is not None and value != "":
+                parts.append(f"{label}={value_text(value)}")
+
+        if event == "configuration":
+            for side, endpoint in fields.get("endpoints", {}).items():
+                add(sides.get(side, side), f"{endpoint.get('host')}:{endpoint.get('port')}")
+            add("模式", fields.get("configured_mode"))
+            add("速度", fields.get("speed_raw"))
+            add("力指令", fields.get("force_raw"))
+            policy = fields.get("hold_control", {})
+            add("自动减载", "开启" if policy.get("enabled") else "关闭")
+            if policy.get("enabled"):
+                for key, label in (("current_limit", "电流上限"), ("force_limit", "力上限"),
+                                   ("min_force", "最低保持力"), ("temperature_limit", "温度上限")):
+                    add(label, policy.get(key))
+            parts.append("数值为寄存器刻度；配置不代表设备读回")
+        elif event == "hold_phase_changed":
+            for key, label in (("actual_raw", "当前位置"), ("release_target_raw", "减载目标"),
+                               ("steps", "减载步数")):
+                add(label, fields.get(key))
+            if fields.get("phase") == "moving":
+                for key, label in (("current_raw", "电流"), ("force_raw", "力")):
+                    add(label, fields.get(key))
+                for key, label in (("current_limit", "电流上限"), ("force_limit", "力上限")):
+                    add(label, fields.get("limits", {}).get(key))
+        elif event == "device_error":
+            errors = {"stall": "堵转", "overtemperature": "过温", "overcurrent": "过流",
+                      "motor_error": "电机异常", "communication_error": "通信异常"}
+            for channel in fields.get("channels", []):
+                names = [errors.get(name, name) for name in channel["error_names"]]
+                if channel.get("unknown_bits"):
+                    names.append(f"未知故障位 {channel['unknown_bits']}")
+                parts.append(f"{channels.get(channel['channel_name'], channel['channel_name'])}: "
+                             f"{'、'.join(names)}（故障码={channel['code']}，"
+                             f"电流={channel['current_raw']}，力={channel['force_raw']}，"
+                             f"温度={channel['temperature_c']}）")
+        else:
+            if event == "feedback_status_changed":
+                reason = (fields.get("last_error") or fields.get("invalid_reason") or
+                          ("设备报告故障" if fields.get("status") == "ERROR" else "反馈读取或更新延迟"))
+            translations = {
+                "temperature limit reached": "温度达到上限", "invalid load feedback": "负载反馈超出寄存器范围",
+                "invalid position feedback": "位置反馈无效", "insufficient holding force": "保持力持续不足",
+                "closing timeout without stable contact": "闭合超时，未形成稳定接触",
+                "release motion timeout": "减载运动超时", "adjustment time budget exhausted": "累计调节超时",
+                "release step/distance budget exhausted": "减载步数或距离达到上限",
+                "persistent load outside adaptive hold": "不可自动减载的通道持续过载",
+                "missing/stale/future feedback": "反馈缺失、过期或时间戳超前",
+                "no_feedback": "尚未收到反馈", "feedback_timestamp_expired_or_future": "反馈过期或时间戳超前",
+                "angle_register_out_of_range": "位置寄存器超出范围", "feedback_read_error": "反馈读取失败",
+            }
+            for raw, translated in translations.items():
+                reason = reason.replace(raw, translated)
+            add("原因", reason)
+            for key, label in (
+                ("role", "连接用途"), ("phase", "阶段"), ("duration_ms", "耗时(ms)"),
+                ("feedback_age_ms", "反馈年龄(ms)"), ("feedback_timeout_ms", "反馈超时阈值(ms)"),
+                ("read_duration_ms", "读取耗时(ms)"), ("sample_timestamp_offset_ms", "采集耗时(ms)"),
+                ("start_gap_ms", "轮询间隔(ms)"), ("wait_overrun_ms", "轮询等待超期(ms)"),
+                ("gap_ms", "发布间隔(ms)"), ("receive_age_ms", "指令接收间隔(ms)"),
+                ("command_age_ms", "指令年龄(ms)"), ("origin_age_ms", "源指令年龄(ms)"),
+                ("command_timeout_ms", "指令超时阈值(ms)"), ("sequence", "指令序号"),
+                ("accepted_sequence", "已接受序号"), ("frame_count", "消息帧数"), ("dropped", "累计丢弃"),
+                ("actual_raw", "当前位置"), ("requested_raw", "请求位置"),
+                ("target_raw", "写入目标"), ("previous_target_raw", "上次写入目标"),
+                ("release_target_raw", "减载目标"), ("steps", "减载步数"),
+                ("current_raw", "电流"), ("current_register_raw", "电流原始字"),
+                ("force_raw", "力"), ("temperature_c", "温度"), ("error_code", "设备故障码"),
+                ("overload_age_ms", "过载持续(ms)"), ("phase_age_ms", "阶段持续(ms)"),
+                ("closing_age_ms", "闭合持续(ms)"), ("low_force_age_ms", "力不足持续(ms)"),
+                ("last_write_error", "最近写入错误"),
+            ):
+                value = fields.get(key)
+                if key == "phase":
+                    value = phases.get(value, {"angle": "位置写入", "force": "力阈值写入",
+                                               "speed": "速度写入", "mode": "模式写入"}.get(value, value))
+                elif key == "role":
+                    value = {"command": "指令", "feedback": "反馈"}.get(value, value)
+                add(label, value)
+            limits = fields.get("limits", {})
+            for key, label in (("current_limit", "电流上限"), ("force_limit", "力上限"),
+                               ("min_force", "最低保持力"), ("temperature_limit", "温度上限")):
+                add(label, limits.get(key))
+        if fields.get("host"):
+            add("设备", f"{fields['host']}:{fields.get('port')}")
+        if fields.get("suppressed"):
+            add("期间省略同类日志", fields["suppressed"])
+        return "；".join(parts)
+
     def emit(self, event: str, *, key: str | None = None, reason: str = "",
              throttle_us: int = 1000000, **fields: Any) -> None:
+        if self.log_format == "text":
+            if event == "health":
+                return
+            if throttle_us:
+                throttle_us = max(throttle_us, 10000000)
         now = monotonic_us()
         with self._lock:
             name = key or event
@@ -222,9 +356,11 @@ class DiagnosticLog:
             if suppressed:
                 record["suppressed"] = suppressed
             emit = (Logger.error if event.endswith("_failed") or event == "device_error" else
-                    Logger.info if event in ("health", "feedback_status_changed", "configuration", "hold_phase_changed")
-                    else Logger.warn)
-            emit("rh56ftp_hand: " + json.dumps(record, ensure_ascii=False, allow_nan=False),
+                    Logger.info if event in ("health", "configuration", "feedback_recovered") or
+                    (event == "hold_phase_changed" and fields.get("phase") != "moving") else Logger.warn)
+            message = (json.dumps(record, ensure_ascii=False, allow_nan=False) if self.log_format == "json"
+                       else self._text(event, reason, record))
+            emit("rh56ftp_hand: " + message,
                   file=sys.stderr, flush=True)
 
 
@@ -392,7 +528,7 @@ class Rh56FtpNode:
                  speed: int = DEFAULT_SPEED, force: int = DEFAULT_FORCE,
                  diagnostic_interval_s: float = 1.0,
                  closing_hold_ms: int = 5000, closing_motion_raw: int = 10,
-                 hold_control: dict[str, Any] | None = None):
+                 hold_control: dict[str, Any] | None = None, log_format: str = "text"):
         if set(links) != set(SIDES) or not any(links.values()):
             raise ValueError("at least one left/right RH56FTP link is required")
         if command_timeout_ms <= 0 or feedback_timeout_ms <= 0:
@@ -432,7 +568,7 @@ class Rh56FtpNode:
         self.state_sequence = 0
         self._safe_applied = False
         self._safe_required = not feedback_only
-        self.diag = DiagnosticLog()
+        self.diag = DiagnosticLog(log_format)
         self.diagnostic_interval_us = int(diagnostic_interval_s * 1000000)
         self._next_diagnostic_us = 0
         self.command_received = self.command_accepted = self.command_rejected = 0
@@ -478,6 +614,7 @@ class Rh56FtpNode:
                 self.snapshots[side].error = str(exc)
                 self.diag.emit("modbus_connect_failed", key=f"connect:{side}:{id(link)}", side=side,
                                role="command" if link is self.links[side] else "feedback",
+                               host=getattr(link, "host", None), port=getattr(link, "port", None),
                                reason=f"{type(exc).__name__}: {exc}")
 
     def close(self) -> None:
@@ -1186,8 +1323,6 @@ class Rh56FtpNode:
         details = {}
         abnormal = bool(self.hold_control_error or self.last_write_error or self.last_command_error or
                         self.last_command_duration_ms >= self.command_timeout_us / 2000)
-        abnormal |= self.hold_control.enabled and any(
-            c.held_raw is not None for channels in self.closing_holds.values() for c in channels)
         for side in SIDES:
             hand = state["hands"][side]
             snapshot = self.snapshots[side]
@@ -1251,7 +1386,11 @@ class Rh56FtpNode:
             self._feedback_status[side] = status
             if side_abnormal and status != previous:
                 self.diag.emit("feedback_status_changed", key=f"feedback_status:{side}",
-                               reason=str(status), side=side, reader=self.reader_diagnostics(now), **details[side])
+                               throttle_us=0, reason=str(status), side=side,
+                               reader=self.reader_diagnostics(now), **details[side])
+            elif previous and previous[0] and not side_abnormal:
+                self.diag.emit("feedback_recovered", key=f"feedback_status:{side}", throttle_us=0,
+                               side=side, feedback_age_ms=hand["feedback_age_ms"])
         if abnormal and self.diagnostic_interval_us and now >= self._next_diagnostic_us:
             self._next_diagnostic_us = now + self.diagnostic_interval_us
             self.diag.emit("health", throttle_us=0, state_sequence=state["sequence"],
@@ -1419,7 +1558,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--closing-motion-raw", type=int, default=10,
                         help="握紧停滞窗口内允许的最大位置范围及目标残差容差（默认 10，范围 0..999）")
     parser.add_argument("--diagnostic-interval-s", type=float, default=1.0,
-                        help="异常详情汇总间隔秒数（默认 1；0 只保留异常事件；正常运行不打印）")
+                        help="JSON 模式的异常详情汇总间隔秒数（默认 1；0 关闭汇总）")
+    parser.add_argument("--log-format", choices=("text", "json"), default="text",
+                        help="日志格式：默认 text 简洁中文；json 保留完整排障上下文")
     parser.add_argument("--feedback-only", action="store_true")
     args = parser.parse_args(argv)
     settings = {}
@@ -1472,7 +1613,7 @@ def main(argv: list[str] | None = None) -> int:
                        feedback_only=args.feedback_only, speed=args.speed, force=args.force,
                        diagnostic_interval_s=args.diagnostic_interval_s,
                        closing_hold_ms=args.closing_hold_ms, closing_motion_raw=args.closing_motion_raw,
-                       hold_control=settings.get("hold_control"))
+                       hold_control=settings.get("hold_control"), log_format=args.log_format)
     return run_node(node, args.endpoint, args.state_endpoint, args.state_hz)
 
 

@@ -148,9 +148,13 @@ python3 nodes/rh56ftp_hand/rh56ftp_node.py \
 请求停止并发布 `hand.state.valid=false`，供 Core 现有反馈保护处理；重连/重启节点后清除。
 命令 watchdog 和安全姿态仍会全张开。该策略不能保证 `-1` 后电机断流或实际抓握可靠，
 `grasp_verified` 仍为 false。调节状态位于各手的 `hold_control` 数组；
-健康日志包含电流、受力、温度，阶段切换输出 `hold_phase_changed`。
+终端默认使用简洁中文日志，正常运动和稳定保持不周期打印。保持、减载及故障阶段切换时输出提示。
 
-诊断日志采用现有 Logger 和 JSON 事件格式：
+日志沿用现有 Logger 的时间戳和 INFO/WARNING/ERROR 级别。默认显示左右手、手指名称、
+原因和相关测量值；例如 `左手食指 负载过高，开始减载；当前位置=400；减载目标=405…`。
+设备故障码会展开成堵转、过温、过流等中文说明。数值均沿用原寄存器刻度。
+
+需要完整上下文时，在手节点启动参数中加入 `--log-format json`，恢复 JSON 事件格式：
 
 - `configuration`：连接时打印生效的模式配置、速度/力指令、超时、六路阈值和设备地址。
   这是配置值，不代表设备寄存器读回结果。
@@ -189,12 +193,17 @@ python3 nodes/aviator_hand/hand_command.py
 
 ## Core 手反馈或 ACK 过期诊断
 
-重启节点后只在异常时打印。正常连接、正常命令、正常反馈、恢复和安全姿态执行成功均不打印。
-异常事件立即打印；持续异常期间默认每秒补充一条 JSON `health` 详情汇总，正常时不输出汇总。
-同一异常每秒最多打印一次，`suppressed` 表示期间省略的重复次数。
-`--diagnostic-interval-s 0` 关闭异常详情汇总，仍保留异常事件日志。将原启动命令末尾加上 `2>&1 | tee rh56ftp-hand.log` 可保留日志。
+默认 `--log-format text`：启动时打印一次配置摘要；正常命令、反馈和稳定保持不周期打印。
+异常首次出现立即打印，同一事件/设备且原因相同的重复异常每 10 秒最多提醒一次，附带省略次数；
+原因改变、反馈异常状态变化和反馈恢复立即提示。减载动作使用 WARNING，设备/I/O/握持保护故障使用 ERROR。
+文本模式不输出周期性 `health` 汇总。
 
-重点查看：
+`--log-format json` 用于详细排障，保留测量值、阈值、计时器、命令上下文和异常调用栈。
+该模式下同类重复异常每秒最多打印一次；持续异常期间默认每秒输出一次 `health` 汇总，
+正常保持不再被视为异常。`--diagnostic-interval-s 0` 可关闭 JSON 异常汇总，仍保留事件日志。
+将手节点启动命令末尾加上 `2>&1 | tee rh56ftp-hand.log` 可保留日志。
+
+需要进一步排障时，在 JSON 日志中重点查看：
 
 - `hands.left/right.valid`、`feedback_age_ms`、`invalid_reason`、`last_error`：确定是哪侧反馈失效及原因。
 - `read_duration_ms`、`read_in_progress_ms`、`write.duration_ms`：区分读取卡住和写入变慢。
