@@ -159,9 +159,27 @@ class HandLink:
 
     # ------------------------------------------------------------ 写控制
 
-    def write_angle_set(self, values: list[int]) -> None:
-        """六个自由度角度设定，0-1000；-1 表示该指保持不动。"""
-        self._write(REG["angleSet"], values)
+    def write_angle_set(self, values: list[int | None]) -> None:
+        """0..1000：目标；-1：停止该指；None：不写该指寄存器。"""
+        if len(values) != N_FINGERS:
+            raise ValueError("angle targets must contain six values")
+        start = 0
+        while start < N_FINGERS:
+            if values[start] is None:
+                start += 1
+                continue
+            end = start + 1
+            while end < N_FINGERS and values[end] is not None:
+                end += 1
+            # Manual addresses are byte offsets; each angle occupies two bytes.
+            self._write(REG["angleSet"] + 2 * start, values[start:end])
+            start = end
+
+    def write_mode_set(self, values: list[int]) -> None:
+        """六路模式字节：0 速度力保护，1 力控，2 负载保持。"""
+        if len(values) != N_FINGERS or any(type(v) is not int or v not in (0, 1, 2) for v in values):
+            raise ValueError("mode requires six integers in [0,2]")
+        self._write(REG["mode"], [values[i] | (values[i + 1] << 8) for i in range(0, 6, 2)])
 
     def write_force_set(self, values: list[int]) -> None:
         """六个自由度力控阈值，0-3000。"""

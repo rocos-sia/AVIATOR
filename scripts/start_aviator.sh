@@ -113,7 +113,7 @@ if ! $DRY_RUN; then
     else
         commands+=(sudo)
         executables+=("$AVIATOR_BIN/manipulator" "$HAND_PYTHON" "$CAMERA_PYTHON")
-        files+=(config/camera.yaml nodes/rh56ftp_hand/rh56ftp_node.py nodes/camera/main.py)
+        files+=(config/camera.yaml config/rh56ftp_hand.yaml nodes/rh56ftp_hand/rh56ftp_node.py nodes/camera/main.py)
     fi
     for command in "${commands[@]}"; do
         command -v "$command" >/dev/null || { echo "缺少命令: $command" >&2; exit 1; }
@@ -152,7 +152,7 @@ else
     start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config "$SYSTEM_CONFIG"
     start rh56ftp env PATH="$(dirname "$HAND_PYTHON"):$PATH" "$HAND_PYTHON" \
         nodes/rh56ftp_hand/rh56ftp_node.py --right-host 192.168.21.210 \
-        --left-host 192.168.11.210 --speed 500 --force 500
+        --left-host 192.168.11.210 --config config/rh56ftp_hand.yaml
 fi
 start gateway "$AVIATOR_BIN/flight_gateway"
 start core "$AVIATOR_BIN/aviator_core_managed" --config "$SYSTEM_CONFIG"

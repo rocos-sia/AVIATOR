@@ -19,7 +19,7 @@ FK tool 中心到对应抓握目标的距离分别触发闭合，以五次平滑
 - `monitor.yaml`：Monitor 的消息来源、超时、RGB 预览及显示标定。可在网页“配置”页保存并即时应用，详见 [Monitor 说明](../nodes/aviator_monitor/README.md)。
 - `recording.yaml`：Logger 配置 v1。通过 `aviator_logger --config config/recording.yaml` 加载；`camera.mode` 选择 `disabled`、`raw` 或 `compressed`。字段、默认值、校验及 CLI 覆盖规则见 [Logger 说明](../nodes/aviator_logger/README.md)。
 - `camera.yaml`：相机节点的设备选择、彩色采集、深度尺寸与 ChArUco/AprilTag 参数。`detector.type` 每次只选择一种识别模式，当前选择 `charuco`。`visualization.show`、`visualization.print_pose` 默认关闭；可用 `--show --print-pose` 临时开启视频和位姿输出，`print_interval_s` 默认 0.5 秒。传入启用图像的 `--recording-config` 后发送 RGB8；对应 `camera.sources[].record_depth: true` 时才额外采集和记录 Z16。`--camera-id` 必须匹配录制配置。完整命令见 [相机说明](../nodes/camera/README.md)。
-- SocketCAN 手节点配置位于 [`inspire_hand.yaml`](inspire_hand.yaml)；RH56FTP Modbus TCP 节点通过命令行指定 IP/端口，说明见 [`rh56ftp_hand`](../nodes/rh56ftp_hand/README.md)。
+- SocketCAN 手节点配置位于 [`inspire_hand.yaml`](inspire_hand.yaml)；RH56FTP 的速度和力设定在 [`rh56ftp_hand.yaml`](rh56ftp_hand.yaml)，一键启动自动加载，IP/端口仍通过命令行指定，说明见 [`rh56ftp_hand`](../nodes/rh56ftp_hand/README.md)。
 - 方向盘 AprilTag 标定结果写入 [`steering_wheel_calibration.yaml`](steering_wheel_calibration.yaml)，标定和验证程序见 [`tools/steering_wheel_calibration`](../tools/steering_wheel_calibration/README.md)。
 - `robot.yaml`：机械臂后端、模型与规划参数。`system.yaml`：总线、设备服务与 Core 配置；`core_hand` 控制真实手接入、双手归一化开合目标与反馈时限，当前张开为 `[0,1,1,1,1,1]`、闭合为 `[0.3,0,0,0,0,0]`。MuJoCo 后端不发布真实手命令；见 [Core 使用说明](../nodes/aviator_core/README.md#core-控制真实机械手)。
 

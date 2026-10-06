@@ -5,10 +5,11 @@ import multiprocessing
 import subprocess
 import sys
 import time
+import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 
 SCRIPT = Path(__file__).with_name("rh56ftp_node.py")
@@ -41,6 +42,7 @@ class FakeLink:
         self.events = []
         self.fail_writes = False
         self.fail_force = False
+        self.fail_mode = False
 
     def connect(self):
         pass
@@ -63,6 +65,12 @@ class FakeLink:
             raise RuntimeError("force write failed")
         self.setting_writes.append(("force", list(values)))
         self.events.append(("force", list(values)))
+
+    def write_mode_set(self, values):
+        if self.fail_mode:
+            raise RuntimeError("mode write failed")
+        self.setting_writes.append(("mode", list(values)))
+        self.events.append(("mode", list(values)))
 
     def read_state(self):
         return {"angle": [10, 20, 30, 40, 50, 60], "force": [1] * 6,
@@ -145,7 +153,7 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(links["left"].writes[-1], [0] * 6)
         # Continue fresh commands and feedback until the full window is covered.
         self.drive_closing(node, duration_ms=120)
-        self.assertEqual(links["left"].writes[-1], [400] * 5 + [0])
+        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
         self.assertEqual(node.guard.last_sequence, node.command_accepted)
         self.assertEqual(node.guard.sample_mono_us, node.clock_now)
         self.assertTrue(node.command_valid)
@@ -157,27 +165,52 @@ class NodeTests(unittest.TestCase):
             self.assertEqual(hand["closing_hold_active"], [False] + [True] * 5)
             self.assertEqual(hand["drive_position_normalized"], [.4] * 6)
         # A new position reading must not make a latched target drift.
+        before = len(links["left"].writes)
         self.drive_closing(node, duration_ms=60, position=lambda _ms, _side: [450] * 6)
-        self.assertEqual(links["left"].writes[-1], [400] * 5 + [0])
+        self.assertEqual(len(links["left"].writes), before)
 
-    def test_opening_and_new_targets_release_hold_immediately(self):
+    def test_stopped_fingers_only_read_and_ack_until_opening(self):
+        node, links = self.make_node()
+        self.drive_closing(node, target=[0] + [.2] * 5)
+        counts = {side: len(link.events) for side, link in links.items()}
+        last_write = node.last_ack_write_us
+        reads = node.snapshots["left"].reads
+        for target in (.1, .3, .4):
+            self.drive_closing(node, duration_ms=1200, target=[0] + [target] * 5)
+        self.assertGreater(node.snapshots["left"].reads, reads)
+        self.assertEqual(node.last_ack_write_us, last_write)
+        self.assertEqual(node.guard.sample_mono_us, node.clock_now)
+        self.assertTrue(node.command_valid)
+        for side, link in links.items():
+            self.assertEqual(len(link.events), counts[side])
+        # Only one opening channel is written; stopped neighbours stay untouched.
+        self.drive_closing(node, duration_ms=0, target=[0, .6, .4, .4, .4, .4])
+        self.assertEqual(links["left"].writes[-1], [None, None, None, None, 600, None])
+
+    def test_only_opening_beyond_stopped_position_releases_hold(self):
         node, links = self.make_node()
         self.drive_closing(node)
         self.drive_closing(node, duration_ms=0, target=[1] * 6)
         self.assertEqual(links["left"].writes[-1], [1000] * 6)
         self.assertFalse(any(c.held_raw is not None for c in node.closing_holds["left"]))
-        # A new, tighter target starts a new observation window too.
+        # Changing a closing target must not restart a stopped bending finger.
         self.drive_closing(node, target=[.2] * 6)
-        self.assertEqual(links["left"].writes[-1], [400] * 5 + [200])
+        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
         self.drive_closing(node, duration_ms=0, target=[.1] * 6)
-        self.assertEqual(links["left"].writes[-1], [100] * 6)
+        self.assertEqual(links["left"].writes[-1], [None] * 5 + [100])
+        self.drive_closing(node, duration_ms=0, target=[.3] * 6)
+        self.assertEqual(links["left"].writes[-1], [None] * 5 + [300])
+        self.assertTrue(all(c.held_raw == 400 for c in node.closing_holds["left"][1:]))
+        self.drive_closing(node, duration_ms=0, target=[.6] * 6)
+        self.assertEqual(links["left"].writes[-1], [600] * 6)
+        self.assertFalse(any(c.held_raw is not None for c in node.closing_holds["left"]))
 
     def test_moving_fingers_continue_while_stalled_fingers_hold_independently(self):
         node, links = self.make_node()
         self.drive_closing(node, position=lambda ms, side: (
             [400, 400, 700 - ms // 20, 400, 400, 400] if side == "left" else [400] * 6))
-        self.assertEqual(links["left"].writes[-1], [400, 400, 400, 0, 400, 0])
-        self.assertEqual(links["right"].writes[-1], [400] * 5 + [0])
+        self.assertEqual(links["left"].writes[-1], [-1, -1, -1, None, -1, None])
+        self.assertEqual(links["right"].writes[-1], [-1] * 5 + [None])
 
     def test_motion_window_uses_range_not_only_start_end_displacement(self):
         node, links = self.make_node()
@@ -197,7 +230,7 @@ class NodeTests(unittest.TestCase):
         self.drive_closing(node, feedback=lambda ms: ms != 3000)
         self.assertEqual(links["left"].writes[-1], [0] * 6)
         self.drive_closing(node, duration_ms=3000)
-        self.assertEqual(links["left"].writes[-1], [400] * 5 + [0])
+        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
         # Repeating the same snapshot cannot substitute for five seconds of measurements.
         node, links = self.make_node()
         self.drive_closing(node, duration_ms=0)
@@ -226,14 +259,14 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(links["left"].writes[-1], [1000] * 6)
         self.assertFalse(any(c.held_raw is not None for c in node.closing_holds["left"]))
 
-    def test_command_gap_and_changed_target_do_not_accumulate_old_stall_time(self):
+    def test_command_gap_resets_but_changing_closing_target_keeps_stall_window(self):
         node, links = self.make_node()
         self.drive_closing(node, duration_ms=4980)
         node.clock_now += node.command_timeout_us
         self.drive_closing(node, duration_ms=120)
         self.assertEqual(links["left"].writes[-1], [0] * 6)
         self.drive_closing(node, duration_ms=4980, target=[.1] * 6)
-        self.assertEqual(links["left"].writes[-1], [100] * 6)
+        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
 
     def test_grasp_mode_also_holds_bending_channels(self):
         node, links = self.make_node()
@@ -242,7 +275,7 @@ class NodeTests(unittest.TestCase):
         msg["mode"] = "GRASP_SETPOINT"
         msg["hands"] = {side: {"grasp": {"closure": 1}} for side in module.SIDES}
         node.handle_command("hand.command", json.dumps(msg), now=node.clock_now)
-        self.assertEqual(links["left"].writes[-1], [400] * 5 + [0])
+        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
 
     def test_reorder_and_command_write(self):
         node, links = self.make_node()
@@ -257,17 +290,18 @@ class NodeTests(unittest.TestCase):
         for link in links.values():
             self.assertEqual(link.events, [("speed", [500] * 6),
                                            ("force", [500] * 6),
+                                           ("mode", [1] * 6),
                                            ("angle", [1000] * 6)])
         node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
         node.supervise(now=node.clock_now + node.command_timeout_us)
         node._safe_pose()  # Exit pose uses the same settings.
         for link in links.values():
-            self.assertEqual(len(link.setting_writes), 2)
+            self.assertEqual(len(link.setting_writes), 3)
 
     def test_setting_failure_blocks_angles_and_retries(self):
         node, links = self.make_node()
         links["right"].fail_force = True
-        with self.assertRaisesRegex(RuntimeError, "right speed/force setup failed"):
+        with self.assertRaisesRegex(RuntimeError, "right speed/force/mode setup failed"):
             node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
         self.assertFalse(node.guard.authorized)
         self.assertFalse(node.command_valid)
@@ -287,8 +321,8 @@ class NodeTests(unittest.TestCase):
             node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
         links["left"].fail_writes = False
         node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
-        self.assertEqual(len(links["left"].setting_writes), 4)
-        self.assertEqual(len(links["right"].setting_writes), 2)
+        self.assertEqual(len(links["left"].setting_writes), 6)
+        self.assertEqual(len(links["right"].setting_writes), 3)
 
     def test_feedback_only_does_not_write_registers(self):
         links = {"left": FakeLink(), "right": FakeLink()}
@@ -311,7 +345,52 @@ class NodeTests(unittest.TestCase):
         node._safe_pose()
         self.assertIsNone(node.links["right"])
         self.assertEqual(node.links["left"].setting_writes,
-                         [("speed", [250] * 6), ("force", [1200] * 6)])
+                         [("speed", [250] * 6), ("force", [1200] * 6), ("mode", [1] * 6)])
+
+    def test_mode_failure_prevents_motion_and_ack(self):
+        node, links = self.make_node()
+        links["right"].fail_mode = True
+        with patch("sys.stderr", io.StringIO()), self.assertRaisesRegex(RuntimeError, "mode setup failed"):
+            node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
+        self.assertFalse(node.guard.authorized)
+        self.assertTrue(all(not link.writes for link in links.values()))
+        links["right"].fail_mode = False
+        node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
+        self.assertTrue(node.command_valid)
+
+    def test_config_settings_and_cli_override_are_loaded_before_connections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "hand.yaml"
+            config.write_text("speed: 300\nforce: 750\n")
+            with patch.object(module, "load_handlink", return_value=("fake", 6000, FakeLink)), \
+                    patch.object(module, "run_node", return_value=0) as run:
+                module.main(["--config", str(config)])
+                self.assertEqual((run.call_args.args[0].speed, run.call_args.args[0].force), (300, 750))
+                module.main(["--force", "900", "--config", str(config)])
+                self.assertEqual(run.call_args.args[0].force, 900)
+            for text in ("force: true", "force: 3001", "force: 1.5", "forse: 500", "[]", "force: ["):
+                config.write_text(text)
+                with patch.object(module, "load_handlink") as load, patch("sys.stderr"), self.assertRaises(SystemExit):
+                    module.main(["--config", str(config)])
+                load.assert_not_called()
+
+    def test_modbus_mode_packing_and_sparse_angle_writes(self):
+        path = SCRIPT.parents[2] / "third_party/RH56FTP/python/pendant/handlink.py"
+        spec = importlib.util.spec_from_file_location("test_handlink", path)
+        backend = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {"pymodbus": Mock(), "pymodbus.client": Mock()}):
+            spec.loader.exec_module(backend)
+        link = backend.HandLink()
+        link._cli = Mock()
+        link._cli.write_registers.return_value.isError.return_value = False
+        link.write_mode_set([1] * 6)
+        link.write_angle_set([None, -1, -1, None, 800, None])
+        link.write_angle_set([None] * 6)
+        self.assertEqual(link._cli.write_registers.call_args_list, [
+            call(address=1625, values=[0x0101] * 3, device_id=1),
+            call(address=1488, values=[0xFFFF, 0xFFFF], device_id=1),
+            call(address=1494, values=[800], device_id=1),
+        ])
 
     def test_invalid_settings_rejected_before_opening_links(self):
         for option, value in (("--speed", "-1"), ("--speed", "1001"),
@@ -433,8 +512,10 @@ class NodeTests(unittest.TestCase):
         with patch("sys.stderr", output), patch.object(module, "monotonic_us", return_value=node.clock_now):
             node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
             links["right"].fail_writes = True
+            changed = command(node, sequence=2)
+            changed["hands"]["right"]["drive_position_normalized"][0] = .8
             with self.assertRaisesRegex(RuntimeError, "write failed"):
-                node.handle_command("hand.command", json.dumps(command(node, sequence=2)), now=node.clock_now)
+                node.handle_command("hand.command", json.dumps(changed), now=node.clock_now)
             node.read_states(now=node.clock_now)
             node.report_diagnostics(node.make_state(now=node.clock_now), now=node.clock_now)
         records = self.diagnostic_records(output)

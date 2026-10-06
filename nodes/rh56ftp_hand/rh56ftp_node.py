@@ -177,7 +177,7 @@ def decode_command(topic: str, payload: bytes | str) -> dict[str, Any]:
     return message
 
 
-def canonical_to_rh(values: list[int] | tuple[int, ...]) -> list[int]:
+def canonical_to_rh(values: list[int | None] | tuple[int, ...]) -> list[int | None]:
     """AVIATOR [thumb_rot..pinky] -> RH56FTP [pinky..thumb_rot]."""
     if len(values) != 6:
         raise ValueError("six hand channels required")
@@ -340,6 +340,7 @@ class Rh56FtpNode:
         self.speed = _register_setting(speed, "speed", 1000)
         self.force = _register_setting(force, "force", 3000)
         self._settings_applied: set[str] = set()
+        self._angle_applied: dict[str, list[int]] = {}
         self.clock_id = clock_id or _clock_id()
         self.session_id = session_id or f"run-{time.time_ns()}-{os.getpid()}"
         self.guard = CommandGuard()
@@ -375,6 +376,7 @@ class Rh56FtpNode:
 
     def connect(self) -> None:
         self._settings_applied.clear()
+        self._angle_applied.clear()
         self._reset_closing_holds()
         seen: set[int] = set()
         entries = list(self.links.items()) + list(self.read_links.items())
@@ -529,17 +531,25 @@ class Rh56FtpNode:
                 try:
                     self._write_call(side, "speed", lambda: link.write_speed_set([self.speed] * 6))
                     self._write_call(side, "force", lambda: link.write_force_set([self.force] * 6))
+                    self._write_call(side, "mode", lambda: link.write_mode_set([1] * 6))
                 except Exception as exc:
-                    raise RuntimeError(f"{side} speed/force setup failed: {exc}") from exc
+                    raise RuntimeError(f"{side} speed/force/mode setup failed: {exc}") from exc
                 self._settings_applied.add(side)
         for side, link in self.links.items():
             if link is not None:
                 try:
-                    self._write_call(side, "angle", lambda: link.write_angle_set(canonical_to_rh(raw_by_side[side])),
-                                     raw_by_side[side])
+                    targets = raw_by_side[side]
+                    previous = self._angle_applied.get(side, [None] * 6)
+                    changed = [value if value != old else None for value, old in zip(targets, previous)]
+                    if any(value is not None for value in changed):
+                        self._write_call(side, "angle", lambda: link.write_angle_set(canonical_to_rh(changed)),
+                                         targets)
+                        self._angle_applied[side] = list(targets)
+                        self.last_ack_write_us = monotonic_us()
                 except Exception:
                     # Reapply settings on the next attempt after a write error.
                     self._settings_applied.discard(side)
+                    self._angle_applied.pop(side, None)
                     raise
         self.last_write_error = ""
 
@@ -570,15 +580,20 @@ class Rh56FtpNode:
                 target = requested[side][index]
                 previous = self.closing_holds[side][index]
                 channel = replace(previous, samples=deque(previous.samples))
-                if (channel.requested_raw != target or now < channel.last_command_us or
+                if (now < channel.last_command_us or
                         now - channel.last_command_us >= self.command_timeout_us):
                     channel = ClosingHold(requested_raw=target, target_since_us=now,
                                           feedback_errors=snapshot.errors)
+                # A changed closing target cannot release a stopped finger.
+                # Only a target beyond the recorded position requests opening.
+                if channel.held_raw is not None and target > channel.held_raw:
+                    channel = ClosingHold(requested_raw=target, target_since_us=now,
+                                          feedback_errors=snapshot.errors)
+                channel.requested_raw = target
                 channel.last_command_us = now
-                # Keep the frozen target for this same request, including when
-                # feedback is temporarily unavailable. Never chase live position.
+                # Send STOP once; _write_targets skips subsequent identical writes.
                 if channel.held_raw is not None:
-                    effective[side][index] = channel.held_raw
+                    effective[side][index] = -1
                 elif not fresh:
                     channel.samples.clear()
                     channel.last_sample_us = 0
@@ -604,7 +619,7 @@ class Rh56FtpNode:
                             positions = [value for _, value in channel.samples]
                             if max(positions) - min(positions) <= self.closing_motion_raw:
                                 channel.held_raw = position
-                                effective[side][index] = position
+                                effective[side][index] = -1
                     channel.last_sample_us = stamp
                 channels.append(channel)
             pending[side] = channels
@@ -647,7 +662,6 @@ class Rh56FtpNode:
             raise
         else:
             self.command_accepted += 1
-            self.last_ack_write_us = monotonic_us()
             self.last_write_error = ""
             self.last_command_error = ""
             return True
@@ -676,7 +690,8 @@ class Rh56FtpNode:
             self.closing_holds = pending_holds
             self.requested_targets = {side: [value / 1000.0 for value in requested[side]] for side in SIDES}
             self.last_targets = {
-                side: [value / 1000.0 for value in raw_by_side[side]] for side in SIDES
+                side: [(pending_holds[side][i].held_raw if value == -1 else value) / 1000.0
+                       for i, value in enumerate(raw_by_side[side])] for side in SIDES
             }
             self.command_valid = True
             self._safe_applied = False
@@ -1039,6 +1054,7 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, help="YAML 配置文件（speed、force）；显式命令行参数优先")
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5556", help="hand.command SUB connects to bus egress")
     parser.add_argument("--state-endpoint", default="tcp://127.0.0.1:5555", help="hand.state PUB connects to bus ingress")
     parser.add_argument("--right-host", default=None)
@@ -1052,18 +1068,34 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--feedback-timeout-ms", type=int, default=500)
     parser.add_argument("--modbus-timeout", type=float, default=0.2,
                         help="每个 Modbus TCP 请求超时秒数（读写连接均使用）")
-    parser.add_argument("--speed", type=int, default=DEFAULT_SPEED,
+    parser.add_argument("--speed", type=int, default=None,
                         help="所有已连接手的六路速度设定，0..1000（默认 500）")
-    parser.add_argument("--force", type=int, default=DEFAULT_FORCE,
+    parser.add_argument("--force", type=int, default=None,
                         help="所有已连接手的六路力阈值设定，0..3000（默认 500）")
     parser.add_argument("--closing-hold-ms", type=int, default=5000,
-                        help="五个弯曲通道握紧目标不变且运动很小的观察窗口（默认 5000 ms）")
+                        help="五个弯曲通道持续握紧且运动很小的停止观察窗口（默认 5000 ms）")
     parser.add_argument("--closing-motion-raw", type=int, default=10,
                         help="握紧停滞窗口内允许的最大位置范围及目标残差容差（默认 10，范围 0..999）")
     parser.add_argument("--diagnostic-interval-s", type=float, default=1.0,
                         help="异常详情汇总间隔秒数（默认 1；0 只保留异常事件；正常运行不打印）")
     parser.add_argument("--feedback-only", action="store_true")
     args = parser.parse_args(argv)
+    settings = {}
+    if args.config:
+        try:
+            import yaml
+            settings = yaml.safe_load(args.config.read_text(encoding="utf-8"))
+            if not isinstance(settings, dict) or set(settings) - {"speed", "force"}:
+                raise ValueError("配置必须为仅包含 speed、force 的映射")
+        except ImportError:
+            parser.error("读取 --config 需要 PyYAML")
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            parser.error(str(exc))
+    try:
+        args.speed = _register_setting(args.speed if args.speed is not None else settings.get("speed", DEFAULT_SPEED), "speed", 1000)
+        args.force = _register_setting(args.force if args.force is not None else settings.get("force", DEFAULT_FORCE), "force", 3000)
+    except ValueError as exc:
+        parser.error(str(exc))
     if not math.isfinite(args.modbus_timeout) or args.modbus_timeout <= 0:
         parser.error("--modbus-timeout 必须为正数")
     if not math.isfinite(args.state_hz) or not 0 < args.state_hz <= 100:
