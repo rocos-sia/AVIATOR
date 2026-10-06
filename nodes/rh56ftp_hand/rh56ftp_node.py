@@ -216,8 +216,11 @@ class DiagnosticLog:
             "feedback_recovered": "反馈已恢复",
             "modbus_connect_failed": "设备连接失败", "feedback_read_failed": "读取反馈失败",
             "modbus_write_failed": "写入设备失败", "feedback_reader_failed": "反馈线程退出",
-            "hold_control_failed": "握持保护触发，已锁存故障并请求保持当前位置",
+            "hold_control_failed": "握持保护触发，已锁存故障并请求全部已连接通道停止",
             "hold_feedback_unavailable": "反馈不可用，暂停握持调节",
+            "hold_monitor_started": "弯曲通道已进入保持监测",
+            "hold_monitor_stopped": "弯曲通道执行运动，暂停长期负载监测",
+            "fault_safe_pose_applied": "握持故障仍锁存，已发送全部张开目标（六路 1000）",
             "device_error": "设备故障", "reject command": "指令被拒绝",
             "command_ignored": "仅反馈模式，忽略运动指令",
             "command_watchdog_expired": "指令超时，准备执行安全姿态",
@@ -235,6 +238,8 @@ class DiagnosticLog:
         sides = {"left": "左手", "right": "右手"}
         channels = dict(zip(CHANNEL_NAMES, ("拇指侧摆", "拇指弯曲", "食指", "中指", "无名指", "小指")))
         title = phases.get(fields.get("phase"), "握持阶段变化") if event == "hold_phase_changed" else titles.get(event, event)
+        if event == "feedback_recovered" and fields.get("hold_control_error"):
+            title = "反馈已恢复，但握持故障仍锁存"
         location = sides.get(fields.get("side"), "") + channels.get(fields.get("channel_name"), "")
         parts = [f"{location} {title}".strip()]
 
@@ -272,16 +277,21 @@ class DiagnosticLog:
                 for key, label in (("current_limit", "电流上限"), ("force_limit", "力上限")):
                     add(label, fields.get("limits", {}).get(key))
         elif event == "device_error":
+            if "command_valid" in fields:
+                add("控制状态", "有有效指令" if fields["command_valid"] else "无有效指令")
             errors = {"stall": "堵转", "overtemperature": "过温", "overcurrent": "过流",
                       "motor_error": "电机异常", "communication_error": "通信异常"}
             for channel in fields.get("channels", []):
                 names = [errors.get(name, name) for name in channel["error_names"]]
                 if channel.get("unknown_bits"):
                     names.append(f"未知故障位 {channel['unknown_bits']}")
+                context = "".join(f"，{label}={channel[key]}" for key, label in (
+                    ("actual_raw", "当前位置"), ("requested_raw", "最近请求位置"),
+                    ("applied_raw", "最近成功写入目标")) if channel.get(key) is not None)
                 parts.append(f"{channels.get(channel['channel_name'], channel['channel_name'])}: "
                              f"{'、'.join(names)}（故障码={channel['code']}，"
                              f"电流={channel['current_raw']}，力={channel['force_raw']}，"
-                             f"温度={channel['temperature_c']}）")
+                             f"温度={channel['temperature_c']}{context}）")
         else:
             if event == "feedback_status_changed":
                 reason = (fields.get("last_error") or fields.get("invalid_reason") or
@@ -296,6 +306,8 @@ class DiagnosticLog:
                 "missing/stale/future feedback": "反馈缺失、过期或时间戳超前",
                 "no_feedback": "尚未收到反馈", "feedback_timestamp_expired_or_future": "反馈过期或时间戳超前",
                 "angle_register_out_of_range": "位置寄存器超出范围", "feedback_read_error": "反馈读取失败",
+                "current_raw=": "电流原始值=", "force_raw=": "受力原始值=",
+                "temperature_raw=": "温度原始值=", "outside ": "超出手册范围 ",
             }
             for raw, translated in translations.items():
                 reason = reason.replace(raw, translated)
@@ -317,6 +329,7 @@ class DiagnosticLog:
                 ("overload_age_ms", "过载持续(ms)"), ("phase_age_ms", "阶段持续(ms)"),
                 ("closing_age_ms", "闭合持续(ms)"), ("low_force_age_ms", "力不足持续(ms)"),
                 ("last_write_error", "最近写入错误"),
+                ("rotation_error_raw", "侧摆位置偏差（不阻塞弯曲减载）"),
             ):
                 value = fields.get(key)
                 if key == "phase":
@@ -338,7 +351,9 @@ class DiagnosticLog:
     def emit(self, event: str, *, key: str | None = None, reason: str = "",
              throttle_us: int = 1000000, **fields: Any) -> None:
         if self.log_format == "text":
-            if event == "health":
+            # The initiating fault already reports the cause and all-channel stop.
+            # Per-channel failed phases are software propagation, not 12 motor faults.
+            if event == "health" or (event == "hold_phase_changed" and fields.get("phase") == "failed"):
                 return
             if throttle_us:
                 throttle_us = max(throttle_us, 10000000)
@@ -355,8 +370,10 @@ class DiagnosticLog:
                 record["reason"] = reason
             if suppressed:
                 record["suppressed"] = suppressed
-            emit = (Logger.error if event.endswith("_failed") or event == "device_error" else
-                    Logger.info if event in ("health", "configuration", "feedback_recovered") or
+            emit = (Logger.error if event.endswith("_failed") or event == "device_error" or
+                    (event == "hold_phase_changed" and fields.get("phase") == "failed") else
+                    Logger.info if event in ("health", "configuration", "feedback_recovered",
+                                            "hold_monitor_started", "hold_monitor_stopped") or
                     (event == "hold_phase_changed" and fields.get("phase") != "moving") else Logger.warn)
             message = (json.dumps(record, ensure_ascii=False, allow_nan=False) if self.log_format == "json"
                        else self._text(event, reason, record))
@@ -564,6 +581,7 @@ class Rh56FtpNode:
         self.hold_control = HoldControl.parse(hold_control if hold_control is not None else {})
         self.hold_control_error = ""
         self.closing_holds = {side: [ClosingHold() for _ in range(6)] for side in SIDES}
+        self._hold_monitor_ready: dict[str, bool] = {}
         self.command_valid = False
         self.state_sequence = 0
         self._safe_applied = False
@@ -787,9 +805,13 @@ class Rh56FtpNode:
         self.last_write_error = ""
 
     def _safe_pose(self) -> None:
+        # Restore the all-open protective pose for watchdog, invalid commands,
+        # and shutdown, including after a latched holding fault.
         self._reset_closing_holds()
         raw = normalized_to_raw(list(DEFAULT_SAFE_POSE))
         self._write_targets({side: raw for side in SIDES})
+        if self.hold_control_error:
+            self.diag.emit("fault_safe_pose_applied", reason=self.hold_control_error)
         self.last_targets = {side: [value / 1000.0 for value in raw] for side in SIDES}
         self.requested_targets = {side: [] for side in SIDES}
         self.command_valid = False
@@ -798,6 +820,7 @@ class Rh56FtpNode:
 
     def _reset_closing_holds(self) -> None:
         self.closing_holds = {side: [ClosingHold() for _ in range(6)] for side in SIDES}
+        self._hold_monitor_ready.clear()
 
     def _closing_targets(self, requested: dict[str, list[int]], now: int
                          ) -> tuple[dict[str, list[int]], dict[str, list[ClosingHold]]]:
@@ -948,21 +971,30 @@ class Rh56FtpNode:
             for index in range(6):
                 if measured["error_codes"][index]:
                     return fail(side, index, f"device error {measured['error_codes'][index]}")
-                if not (abs(measured["current"][index]) <= 2000 and
-                        abs(measured["force"][index]) <= 4000 and
-                        0 <= measured["temperature"][index] <= 100):
-                    return fail(side, index, "invalid load feedback")
+                for field, minimum, maximum in (("current", -2000, 2000), ("force", -4000, 4000),
+                                                ("temperature", 0, 100)):
+                    value = measured[field][index]
+                    if not minimum <= value <= maximum:
+                        return fail(side, index, f"invalid load feedback: {field}_raw={value} "
+                                                f"outside [{minimum},{maximum}]")
 
         # Long-term holding limits do not apply while the hand is still executing
-        # the grasp/open command. A side is ready once rotation has reached its
-        # target and all bending fingers are held or at their requested positions.
+        # the bending grasp/open command. Rotation has an independent target and
+        # must not indefinitely block unloading of already-held bending fingers.
         hold_ready = {
             side: any(c.held_raw is not None for c in pending[side][1:]) and
                   all(c.held_raw is not None or
                       abs(measured["drive_position_raw"][i] - requested[side][i]) <= self.closing_motion_raw
-                      for i, c in enumerate(pending[side]))
+                      for i, c in enumerate(pending[side]) if i > 0)
             for side, (measured, _) in measurements.items()
         }
+        for side, ready in hold_ready.items():
+            previous = self._hold_monitor_ready.get(side, False)
+            self._hold_monitor_ready[side] = ready
+            if ready != previous:
+                self.diag.emit("hold_monitor_started" if ready else "hold_monitor_stopped",
+                               key=f"hold_monitor:{side}", throttle_us=0, side=side,
+                               rotation_error_raw=measurements[side][0]["drive_position_raw"][0] - requested[side][0])
 
         busy = any(c.phase in ("moving", "settling") for channels in pending.values() for c in channels)
         for side, (measured, stamp) in measurements.items():
@@ -982,7 +1014,8 @@ class Rh56FtpNode:
                     c.close_since_us = (c.close_since_us or stamp) if closing else 0
                     if c.close_since_us and stamp - c.close_since_us >= policy.close_timeout_ms * 1000:
                         return fail(side, index, "closing timeout without stable contact")
-                if not hold_ready[side]:
+                if not hold_ready[side] or (index == 0 and
+                        abs(actual - requested[side][index]) > self.closing_motion_raw):
                     # Movement loads must not carry over into the holding timer.
                     c.overload_since_us = c.low_force_since_us = 0
                     if c.phase in ("moving", "settling"):
@@ -1154,7 +1187,8 @@ class Rh56FtpNode:
         now = monotonic_us() if now is None else now
         if self.command_valid and self.guard.expired(now, self.command_timeout_us):
             self.diag.emit("command_watchdog_expired", receive_age_ms=age_ms(now, self.guard.last_recv_mono_us),
-                           origin_age_ms=age_ms(now, self.guard.origin_mono_us), **self.command_context(now))
+                           origin_age_ms=age_ms(now, self.guard.origin_mono_us),
+                           hold_control_error=self.hold_control_error, **self.command_context(now))
             self._safe_required = True
         if self._safe_required and not self._safe_applied:
             try:
@@ -1363,14 +1397,19 @@ class Rh56FtpNode:
                 "hold_control": hand["hold_control"],
             }
             if any(hand["error_codes"]):
+                requested = (normalized_to_raw(self.requested_targets[side])
+                             if self.requested_targets[side] else [None] * 6)
+                applied = self._angle_applied.get(side, [None] * 6)
                 self.diag.emit("device_error", key=f"device_error:{side}", reason=str(hand["error_codes"]),
                                side=side, host=details[side]["host"], port=details[side]["port"],
+                               command_valid=self.command_valid,
                                channels=[{"channel": i, "channel_name": CHANNEL_NAMES[i], "code": code,
                                           "error_names": [name for bit, name in DEVICE_ERRORS if int(code) & bit],
                                           "unknown_bits": int(code) & ~31,
                                           "current_raw": hand["current"][i], "force_raw": hand["force"][i],
                                           "current_register_raw": hand["current_register_raw"][i],
-                                          "temperature_c": hand["temperature"][i], "actual_raw": hand["angle_raw"][i]}
+                                          "temperature_c": hand["temperature"][i], "actual_raw": hand["angle_raw"][i],
+                                          "requested_raw": requested[i], "applied_raw": applied[i]}
                                          for i, code in enumerate(hand["error_codes"]) if code])
             # A first sample still in flight is normal during reader startup.
             feedback_invalid = not hand["valid"] and (snapshot.data is not None or bool(snapshot.error) or
@@ -1390,7 +1429,8 @@ class Rh56FtpNode:
                                reader=self.reader_diagnostics(now), **details[side])
             elif previous and previous[0] and not side_abnormal:
                 self.diag.emit("feedback_recovered", key=f"feedback_status:{side}", throttle_us=0,
-                               side=side, feedback_age_ms=hand["feedback_age_ms"])
+                               side=side, feedback_age_ms=hand["feedback_age_ms"],
+                               hold_control_error=self.hold_control_error)
         if abnormal and self.diagnostic_interval_us and now >= self._next_diagnostic_us:
             self._next_diagnostic_us = now + self.diagnostic_interval_us
             self.diag.emit("health", throttle_us=0, state_sequence=state["sequence"],
