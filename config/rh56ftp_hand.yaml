@@ -13,7 +13,7 @@ hold_control:
   enabled: true
   current_limit: 500          # 电流反馈寄存器刻度，整数 0..2000（设备无对应电流设置指令）
   force_limit: 2000            # 受力幅值阈值，整数 0..3000，与 force 指令同刻度
-  min_force: 150               # 最低接触/保持力，整数 0..3000；小于 force_limit * recovery_ratio
+  min_force: 50               # 最低接触/保持力，整数 0..3000；小于 force_limit * recovery_ratio
   temperature_limit: 80       # 温度反馈寄存器刻度，整数 0..100；保持阶段达到即锁存故障
   close_timeout_ms: 30000      # 仍有闭合残差且未确认稳定接触的最长时间
   overload_ms: 1000            # 电流/力持续超限或保持力不足的确认时间
