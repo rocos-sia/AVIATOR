@@ -39,7 +39,9 @@ DEVICE_ERRORS = ((1, "stall"), (2, "overtemperature"), (4, "overcurrent"),
 # AVIATOR order: keep thumb rotation at the handle-clearance position; open bends.
 DEFAULT_SAFE_POSE = (0.5, 1.0, 1.0, 1.0, 1.0, 1.0)
 DEFAULT_SPEED = 500
-DEFAULT_FORCE = 500
+DEFAULT_FORCE = 1000
+DEFAULT_HOLD_SPEED = 100
+DEFAULT_HOLD_FORCE = 100
 POSITION_FORCE_PROTECTION_MODE = 0
 DEFAULT_STATE_HZ = 1000.0 / 60.0
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
@@ -231,7 +233,7 @@ class DiagnosticLog:
             "state_publish_dropped": "状态发送队列已满，丢弃本次状态",
             "invalid_wire_message": "收到无效总线消息",
         }
-        phases = {"tracking": "执行运动指令", "holding": "保持当前位置",
+        phases = {"tracking": "执行运动指令", "holding": "满足抓握完成判据，切换到保持状态",
             "failed": "故障"}
         sides = {"left": "左手", "right": "右手"}
         channels = dict(zip(CHANNEL_NAMES, ("拇指侧摆", "拇指弯曲", "食指", "中指", "无名指", "小指")))
@@ -252,18 +254,35 @@ class DiagnosticLog:
             if value is not None and value != "":
                 parts.append(f"{label}={value_text(value)}")
 
-        if event == "configuration":
+        if event == "configuration_loaded":
+            rows = [(name, json.dumps(value, ensure_ascii=False))
+                    for name, value in fields["parameters"].items()]
+            width = max(len(name) for name, _ in rows)
+            lines = ["启动配置加载完成（命令行覆盖后的最终值）", f"{'Parameter':<{width}} | Value",
+                     "-" * width + "-+-" + "-" * 48]
+            lines.extend(f"{name:<{width}} | {value}" for name, value in rows)
+            return "\n".join(lines)
+        elif event == "setting_write":
+            setting = {"speed": "速度 speed", "force": "力阈值 force"}[fields["phase"]]
+            parts = [f"{location} 发送{setting}设置命令".strip()]
+            add("通道顺序", [channels[name] for name in fields["channel_names"]])
+            add("寄存器设定值", fields["target_raw"])
+        elif event == "configuration":
             for side, endpoint in fields.get("endpoints", {}).items():
                 add(sides.get(side, side), f"{endpoint.get('host')}:{endpoint.get('port')}")
             add("模式", fields.get("configured_mode"))
-            add("速度", fields.get("speed_raw"))
-            add("力指令", fields.get("force_raw"))
+            add("抓取速度", fields.get("speed_raw"))
+            add("抓取力指令", fields.get("force_raw"))
+            add("保持速度", fields.get("hold_speed_raw"))
+            add("保持力指令", fields.get("hold_force_raw"))
             add("握紧位置误差阈值", fields.get("closing_motion_raw"))
             add("持续时间(ms)", fields.get("closing_hold_ms"))
             parts.append("数值为寄存器刻度；配置不代表设备读回")
         elif event == "hold_phase_changed":
             for key, label in (("actual_raw", "当前位置"), ("requested_raw", "请求位置"),
-                               ("threshold", "位置误差阈值"), ("closing_age_ms", "偏差持续(ms)")):
+                               ("threshold", "位置误差阈值"), ("closing_age_ms", "偏差持续(ms)"),
+                               ("held_raw", "保持位置"), ("hold_speed_raw", "保持速度"),
+                               ("hold_force_raw", "保持力阈值")):
                 add(label, fields.get(key))
         elif event == "device_error":
             if "command_valid" in fields:
@@ -352,7 +371,8 @@ class DiagnosticLog:
                 record["suppressed"] = suppressed
             emit = (Logger.error if event.endswith("_failed") or event == "device_error" or
                     (event == "hold_phase_changed" and fields.get("phase") == "failed") else
-                    Logger.info if event in ("health", "configuration", "feedback_recovered", "hold_phase_changed")
+                    Logger.info if event in ("health", "configuration", "configuration_loaded", "setting_write",
+                                             "feedback_recovered", "hold_phase_changed")
                     else Logger.warn)
             message = (json.dumps(record, ensure_ascii=False, allow_nan=False) if self.log_format == "json"
                        else self._text(event, reason, record))
@@ -457,7 +477,8 @@ class Rh56FtpNode:
                  speed: int = DEFAULT_SPEED, force: int = DEFAULT_FORCE,
                  diagnostic_interval_s: float = 1.0,
                  closing_hold_ms: int = 10000, closing_motion_raw: int = 10,
-                 log_format: str = "text"):
+                 log_format: str = "text", hold_speed: int = DEFAULT_HOLD_SPEED,
+                 hold_force: int = DEFAULT_HOLD_FORCE):
         if set(links) != set(SIDES) or not any(links.values()):
             raise ValueError("at least one left/right RH56FTP link is required")
         if command_timeout_ms <= 0 or feedback_timeout_ms <= 0:
@@ -479,7 +500,9 @@ class Rh56FtpNode:
         self.feedback_only = feedback_only
         self.speed = _register_setting(speed, "speed", 1000)
         self.force = _register_setting(force, "force", 3000)
-        self._settings_applied: set[str] = set()
+        self.hold_speed = _register_setting(hold_speed, "hold_speed", 1000)
+        self.hold_force = _register_setting(hold_force, "hold_force", 3000)
+        self._settings_applied: dict[str, tuple[bool, ...]] = {}
         self._angle_applied: dict[str, list[int]] = {}
         self.clock_id = clock_id or _clock_id()
         self.session_id = session_id or f"run-{time.time_ns()}-{os.getpid()}"
@@ -526,6 +549,7 @@ class Rh56FtpNode:
         self._reset_closing_holds()
         self.diag.emit("configuration", throttle_us=0, publisher=self.publisher_id, session=self.session_id,
                        configured_mode=POSITION_FORCE_PROTECTION_MODE, speed_raw=self.speed, force_raw=self.force,
+                       hold_speed_raw=self.hold_speed, hold_force_raw=self.hold_force,
                        feedback_timeout_ms=self.feedback_timeout_us / 1000,
                        command_timeout_ms=self.command_timeout_us / 1000,
                        closing_hold_ms=self.closing_hold_us / 1000, closing_motion_raw=self.closing_motion_raw,
@@ -661,6 +685,11 @@ class Rh56FtpNode:
         stats = self.write_stats[side]
         stats["calls"] += 1
         try:
+            if phase in ("speed", "force"):
+                self.diag.emit("setting_write", throttle_us=0, side=side, phase=phase,
+                               host=getattr(self.links[side], "host", None),
+                               port=getattr(self.links[side], "port", None),
+                               channel_names=CHANNEL_NAMES, target_raw=target_raw)
             operation()
         except Exception as exc:
             stats["errors"] += 1
@@ -687,18 +716,23 @@ class Rh56FtpNode:
         # Configure every connected hand before moving either hand. Cache
         # successful writes to avoid adding Modbus traffic at command rate.
         for side, link in self.links.items():
-            if link is not None and side not in self._settings_applied:
+            holding = tuple(value == -1 for value in raw_by_side[side])
+            if link is not None and self._settings_applied.get(side) != holding:
                 try:
                     # Both bus modes produce angle targets. Manual §2.6.20:
                     # mode 0 stops at the angle/force limit; mode 1 regulates
                     # force instead. Restore mode 0 before changing force, even
                     # when a previous node left the device in force control.
-                    self._write_call(side, "mode", lambda: link.write_mode_set([POSITION_FORCE_PROTECTION_MODE] * 6))
-                    self._write_call(side, "speed", lambda: link.write_speed_set([self.speed] * 6))
-                    self._write_call(side, "force", lambda: link.write_force_set([self.force] * 6))
+                    if side not in self._settings_applied:
+                        self._write_call(side, "mode", lambda: link.write_mode_set([POSITION_FORCE_PROTECTION_MODE] * 6))
+                    speeds = canonical_to_rh([self.hold_speed if held else self.speed for held in holding])
+                    forces = canonical_to_rh([self.hold_force if held else self.force for held in holding])
+                    self._write_call(side, "speed", lambda: link.write_speed_set(speeds), rh_to_canonical(speeds))
+                    self._write_call(side, "force", lambda: link.write_force_set(forces), rh_to_canonical(forces))
                 except Exception as exc:
+                    self._settings_applied.pop(side, None)
                     raise RuntimeError(f"{side} speed/force/mode setup failed: {exc}") from exc
-                self._settings_applied.add(side)
+                self._settings_applied[side] = holding
         for side, link in self.links.items():
             if link is not None:
                 try:
@@ -712,7 +746,7 @@ class Rh56FtpNode:
                         self.last_ack_write_us = monotonic_us()
                 except Exception:
                     # Reapply settings on the next attempt after a write error.
-                    self._settings_applied.discard(side)
+                    self._settings_applied.pop(side, None)
                     self._angle_applied.pop(side, None)
                     raise
         self.last_write_error = ""
@@ -940,6 +974,8 @@ class Rh56FtpNode:
                     if channel.phase != self.closing_holds[side][index].phase:
                         self.diag.emit("hold_phase_changed", key=f"hold_phase:{side}:{index}", throttle_us=0,
                                        previous_phase=self.closing_holds[side][index].phase,
+                                       hold_speed_raw=self.hold_speed if channel.phase == "holding" else None,
+                                       hold_force_raw=self.hold_force if channel.phase == "holding" else None,
                                        **self._hold_context(side, index, channel, now, requested[side][index]))
             self.closing_holds = pending_holds
             if self.hold_control_error:
@@ -1374,9 +1410,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--modbus-timeout", type=float, default=0.2,
                         help="每个 Modbus TCP 请求超时秒数（读写连接均使用）")
     parser.add_argument("--speed", type=int, default=None,
-                        help="所有已连接手的六路速度设定，0..1000（默认 500）")
+                        help="运动/抓取速度设定，0..1000（默认 500）")
     parser.add_argument("--force", type=int, default=None,
-                        help="所有已连接手的六路力阈值设定，0..3000（默认 500）")
+                        help="运动/抓取力阈值设定，0..3000（默认 1000）")
+    parser.add_argument("--hold-speed", type=int, default=None,
+                        help="保持速度设定，0..1000（默认 100）")
+    parser.add_argument("--hold-force", type=int, default=None,
+                        help="保持力阈值设定，0..3000（默认 100）")
     parser.add_argument("--closing-hold-ms", type=int, default=10000,
                         help="闭合位置误差连续超过阈值的观察时间（默认 10000 ms）")
     parser.add_argument("--threshold", "--closing-motion-raw", dest="closing_motion_raw", type=int, default=None,
@@ -1399,8 +1439,20 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError, yaml.YAMLError) as exc:
             parser.error(str(exc))
     try:
-        args.speed = _register_setting(args.speed if args.speed is not None else settings.get("speed", DEFAULT_SPEED), "speed", 1000)
-        args.force = _register_setting(args.force if args.force is not None else settings.get("force", DEFAULT_FORCE), "force", 3000)
+        for name, maximum, grasp_default, hold_default in (
+                ("speed", 1000, DEFAULT_SPEED, DEFAULT_HOLD_SPEED),
+                ("force", 3000, DEFAULT_FORCE, DEFAULT_HOLD_FORCE)):
+            value = settings.get(name, {})
+            if not isinstance(value, dict):
+                value = {"grasp": value}  # Legacy scalar settings apply to motion.
+            if set(value) - {"grasp", "hold"}:
+                raise ValueError(f"{name} 仅支持 grasp、hold")
+            for phase, option, default in (("grasp", name, grasp_default),
+                                            ("hold", f"hold_{name}", hold_default)):
+                override = getattr(args, option)
+                setattr(args, option, _register_setting(
+                    override if override is not None else value.get(phase, default),
+                    f"{name}.{phase}", maximum))
         args.closing_motion_raw = _register_setting(
             args.closing_motion_raw if args.closing_motion_raw is not None else settings.get("threshold", 10),
             "threshold", 999)
@@ -1444,9 +1496,19 @@ def main(argv: list[str] | None = None) -> int:
                        command_timeout_ms=args.command_timeout_ms,
                        feedback_timeout_ms=args.feedback_timeout_ms,
                        feedback_only=args.feedback_only, speed=args.speed, force=args.force,
+                       hold_speed=args.hold_speed, hold_force=args.hold_force,
                        diagnostic_interval_s=args.diagnostic_interval_s,
                        closing_hold_ms=args.closing_hold_ms, closing_motion_raw=args.closing_motion_raw,
                        log_format=args.log_format)
+    parameters = dict(vars(args))
+    parameters.update(config=str(args.config.resolve()) if args.config else None,
+                      right_host=right_host, right_port=right_port, left_host=args.left_host or "",
+                      configured_mode=POSITION_FORCE_PROTECTION_MODE, safe_pose=list(DEFAULT_SAFE_POSE))
+    for option, name in (("speed", "speed.grasp"), ("force", "force.grasp"),
+                         ("hold_speed", "speed.hold"), ("hold_force", "force.hold"),
+                         ("closing_motion_raw", "threshold")):
+        parameters[name] = parameters.pop(option)
+    node.diag.emit("configuration_loaded", throttle_us=0, parameters=parameters)
     return run_node(node, args.endpoint, args.state_endpoint, args.state_hz)
 
 

@@ -132,7 +132,7 @@ class ConsoleLogTests(unittest.TestCase):
                      actual_raw=400, requested_raw=0, threshold=25, closing_age_ms=10000)
         text = output.getvalue()
         for expected in ("右手 设备故障", "拇指侧摆: 堵转、过流、未知故障位 32", "电流=-128",
-                         "左手食指 保持当前位置", "位置误差阈值=25", "偏差持续(ms)=10000", "[info]", "[error]",
+                         "左手食指 满足抓握完成判据，切换到保持状态", "位置误差阈值=25", "偏差持续(ms)=10000", "[info]", "[error]",
                          "当前位置=483", "最近请求位置=500", "最近成功写入目标=-1", "控制状态=有有效指令"):
             self.assertIn(expected, text)
 
@@ -278,6 +278,42 @@ class NodeTests(unittest.TestCase):
             [400, 400, max(0, 700 - ms // 10), 400, 400, 400] if side == "left" else [400] * 6))
         self.assertEqual(links["left"].writes[-1], [-1, -1, -1, None, -1, None])
         self.assertEqual(links["right"].writes[-1], [-1] * 5 + [None])
+        self.assertEqual(links["left"].setting_writes[-2:],
+                         [("speed", [100, 100, 100, 500, 100, 500]),
+                          ("force", [100, 100, 100, 1000, 100, 1000])])
+
+    def test_hold_limits_are_cached_and_motion_restores_grasp_limits(self):
+        node, links = self.make_node()
+        node.hold_speed, node.hold_force = 80, 90
+        self.drive_closing(node)
+        for link in links.values():
+            self.assertEqual(link.events[-3:],
+                             [("speed", [80] * 5 + [500]),
+                              ("force", [90] * 5 + [1000]),
+                              ("angle", [-1] * 5 + [None])])
+        before = {side: len(link.events) for side, link in links.items()}
+        self.drive_closing(node, duration_ms=120)
+        self.assertEqual({side: len(link.events) for side, link in links.items()}, before)
+        self.drive_closing(node, duration_ms=0, target=[0.6] * 6)
+        for link in links.values():
+            self.assertEqual(link.events[-3:], [("speed", [500] * 6),
+                                                ("force", [1000] * 6), ("angle", [600] * 6)])
+
+    def test_hold_limit_failure_does_not_commit_hold_or_ack_and_retries(self):
+        node, links = self.make_node()
+        self.drive_closing(node, duration_ms=9960)
+        sequence = node.guard.last_sequence
+        links["left"].fail_force = True
+        with self.assertRaisesRegex(RuntimeError, "force write failed"):
+            self.drive_closing(node, duration_ms=120)
+        self.assertTrue(all(c.held_raw is None for c in node.closing_holds["left"]))
+        self.assertEqual(node.guard.last_sequence, sequence + 3)
+        self.assertEqual(links["left"].writes[-1], [0] * 6)
+        links["left"].fail_force = False
+        self.drive_closing(node, duration_ms=0)
+        self.assertEqual(links["left"].events[-3:], [("speed", [100] * 5 + [500]),
+                                                   ("force", [100] * 5 + [1000]),
+                                                   ("angle", [-1] * 5 + [None])])
 
     def test_persistent_residual_holds_without_position_stability_requirement(self):
         node, links = self.make_node()
@@ -392,11 +428,12 @@ class NodeTests(unittest.TestCase):
         for link in links.values():
             self.assertEqual(link.events, [("mode", [0] * 6),
                                            ("speed", [500] * 6),
-                                           ("force", [500] * 6),
+                                           ("force", [1000] * 6),
                                            ("angle", [1000, 1000, 1000, 1000, 1000, 500])])
+        node.read_states(now=node.clock_now)
         node.handle_command("hand.command", json.dumps(command(node)), now=node.clock_now)
         node.supervise(now=node.clock_now + node.command_timeout_us)
-        node._safe_pose()  # Exit pose uses the same settings.
+        node._safe_pose(force_open=True)  # Exit pose uses the same settings.
         for link in links.values():
             self.assertEqual(len(link.setting_writes), 3)
 
@@ -413,7 +450,7 @@ class NodeTests(unittest.TestCase):
         node.supervise(now=node.clock_now)
         for link in links.values():
             self.assertEqual(link.writes, [[-1] * 6])  # A transport/settings failure does not prove six failed channels.
-            self.assertIn(("force", [500] * 6), link.setting_writes)
+            self.assertIn(("force", [100] * 6), link.setting_writes)
 
     def test_angle_control_recovers_from_previous_force_mode(self):
         class ModeAwareLink(FakeLink):
@@ -551,6 +588,8 @@ class NodeTests(unittest.TestCase):
             self.assertEqual([c.args[0] for c in factory.call_args_list],
                              [settings["right_host"], settings["left_host"]] * 2)
             node = run.call_args.args[0]
+            self.assertEqual((node.speed, node.force, node.hold_speed, node.hold_force),
+                             (500, 1000, 100, 100))
             self.assertEqual(node.closing_motion_raw, settings["threshold"])
             self.assertEqual(node.closing_hold_us, 10000000)
             factory.reset_mock()
@@ -559,6 +598,28 @@ class NodeTests(unittest.TestCase):
             self.assertEqual([c.args[0] for c in factory.call_args_list], ["override"] * 2)
             self.assertIsNone(run.call_args.args[0].links["left"])
             self.assertEqual(run.call_args.args[0].closing_motion_raw, 31)
+
+    def test_phase_settings_validation_and_cli_overrides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "hand.yaml"
+            config.write_text("speed: {grasp: 400, hold: 80}\nforce: {grasp: 900, hold: 70}\n")
+            with patch.object(module, "load_handlink", return_value=("fake", 6000, FakeLink)), \
+                    patch.object(module, "run_node", return_value=0) as run:
+                module.main(["--config", str(config)])
+                node = run.call_args.args[0]
+                self.assertEqual((node.speed, node.force, node.hold_speed, node.hold_force),
+                                 (400, 900, 80, 70))
+                module.main(["--config", str(config), "--speed", "600", "--force", "1100",
+                             "--hold-speed", "90", "--hold-force", "120"])
+                node = run.call_args.args[0]
+                self.assertEqual((node.speed, node.force, node.hold_speed, node.hold_force),
+                                 (600, 1100, 90, 120))
+            for text in ("speed: {hold: true}", "speed: {hold: 1001}", "force: {hold: 3001}",
+                         "force: {grasp: -1}", "speed: {hold: 1.5}", "force: {typo: 100}"):
+                config.write_text(text)
+                with patch.object(module, "load_handlink") as load, patch("sys.stderr"), self.assertRaises(SystemExit):
+                    module.main(["--config", str(config)])
+                load.assert_not_called()
 
     def test_threshold_default_validation_and_retired_config(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -783,7 +844,7 @@ class NodeTests(unittest.TestCase):
             node._safe_pose()
             node.close()
         records = self.diagnostic_records(output)
-        self.assertEqual([r["event"] for r in records], ["configuration"])
+        self.assertEqual([r["event"] for r in records], ["configuration"] + ["setting_write"] * 4)
         self.assertEqual(records[0]["configured_mode"], 0)
         self.assertEqual(records[0]["closing_motion_raw"], 10)
         self.assertEqual(records[0]["closing_hold_ms"], 10000)
