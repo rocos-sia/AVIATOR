@@ -43,6 +43,30 @@ int main(int argc, char** argv) {
         };
         auto state = feedback(command, now + 1, 1);
         {
+            auto startup = create();
+            startup.startMonitoring(now);
+            startup.request(true, now);
+            auto cmd = *startup.command(now, now, session);
+            auto m = feedback(cmd, now + 1, 1);
+            m.body["command_valid"] = false;
+            m.body["accepted_command"] = nullptr;
+            startup.receive(m, now + 1, session);
+            check(startup.fresh(now + 1) && !startup.complete(now + 1),
+                  "startup feedback requires a command ACK or completes motion without one");
+            m.header.sequence = 2;
+            m.header.sample_mono_us = now + 1000002;
+            for (auto& hand : m.body["hands"]) hand["sample_mono_us"] = now + 1000002;
+            m.body["command_valid"] = true;
+            startup.receive(m, now + 1000002, session);
+            check(!startup.messageFault(now + 1000002).empty(), "missing command ACK accepted");
+            m.body["command_valid"] = false;
+            m.header.valid = false;
+            for (auto& hand : m.body["hands"]) hand["valid"] = false;
+            startup.receive(m, now + 1000002, session);
+            check(startup.messageFault(now + 1000002).empty() && !startup.fresh(now + 1000002),
+                  "invalid startup feedback was treated as missing messages");
+        }
+        {
             auto protected_hand = create();
             protected_hand.request(true, now);
             auto cmd = *protected_hand.command(now, now, session);

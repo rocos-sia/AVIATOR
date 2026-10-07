@@ -99,9 +99,13 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
         const bool readonly = m.body.at("feedback_only").get<bool>();
         const bool accepted = m.body.at("command_valid").get<bool>();
         const auto& ack = m.body.at("accepted_command");
-        const auto publisher = ack.at("publisher_id").get<std::string>();
-        const auto seq = ack.at("sequence").get<uint64_t>();
-        const auto stamp = ack.at("sample_mono_us").get<uint64_t>();
+        std::string publisher;
+        uint64_t seq = 0, stamp = 0;
+        if (!ack.is_null()) {
+            publisher = ack.at("publisher_id").get<std::string>();
+            seq = ack.at("sequence").get<uint64_t>();
+            stamp = ack.at("sample_mono_us").get<uint64_t>();
+        } else if (accepted) return; // A valid command must have an acknowledgement.
         // RH56FTP measurement validity is independent of its latched motion fault.
         bool valid = m.header.valid && m.body.value("hold_control_error", std::string{}).empty();
         for (const char* side : {"left", "right"}) {

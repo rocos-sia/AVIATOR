@@ -2,6 +2,10 @@
 
 独立 C++ 记录节点：订阅全部业务 JSON Topic，并根据 YAML 选择不保存图像、原始保存、压缩保存。业务 JSON 与图像分别写入两个 MCAP，图像使用独立 TCP 入口及有界队列。依赖和协议细节、实现过程见 [实现说明](../../docs/Logger配置与图像记录实现说明.md)。
 
+`hand.state` 按原始 JSON 字节记录，仅校验公共信封，不要求旧测量别名、`enabled` 或关节量。
+RH56FTP 的 `accepted_command=null`、反馈失效及 `valid=true` 但故障锁存非空的状态均可记录；
+`arm_command_mode: compact/full` 不改变手部消息的内容或记录方式。
+
 ## 构建与启动
 
 ```bash

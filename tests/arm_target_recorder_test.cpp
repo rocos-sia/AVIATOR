@@ -124,7 +124,15 @@ uint64_t transport(const std::filesystem::path& dir, const std::string& mode) {
         }
         originals.emplace_back("arm.state",state(21,99).dump()); // Explicit missing target record.
         Json other = {{"msg_type","HandState"},{"version","1.0"},{"sequence",1},{"timestamp",1000000},
-            {"sample_mono_us",1000000},{"clock_id","boot"},{"publisher_id","inspire_hand"},{"session_id",device},{"valid",false}};
+            {"sample_mono_us",1000000},{"clock_id","boot"},{"publisher_id","rh56ftp_hand"},{"session_id",device},{"valid",true},
+            {"command_valid",false},{"feedback_only",false},{"accepted_command",nullptr},
+            {"hold_control_error","left[0]: device error 4"}};
+        for (const char* side : {"left", "right"})
+            other["hands"][side] = {{"valid",true},{"status","READY"},{"feedback_available",true},
+                {"sample_mono_us",1000000},{"drive_position_raw",{100,200,300,400,500,600}},
+                {"drive_position_normalized",{.1,.2,.3,.4,.5,.6}},
+                {"error_code",0},{"error_codes",{0,0,0,0,0,0}},{"status_codes",{3,3,3,3,3,3}},
+                {"temperature",{35,35,35,35,35,35}}};
         originals.emplace_back("hand.state",other.dump());
         for (const auto& [topic,data]: originals) check(send(pub,topic,data),"publish test traffic");
         std::this_thread::sleep_for(300ms); stop=true;

@@ -111,8 +111,6 @@ int main(int argc, char** argv) {
                      {"feedback_available", true},
                      {"sample_mono_us", 900000},
                      {"feedback_age_ms", 100},
-                     {"joint_position", nullptr},
-                     {"joint_velocity", nullptr},
                      {"commanded_drive_position_normalized", {.9, .9, .9, .9, .9, .9}},
                      {"drive_position_raw", {100, 200, 300, 400, 500, 600}},
                      {"drive_position_normalized", {.1, .2, .3, .4, .5, .6}}};
@@ -131,6 +129,28 @@ int main(int argc, char** argv) {
         check(o["hands"]["right"]["current"].is_null(), "invalid hand current");
         check(state.overview(1200000, "clock")["hands"]["left"]["current"].is_null(),
               "outer new stamp hides old hand sample");
+        {
+            monitor::State compact;
+            compact.config["sources"]["hand.state"] = "rh56ftp_hand";
+            monitor::validate_config(compact.config);
+            auto measured = hand;
+            measured["status"] = "READY";
+            measured["error_code"] = 0;
+            measured["error_codes"] = {0, 0, 0, 0, 0, 0};
+            measured["status_codes"] = {3, 3, 3, 3, 3, 3};
+            measured["temperature"] = {35, 35, 35, 35, 35, 35};
+            Json body = {{"command_valid", false}, {"accepted_command", nullptr},
+                         {"hold_control_error", "left[0]: device error 4"},
+                         {"hands", {{"left", measured}, {"right", measured}}}};
+            const auto payload = wire(aviator::Topic::hand_state, body, 1000000, true, "rh56ftp_hand");
+            compact.ingest("hand.state", payload, 1000000);
+            auto view = compact.overview(1090000, "clock");
+            check(view["hands"]["left"]["measurement_state"] == "VALID" &&
+                  view["hands"]["left"]["current"]["hold_control_error"] == body["hold_control_error"] &&
+                  view["hands"]["right"]["current"]["command_valid"] == false,
+                  "compact RH56FTP feedback lost measurement or latched protection");
+            check(compact.detail(1) == payload, "compact hand raw payload changed");
+        }
         for (const auto& bad : {Json::array(), Json{0, 0, 0, 0, 0, 1.1},
                                Json{0, 0, 0, 0, 0, nullptr}, Json{.9, .9, .9, .9, .9, .9}}) {
             monitor::State bad_feedback;

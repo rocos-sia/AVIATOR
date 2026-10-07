@@ -124,7 +124,11 @@ function renderDevices() {
       `${labels[current.pose_state]} · 握持${current.grasp_verified ? '已验证' : '未验证'}` :
       `采样 ${fmt(g.sample_age_ms + performance.now() - overviewAt)} ms · ${current.status ?? '—'}`) :
       `${reasonText(g)}${g?.source ? ' · 旧姿态仅供参考' : ''}`;
-    if (Number.isFinite(current?.error_code) && current.error_code !== 0) { note.textContent += ` · 错误 ${current.error_code}`; status.className='INVALID'; }
+    if (Number.isFinite(current?.error_code) && current.error_code !== 0) { note.textContent += ` · 错误 ${current.error_code}`; status.className='INVALID'; status.textContent='设备故障'; }
+    if (kind === 'hands' && current?.hold_control_error) {
+      note.textContent += ` · 故障保护：${current.hold_control_error}`;
+      status.className='INVALID'; status.textContent='故障保护';
+    }
     for (let i = 0; i < values.length; i++) {
       const value = kind === 'arms' ? current?.joint_position_rad?.[i] : current?.drive_position_normalized?.[i];
       values[i].value.textContent = Number.isFinite(value) ? (kind === 'arms' ? `${fmt(value*180/Math.PI)}°` : `${fmt(value*100,0)}%`) : '—';

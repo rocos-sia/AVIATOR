@@ -428,6 +428,10 @@ Servo 入口会自动张开、使能、接近、闭合，然后接收摇杆输�
 `aviator_core_sml` 仅测试状态转换，不执行上述开合，也不提供摇杆/RS422 接入。
 
 Core 的独立手部通信线程 `HandLink` 以 50 Hz 发布 `hand.command`，并独立接收 `hand.state`。
+兼容 RH56FTP 精简协议：实际位置使用 `drive_position_normalized`，不依赖每侧 `enabled`、
+关节量占位或旧测量别名。启动时 `accepted_command=null` 且 `command_valid=false` 的状态
+正常更新反馈与消息在线检查，不作为动作 ACK。`hold_control_error` 非空时，即使测量
+`valid=true`，仍禁止用该反馈确认动作完成。
 它拥有单独的 PUB/SUB socket、目标/反馈锁和条件变量，不使用机械臂 IO 线程的锁。`lock/unlock`
 只提交完整的双手目标快照；目标版本防止旧等待被新目标的应答完成，需要确认的操作在释放机械臂锁后等待。
 `flight.state.hand_control.target_version` 可用于诊断当前目标版本。目标长期不变仍持续发送，

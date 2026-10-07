@@ -108,6 +108,11 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 
 ## 配置与标定
 
+灵巧手概览使用 `drive_position_raw/drive_position_normalized`，兼容 RH56FTP 删除旧别名、
+`enabled` 及空关节量后的协议。软件命令状态读取顶层 `command_valid`。
+反馈恢复后仍有 `hold_control_error` 时，概览保留有效实际位置并显示“故障保护”及原因；
+测量有效性与运动保护独立显示。设备 `error_code` 非零时显示“设备故障”。消息页保留原始 JSON。
+
 [monitor.yaml](../../config/monitor.yaml) 控制概览的发布者筛选、各 Topic 时效、预览身份、关节映射和标定。`sources` 中空字符串可用于观察任意发布者，但仍会报告多源冲突；可使用发布者字符串或 `{ "publisher_id": "aviator_core" }` 筛选；旧配置的 `session_id` 字段兼容读取但不再用于筛选。仓库配置的 `sources["hand.state"]` 为当前 Modbus TCP 后端的 `rh56ftp_hand`；使用 `aviator_hand` CAN 后端时改为其 `node.publisher_id`（默认 `inspire_hand`）。网页保存后立即生效；手动编辑磁盘文件后需重启 Monitor。若消息页已有 `hand.state`，概览却显示“尚无样本”，先检查该筛选值是否与消息的 `publisher_id` 一致。
 
 默认时效：flight 100 ms，arm 50 ms，hand.state 300 ms，hand.command 100 ms，camera 200 ms，RGB 500 ms；其他流 2 s。左右臂/手还检查侧级采样时间和反馈年龄。原始 `sample_mono_us` 在匹配本机 clock_id 时才计算年龄，未知不伪造为零。驾驶盘显示以本地接收 `camera.detection` 的时间判断时效，不因采样延迟或相机时钟域不同拒绝有效检测；停止接收达到 camera 超时后显示过期。JOYSTICK POSITION_HOLD 使用 checked_mono_us 判断显示有效期，同时保留原始采样年龄。
