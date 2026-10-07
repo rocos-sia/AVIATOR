@@ -40,6 +40,7 @@ private:
     bool hand_valid_ = false;
     struct ClosingHold {
         int requested = -1, held = -1;
+        int residual_direction = 0;
         std::uint64_t last_command = 0;
         std::deque<std::pair<std::uint64_t, int>> samples;
     };

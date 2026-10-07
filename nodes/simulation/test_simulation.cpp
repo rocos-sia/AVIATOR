@@ -200,23 +200,58 @@ void managed_hand_test(const std::string& path) {
     int joint = mj_name2id(sim.model(), mjOBJ_JOINT, "left_index_1_joint");
     sim.data()->qpos[sim.model()->jnt_qposadr[joint]] = sim.model()->jnt_range[2*joint] +
         .4 * (sim.model()->jnt_range[2*joint+1] - sim.model()->jnt_range[2*joint]);
+    for (const char* name : {"left_thumb_1_joint", "right_thumb_1_joint"}) {
+        const int rotation = mj_name2id(sim.model(), mjOBJ_JOINT, name);
+        check(rotation >= 0, "rotation joint exists");
+        sim.data()->qpos[sim.model()->jnt_qposadr[rotation]] = sim.model()->jnt_range[2*rotation] +
+            .4 * (sim.model()->jnt_range[2*rotation+1] - sim.model()->jnt_range[2*rotation]);
+    }
     for (int tick = 0; tick <= 500; ++tick) {
         const auto stamp = now + 200000 + tick * 10000;
         m.header.sequence = 4 + tick;
         m.header.sample_mono_us = stamp;
         m.body["origin"]["sample_mono_us"] = stamp;
         for (const char* side : {"left", "right"}) m.body["hands"][side] = {{"drive_position_normalized", {0,0,0,0,0,0}}};
+        m.body["hands"]["right"]["drive_position_normalized"][0] = 1.0;
         check(sim.handCommand(m, stamp, error), "refresh closing command");
         sim.applyHands(stamp);
-        if (tick == 499)
+        if (tick == 499) {
             check(sim.handState(stamp, "rh56ftp_hand").body["hands"]["left"]["closing_hold_active"][2] == false,
                   "blocked finger cannot freeze before five seconds");
+            for (const char* side : {"left", "right"})
+                check(sim.handState(stamp, "rh56ftp_hand").body["hands"][side]["closing_hold_active"][0] == false,
+                      "rotation cannot freeze before five seconds");
+        }
     }
     auto held = sim.handState(now + 5200000, "rh56ftp_hand").body["hands"]["left"];
-    check(held["closing_hold_active"][2] == true && held["closing_hold_active"][0] == false,
-          "blocked-closing hold excludes thumb rotation");
+    check(held["closing_hold_active"][2] == true && held["closing_hold_active"][0] == true,
+          "blocked hold includes thumb rotation");
+    check(sim.handState(now + 5200000, "rh56ftp_hand").body["hands"]["right"]["closing_hold_active"][0] == true,
+          "rotation also holds when blocked toward increasing positions");
     check(std::abs(held["commanded_drive_position_normalized"][2].get<double>() - .6) < 1e-9 &&
           held["requested_drive_position_normalized"][2] == 0.0, "held target and requested target remain distinct");
+    const auto rotate = [&](double left, double right, std::uint64_t stamp) {
+        ++m.header.sequence;
+        m.header.sample_mono_us = stamp;
+        m.body["origin"]["sample_mono_us"] = stamp;
+        m.body["hands"]["left"]["drive_position_normalized"][0] = left;
+        m.body["hands"]["right"]["drive_position_normalized"][0] = right;
+        check(sim.handCommand(m, stamp, error), "update rotation target");
+        sim.applyHands(stamp);
+        return sim.handState(stamp, "rh56ftp_hand").body["hands"];
+    };
+    auto rotations = rotate(.4, .8, now + 5210000);
+    for (const char* side : {"left", "right"})
+        check(rotations[side]["closing_hold_active"][0] == true, "same blocked direction stays held");
+    rotations = rotate(.6, .6, now + 5220000);
+    for (const char* side : {"left", "right"})
+        check(rotations[side]["closing_hold_active"][0] == true, "target at stop position stays held");
+    rotations = rotate(.8, .4, now + 5230000);
+    for (const char* side : {"left", "right"}) {
+        check(rotations[side]["closing_hold_active"][0] == false, "reverse rotation releases hold");
+        check(rotations[side]["commanded_drive_position_normalized"][0] ==
+              m.body["hands"][side]["drive_position_normalized"][0], "released rotation applies new target");
+    }
 }
 void process_test(const char* executable,const char* path,bool camera) {
     // In-test XSUB/XPUB bus uses ephemeral TCP ports, independent of running production buses.

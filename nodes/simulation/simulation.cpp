@@ -172,7 +172,10 @@ bool Simulation::handCommand(const aviator::Message& message, std::uint64_t now,
                 auto& joint = hands_[side][j];
                 auto& hold = closing_holds_[side][j];
                 const int requested = static_cast<int>(std::lround(targets[side][j] * 1000));
-                if (!hand_valid_ || hold.requested != requested || now < hold.last_command || now - hold.last_command >= 100000)
+                const bool release = j == 0
+                    ? hold.held >= 0 && hold.residual_direction * (requested - hold.held) > 0
+                    : hold.requested != requested;
+                if (!hand_valid_ || release || now < hold.last_command || now - hold.last_command >= 100000)
                     hold = {};
                 hold.requested = hand_valid_ ? requested : -1;
                 hold.last_command = now;
@@ -195,11 +198,16 @@ void Simulation::applyHands(std::uint64_t now) {
     for (int side = 0; side < 2; ++side) for (int channel = 0; channel < 6; ++channel) {
         auto& j = hands_[side][channel];
         auto& hold = closing_holds_[side][channel];
-        // Same five-second stalled-closing policy as RH56FTP, excluding thumb rotation.
-        if (hand_valid_ && channel > 0 && hold.held < 0) {
+        // Simulator uses a five-second stable-position window. Rotation qualifies
+        // in either direction, while bending channels only qualify when closing.
+        if (hand_valid_ && hold.held < 0) {
             const int actual = static_cast<int>(std::lround(1000 * std::clamp(
                 (j.high - data()->qpos[j.q]) / (j.high - j.low), 0.0, 1.0)));
-            if (actual - hold.requested <= 10) hold.samples.clear();
+            const int residual = actual - hold.requested;
+            const int direction = channel == 0 && residual < 0 ? -1 : 1;
+            if (direction != hold.residual_direction) hold.samples.clear();
+            hold.residual_direction = direction;
+            if (direction * residual <= 10) hold.samples.clear();
             else if (hold.samples.empty() || now - hold.samples.back().first >= 10000) {
                 hold.samples.emplace_back(now, actual);
                 while (hold.samples.size() > 1 && now - hold.samples[1].first >= 5000000)

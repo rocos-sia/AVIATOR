@@ -214,13 +214,13 @@ class NodeTests(unittest.TestCase):
                 msg["hands"][side]["drive_position_normalized"] = list(target)
             node.handle_command("hand.command", json.dumps(msg), now=node.clock_now)
 
-    def test_closing_hold_only_affects_five_bending_channels_and_keeps_ack_fresh(self):
+    def test_closing_hold_affects_all_six_channels_and_keeps_ack_fresh(self):
         node, links = self.make_node()
         self.drive_closing(node, duration_ms=9960)
         self.assertEqual(links["left"].writes[-1], [0] * 6)
         # Continue fresh commands and feedback until the full window is covered.
         self.drive_closing(node, duration_ms=120)
-        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
+        self.assertEqual(links["left"].writes[-1], [-1] * 6)
         self.assertEqual(node.guard.last_sequence, node.command_accepted)
         self.assertEqual(node.guard.sample_mono_us, node.clock_now)
         self.assertTrue(node.command_valid)
@@ -228,8 +228,9 @@ class NodeTests(unittest.TestCase):
         for side in module.SIDES:
             hand = state["hands"][side]
             self.assertEqual(hand["requested_drive_position_normalized"], [0] * 6)
-            self.assertEqual(hand["commanded_drive_position_normalized"], [0] + [.4] * 5)
-            self.assertEqual(hand["closing_hold_active"], [False] + [True] * 5)
+            self.assertEqual(hand["commanded_drive_position_normalized"], [.4] * 6)
+            self.assertEqual(hand["closing_hold_active"], [True] * 6)
+            self.assertEqual(hand["closing_hold_position_normalized"], [.4] * 6)
             self.assertEqual(hand["drive_position_normalized"], [.4] * 6)
         # A new position reading must not make a latched target drift.
         before = len(links["left"].writes)
@@ -260,13 +261,14 @@ class NodeTests(unittest.TestCase):
         self.drive_closing(node, duration_ms=0, target=[1] * 6)
         self.assertEqual(links["left"].writes[-1], [1000] * 6)
         self.assertFalse(any(c.held_raw is not None for c in node.closing_holds["left"]))
-        # Changing a closing target must not restart a stopped bending finger.
+        # Changing a target toward the obstruction must not restart any channel.
         self.drive_closing(node, target=[.2] * 6)
-        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
+        self.assertEqual(links["left"].writes[-1], [-1] * 6)
+        before = len(links["left"].writes)
         self.drive_closing(node, duration_ms=0, target=[.1] * 6)
-        self.assertEqual(links["left"].writes[-1], [None] * 5 + [100])
+        self.assertEqual(len(links["left"].writes), before)
         self.drive_closing(node, duration_ms=0, target=[.3] * 6)
-        self.assertEqual(links["left"].writes[-1], [None] * 5 + [300])
+        self.assertEqual(len(links["left"].writes), before)
         self.assertTrue(all(c.held_raw == 400 for c in node.closing_holds["left"][1:]))
         self.drive_closing(node, duration_ms=0, target=[.6] * 6)
         self.assertEqual(links["left"].writes[-1], [600] * 6)
@@ -276,11 +278,11 @@ class NodeTests(unittest.TestCase):
         node, links = self.make_node()
         self.drive_closing(node, position=lambda ms, side: (
             [400, 400, max(0, 700 - ms // 10), 400, 400, 400] if side == "left" else [400] * 6))
-        self.assertEqual(links["left"].writes[-1], [-1, -1, -1, None, -1, None])
-        self.assertEqual(links["right"].writes[-1], [-1] * 5 + [None])
+        self.assertEqual(links["left"].writes[-1], [-1, -1, -1, None, -1, -1])
+        self.assertEqual(links["right"].writes[-1], [-1] * 6)
         self.assertEqual(links["left"].setting_writes[-2:],
-                         [("speed", [100, 100, 100, 500, 100, 500]),
-                          ("force", [100, 100, 100, 1000, 100, 1000])])
+                         [("speed", [100, 100, 100, 500, 100, 100]),
+                          ("force", [100, 100, 100, 1000, 100, 100])])
 
     def test_hold_limits_are_cached_and_motion_restores_grasp_limits(self):
         node, links = self.make_node()
@@ -288,9 +290,9 @@ class NodeTests(unittest.TestCase):
         self.drive_closing(node)
         for link in links.values():
             self.assertEqual(link.events[-3:],
-                             [("speed", [80] * 5 + [500]),
-                              ("force", [90] * 5 + [1000]),
-                              ("angle", [-1] * 5 + [None])])
+                             [("speed", [80] * 6),
+                              ("force", [90] * 6),
+                              ("angle", [-1] * 6)])
         before = {side: len(link.events) for side, link in links.items()}
         self.drive_closing(node, duration_ms=120)
         self.assertEqual({side: len(link.events) for side, link in links.items()}, before)
@@ -311,21 +313,21 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(links["left"].writes[-1], [0] * 6)
         links["left"].fail_force = False
         self.drive_closing(node, duration_ms=0)
-        self.assertEqual(links["left"].events[-3:], [("speed", [100] * 5 + [500]),
-                                                   ("force", [100] * 5 + [1000]),
-                                                   ("angle", [-1] * 5 + [None])])
+        self.assertEqual(links["left"].events[-3:], [("speed", [100] * 6),
+                                                   ("force", [100] * 6),
+                                                   ("angle", [-1] * 6)])
 
     def test_persistent_residual_holds_without_position_stability_requirement(self):
         node, links = self.make_node()
         self.drive_closing(node, position=lambda ms, _side: [400 if ms < 2000 or ms > 3000 else 500] * 6)
-        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
+        self.assertEqual(links["left"].writes[-1], [-1] * 6)
 
-    def test_reached_targets_and_opening_never_trigger_hold(self):
-        for target in ([.4] * 6, [1] * 6):
+    def test_reached_targets_and_bend_opening_never_trigger_hold(self):
+        for target in ([.4] * 6, [.4] + [1] * 5):
             with self.subTest(target=target):
                 node, links = self.make_node()
                 self.drive_closing(node, target=target)
-                self.assertEqual(links["left"].writes[-1], module.normalized_to_raw(target))
+                self.assertEqual(links["left"].writes[-1], module.canonical_to_rh(module.normalized_to_raw(target)))
                 self.assertFalse(any(c.held_raw is not None for c in node.closing_holds["left"]))
 
     def test_failed_feedback_resets_stall_window_and_missing_samples_cannot_trigger_hold(self):
@@ -333,7 +335,7 @@ class NodeTests(unittest.TestCase):
         self.drive_closing(node, feedback=lambda ms: ms != 3000)
         self.assertEqual(links["left"].writes[-1], [0] * 6)
         self.drive_closing(node, duration_ms=3000)
-        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
+        self.assertEqual(links["left"].writes[-1], [-1] * 6)
         # Repeating the same snapshot cannot substitute for ten seconds of measurements.
         node, links = self.make_node()
         self.drive_closing(node, duration_ms=0)
@@ -369,7 +371,7 @@ class NodeTests(unittest.TestCase):
         self.drive_closing(node, duration_ms=120)
         self.assertEqual(links["left"].writes[-1], [0] * 6)
         self.drive_closing(node, duration_ms=9960, target=[.1] * 6)
-        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
+        self.assertEqual(links["left"].writes[-1], [-1] * 6)
 
     def test_threshold_is_strict_and_continuity_resets_at_boundary(self):
         node, links = self.make_node()
@@ -387,7 +389,7 @@ class NodeTests(unittest.TestCase):
         self.assertIsNone(node.closing_holds["left"][1].held_raw)
         self.drive_closing(node, duration_ms=60, position=lambda _ms, _side: [26] * 6)
         self.assertEqual(node.closing_holds["left"][1].held_raw, 26)
-        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
+        self.assertEqual(links["left"].writes[-1], [-1] * 6)
 
     def test_feedback_gap_resets_timer_despite_continuous_commands(self):
         node, _ = self.make_node()
@@ -406,14 +408,79 @@ class NodeTests(unittest.TestCase):
         self.drive_closing(node, duration_ms=60)
         self.assertEqual(node.closing_holds["left"][1].held_raw, 400)
 
-    def test_grasp_mode_also_holds_bending_channels(self):
+    def test_grasp_mode_also_holds_all_channels(self):
         node, links = self.make_node()
         self.drive_closing(node)
         msg = command(node, sequence=node.guard.last_sequence + 1)
         msg["mode"] = "GRASP_SETPOINT"
         msg["hands"] = {side: {"grasp": {"closure": 1}} for side in module.SIDES}
         node.handle_command("hand.command", json.dumps(msg), now=node.clock_now)
-        self.assertEqual(links["left"].writes[-1], [-1] * 5 + [None])
+        self.assertEqual(links["left"].writes[-1], [-1] * 6)
+
+    def test_rotation_holds_in_both_directions_and_only_reversing_releases(self):
+        for target, blocked_targets, release in ((0, (.1, .3, .4), .6), (.8, (.9, .5, .4), .2)):
+            with self.subTest(target=target):
+                node, links = self.make_node()
+                self.drive_closing(node, duration_ms=9960, target=[target] + [.4] * 5)
+                self.assertIsNone(node.closing_holds["left"][0].held_raw)
+                self.drive_closing(node, duration_ms=120, target=[target] + [.4] * 5)
+                for side, link in links.items():
+                    self.assertEqual(link.events[-3:], [
+                        ("speed", [500] * 5 + [100]), ("force", [1000] * 5 + [100]),
+                        ("angle", [None] * 5 + [-1])])
+                    hand = node.make_state(node.clock_now)["hands"][side]
+                    self.assertEqual(hand["closing_hold_active"], [True] + [False] * 5)
+                    self.assertEqual(hand["closing_hold_position_normalized"], [.4] + [None] * 5)
+                before = {side: len(link.events) for side, link in links.items()}
+                for value in blocked_targets:
+                    self.drive_closing(node, duration_ms=120, target=[value] + [.4] * 5,
+                                       position=lambda _ms, _side: [450] + [400] * 5)
+                # Missing feedback must not unlatch a stopped rotation, either.
+                self.drive_closing(node, duration_ms=600, target=[target] + [.4] * 5,
+                                   feedback=lambda _ms: False)
+                self.assertEqual({side: len(link.events) for side, link in links.items()}, before)
+                self.drive_closing(node, duration_ms=0, target=[release] + [.4] * 5)
+                for side, link in links.items():
+                    self.assertIsNone(node.closing_holds[side][0].held_raw)
+                    self.assertEqual(link.events[-3:], [
+                        ("speed", [500] * 6), ("force", [1000] * 6),
+                        ("angle", [None] * 5 + [round(release * 1000)])])
+
+    def test_rotation_reversing_residual_restarts_full_observation_window(self):
+        for by_feedback in (False, True):
+            with self.subTest(by_feedback=by_feedback):
+                node, _ = self.make_node()
+                target = [.2] + [.4] * 5
+                self.drive_closing(node, duration_ms=9960, target=target)
+                node.clock_now += 20000
+                # Reverse via a new target or via feedback crossing the unchanged target.
+                if not by_feedback:
+                    target[0] = .8
+                position = lambda _ms, _side: [100 if by_feedback else 400] + [400] * 5
+                self.drive_closing(node, duration_ms=9960, target=target, position=position)
+                self.assertIsNone(node.closing_holds["left"][0].held_raw)
+                self.drive_closing(node, duration_ms=60, target=target, position=position)
+                self.assertEqual(node.closing_holds["left"][0].held_raw, 100 if by_feedback else 400)
+
+    def test_rotation_threshold_is_strict_in_both_directions(self):
+        for sign in (-1, 1):
+            with self.subTest(sign=sign):
+                node, _ = self.make_node()
+                node.closing_motion_raw = 25
+                target = [.4] * 6
+                at_boundary = lambda _ms, _side: [400 + sign * 25] + [400] * 5
+                outside = lambda _ms, _side: [400 + sign * 26] + [400] * 5
+                self.drive_closing(node, target=target, position=at_boundary)
+                self.assertIsNone(node.closing_holds["left"][0].held_raw)
+                node.clock_now += 20000
+                self.drive_closing(node, duration_ms=9960, target=target, position=outside)
+                self.assertIsNone(node.closing_holds["left"][0].held_raw)
+                self.drive_closing(node, duration_ms=60, target=target, position=at_boundary)
+                node.clock_now += 20000
+                self.drive_closing(node, duration_ms=9960, target=target, position=outside)
+                self.assertIsNone(node.closing_holds["left"][0].held_raw)
+                self.drive_closing(node, duration_ms=60, target=target, position=outside)
+                self.assertEqual(node.closing_holds["left"][0].held_raw, 400 + sign * 26)
 
     def test_reorder_and_command_write(self):
         node, links = self.make_node()

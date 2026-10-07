@@ -414,6 +414,7 @@ class ClosingHold:
     feedback_errors: int = 0
     held_raw: int | None = None
     close_since_us: int = 0
+    residual_direction: int = 0
     phase: str = "tracking"
 
 
@@ -832,18 +833,21 @@ class Rh56FtpNode:
             measured = self._canonical_state(snapshot.data) if snapshot.data is not None else None
             actual = measured["drive_position_raw"] if measured and measured["drive_position_normalized"] else None
             fresh = snapshot.fresh(now, self.feedback_timeout_us) and not snapshot.error and actual is not None
-            # Rotation has no closing direction; only the five bending channels qualify.
-            channels = [ClosingHold(requested_raw=requested[side][0], last_command_us=now)]
-            for index in range(1, 6):
+            channels = []
+            for index in range(6):
                 target = requested[side][index]
                 channel = replace(self.closing_holds[side][index])
+                # Rotation can be blocked in either direction. Release only when
+                # the target crosses the recorded stop position away from that direction.
+                release_direction = channel.residual_direction if index == 0 else 1
                 if (now < channel.last_command_us or
                         now - channel.last_command_us >= self.command_timeout_us or
-                        (channel.held_raw is not None and target > channel.held_raw)):
+                        (channel.held_raw is not None and
+                         release_direction * (target - channel.held_raw) > 0)):
                     channel = ClosingHold(target_since_us=now, feedback_errors=snapshot.errors)
                 channel.requested_raw = target
                 channel.last_command_us = now
-                # A closing target cannot release a stopped finger; an explicit opening can.
+                # Further movement into the blocked direction cannot release a hold.
                 if channel.held_raw is not None:
                     effective[side][index] = -1
                 elif not fresh:
@@ -856,8 +860,13 @@ class Rh56FtpNode:
                             (channel.last_sample_us and stamp - channel.last_sample_us >= self.feedback_timeout_us)):
                         channel.close_since_us = 0
                     channel.feedback_errors = snapshot.errors
-                    if position - target <= self.closing_motion_raw:
-                        # Opening, reached target, or residual within threshold breaks continuity.
+                    residual = position - target
+                    direction = (1 if residual > 0 else -1) if index == 0 else 1
+                    if direction != channel.residual_direction:
+                        channel.close_since_us = 0
+                    channel.residual_direction = direction
+                    if direction * residual <= self.closing_motion_raw:
+                        # Reached target (or opening a bend) breaks continuity.
                         channel.close_since_us = 0
                     elif stamp >= channel.target_since_us and stamp != channel.last_sample_us:
                         if not channel.close_since_us:
