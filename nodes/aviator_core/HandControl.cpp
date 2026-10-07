@@ -40,6 +40,7 @@ void HandControl::request(bool close, uint64_t now) {
     closing_ = close;
     target_ = close ? close_ : open_;
     requested_ = now;
+    completion_started_ = now;
     first_sequence_ = command_sequence_ + 1;
     next_ = 0;
     accepted_at_ = 0;
@@ -64,6 +65,7 @@ void HandControl::approachProgress(const std::array<double, 2>& progress, uint64
     if (!endpoint_ && progress[0] == 1 && progress[1] == 1) {
         endpoint_ = true;
         requested_ = now;
+        completion_started_ = now;
         first_sequence_ = command_sequence_ + 1; // A partial-target ACK cannot complete the grasp.
         next_ = 0; // Publish the exact endpoint without waiting for the next 50 Hz slot.
     }
@@ -76,7 +78,11 @@ void HandControl::fail(const std::string& reason) {
     error_ = reason;
 }
 bool HandControl::fresh(uint64_t now) const {
-    return valid_ && received_ && now >= received_ && now >= sample_ &&
+    return valid_ && feedbackFresh(now);
+}
+bool HandControl::feedbackFresh(uint64_t now) const {
+    // Device validity does not determine whether command transport is alive.
+    return feedback_timely_ && received_ && now >= received_ && now >= sample_ &&
            now - received_ < feedback_timeout_ && now - sample_ < feedback_timeout_;
 }
 std::string HandControl::messageFault(uint64_t now) const {
@@ -106,21 +112,28 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
             seq = ack.at("sequence").get<uint64_t>();
             stamp = ack.at("sample_mono_us").get<uint64_t>();
         } else if (accepted) return; // A valid command must have an acknowledgement.
-        // RH56FTP measurement validity is independent of its latched motion fault.
-        bool valid = m.header.valid && m.body.value("hold_control_error", std::string{}).empty();
+        // hold_control_error is historical, latched device diagnostics. It cannot
+        // invalidate recovered measurements or prevent an open target completing.
+        // Live validity, position, timestamps and command ACKs remain authoritative.
+        bool valid = m.header.valid;
+        bool timely = true;
         for (const char* side : {"left", "right"}) {
             const auto& hand = m.body.at("hands").at(side);
             if (!hand.at("valid").get<bool>()) { valid = false; continue; }
             const auto sample = hand.at("sample_mono_us").get<uint64_t>();
-            if (sample > now || now - sample >= feedback_timeout_) valid = false;
+            if (sample > now || now - sample >= feedback_timeout_) valid = timely = false;
             const auto values = hand.at("drive_position_normalized").get<std::array<double, 6>>();
             for (auto v : values) if (!std::isfinite(v) || v < 0 || v > 1) return;
         }
+        // Give recovered measurements a full completion window without changing
+        // the original target/ACK identity or replay checks.
+        if (active_ && received_ && !valid_ && valid) completion_started_ = now;
         node_session_ = m.header.session_id;
         state_sequence_ = m.header.sequence;
         received_ = now;
         sample_ = m.header.sample_mono_us;
         valid_ = valid;
+        feedback_timely_ = timely;
         body_ = m.body;
         if (!active_) return;
         if (readonly) { fail("aviator_hand is feedback-only; restart it in control mode"); return; }
@@ -152,11 +165,17 @@ bool HandControl::complete(uint64_t now) const {
 std::string HandControl::fault(uint64_t now) const {
     if (!error_.empty()) return error_;
     if (!active_) return {};
-    if (acknowledged_ && (!fresh(now) || now - accepted_at_ >= feedback_timeout_))
+    if (acknowledged_ && (!feedbackFresh(now) || now - accepted_at_ >= feedback_timeout_))
         return "hand.state feedback/command acknowledgement expired";
-    if ((!synchronized_ || endpoint_ || !acknowledged_) && !complete(now) && now - requested_ >= timeout_)
+    // Missing ACKs and a valid-but-unreached target remain failures. Invalid
+    // measurements only prevent completion; they must not revoke publication.
+    if (waitExpired(now) && (!acknowledged_ || valid_))
         return "Hand target timeout: check CAN, pose, feedback and publisher binding";
     return {};
+}
+bool HandControl::waitExpired(uint64_t now) const {
+    return active_ && (!synchronized_ || endpoint_ || !acknowledged_) && !complete(now) &&
+           now >= completion_started_ && now - completion_started_ >= timeout_;
 }
 std::optional<Message> HandControl::command(uint64_t now, uint64_t heartbeat, const std::string& session) {
     if (!enabled_ || !active_) return {};

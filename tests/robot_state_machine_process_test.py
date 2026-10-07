@@ -11,6 +11,8 @@ import time
 import yaml
 import zmq
 
+from fake_rh56ftp_hand import FakeRH56FTPHand
+
 
 def port():
     with socket.socket() as sock:
@@ -21,12 +23,19 @@ def port():
 def main():
     bus, manipulator, core, root = sys.argv[1:5]
     hand_timeout = '--hand-timeout' in sys.argv[5:]
+    latched_error = '--hand-latched-error' in sys.argv[5:]
+    hand_fault = (4 if latched_error or '--hand-overcurrent' in sys.argv[5:] else
+                  2 if '--hand-overtemperature' in sys.argv[5:] else 0)
+    assert not (hand_fault and hand_timeout), 'hand fault and message timeout are separate scenarios'
     root = Path(root)
     directory = Path(tempfile.mkdtemp(prefix="aviator-fsm-test-"))
     print(f"FSM process logs: {directory}", flush=True)
     config = yaml.safe_load((root / "config/system.yaml").read_text())
     if hand_timeout:
         config['core_hand'].update(enabled=True, publisher_id='unavailable_test_hand', completion_timeout_ms=500)
+    if hand_fault:
+        # Require actual simulated opening, rather than the deployment's permissive tolerance.
+        config['core_hand'].update(enabled=True, publisher_id='rh56ftp_hand', open_tolerance=.03)
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot["viewer"] = False
     robot["settle_duration"] = .15
@@ -39,7 +48,7 @@ def main():
     config["robot"] = "robot.yaml"
     (directory / "system.yaml").write_text(yaml.safe_dump(config))
     device_config = dict(config)
-    if hand_timeout:
+    if hand_timeout or hand_fault:
         # Simulation uses its configured hand publisher; use a distinct identity
         # so Core really receives no matching hand feedback during the full cycle.
         device_config['core_hand'] = {**config['core_hand'], 'publisher_id': 'simulated_test_hand'}
@@ -47,6 +56,7 @@ def main():
     (directory / "robot.yaml").write_text(yaml.safe_dump(robot))
     children, logs = [], []
     context = zmq.Context()
+    hand = FakeRH56FTPHand(context, endpoints, config['core_hand'], directory, latched_error) if hand_fault else None
     sub = context.socket(zmq.SUB)
     sub.subscribe(b"flight.state")
     sub.connect(endpoints[1])
@@ -62,6 +72,8 @@ def main():
     def wait_state(expected, timeout=100):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            if hand:
+                hand.check()
             if sub.poll(100):
                 message = json.loads(sub.recv_multipart()[1])
                 state = message.get("system", {})
@@ -69,6 +81,8 @@ def main():
                     return state
                 if state.get("state") in ("ERROR", "EMERGENCY_STOP"):
                     raise AssertionError(f"Expected {expected}, got {state}")
+                if hand and state.get('state') == 'SAFE':
+                    raise AssertionError(f'Hand fault unexpectedly triggered SAFE: {state}')
             if process.poll() is not None:
                 raise AssertionError("Child process exited; inspect logs")
         raise AssertionError(f"Timed out waiting for {expected}")
@@ -81,6 +95,8 @@ def main():
         start("bus", [bus, "--input", endpoints[0], "--output", endpoints[1],
                       "--lock-file", str(directory / "bus.lock")])
         start("manipulator", [manipulator, "--config", str(directory / "device-system.yaml"), "--headless", "--no-camera"])
+        if hand:
+            hand.start()
         arguments = [core, "--config", str(directory / "system.yaml"), "--console"]
         process = start("core", arguments)
         if hand_timeout:
@@ -118,9 +134,15 @@ def main():
         deadline = time.monotonic() + 15
         while not wait_state("FOLLOWING", 3).get("settled"):
             assert time.monotonic() < deadline, "executor did not acknowledge normal stop"
+        if hand:
+            hand.inject(hand_fault)
         command("LEAVE_WHEEL")
         wait_state("RELEASING", 3)
         wait_state("STANDBY", 30)
+        if hand:
+            # Let the independent hand peer observe the final flight.state too.
+            time.sleep(.1)
+            hand.verify_release()
         command("emergency")
         state = wait_state("EMERGENCY_STOP", 3)
         assert state["brake_requested"] and not state["brake_confirmed"]
@@ -143,6 +165,8 @@ def main():
                     child.wait()
         for log in logs:
             log.close()
+        if hand and hand.thread.ident is not None:
+            hand.finish()
         sub.close(0)
         context.term()
 

@@ -95,6 +95,10 @@ bool HandLink::wait(uint64_t version, const std::atomic<bool>* cancel) {
         const auto reason = control_.fault(now);
         if (!reason.empty()) { control_.fail(reason); warnLocked(reason); return false; }
         if (control_.complete(now)) return true;
+        if (control_.waitExpired(now)) {
+            warnLocked("hand.state invalid; target completion unconfirmed; continuing hand.command publication");
+            return false;
+        }
         changed_.wait_for(lock, std::chrono::milliseconds(5));
     }
 }

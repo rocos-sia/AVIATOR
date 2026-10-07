@@ -12,10 +12,24 @@
 平滑闭合终点、真实 Pinocchio FK/IK、旧共享配置兼容、缺失/混合配置拒绝、碰撞模型加载与
 MuJoCo TCP；无需连接真机。`control_nodes_grasp` 运行真实总线和 MuJoCo，覆盖使能、从 home
 连续接近、锁定、张开、失能和退出。
+`grasp_tools` 还注入释放阶段 FK 失败，刻意让执行器先进入 FAULT，再运行状态机监督，
+验证原始错误被保留并进入 ERROR，避免先进入 SAFE 后吞掉工作线程异常。
 
 `core_hand` 验证接近期间的双手目标插值、超过普通完成时限的持续运动、终点 ACK 与取消。
 `core_hand_process_test.py` 的 `synchronized` 场景使用真实 ZMQ 和模拟设备反馈，冻结机械臂
 游标 300 ms，确认手指目标不按墙钟时间继续闭合，并验证恢复执行与最终锁定。
+
+`robot_state_machine_hand_overcurrent` / `robot_state_machine_hand_overtemperature`
+使用隔离 ZMQ 总线、MuJoCo 双臂及模拟 `rh56ftp_hand` 发布者，完成真实托管 Core 的
+`FOLLOWING → RELEASING → STANDBY`。分别注入错误码 4（过流）、2（过温），顶层和左右手
+`valid=false`；模拟驱动 800 ms 后恢复运动，反馈有效性继续保持无效至 2 s。
+验证无效期间持续收到张开目标（间隔小于 100 ms）、左右手实际模拟位置张开，反馈恢复后
+完成释放。测试把位置容差设为 0.03，保留临时目录内的 `hand-zmq.jsonl` 完整手部消息和
+`hand-fault-result.json` 结果；不连接串口或部署总线。
+
+`robot_state_machine_hand_latched-error` 在上述过程中永久保留 `hold_control_error`，
+验证设备恢复后 Core 接受有效测量、完成张开，不进入 SAFE/ERROR；同时检查释放期间
+`arm.command` 持续发布。该场景模拟驱动已经恢复执行目标，不能替代驱动故障锁存恢复测试。
 
 `communication_test.cpp` 经 CTest 注册为 `communication`，不依赖机器人或相机硬件，使用实际 libzmq socket。
 

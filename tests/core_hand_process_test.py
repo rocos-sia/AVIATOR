@@ -62,6 +62,7 @@ core_hand:
         last_change = next_state = locked_at = last_arm = 0
         first_open = close_seen = unlock_seen = aggregate_seen = False
         command_times, operations, captured = [], [], []
+        invalid_state_times = []
         trajectory_id = cursor = reported_cursor = 0
         trajectory_at = 0
         partial_seen = False
@@ -97,12 +98,12 @@ core_hand:
                         result = dict(target=[0]*14)
                     elif op == 'disable': enabled = False
                     elif op == 'lock':
-                        if mode in ('normal', 'isolation', 'synchronized', 'dropped', 'revoke', 'heartbeat', 'arm_failure'):
+                        if mode in ('normal', 'isolation', 'invalid_recovery', 'synchronized', 'dropped', 'revoke', 'heartbeat', 'arm_failure'):
                             assert close_seen, 'software lock before physical command'
                         locked = True
                         locked_at = now
                     elif op == 'unlock':
-                        if mode in ('normal', 'isolation', 'synchronized', 'no_close'):
+                        if mode in ('normal', 'isolation', 'invalid_recovery', 'synchronized', 'no_close'):
                             assert actual == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]), 'software unlock before actual opening'
                         locked = False
                     elif op == 'stop': result = dict(target=[0]*14)
@@ -193,8 +194,10 @@ core_hand:
                                  hands={side: dict(valid=True, sample_mono_us=m['sample_mono_us'],
                                                   drive_position_normalized=actual[side],
                                                   position_source='angle_act_register') for side in targets})
-                        if mode == 'invalid':
+                        if (mode == 'invalid' or
+                                (mode == 'invalid_recovery' and locked_at and .1 < now - locked_at < 1.2)):
                             m['valid'] = False
+                            invalid_state_times.append(now)
                             for hand in m['hands'].values():
                                 hand.update(valid=False, status='ERROR', error_code=5)
                         if mode == 'stale':
@@ -216,13 +219,17 @@ core_hand:
                 assert cursor == 1000 and len(stalled_targets) >= 5
                 assert all(v == stalled_targets[0] for v in stalled_targets), 'hand advanced while arm cursor was frozen'
                 assert operations == ['describe','authorize','enable','lock','unlock','disable'], operations
-            elif mode in ('normal', 'isolation'):
+            elif mode in ('normal', 'isolation', 'invalid_recovery'):
                 assert first_open and close_seen and unlock_seen and aggregate_seen
                 assert operations == ['describe','authorize','enable','lock','stop','unlock','disable'], operations
                 max_gap = max(b-a for a,b in zip(command_times,command_times[1:]))
                 assert len(command_times) >= 40 and max_gap < .1
                 print(f'{mode}: maximum observed hand command gap {max_gap * 1000:.1f} ms', flush=True)
                 assert len({m['control_epoch'] for m in captured}) == 1
+                if mode == 'invalid_recovery':
+                    assert invalid_state_times[-1] - invalid_state_times[0] > 1
+                    assert len([t for t in command_times
+                                if invalid_state_times[0] < t < invalid_state_times[-1]]) >= 40
             elif mode in ('dropped', 'revoke', 'heartbeat', 'arm_failure'):
                 assert close_seen and not unlock_seen
                 assert time.monotonic() - command_times[-1] > .25, 'hand target kept alive after fault/revocation'
@@ -239,6 +246,10 @@ core_hand:
                 assert 'Core FSM fault' not in output, output
                 if mode in ('synchronized_drop', 'no_close'):
                     assert cursor == 1000, 'hand warning interrupted arm trajectory'
+                if mode == 'invalid':
+                    assert first_open and close_seen and unlock_seen
+                    assert len(command_times) >= 80, 'invalid feedback stopped command publication'
+                    assert max(b-a for a,b in zip(command_times, command_times[1:])) < .1
             print(mode + ': ' + output.strip(), flush=True)
         finally:
             if child and child.poll() is None: child.kill(); child.wait()
@@ -248,5 +259,5 @@ core_hand:
 
 
 if __name__ == '__main__':
-    for scenario in ('synchronized', 'normal', 'missing', 'readonly', 'foreign', 'invalid', 'stale', 'stuck_open', 'bad_config', 'no_close', 'synchronized_drop', 'dropped', 'revoke', 'isolation', 'heartbeat', 'arm_failure', 'no_arm'):
+    for scenario in ('synchronized', 'normal', 'missing', 'readonly', 'foreign', 'invalid', 'invalid_recovery', 'stale', 'stuck_open', 'bad_config', 'no_close', 'synchronized_drop', 'dropped', 'revoke', 'isolation', 'heartbeat', 'arm_failure', 'no_arm'):
         run(*sys.argv[1:], scenario)

@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
                 link.sendGraspCommand(GraspCommand::Unlock);
                 link.disable(Side::Left);
                 cleanup();
-            } else if (mode == "normal" || mode == "isolation") {
+            } else if (mode == "normal" || mode == "isolation" || mode == "invalid_recovery") {
                 link.enable(Side::Left);
                 link.sendGraspCommand(GraspCommand::Lock);
                 if (mode == "isolation") RemoteLinkTestAccess::stallArmIO(link);

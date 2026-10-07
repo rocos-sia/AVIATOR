@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <thread>
 #ifdef AVIATOR_HAVE_MUJOCO
 #include <mujoco/mujoco.h>
 #include "DataLink_direct.hpp"
@@ -23,12 +24,14 @@ void samePose(const pinocchio::SE3 &a, const pinocchio::SE3 &b) {
           "Wrong per-arm tool pose");
 }
 struct RecordingIk : Kinematics {
+    std::atomic<bool> fail_fk{false};
     std::vector<pinocchio::SE3> targets[2];
     bool solveIk(Side side, const std::array<double, 7> &seed, const pinocchio::SE3 &pose,
                  std::array<double, 7> &out) override {
         targets[int(side)].push_back(pose); out = seed; return true;
     }
     bool solveFk(Side side, const std::array<double, 7> &, pinocchio::SE3 &out) override {
+        if (fail_fk) return false;
         out = targets[int(side)].empty() ? pinocchio::SE3::Identity() : targets[int(side)].back(); return true;
     }
     double jointLower(Side, int) const override { return -10; }
@@ -57,6 +60,50 @@ struct Device : DataLink {
         q = v.back().q; now += v.size() * .001;
     }
 };
+// Let the executor enter FAULT before the owner consumes the failed future. This
+// reproduces the release exception being masked by SafetyLost and a new generation.
+void managedReleaseFailure(const fs::path& config) {
+    auto device = std::make_unique<Device>();
+    device->q[1] = device->q[8] = M_PI / 2;
+    auto ik = std::make_unique<RecordingIk>();
+    auto* solver = ik.get();
+    bool allowed = false;
+    ManagedOptions options;
+    options.snapshot = [] {
+        fsm::Snapshot s;
+        s.ready = s.settled = s.clear_of_wheel = s.following_authorized = true;
+        s.release_authorized = s.source_authorized = s.input_ready = s.fault_cleared = s.emergency_known = true;
+        return s;
+    };
+    options.allow_motion = [&](bool value) { allowed = value; };
+    options.heartbeat = [] {};
+    options.request_brake = [] {};
+    Aviator core(std::move(device), std::move(ik), nullptr, config.string(), options);
+    const auto wait = [&](const char* state) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (core.GetSystemState() != state && std::chrono::steady_clock::now() < deadline) {
+            core.Update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        check(core.GetSystemState() == state, "Managed release setup failed");
+    };
+    core.Init(); wait("READY");
+    check(core.EnterStandby() == fsm::Reply::accepted, "Home was not accepted");
+    wait("STANDBY");
+    check(core.GraspWheel() == fsm::Reply::accepted, "Grasp was not accepted");
+    wait("FOLLOWING");
+    solver->fail_fk = true;
+    check(core.LeaveWheel() == fsm::Reply::accepted, "Release was not accepted");
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (core.GetState() != "FAULT" && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    check(core.GetState() == "FAULT", "Release FK failure was not injected");
+    core.Update();
+    check(core.GetSystemState() == "ERROR", "Release exception was masked by SAFE");
+    check(core.GetSystemStatus().current_error.find("Release FK failed") != std::string::npos,
+          "Release failure lost the original diagnostic");
+    check(!allowed, "Release failure left commands authorized");
+}
 // Check collision behavior independently of the real model's initial contacts.
 void collisionModelRegression(const fs::path &dir) {
     const auto path = dir / "collision.urdf";
@@ -197,6 +244,7 @@ int main(int argc, char **argv) try {
         check(rejected, "Invalid closing distance accepted");
     }
     runCore(split); runCore(legacy);
+    managedReleaseFailure(dir / "robot.yaml");
     // Real deployment geometry + Pinocchio FK/IK, without connecting any device.
     const auto posture = YAML::LoadFile((root / "config/posture.json").string());
     for (double threshold : {.07, .04}) {

@@ -434,10 +434,13 @@ class Aviator::Impl {
         require(GetState() == "LOCKED" || GetState() == "ENABLED", "Release requires a stable enabled executor");
         requireBackend(!grasp().fault, "Backend fault before release");
         cancel_ = false;
+        setMotionError("");
         setState("RELEASING");
+        const char* phase = "planning start";
         try {
             auto seed = planningStart();
             auto wheel = grasp();
+            phase = "forward kinematics";
             std::array<pinocchio::SE3, 2> from;
             for (int side = 0; side < 2; ++side) {
                 std::array<double, 7> q{};
@@ -445,6 +448,7 @@ class Aviator::Impl {
                 require(kinematics_->solveFk(static_cast<Side>(side), q, from[side]), "Release FK failed");
             }
             Path path;
+            phase = "retreat inverse kinematics";
             const auto steps = static_cast<size_t>(std::ceil(final_approach_duration_ / planning_period_));
             for (size_t k = 0; k <= steps; ++k) {
                 require(!cancel_, "Release cancelled");
@@ -455,12 +459,25 @@ class Aviator::Impl {
                 if (k) seed = solve(targets, seed);
                 path.push_back({seed, wheel.angle, wheel.displacement});
             }
+            phase = "retreat validation";
             validate(path, final_approach_duration_);
             require(!cancel_, "Release cancelled");
+            phase = "open hands";
             command(GraspCommand::Unlock);
+            phase = "retreat execution";
             execute(path, final_approach_duration_, false);
             setState("ENABLED");
-        } catch (...) { stopSafely(); setState("FAULT"); throw; }
+        } catch (const std::exception& e) {
+            const auto error = std::string("ReleaseHandles [") + phase + "]: " + e.what();
+            // Publish the cause before FAULT becomes observable. Otherwise the
+            // owner can enter SAFE and discard this worker's failed generation.
+            setMotionError(error);
+            stopSafely(); setState("FAULT");
+            throw std::runtime_error(error);
+        } catch (...) {
+            setMotionError(std::string("ReleaseHandles [") + phase + "]: unknown exception");
+            stopSafely(); setState("FAULT"); throw;
+        }
     }
 
     void resetFault() {
@@ -982,8 +999,10 @@ public:
         if (phase == "FAULT") {
             s.ready = false;
             // Maintenance may have removed the device fault; ResetError acknowledges the local fault.
-            if (std::string(machine_.state()) != "ERROR" && std::string(machine_.state()) != "SAFE")
+            if (std::string(machine_.state()) != "ERROR" && std::string(machine_.state()) != "SAFE") {
                 s.fault = executor_.GetStatus().motion_error;
+                if (s.fault.empty()) s.fault = "Executor entered FAULT without a diagnostic";
+            }
         }
         if (machine_.acceptsControl()) {
             const auto now = managedNow();

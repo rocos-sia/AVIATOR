@@ -42,6 +42,74 @@ int main(int argc, char** argv) {
             return m;
         };
         auto state = feedback(command, now + 1, 1);
+        // Invalid device measurements must not terminate an otherwise live
+        // command/ACK stream, including after the normal completion deadline.
+        for (int invalid_field = 0; invalid_field < 3; ++invalid_field) {
+            auto continued = create();
+            continued.startMonitoring(now);
+            continued.request(true, now);
+            auto cmd = *continued.command(now, now, session);
+            continued.receive(feedback(cmd, now + 1, 1), now + 1, session);
+            const auto invalidate = [&](Message& m) {
+                if (invalid_field == 0) m.header.valid = false;
+                if (invalid_field == 1 || invalid_field == 2) {
+                    auto& hand = m.body["hands"][invalid_field == 1 ? "left" : "right"];
+                    hand["valid"] = false;
+                    hand.erase("drive_position_normalized");
+                }
+            };
+            uint64_t seq = 1;
+            for (uint64_t elapsed = 20000; elapsed <= 1200000; elapsed += 20000) {
+                const auto t = now + elapsed;
+                auto next = continued.command(t, t, session);
+                check(next.has_value() && next->header.valid, "invalid feedback stopped valid hand commands");
+                cmd = *next;
+                auto m = feedback(cmd, t + 1, ++seq);
+                invalidate(m);
+                continued.receive(m, t + 1, session);
+                check(!continued.fresh(t + 1) && !continued.complete(t + 1),
+                      "invalid feedback claimed successful completion");
+                check(continued.fault(t + 1).empty() && continued.messageFault(t + 1).empty(),
+                      "invalid online feedback raised a publication/communication fault");
+            }
+            check(continued.waitExpired(now + 1200001), "invalid completion wait is not bounded");
+            const auto open_at = now + 1220000;
+            continued.request(false, open_at);
+            for (uint64_t elapsed = 0; elapsed <= 600000; elapsed += 20000) {
+                const auto t = open_at + elapsed;
+                auto next = continued.command(t, t, session);
+                check(next.has_value(), "opening stopped during invalid feedback");
+                cmd = *next;
+                for (const char* side : {"left", "right"})
+                    check(cmd.body["hands"][side]["drive_position_normalized"] == Json({.5,1,1,1,1,1}),
+                          "invalid feedback prevented changing to the open target");
+                auto m = feedback(cmd, t + 1, ++seq);
+                invalidate(m);
+                continued.receive(m, t + 1, session);
+            }
+            const auto recovered_at = open_at + 620000;
+            auto recovering = feedback(cmd, recovered_at, ++seq);
+            recovering.body["hands"]["left"]["drive_position_normalized"][0] = .9;
+            continued.receive(recovering, recovered_at, session);
+            check(continued.fresh(recovered_at) && !continued.complete(recovered_at) &&
+                  continued.fault(recovered_at).empty(), "recovery inherited the invalid completion deadline");
+            auto reopened = continued.command(recovered_at, recovered_at, session);
+            check(reopened.has_value(), "recovery stopped command publication");
+            continued.receive(feedback(*reopened, recovered_at + 1, ++seq), recovered_at + 1, session);
+            check(continued.complete(recovered_at + 1), "recovered opening did not complete");
+        }
+        {
+            auto stale_side = create();
+            stale_side.request(true, now);
+            auto cmd = *stale_side.command(now, now, session);
+            stale_side.receive(feedback(cmd, now + 1, 1), now + 1, session);
+            auto m = feedback(cmd, now + 20000, 2);
+            m.header.valid = false;
+            m.body["hands"]["left"]["sample_mono_us"] = now - 500000;
+            stale_side.receive(m, now + 20000, session);
+            check(!stale_side.command(now + 20000, now + 20000, session),
+                  "genuinely stale side feedback kept publication alive");
+        }
         {
             auto startup = create();
             startup.startMonitoring(now);
@@ -68,17 +136,20 @@ int main(int argc, char** argv) {
         }
         {
             auto protected_hand = create();
-            protected_hand.request(true, now);
+            protected_hand.request(false, now);
             auto cmd = *protected_hand.command(now, now, session);
             auto m = feedback(cmd, now + 1, 1);
             m.body["hold_control_error"] = "left[0]: device error 4";
+            m.body["hands"]["left"]["drive_position_normalized"][1] = 0;
             protected_hand.receive(m, now + 1, session);
-            check(!protected_hand.fresh(now + 1) && !protected_hand.complete(now + 1),
-                  "valid measurements bypassed latched hand protection");
+            check(protected_hand.fresh(now + 1) && !protected_hand.complete(now + 1),
+                  "historical hand error invalidated measurements or bypassed actual opening");
             m = feedback(cmd, now + 2, 2);
-            m.body["hold_control_error"] = "";
+            m.body["hold_control_error"] = "left[0]: device error 4";
             protected_hand.receive(m, now + 2, session);
-            check(protected_hand.complete(now + 2), "cleared hand protection still blocks feedback");
+            check(protected_hand.complete(now + 2), "latched historical error blocked recovered opening");
+            check(protected_hand.body()["hold_control_error"] == "left[0]: device error 4",
+                  "historical device diagnostics were discarded");
         }
         {
             auto monitored = create();
