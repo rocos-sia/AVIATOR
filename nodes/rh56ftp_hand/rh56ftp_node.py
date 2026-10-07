@@ -284,6 +284,9 @@ class DiagnosticLog:
                                ("held_raw", "保持位置"), ("hold_speed_raw", "保持速度"),
                                ("hold_force_raw", "保持力阈值")):
                 add(label, fields.get(key))
+            reasons = {"position_error": "持续位置偏差", "position_stable": "位置稳定"}
+            add("保持原因", reasons.get(fields.get("hold_reason")))
+            add("稳定观察窗口(ms)", fields.get("stable_window_ms"))
         elif event == "device_error":
             if "command_valid" in fields:
                 add("控制状态", "有有效指令" if fields["command_valid"] else "无有效指令")
@@ -415,6 +418,9 @@ class ClosingHold:
     held_raw: int | None = None
     close_since_us: int = 0
     residual_direction: int = 0
+    stability_samples: tuple[tuple[int, int], ...] = ()
+    held_at_target: bool = False
+    hold_reason: str = ""
     phase: str = "tracking"
 
 
@@ -837,14 +843,17 @@ class Rh56FtpNode:
             for index in range(6):
                 target = requested[side][index]
                 channel = replace(self.closing_holds[side][index])
-                # Rotation can be blocked in either direction. Release only when
-                # the target crosses the recorded stop position away from that direction.
-                release_direction = channel.residual_direction if index == 0 else 1
+                target_changed = target != channel.requested_raw
+                # A reached/stable target accepts new motion in either direction.
+                # A blocked channel only accepts motion away from its stop position.
                 if (now < channel.last_command_us or
                         now - channel.last_command_us >= self.command_timeout_us or
                         (channel.held_raw is not None and
-                         release_direction * (target - channel.held_raw) > 0)):
+                         ((channel.held_at_target and target_changed) or
+                          channel.residual_direction * (target - channel.held_raw) > 0))):
                     channel = ClosingHold(target_since_us=now, feedback_errors=snapshot.errors)
+                if target_changed:
+                    channel.stability_samples = ()
                 channel.requested_raw = target
                 channel.last_command_us = now
                 # Further movement into the blocked direction cannot release a hold.
@@ -852,6 +861,7 @@ class Rh56FtpNode:
                     effective[side][index] = -1
                 elif not fresh:
                     channel.close_since_us = channel.last_sample_us = 0
+                    channel.stability_samples = ()
                 else:
                     stamp = snapshot.sample_mono_us
                     position = actual[index]
@@ -859,20 +869,35 @@ class Rh56FtpNode:
                             stamp < channel.last_sample_us or
                             (channel.last_sample_us and stamp - channel.last_sample_us >= self.feedback_timeout_us)):
                         channel.close_since_us = 0
+                        channel.stability_samples = ()
                     channel.feedback_errors = snapshot.errors
                     residual = position - target
-                    direction = (1 if residual > 0 else -1) if index == 0 else 1
+                    direction = 1 if residual >= 0 else -1
                     if direction != channel.residual_direction:
                         channel.close_since_us = 0
                     channel.residual_direction = direction
-                    if direction * residual <= self.closing_motion_raw:
-                        # Reached target (or opening a bend) breaks continuity.
+                    if abs(residual) <= self.closing_motion_raw:
                         channel.close_since_us = 0
-                    elif stamp >= channel.target_since_us and stamp != channel.last_sample_us:
-                        if not channel.close_since_us:
+                    if stamp >= channel.target_since_us and stamp != channel.last_sample_us:
+                        if abs(residual) > self.closing_motion_raw and not channel.close_since_us:
                             channel.close_since_us = stamp
-                        if stamp - channel.close_since_us >= self.closing_hold_us:
+                        # Keep the full observation window, including its boundary
+                        # sample. Small steps must not hide slow, continuing motion.
+                        samples = channel.stability_samples + ((stamp, position),)
+                        cutoff = stamp - self.closing_hold_us
+                        first = 0
+                        while first + 1 < len(samples) and samples[first + 1][0] <= cutoff:
+                            first += 1
+                        channel.stability_samples = samples[first:]
+                        positions = [value for _, value in channel.stability_samples]
+                        stable = (stamp - channel.stability_samples[0][0] >= self.closing_hold_us and
+                                  max(positions) - min(positions) < self.closing_motion_raw)
+                        residual_held = (channel.close_since_us != 0 and
+                                         stamp - channel.close_since_us >= self.closing_hold_us)
+                        if residual_held or stable:
                             channel.held_raw = position
+                            channel.held_at_target = abs(residual) <= self.closing_motion_raw
+                            channel.hold_reason = "position_error" if residual_held else "position_stable"
                             channel.phase = "holding"
                             effective[side][index] = -1
                     channel.last_sample_us = stamp
@@ -894,6 +919,10 @@ class Rh56FtpNode:
             "phase": channel.phase, "requested_raw": requested_raw, "actual_raw": actual,
             "position_error_raw": actual - requested_raw if actual is not None and requested_raw is not None else None,
             "held_raw": channel.held_raw,
+            "hold_reason": channel.hold_reason,
+            "held_at_target": channel.held_at_target,
+            "stable_window_ms": (age_ms(now, channel.stability_samples[0][0])
+                                 if channel.stability_samples else None),
             "hold_drift_raw": actual - channel.held_raw if actual is not None and channel.held_raw is not None else None,
             "applied_raw": self._angle_applied.get(side, [None] * 6)[index],
             "current_raw": value("current"), "current_register_raw": value("current_register_raw"),
@@ -1427,9 +1456,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hold-force", type=int, default=None,
                         help="保持力阈值设定，0..3000（默认 100）")
     parser.add_argument("--closing-hold-ms", type=int, default=10000,
-                        help="闭合位置误差连续超过阈值的观察时间（默认 10000 ms）")
+                        help="持续位置偏差及位置稳定的观察时间（默认 10000 ms）")
     parser.add_argument("--threshold", "--closing-motion-raw", dest="closing_motion_raw", type=int, default=None,
-                        help="握紧位置误差阈值，寄存器刻度（默认 10，范围 0..999）")
+                        help="位置偏差及稳定变化范围阈值，寄存器刻度（默认 10，范围 0..999）")
     parser.add_argument("--diagnostic-interval-s", type=float, default=1.0,
                         help="JSON 模式的异常详情汇总间隔秒数（默认 1；0 关闭汇总）")
     parser.add_argument("--log-format", choices=("text", "json"), default="text",

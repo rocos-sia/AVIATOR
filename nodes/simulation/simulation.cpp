@@ -172,11 +172,12 @@ bool Simulation::handCommand(const aviator::Message& message, std::uint64_t now,
                 auto& joint = hands_[side][j];
                 auto& hold = closing_holds_[side][j];
                 const int requested = static_cast<int>(std::lround(targets[side][j] * 1000));
-                const bool release = j == 0
-                    ? hold.held >= 0 && hold.residual_direction * (requested - hold.held) > 0
-                    : hold.requested != requested;
+                const bool changed = hold.requested != requested;
+                const bool release = hold.held >= 0 &&
+                    ((hold.held_at_target && changed) || hold.residual_direction * (requested - hold.held) > 0);
                 if (!hand_valid_ || release || now < hold.last_command || now - hold.last_command >= 100000)
                     hold = {};
+                if (changed) hold.samples.clear();
                 hold.requested = hand_valid_ ? requested : -1;
                 hold.last_command = now;
                 const double effective = hold.held >= 0 ? hold.held / 1000.0 : targets[side][j];
@@ -198,27 +199,28 @@ void Simulation::applyHands(std::uint64_t now) {
     for (int side = 0; side < 2; ++side) for (int channel = 0; channel < 6; ++channel) {
         auto& j = hands_[side][channel];
         auto& hold = closing_holds_[side][channel];
-        // Simulator uses a five-second stable-position window. Rotation qualifies
-        // in either direction, while bending channels only qualify when closing.
+        // Same ten-second residual OR stable-position policy as RH56FTP defaults.
         if (hand_valid_ && hold.held < 0) {
             const int actual = static_cast<int>(std::lround(1000 * std::clamp(
                 (j.high - data()->qpos[j.q]) / (j.high - j.low), 0.0, 1.0)));
             const int residual = actual - hold.requested;
-            const int direction = channel == 0 && residual < 0 ? -1 : 1;
-            if (direction != hold.residual_direction) hold.samples.clear();
+            const int direction = residual < 0 ? -1 : 1;
+            if (direction != hold.residual_direction) hold.residual_since = 0;
             hold.residual_direction = direction;
-            if (direction * residual <= 10) hold.samples.clear();
-            else if (hold.samples.empty() || now - hold.samples.back().first >= 10000) {
+            if (std::abs(residual) <= 10) hold.residual_since = 0;
+            else if (!hold.residual_since) hold.residual_since = now;
+            if (hold.samples.empty() || now - hold.samples.back().first >= 10000) {
                 hold.samples.emplace_back(now, actual);
-                while (hold.samples.size() > 1 && now - hold.samples[1].first >= 5000000)
+                while (hold.samples.size() > 1 && now - hold.samples[1].first >= 10000000)
                     hold.samples.pop_front();
-                if (now - hold.samples.front().first >= 5000000) {
-                    int low = actual, high = actual;
-                    for (const auto& sample : hold.samples) { low = std::min(low, sample.second); high = std::max(high, sample.second); }
-                    if (high - low <= 10) {
-                        hold.held = actual;
-                        j.target = j.low + (1 - actual / 1000.0) * (j.high - j.low);
-                    }
+                int low = actual, high = actual;
+                for (const auto& sample : hold.samples) { low = std::min(low, sample.second); high = std::max(high, sample.second); }
+                const bool stable = now - hold.samples.front().first >= 10000000 && high - low < 10;
+                const bool residual_held = hold.residual_since && now - hold.residual_since >= 10000000;
+                if (stable || residual_held) {
+                    hold.held = actual;
+                    hold.held_at_target = std::abs(residual) <= 10;
+                    j.target = j.low + (1 - actual / 1000.0) * (j.high - j.low);
                 }
             }
         }

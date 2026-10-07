@@ -48,10 +48,11 @@ AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
   与 RH56FTP 相同，首次合法命令绑定发布者/epoch/origin，反馈携带
   `accepted_command`（包含原始采样时间）、`command_valid`、`feedback_only`
   和各侧实际驱动位置。非法消息不刷新授权或 ACK；`valid=false` 或 100 ms
-  超时使双手回安全张开目标。弯曲通道持续闭合且实测位置在五秒内变化不超过
-  10 个 raw 单位时冻结目标；拇指旋转双向适用，偏差换向重新计时，保持后仅目标越过
-  停止位置反向离开时恢复运动。分别回显 requested/commanded/closing_hold。
-  仿真仍使用五秒位置稳定窗口；RH56FTP 真机节点使用可配置的持续位置偏差窗口（默认十秒）。
+  超时使双手回安全张开目标。六个通道使用与 RH56FTP 默认参数一致的保持判据：
+  实际位置与目标的绝对偏差连续十秒大于 10 个 raw 单位，或完整十秒窗口内
+  位置最大值减最小值小于 10 个 raw 单位，满足任一条件即冻结目标。
+  到位保持后目标变化恢复运动；受阻保持后仅目标越过停止位置反向离开时恢复运动。
+  分别回显 requested/commanded/closing_hold。
   手部没有独立 RPC，ACK 通过 `hand.state` 返回。
 - 手部位置来自实际积分关节，按 0..1000 量化，不以目标冒充反馈；
   力、电流、温度等硬件寄存器不可用时返回空数组，`grasp_verified=false`。
