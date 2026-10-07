@@ -172,13 +172,14 @@ int main(int argc, char** argv) {
                 catch (const std::exception& e) { rejected = std::string(e.what()).find(why) != std::string::npos; }
                 check(rejected, "obsolete/revoked/stopped wait not cancelled");
             };
-            expect(first, "superseded");
+            check(!link.wait(first), "superseded hand wait claimed completion");
             link.allow(false);
             expect(second, "revoked");
             link.allow(true);
             auto third = link.request(false);
             link.stop();
-            expect(third, "stopped");
+            check(!link.wait(third), "stopped hand worker claimed completion");
+            check(link.request(false) == 0, "stopped hand worker accepted target");
         }
         auto sim = HandControl(); sim.configure(path); check(sim.enabled(), "hand control must not depend on device implementation");
         std::ofstream(path) << "core_hand: {enabled: true, close: null}\n";

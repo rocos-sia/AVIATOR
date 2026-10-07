@@ -151,8 +151,7 @@ if $SIMULATION; then
 else
     start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config "$SYSTEM_CONFIG"
     start rh56ftp env PATH="$(dirname "$HAND_PYTHON"):$PATH" "$HAND_PYTHON" \
-        nodes/rh56ftp_hand/rh56ftp_node.py --right-host 192.168.21.210 \
-        --left-host 192.168.11.210 --config config/rh56ftp_hand.yaml
+        nodes/rh56ftp_hand/rh56ftp_node.py --config config/rh56ftp_hand.yaml
 fi
 start gateway "$AVIATOR_BIN/flight_gateway"
 start core "$AVIATOR_BIN/aviator_core_managed" --config "$SYSTEM_CONFIG"

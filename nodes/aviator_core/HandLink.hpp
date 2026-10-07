@@ -27,11 +27,12 @@ public:
     uint64_t request(bool close);
     uint64_t beginApproach();
     void approachProgress(uint64_t version, const std::array<double, 2>&);
-    void wait(uint64_t version, const std::atomic<bool>* cancel = nullptr);
+    bool wait(uint64_t version, const std::atomic<bool>* cancel = nullptr);
     void fail(const std::string&);
     std::string fault() const;
     Status status() const;
 private:
+    void warnLocked(const std::string& reason); // Hand failures are advisory to Core; mutex_ held.
     void io(zmq::context_t&, const MotionConfig&, const std::string& session,
             const std::atomic<uint64_t>& heartbeat);
     HandControl control_;
@@ -39,6 +40,8 @@ private:
     std::condition_variable changed_;
     bool allowed_ = false, stopping_ = true, failed_ = false;
     uint64_t version_ = 0;
+    uint64_t warning_at_ = 0;
+    std::string last_warning_;
     std::thread thread_;
 };
 } // namespace aviator

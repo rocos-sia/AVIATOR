@@ -59,10 +59,6 @@ DeviceState RemoteLink::snapshot(bool& fresh, bool* status_fresh) const {
     if (protective_stop_.valid() && protective_stop_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
         result.stopping = true;
     if (!error_.empty()) { result.fault = true; result.error = error_; }
-    if (hand_.enabled()) {
-        const auto reason = hand_.fault();
-        if (!reason.empty()) { result.fault = true; result.error = reason; }
-    }
     return result;
 }
 void RemoteLink::allowMotion(bool allowed) {
@@ -119,7 +115,7 @@ void RemoteLink::enable(Side) {
         if (enabled_)
             return;
     }
-    handTarget(false); // Open and confirm actual position before any arm approach.
+    handTarget(false); // Attempt opening; hand warnings do not block arm enable.
     auto response = operation("enable");
     std::unique_lock<std::mutex> lock(mutex_);
     if (!motion_allowed_) throw std::runtime_error("Core motion authorization revoked during enable");
@@ -164,10 +160,6 @@ GraspState RemoteLink::graspState() const {
                      monotonic_us() - sample_ >= config_.timeout_us)) {
         g.fault = 1;
         g.fault_reason = "arm.state feedback expired";
-    }
-    if (hand_.enabled()) {
-        const auto reason = hand_.fault();
-        if (!reason.empty()) { g.fault = 1; g.fault_reason = reason; }
     }
     g.angle = state_.angle;
     g.displacement = state_.displacement;
@@ -227,7 +219,7 @@ void RemoteLink::setJointPositions(const Joints &) {
 void RemoteLink::beginStream(const std::vector<JointFrame> &frames) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!motion_allowed_) throw MotionCancelled();
-    if (!enabled_ || state_.fault || !error_.empty() || !hand_.fault().empty() || frames.size() < 61 || frames.size() > 251)
+    if (!enabled_ || state_.fault || !error_.empty() || frames.size() < 61 || frames.size() > 251)
         throw std::runtime_error("Servo requires a healthy device and 60..250 ms prefill");
     for (size_t j = 0; j < 14; ++j)
         if (std::abs(frames.front().q[j] - state_.target[j]) > 1e-7)
@@ -243,7 +235,7 @@ void RemoteLink::beginStream(const std::vector<JointFrame> &frames) {
 void RemoteLink::appendStream(const std::vector<JointFrame> &frames) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!motion_allowed_) throw MotionCancelled();
-    if (!streaming_ || stream_finished_ || state_.fault || !error_.empty() || !hand_.fault().empty())
+    if (!streaming_ || stream_finished_ || state_.fault || !error_.empty())
         throw std::runtime_error("Servo stream unavailable: " + error_ + state_.error);
     if (frames.size() < 2 || stream_.size() + frames.size() > 251)
         throw std::runtime_error("Servo queue exceeds 250 ms budget");
@@ -261,7 +253,7 @@ size_t RemoteLink::streamAhead() const {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto now = monotonic_us();
     if (!motion_allowed_) throw MotionCancelled();
-    if (!streaming_ || state_.fault || !error_.empty() || !hand_.fault().empty() || !feedback_valid_ ||
+    if (!streaming_ || state_.fault || !error_.empty() || !feedback_valid_ ||
         now - received_ >= config_.timeout_us || now - sample_ >= config_.timeout_us)
         throw std::runtime_error("Servo feedback unavailable: receive_age_us=" + std::to_string(now - received_) +
                                  " sample_age_us=" + std::to_string(now - sample_) + " " + error_ + state_.error);
@@ -280,8 +272,8 @@ void RemoteLink::finishStream() {
     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while (state_.id != trajectory_id_ || state_.cursor < stream_first_ + stream_.size() - 1) {
         if (!motion_allowed_) throw MotionCancelled();
-        if (state_.fault || !error_.empty() || !hand_.fault().empty())
-            throw std::runtime_error("Servo drain failed: " + error_ + state_.error + hand_.fault());
+        if (state_.fault || !error_.empty())
+            throw std::runtime_error("Servo drain failed: " + error_ + state_.error);
         if (std::chrono::steady_clock::now() > until) throw std::runtime_error("Servo drain timeout");
         changed_.wait_for(lock, std::chrono::milliseconds(5));
     }
@@ -295,7 +287,7 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
     if (data->size() % 2 == 0)
         data->push_back(data->back());
     std::unique_lock<std::mutex> lock(mutex_);
-    if (!motion_allowed_ || !enabled_ || state_.fault || !hand_.fault().empty())
+    if (!motion_allowed_ || !enabled_ || state_.fault)
         throw std::runtime_error("Manipulator is not enabled/healthy");
     const bool synchronized = frames.front().hand_closure[0] >= 0;
     uint64_t hand_version = 0;
@@ -313,7 +305,6 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
     const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(data->size() * 4 + 10000);
     while (true) {
         if (!motion_allowed_) throw std::runtime_error("Core motion authorization revoked");
-        if (const auto reason = hand_.fault(); !reason.empty()) throw std::runtime_error(reason);
         if (cancel) {
             lock.unlock();
             stopTrajectory();
@@ -336,10 +327,10 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
     }
     if (hand_version) {
         lock.unlock();
-        hand_.wait(hand_version, &cancel); // Endpoint CAN-write ACK; fingers were already closing during approach.
+        const bool hand_complete = hand_.wait(hand_version, &cancel); // ACK only, not physical grasp evidence.
         lock.lock();
         if (!motion_allowed_ || cancel) throw std::runtime_error("Motion stopped during hand completion");
-        synchronized_hand_version_ = hand_version;
+        synchronized_hand_version_ = hand_complete ? hand_version : 0;
     }
 }
 void RemoteLink::stopTrajectory() {
@@ -457,15 +448,6 @@ void RemoteLink::io() {
                 changed_.notify_all();
             }
             const auto now = monotonic_us();
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                const auto reason = hand_.fault();
-                if (hand_.enabled() && !reason.empty()) {
-                    // Let the independent arm watchdog stop motion; never stream through hand loss.
-                    publishing_ = false;
-                    changed_.notify_all();
-                }
-            }
             if (now >= next) {
                 next = next && now - next < config_.period_us ? next + config_.period_us
                                                               : now + config_.period_us;
@@ -519,7 +501,7 @@ void RemoteLink::io() {
                     // Serialize the final publication with cancellation. Once allowMotion(false)
                     // returns, no previously prepared ordinary window can be published.
                     std::lock_guard<std::mutex> lock(mutex_);
-                    if (!motion_allowed_ || !hand_.fault().empty()) continue;
+                    if (!motion_allowed_) continue;
                     const auto publish_time = monotonic_us();
                     auto m = motionMessage(Topic::arm_command, "aviator_core", session_, w.sequence,
                                            publish_time >= w.origin_sample &&
@@ -580,7 +562,6 @@ void RemoteLink::io() {
                             {"valid", hand.fresh}, {"age_ms", hand.age_ms}, {"sequence", hand.sequence}};
                         m.body["hand_control"] = {{"enabled", true}, {"error", hand.error},
                                                    {"target_version", hand.target_version}};
-                        if (!hand.error.empty() && system_body_.is_null()) m.header.valid = false;
                     }
                     m.body["software_lock"] = state_.locked;
                     m.body["wheel_reference"] = {{"angle", state_.angle},

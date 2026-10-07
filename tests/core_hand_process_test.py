@@ -39,6 +39,10 @@ core_hand:
     left: [0.9, 0.8, 0.7, 0.6, 0.5, 0.4]
     right: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
 ''')
+        if mode == 'no_close':
+            config.write_text(config.read_text().split('  close:')[0])
+        if mode == 'bad_config':
+            config.write_text(config.read_text().replace('completion_timeout_ms: 700', 'completion_timeout_ms: 1'))
         ctx = zmq.Context()
         pub, sub, rep = [ctx.socket(t) for t in (zmq.PUB, zmq.SUB, zmq.REP)]
         pub.connect(endpoints[0])
@@ -87,16 +91,19 @@ core_hand:
                                       q=[0]*14, target=[0]*14, speed=[1]*14)
                     elif op == 'authorize': result = dict(control_epoch=str(uuid.uuid4()))
                     elif op == 'enable':
-                        assert actual == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]), 'arm enabled before actual opening'
+                        if mode not in ('missing', 'readonly', 'foreign', 'invalid', 'stale', 'stuck_open', 'bad_config'):
+                            assert actual == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]), 'arm enabled before actual opening'
                         enabled = True
                         result = dict(target=[0]*14)
                     elif op == 'disable': enabled = False
                     elif op == 'lock':
-                        assert close_seen, 'software lock before physical command'
+                        if mode in ('normal', 'isolation', 'synchronized', 'dropped', 'revoke', 'heartbeat', 'arm_failure'):
+                            assert close_seen, 'software lock before physical command'
                         locked = True
                         locked_at = now
                     elif op == 'unlock':
-                        assert actual == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]), 'software unlock before actual opening'
+                        if mode in ('normal', 'isolation', 'synchronized', 'no_close'):
+                            assert actual == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]), 'software unlock before actual opening'
                         locked = False
                     elif op == 'stop': result = dict(target=[0]*14)
                     else: raise AssertionError(op)
@@ -107,7 +114,7 @@ core_hand:
                     message = json.loads(data)
                     if topic == b'arm.command':
                         last_arm = now
-                        if mode == 'synchronized' and message['total_ticks'] == 1000:
+                        if mode in ('synchronized', 'synchronized_drop', 'no_close') and message['total_ticks'] == 1000:
                             if not trajectory_at:
                                 trajectory_at = now
                                 trajectory_id = message['trajectory_id']
@@ -131,7 +138,7 @@ core_hand:
                     if not first_open or incoming != targets:
                         last_change = now
                     targets = incoming
-                    if mode == 'synchronized' and trajectory_at and not unlock_seen:
+                    if mode in ('synchronized', 'synchronized_drop') and trajectory_at and not unlock_seen:
                         if targets == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]) and close_seen:
                             unlock_seen = True
                         else:
@@ -153,7 +160,7 @@ core_hand:
                         if close_seen: unlock_seen = True
                         first_open = True
                     ack = {key: message[key] for key in ack}
-                if first_open and now - last_change > .15:
+                if first_open and now - last_change > .15 and mode != 'stuck_open':
                     actual = {key: list(value) for key, value in targets.items()}
                 if now >= next_state:
                     next_state = now + .02
@@ -176,7 +183,8 @@ core_hand:
                     synthetic = header('HandState', 'manipulator', server)
                     synthetic['hands'] = dict(left=dict(position_source='synthetic'), right={})
                     pub.send_multipart([b'hand.state', json.dumps(synthetic).encode()])
-                    if mode != 'missing' and not (mode == 'dropped' and locked_at and now - locked_at > .1):
+                    if (mode != 'missing' and not (mode == 'dropped' and locked_at and now - locked_at > .1)
+                            and not (mode == 'synchronized_drop' and trajectory_at and now - trajectory_at > .1)):
                         m = header('HandState', 'inspire_hand', node)
                         owned = dict(ack)
                         if mode == 'foreign': owned.update(publisher_id='manual', session_id=str(uuid.uuid4()))
@@ -185,6 +193,12 @@ core_hand:
                                  hands={side: dict(valid=True, sample_mono_us=m['sample_mono_us'],
                                                   drive_position_normalized=actual[side],
                                                   position_source='angle_act_register') for side in targets})
+                        if mode == 'invalid':
+                            m['valid'] = False
+                            for hand in m['hands'].values():
+                                hand.update(valid=False, status='ERROR', error_code=5)
+                        if mode == 'stale':
+                            m['sample_mono_us'] -= 1000000
                         pub.send_multipart([b'hand.state', json.dumps(m).encode()])
                 time.sleep(.002)
             if child.poll() is None:
@@ -212,11 +226,19 @@ core_hand:
             elif mode in ('dropped', 'revoke', 'heartbeat', 'arm_failure'):
                 assert close_seen and not unlock_seen
                 assert time.monotonic() - command_times[-1] > .25, 'hand target kept alive after fault/revocation'
-                assert time.monotonic() - last_arm > .25, 'arm windows continued after fault/revocation'
+                if mode in ('dropped', 'heartbeat'):
+                    assert time.monotonic() - last_arm < .15, 'hand warning stopped arm publication'
+                    assert '[warning]' in output and 'Core hand warning:' in output, output
+                else:
+                    assert time.monotonic() - last_arm > .25, 'arm windows continued after arm fault/revocation'
                 if mode == 'revoke':
                     assert operations.count('stop') == 1, 'idle revocation did not request device-local stop'
             else:
-                assert 'enable' not in operations and 'lock' not in operations, operations
+                assert operations == ['describe','authorize','enable','lock','unlock','disable'], operations
+                assert '[warning]' in output and 'Core hand warning:' in output, output
+                assert 'Core FSM fault' not in output, output
+                if mode in ('synchronized_drop', 'no_close'):
+                    assert cursor == 1000, 'hand warning interrupted arm trajectory'
             print(mode + ': ' + output.strip(), flush=True)
         finally:
             if child and child.poll() is None: child.kill(); child.wait()
@@ -226,5 +248,5 @@ core_hand:
 
 
 if __name__ == '__main__':
-    for scenario in ('synchronized', 'normal', 'missing', 'readonly', 'foreign', 'dropped', 'revoke', 'isolation', 'heartbeat', 'arm_failure', 'no_arm'):
+    for scenario in ('synchronized', 'normal', 'missing', 'readonly', 'foreign', 'invalid', 'stale', 'stuck_open', 'bad_config', 'no_close', 'synchronized_drop', 'dropped', 'revoke', 'isolation', 'heartbeat', 'arm_failure', 'no_arm'):
         run(*sys.argv[1:], scenario)

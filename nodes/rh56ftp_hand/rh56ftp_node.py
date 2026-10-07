@@ -26,8 +26,7 @@ import threading
 import time
 import os
 import traceback
-from collections import deque
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -217,15 +216,9 @@ class DiagnosticLog:
             "feedback_recovered": "反馈已恢复",
             "modbus_connect_failed": "设备连接失败", "feedback_read_failed": "读取反馈失败",
             "modbus_write_failed": "写入设备失败", "feedback_reader_failed": "反馈线程退出",
-            "hold_control_failed": "握持保护触发，已锁存故障并请求全部已连接通道停止",
-            "hold_feedback_unavailable": "反馈不可用，暂停握持调节",
-            "load_feedback_out_of_range": "负载反馈超出手册范围，仅记录警告",
-            "hold_monitor_started": "弯曲通道已进入保持监测",
-            "hold_monitor_stopped": "弯曲通道执行运动，暂停长期负载监测",
-            "holding_position_drift": "保持位置发生偏移",
-            "release_step_incomplete": "减载单步未到位，停止后观察负载，仍超限则在预算内重试",
-            "release_hand_stopped": "减载步骤结束，已发送本手六路保持当前位置（-1）",
-            "fault_safe_pose_applied": "握持故障仍锁存，已发送安全张开目标（拇指侧摆 500，其余五路 1000）",
+            "hold_control_failed": "握持保护触发，已锁存故障，按各手故障范围执行保护",
+            "fault_safe_pose_applied": "已确认本手同轮六路故障，已发送安全张开目标（拇指侧摆 500，其余五路 1000）",
+            "fault_hold_applied": "故障保护保持，未满足本手同轮六路故障条件，已请求六路停止（-1）",
             "device_error": "设备故障", "reject command": "指令被拒绝",
             "command_ignored": "仅反馈模式，忽略运动指令",
             "command_watchdog_expired": "指令超时，准备执行安全姿态",
@@ -239,7 +232,7 @@ class DiagnosticLog:
             "invalid_wire_message": "收到无效总线消息",
         }
         phases = {"tracking": "执行运动指令", "holding": "保持当前位置",
-            "moving": "负载过高，开始减载", "settling": "减载停止，等待稳定", "failed": "故障"}
+            "failed": "故障"}
         sides = {"left": "左手", "right": "右手"}
         channels = dict(zip(CHANNEL_NAMES, ("拇指侧摆", "拇指弯曲", "食指", "中指", "无名指", "小指")))
         title = phases.get(fields.get("phase"), "握持阶段变化") if event == "hold_phase_changed" else titles.get(event, event)
@@ -265,39 +258,13 @@ class DiagnosticLog:
             add("模式", fields.get("configured_mode"))
             add("速度", fields.get("speed_raw"))
             add("力指令", fields.get("force_raw"))
-            policy = fields.get("hold_control", {})
-            add("自动减载", "开启" if policy.get("enabled") else "关闭")
-            if policy.get("enabled"):
-                for key, label in (("current_limit", "电流上限"),
-                                   ("min_force", "最低保持力"), ("temperature_limit", "温度上限"),
-                                   ("threshold", "位置偏移警告阈值")):
-                    add(label, policy.get(key))
+            add("握紧位置误差阈值", fields.get("closing_motion_raw"))
+            add("持续时间(ms)", fields.get("closing_hold_ms"))
             parts.append("数值为寄存器刻度；配置不代表设备读回")
-        elif event == "load_feedback_out_of_range":
-            add("字段", {"current": "电流", "force": "受力", "temperature": "温度"}.get(
-                fields.get("measurement_field"), fields.get("measurement_field")))
-            add("原始值", fields.get("raw_value"))
-            add("手册范围", f"[{fields.get('range_min')},{fields.get('range_max')}]")
-            add("阶段", phases.get(fields.get("phase"), fields.get("phase")))
-            for key, label in (("actual_raw", "当前位置"), ("requested_raw", "请求位置"),
-                               ("applied_raw", "最近成功写入目标"), ("current_raw", "电流"),
-                               ("force_raw", "力"), ("temperature_c", "温度")):
-                add(label, fields.get(key))
-        elif event == "holding_position_drift":
-            add("位置偏移警告阈值", fields.get("limits", {}).get("threshold"))
-            for key, label in (("held_raw", "记录保持位置"), ("actual_raw", "当前位置"),
-                               ("hold_drift_raw", "位置偏移"), ("applied_raw", "最近成功写入目标"),
-                               ("current_raw", "电流"), ("force_raw", "力"), ("steps", "减载步数")):
-                add(label, fields.get(key))
         elif event == "hold_phase_changed":
-            for key, label in (("actual_raw", "当前位置"), ("release_target_raw", "减载目标"),
-                               ("steps", "减载步数")):
+            for key, label in (("actual_raw", "当前位置"), ("requested_raw", "请求位置"),
+                               ("threshold", "位置误差阈值"), ("closing_age_ms", "偏差持续(ms)")):
                 add(label, fields.get(key))
-            if fields.get("phase") == "moving":
-                for key, label in (("current_raw", "电流"), ("force_raw", "力")):
-                    add(label, fields.get(key))
-                for key, label in (("current_limit", "电流上限"), ("temperature_limit", "温度上限")):
-                    add(label, fields.get("limits", {}).get(key))
         elif event == "device_error":
             if "command_valid" in fields:
                 add("控制状态", "有有效指令" if fields["command_valid"] else "无有效指令")
@@ -319,13 +286,7 @@ class DiagnosticLog:
                 reason = (fields.get("last_error") or fields.get("invalid_reason") or
                           ("设备报告故障" if fields.get("status") == "ERROR" else "反馈读取或更新延迟"))
             translations = {
-                "temperature limit reached": "温度达到上限", "invalid load feedback": "负载反馈超出寄存器范围",
-                "invalid position feedback": "位置反馈无效", "insufficient holding force": "保持力持续不足",
-                "closing timeout without stable contact": "闭合超时，未形成稳定接触",
-                "release motion timeout": "减载运动超时", "adjustment time budget exhausted": "累计调节超时",
-                "release motion outside expected range": "减载位移方向异常或越过目标范围",
-                "release step/distance budget exhausted": "减载步数或距离达到上限",
-                "persistent load outside adaptive hold": "不可自动减载的通道持续过载",
+                "invalid position feedback": "位置反馈无效",
                 "missing/stale/future feedback": "反馈缺失、过期或时间戳超前",
                 "no_feedback": "尚未收到反馈", "feedback_timestamp_expired_or_future": "反馈过期或时间戳超前",
                 "angle_register_out_of_range": "位置寄存器超出范围", "feedback_read_error": "反馈读取失败",
@@ -348,13 +309,11 @@ class DiagnosticLog:
                 ("held_raw", "记录保持位置"), ("hold_drift_raw", "位置偏移"),
                 ("applied_raw", "最近成功写入目标"),
                 ("target_raw", "写入目标"), ("previous_target_raw", "上次写入目标"),
-                ("release_target_raw", "减载目标"), ("steps", "减载步数"),
                 ("current_raw", "电流"), ("current_register_raw", "电流原始字"),
                 ("force_raw", "力"), ("temperature_c", "温度"), ("error_code", "设备故障码"),
-                ("overload_age_ms", "过载持续(ms)"), ("phase_age_ms", "阶段持续(ms)"),
-                ("closing_age_ms", "闭合持续(ms)"), ("low_force_age_ms", "力不足持续(ms)"),
+                ("closing_age_ms", "偏差持续(ms)"), ("threshold", "位置误差阈值"),
                 ("last_write_error", "最近写入错误"),
-                ("rotation_error_raw", "侧摆位置偏差（不阻塞弯曲减载）"),
+                ("fault_count", "本轮故障自由度数"), ("fault_channels", "本轮故障通道"),
             ):
                 value = fields.get(key)
                 if key == "phase":
@@ -363,10 +322,6 @@ class DiagnosticLog:
                 elif key == "role":
                     value = {"command": "指令", "feedback": "反馈"}.get(value, value)
                 add(label, value)
-            limits = fields.get("limits", {})
-            for key, label in (("current_limit", "电流上限"),
-                               ("min_force", "最低保持力"), ("temperature_limit", "温度上限")):
-                add(label, limits.get(key))
         if fields.get("host"):
             add("设备", f"{fields['host']}:{fields.get('port')}")
         if fields.get("suppressed"):
@@ -397,9 +352,8 @@ class DiagnosticLog:
                 record["suppressed"] = suppressed
             emit = (Logger.error if event.endswith("_failed") or event == "device_error" or
                     (event == "hold_phase_changed" and fields.get("phase") == "failed") else
-                    Logger.info if event in ("health", "configuration", "feedback_recovered",
-                                            "hold_monitor_started", "hold_monitor_stopped", "release_hand_stopped") or
-                    (event == "hold_phase_changed" and fields.get("phase") != "moving") else Logger.warn)
+                    Logger.info if event in ("health", "configuration", "feedback_recovered", "hold_phase_changed")
+                    else Logger.warn)
             message = (json.dumps(record, ensure_ascii=False, allow_nan=False) if self.log_format == "json"
                        else self._text(event, reason, record))
             emit("rh56ftp_hand: " + message,
@@ -438,76 +392,9 @@ class ClosingHold:
     last_command_us: int = 0
     last_sample_us: int = 0
     feedback_errors: int = 0
-    samples: deque[tuple[int, int]] = field(default_factory=deque)
     held_raw: int | None = None
-    stop_requested_raw: int | None = None
     close_since_us: int = 0
     phase: str = "tracking"
-    monitor_sample_us: int = 0
-    overload_since_us: int = 0
-    low_force_since_us: int = 0
-    release_target: int | None = None
-    release_retry_target: int | None = None
-    release_from: int = 0
-    release_origin: int | None = None
-    steps: int = 0
-    adjust_started_us: int = 0
-    phase_started_us: int = 0
-
-
-@dataclass
-class HoldControl:
-    enabled: bool = False
-    current_limit: Any = 100
-    min_force: Any = 50
-    temperature_limit: Any = 50
-    threshold: int = 10
-    close_timeout_ms: int = 30000
-    overload_ms: int = 1000
-    recovery_ratio: float = .8
-    release_step_raw: int = 5
-    release_tolerance_raw: int = 2
-    max_release_raw: int = 30
-    max_steps: int = 6
-    move_timeout_ms: int = 2000
-    settle_ms: int = 2000
-    adjust_timeout_ms: int = 60000
-
-    @classmethod
-    def parse(cls, values: Any) -> "HoldControl":
-        if not isinstance(values, dict):
-            raise ValueError("hold_control must be a mapping")
-        unknown = set(values) - set(cls.__dataclass_fields__)
-        if unknown:
-            raise ValueError(f"unknown hold_control fields: {sorted(unknown, key=str)}; "
-                             "use current_limit, min_force, temperature_limit in raw register counts")
-        policy = cls(**values)
-        if type(policy.enabled) is not bool:
-            raise ValueError("hold_control.enabled must be boolean")
-        if type(policy.threshold) is not int or not 0 <= policy.threshold <= 1000:
-            raise ValueError("hold_control.threshold must be an integer in [0,1000]")
-        for name, maximum in (("current_limit", 2000),
-                              ("min_force", 3000), ("temperature_limit", 100)):
-            value = getattr(policy, name)
-            limits = value if isinstance(value, list) else [value] * 6
-            if len(limits) != 6 or any(type(v) is not int or not 0 <= v <= maximum for v in limits):
-                raise ValueError(f"hold_control.{name} requires a scalar or six integer register counts "
-                                 f"in [0,{maximum}]; got {value!r}")
-            setattr(policy, name, tuple(limits))
-        for name in ("close_timeout_ms", "overload_ms", "move_timeout_ms", "settle_ms", "adjust_timeout_ms",
-                     "release_step_raw", "max_release_raw", "max_steps"):
-            value = getattr(policy, name)
-            maximum = 3600000 if name.endswith("_ms") else 1000
-            if type(value) is not int or not 0 < value <= maximum:
-                raise ValueError(f"hold_control.{name} must be an integer in [1,{maximum}]")
-        if (type(policy.release_tolerance_raw) is not int or
-                not 0 <= policy.release_tolerance_raw < policy.release_step_raw or
-                policy.release_step_raw > policy.max_release_raw):
-            raise ValueError("hold_control requires tolerance < step <= max_release_raw")
-        if (type(policy.recovery_ratio) not in (int, float) or
-                not math.isfinite(policy.recovery_ratio) or not 0 < policy.recovery_ratio < 1):
-            raise ValueError("hold_control.recovery_ratio must be in (0,1)")
-        return policy
 
 
 @dataclass
@@ -569,8 +456,8 @@ class Rh56FtpNode:
                  session_id: str | None = None, read_links: dict[str, Any] | None = None,
                  speed: int = DEFAULT_SPEED, force: int = DEFAULT_FORCE,
                  diagnostic_interval_s: float = 1.0,
-                 closing_hold_ms: int = 5000, closing_motion_raw: int = 10,
-                 hold_control: dict[str, Any] | None = None, log_format: str = "text"):
+                 closing_hold_ms: int = 10000, closing_motion_raw: int = 10,
+                 log_format: str = "text"):
         if set(links) != set(SIDES) or not any(links.values()):
             raise ValueError("at least one left/right RH56FTP link is required")
         if command_timeout_ms <= 0 or feedback_timeout_ms <= 0:
@@ -603,10 +490,10 @@ class Rh56FtpNode:
         self.requested_targets: dict[str, list[float]] = {side: [] for side in SIDES}
         self.closing_hold_us = closing_hold_ms * 1000
         self.closing_motion_raw = closing_motion_raw
-        self.hold_control = HoldControl.parse(hold_control if hold_control is not None else {})
         self.hold_control_error = ""
+        self.fault_channels: dict[str, dict[int, str]] = {side: {} for side in SIDES}
+        self._fault_open_sides: set[str] = set()
         self.closing_holds = {side: [ClosingHold() for _ in range(6)] for side in SIDES}
-        self._hold_monitor_ready: dict[str, bool] = {}
         self.command_valid = False
         self.state_sequence = 0
         self._safe_applied = False
@@ -632,6 +519,8 @@ class Rh56FtpNode:
 
     def connect(self) -> None:
         self.hold_control_error = ""
+        self.fault_channels = {side: {} for side in SIDES}
+        self._fault_open_sides.clear()
         self._settings_applied.clear()
         self._angle_applied.clear()
         self._reset_closing_holds()
@@ -640,7 +529,6 @@ class Rh56FtpNode:
                        feedback_timeout_ms=self.feedback_timeout_us / 1000,
                        command_timeout_ms=self.command_timeout_us / 1000,
                        closing_hold_ms=self.closing_hold_us / 1000, closing_motion_raw=self.closing_motion_raw,
-                       hold_control=asdict(self.hold_control),
                        endpoints={side: {"host": getattr(link, "host", None), "port": getattr(link, "port", None)}
                                   for side, link in self.links.items() if link is not None})
         seen: set[int] = set()
@@ -793,8 +681,7 @@ class Rh56FtpNode:
                 self.diag.emit("modbus_write_slow", key=f"write_slow:{side}", side=side, phase=phase,
                                duration_ms=stats["duration_ms"], command_timeout_ms=self.command_timeout_us / 1000)
 
-    def _write_targets(self, raw_by_side: dict[str, list[int]], *,
-                       force_all_channels: set[str] | None = None) -> None:
+    def _write_targets(self, raw_by_side: dict[str, list[int]]) -> None:
         if self.feedback_only:
             return
         # Configure every connected hand before moving either hand. Cache
@@ -817,8 +704,7 @@ class Rh56FtpNode:
                 try:
                     targets = raw_by_side[side]
                     previous = self._angle_applied.get(side, [None] * 6)
-                    changed = (list(targets) if force_all_channels and side in force_all_channels else
-                               [value if value != old else None for value, old in zip(targets, previous)])
+                    changed = [value if value != old else None for value, old in zip(targets, previous)]
                     if any(value is not None for value in changed):
                         self._write_call(side, "angle", lambda: link.write_angle_set(canonical_to_rh(changed)),
                                          targets)
@@ -831,23 +717,77 @@ class Rh56FtpNode:
                     raise
         self.last_write_error = ""
 
-    def _safe_pose(self) -> None:
-        # Restore the all-open protective pose for watchdog, invalid commands,
-        # and shutdown, including after a latched holding fault.
-        self._reset_closing_holds()
-        raw = normalized_to_raw(list(DEFAULT_SAFE_POSE))
-        self._write_targets({side: raw for side in SIDES})
+    def _observe_faults(self, now: int, pending: dict[str, list[ClosingHold]] | None = None) -> None:
+        """Count independent channel faults from one fresh snapshot per hand, never failed phases."""
+        for side, link in self.links.items():
+            faults = {}
+            snapshot = self.snapshots[side]
+            if link is not None and snapshot.fresh(now, self.feedback_timeout_us) and not snapshot.error:
+                measured = self._canonical_state(snapshot.data)
+                for index in range(6):
+                    code = measured["error_codes"][index]
+                    actual = measured["drive_position_raw"][index]
+                    if code:
+                        faults[index] = f"device error {code}"
+                    elif not 0 <= actual <= 1000:
+                        faults[index] = "invalid position feedback"
+            self.fault_channels[side] = faults
+            if faults and not self.hold_control_error:
+                index = next(iter(faults))
+                self.hold_control_error = f"{side}[{index}]: {faults[index]}"
+                self._safe_applied = False
+                channel = (pending or self.closing_holds)[side][index]
+                self.diag.emit("hold_control_failed", throttle_us=0, reason=self.hold_control_error,
+                               **self._hold_context(side, index, channel, now, channel.requested_raw, snapshot),
+                               command=self.command_context(now))
+            if len(faults) == 6 and side not in self._fault_open_sides:
+                self._fault_open_sides.add(side)
+                self._safe_applied = False
         if self.hold_control_error:
-            self.diag.emit("fault_safe_pose_applied", reason=self.hold_control_error)
-        self.last_targets = {side: [value / 1000.0 for value in raw] for side in SIDES}
-        self.requested_targets = {side: [] for side in SIDES}
+            self._safe_required = True
+
+    def _fault_targets(self) -> dict[str, list[int]]:
+        return {side: normalized_to_raw(list(DEFAULT_SAFE_POSE)) if side in self._fault_open_sides else [-1] * 6
+                for side in SIDES}
+
+    def _report_fault_response(self) -> None:
+        for side, link in self.links.items():
+            if link is not None:
+                event = "fault_safe_pose_applied" if side in self._fault_open_sides else "fault_hold_applied"
+                self.diag.emit(event, key=f"{event}:{side}", side=side, reason=self.hold_control_error,
+                               fault_count=len(self.fault_channels[side]),
+                               fault_channels=list(self.fault_channels[side]))
+
+    def _safe_pose(self, *, force_open: bool = False, now: int | None = None) -> None:
+        now = monotonic_us() if now is None else now
+        if not force_open:
+            self._observe_faults(now)
+        feedback_unavailable = self.guard.authorized and any(
+            link is not None and (self.snapshots[side].error or
+                                  not self.snapshots[side].fresh(now, self.feedback_timeout_us))
+            for side, link in self.links.items())
+        fault_response = not force_open and (self.hold_control_error or feedback_unavailable or self.last_write_error)
+        if fault_response:
+            targets = self._fault_targets()
+            for channels in self.closing_holds.values():
+                for channel in channels:
+                    channel.phase = "failed"
+        else:
+            self._reset_closing_holds()
+            targets = {side: normalized_to_raw(list(DEFAULT_SAFE_POSE)) for side in SIDES}
+        self._write_targets(targets)
+        if fault_response:
+            self._report_fault_response()
+        self.last_targets = {side: [v / 1000.0 for v in raw] if -1 not in raw else []
+                             for side, raw in targets.items()}
+        if not fault_response:
+            self.requested_targets = {side: [] for side in SIDES}
         self.command_valid = False
         self._safe_applied = True
         self._safe_required = False
 
     def _reset_closing_holds(self) -> None:
         self.closing_holds = {side: [ClosingHold() for _ in range(6)] for side in SIDES}
-        self._hold_monitor_ready.clear()
 
     def _closing_targets(self, requested: dict[str, list[int]], now: int
                          ) -> tuple[dict[str, list[int]], dict[str, list[ClosingHold]]]:
@@ -858,66 +798,40 @@ class Rh56FtpNode:
             measured = self._canonical_state(snapshot.data) if snapshot.data is not None else None
             actual = measured["drive_position_raw"] if measured and measured["drive_position_normalized"] else None
             fresh = snapshot.fresh(now, self.feedback_timeout_us) and not snapshot.error and actual is not None
-            # Rotation is monitored, but never automatically unloaded.
-            rotation = replace(self.closing_holds[side][0]) if self.hold_control.enabled else ClosingHold()
-            if (rotation.requested_raw != requested[side][0] or
-                    now < rotation.last_command_us or
-                    now - rotation.last_command_us >= self.command_timeout_us):
-                rotation = ClosingHold()
-            rotation.requested_raw, rotation.last_command_us = requested[side][0], now
-            if rotation.stop_requested_raw is not None:
-                effective[side][0] = -1
-            channels = [rotation]
+            # Rotation has no closing direction; only the five bending channels qualify.
+            channels = [ClosingHold(requested_raw=requested[side][0], last_command_us=now)]
             for index in range(1, 6):
                 target = requested[side][index]
-                previous = self.closing_holds[side][index]
-                channel = replace(previous, samples=deque(previous.samples))
+                channel = replace(self.closing_holds[side][index])
                 if (now < channel.last_command_us or
-                        now - channel.last_command_us >= self.command_timeout_us):
-                    channel = ClosingHold(requested_raw=target, target_since_us=now,
-                                          feedback_errors=snapshot.errors)
-                # A changed closing target cannot release a stopped finger.
-                # Only a target beyond the recorded position requests opening.
-                if channel.held_raw is not None and target > channel.held_raw:
-                    channel = ClosingHold(requested_raw=target, target_since_us=now,
-                                          feedback_errors=snapshot.errors)
+                        now - channel.last_command_us >= self.command_timeout_us or
+                        (channel.held_raw is not None and target > channel.held_raw)):
+                    channel = ClosingHold(target_since_us=now, feedback_errors=snapshot.errors)
                 channel.requested_raw = target
                 channel.last_command_us = now
-                if channel.stop_requested_raw != target:
-                    channel.stop_requested_raw = None
-                # Send STOP once; _write_targets skips subsequent identical writes.
-                if channel.held_raw is not None or channel.stop_requested_raw is not None:
+                # A closing target cannot release a stopped finger; an explicit opening can.
+                if channel.held_raw is not None:
                     effective[side][index] = -1
                 elif not fresh:
-                    channel.samples.clear()
-                    channel.last_sample_us = 0
+                    channel.close_since_us = channel.last_sample_us = 0
                 else:
                     stamp = snapshot.sample_mono_us
                     position = actual[index]
                     if (snapshot.errors != channel.feedback_errors or
                             stamp < channel.last_sample_us or
                             (channel.last_sample_us and stamp - channel.last_sample_us >= self.feedback_timeout_us)):
-                        channel.samples.clear()
+                        channel.close_since_us = 0
                     channel.feedback_errors = snapshot.errors
                     if position - target <= self.closing_motion_raw:
-                        # Opening, already at target, or within the residual tolerance.
-                        channel.samples.clear()
+                        # Opening, reached target, or residual within threshold breaks continuity.
+                        channel.close_since_us = 0
                     elif stamp >= channel.target_since_us and stamp != channel.last_sample_us:
-                        channel.samples.append((stamp, position))
-                        cutoff = stamp - self.closing_hold_us
-                        # Retain one sample at/before the window boundary, so
-                        # sparse polling cannot claim a full five-second window.
-                        while len(channel.samples) > 1 and channel.samples[1][0] <= cutoff:
-                            channel.samples.popleft()
-                        if stamp - channel.samples[0][0] >= self.closing_hold_us:
-                            positions = [value for _, value in channel.samples]
-                            contact = (not self.hold_control.enabled or
-                                       abs(measured["force"][index]) >= self.hold_control.min_force[index])
-                            if max(positions) - min(positions) <= self.closing_motion_raw and contact:
-                                channel.held_raw = position
-                                channel.phase = "holding"
-                                channel.overload_since_us = channel.low_force_since_us = 0
-                                effective[side][index] = -1
+                        if not channel.close_since_us:
+                            channel.close_since_us = stamp
+                        if stamp - channel.close_since_us >= self.closing_hold_us:
+                            channel.held_raw = position
+                            channel.phase = "holding"
+                            effective[side][index] = -1
                     channel.last_sample_us = stamp
                 channels.append(channel)
             pending[side] = channels
@@ -936,16 +850,9 @@ class Rh56FtpNode:
             "host": getattr(self.links[side], "host", None), "port": getattr(self.links[side], "port", None),
             "phase": channel.phase, "requested_raw": requested_raw, "actual_raw": actual,
             "position_error_raw": actual - requested_raw if actual is not None and requested_raw is not None else None,
-            "held_raw": channel.held_raw, "release_target_raw": channel.release_target,
-            "stop_requested_raw": channel.stop_requested_raw,
+            "held_raw": channel.held_raw,
             "hold_drift_raw": actual - channel.held_raw if actual is not None and channel.held_raw is not None else None,
             "applied_raw": self._angle_applied.get(side, [None] * 6)[index],
-            "release_retry_target_raw": channel.release_retry_target,
-            "release_origin_raw": channel.release_origin, "release_from_raw": channel.release_from,
-            "next_release_raw": (max(actual, channel.release_retry_target)
-                                 if channel.release_retry_target is not None else actual) + self.hold_control.release_step_raw
-                                if actual is not None else None,
-            "steps": channel.steps,
             "current_raw": value("current"), "current_register_raw": value("current_register_raw"),
             "current_abs_raw": abs(value("current")) if value("current") is not None else None,
             "force_raw": value("force"),
@@ -956,214 +863,9 @@ class Rh56FtpNode:
             "feedback_age_ms": age_ms(now, snapshot.sample_mono_us),
             "read_errors": snapshot.errors, "last_read_error": snapshot.error,
             "closing_age_ms": age_ms(now, channel.close_since_us),
-            "overload_age_ms": age_ms(now, channel.overload_since_us),
-            "low_force_age_ms": age_ms(now, channel.low_force_since_us),
-            "phase_age_ms": age_ms(now, channel.phase_started_us),
-            "adjustment_age_ms": age_ms(now, channel.adjust_started_us),
-            "limits": {name: (values[index] if isinstance(values, tuple) else values)
-                       for name, values in asdict(self.hold_control).items()},
+            "threshold": self.closing_motion_raw,
+            "closing_hold_ms": self.closing_hold_us / 1000,
         }
-
-    def _holding_targets(self, effective: dict[str, list[int]], pending: dict[str, list[ClosingHold]],
-                         requested: dict[str, list[int]], now: int) -> dict[str, list[int]]:
-        """Bounded unloading in the command thread; commit pending only after successful writes."""
-        policy = self.hold_control
-        if not policy.enabled:
-            return effective
-        stopped = {side: [-1] * 6 for side in SIDES}
-        snapshots = dict(self.snapshots)
-
-        def fail(side: str, index: int, reason: str) -> dict[str, list[int]]:
-            self.hold_control_error = f"{side}[{index}]: {reason}"
-            self.diag.emit("hold_control_failed", throttle_us=0, reason=self.hold_control_error,
-                           **self._hold_context(side, index, pending[side][index], now,
-                                                requested[side][index], snapshots[side]),
-                           command=self.command_context(now))
-            for channels in pending.values():
-                for c in channels:
-                    c.phase, c.release_target = "failed", None
-            return stopped
-
-        if self.hold_control_error:
-            for channels in pending.values():
-                for c in channels:
-                    c.phase, c.release_target = "failed", None
-            return stopped
-        measurements = {}
-        for side, link in self.links.items():
-            if link is None:
-                continue
-            snapshot = snapshots[side]
-            if not snapshot.fresh(now, self.feedback_timeout_us) or snapshot.error:
-                self.diag.emit("hold_feedback_unavailable", key=f"hold_feedback:{side}",
-                               reason=snapshot.error or "missing/stale/future feedback", side=side,
-                               feedback_age_ms=age_ms(now, snapshot.sample_mono_us),
-                               feedback_timeout_ms=self.feedback_timeout_us / 1000,
-                               reader=self.reader_diagnostics(now))
-                # No motion decisions from old feedback. A previous release must not resume.
-                for channels in pending.values():
-                    for c in channels:
-                        c.overload_since_us = c.low_force_since_us = c.monitor_sample_us = c.close_since_us = 0
-                        if c.held_raw is not None:
-                            c.phase, c.release_target = "holding", None
-                return stopped
-            measured = self._canonical_state(snapshot.data)
-            if not measured["drive_position_normalized"]:
-                return fail(side, 0, "invalid position feedback")
-            measurements[side] = (measured, snapshot.sample_mono_us)
-            for index in range(6):
-                if measured["error_codes"][index]:
-                    return fail(side, index, f"device error {measured['error_codes'][index]}")
-                for field, minimum, maximum in (("current", -2000, 2000), ("force", -4000, 4000),
-                                                ("temperature", 0, 100)):
-                    value = measured[field][index]
-                    if not minimum <= value <= maximum:
-                        # Nominal manual ranges are diagnostic only. Preserve the
-                        # measurement for the existing holding limits below.
-                        # Keep changing values out of reason so repeats stay throttled.
-                        self.diag.emit("load_feedback_out_of_range",
-                                       key=f"load_range:{side}:{index}:{field}",
-                                       measurement_field=field, raw_value=value,
-                                       range_min=minimum, range_max=maximum,
-                                       **self._hold_context(side, index, pending[side][index], now,
-                                                            requested[side][index], snapshot))
-
-        # Long-term holding limits do not apply while the hand is still executing
-        # the bending grasp/open command. Rotation has an independent target and
-        # must not indefinitely block unloading of already-held bending fingers.
-        hold_ready = {
-            side: any(c.held_raw is not None for c in pending[side][1:]) and
-                  all(c.held_raw is not None or c.stop_requested_raw is not None or
-                      abs(measured["drive_position_raw"][i] - requested[side][i]) <= self.closing_motion_raw
-                      for i, c in enumerate(pending[side]) if i > 0)
-            for side, (measured, _) in measurements.items()
-        }
-        for side, ready in hold_ready.items():
-            previous = self._hold_monitor_ready.get(side, False)
-            self._hold_monitor_ready[side] = ready
-            if ready != previous:
-                self.diag.emit("hold_monitor_started" if ready else "hold_monitor_stopped",
-                               key=f"hold_monitor:{side}", throttle_us=0, side=side,
-                               rotation_error_raw=measurements[side][0]["drive_position_raw"][0] - requested[side][0])
-
-        busy = any(c.phase in ("moving", "settling") for channels in pending.values() for c in channels)
-        stopped_sides = set()
-        for side, (measured, stamp) in measurements.items():
-            for index, c in enumerate(pending[side]):
-                actual = measured["drive_position_raw"][index]
-                force = abs(measured["force"][index])
-                current = abs(measured["current"][index])
-                new_sample = stamp != c.monitor_sample_us
-                if not c.monitor_sample_us or stamp < c.monitor_sample_us or \
-                        stamp - c.monitor_sample_us >= self.feedback_timeout_us:
-                    c.overload_since_us = c.low_force_since_us = c.close_since_us = 0
-                if new_sample:
-                    c.monitor_sample_us = stamp
-
-                if new_sample and c.held_raw is None and c.stop_requested_raw is None and index > 0:
-                    closing = actual - requested[side][index] > self.closing_motion_raw
-                    c.close_since_us = (c.close_since_us or stamp) if closing else 0
-                    if c.close_since_us and stamp - c.close_since_us >= policy.close_timeout_ms * 1000:
-                        return fail(side, index, "closing timeout without stable contact")
-                if not hold_ready[side] or (index == 0 and c.stop_requested_raw is None and
-                        abs(actual - requested[side][index]) > self.closing_motion_raw):
-                    # Movement loads must not carry over into the holding timer.
-                    c.overload_since_us = c.low_force_since_us = 0
-                    if c.phase in ("moving", "settling"):
-                        c.phase, c.release_target = "holding", None
-                    continue
-                if measured["temperature"][index] >= policy.temperature_limit[index]:
-                    return fail(side, index, "temperature limit reached")
-
-                if c.phase in ("moving", "settling") and now - c.adjust_started_us >= policy.adjust_timeout_ms * 1000:
-                    return fail(side, index, "adjustment time budget exhausted")
-
-                if c.phase == "moving":
-                    effective[side][index] = c.release_target
-                    if new_sample and stamp > c.phase_started_us and actual > c.release_from and \
-                            abs(actual - c.release_target) <= policy.release_tolerance_raw:
-                        c.held_raw = actual
-                        c.phase, c.phase_started_us = "settling", now
-                        c.release_target = c.release_retry_target = None
-                        effective[side][index] = -1
-                        stopped_sides.add(side)
-                    elif now - c.phase_started_us >= policy.move_timeout_ms * 1000:
-                        # A small position step may remain short of its target.
-                        # Stop before observing/retrying; keep the attempted target
-                        # so the next bounded attempt can overcome a small deadband.
-                        if actual < c.release_from - policy.release_tolerance_raw or \
-                                actual > c.release_target + policy.release_tolerance_raw:
-                            return fail(side, index, "release motion outside expected range")
-                        c.release_retry_target = c.release_target
-                        self.diag.emit("release_step_incomplete", key=f"release_incomplete:{side}:{index}",
-                                       throttle_us=0, **self._hold_context(side, index, c, now,
-                                                                         requested[side][index], snapshots[side]))
-                        c.held_raw = actual
-                        c.phase, c.phase_started_us = "settling", now
-                        c.release_target = None
-                        c.overload_since_us = c.low_force_since_us = 0
-                        effective[side][index] = -1
-                        stopped_sides.add(side)
-                    continue
-                if c.phase == "settling":
-                    if not new_sample or stamp - c.phase_started_us < policy.settle_ms * 1000:
-                        continue
-                    c.phase = "holding"
-                    c.overload_since_us = c.low_force_since_us = 0
-                if not new_sample:
-                    continue
-
-                if c.held_raw is not None:
-                    # Diagnostic only: STOP is not a promise of physical self-locking.
-                    # Record drift before a later low-force fault opens the whole hand.
-                    if abs(actual - c.held_raw) > policy.threshold:
-                        self.diag.emit("holding_position_drift", key=f"hold_drift:{side}:{index}",
-                                       **self._hold_context(side, index, c, now,
-                                                            requested[side][index], snapshots[side]))
-                    c.low_force_since_us = (c.low_force_since_us or stamp) if force < policy.min_force[index] else 0
-                    if c.low_force_since_us and stamp - c.low_force_since_us >= policy.overload_ms * 1000:
-                        return fail(side, index, "insufficient holding force")
-
-                overloaded = current > policy.current_limit[index]
-                recovered = current <= policy.current_limit[index] * policy.recovery_ratio
-                if overloaded:
-                    c.overload_since_us = c.overload_since_us or stamp
-                elif recovered:
-                    c.overload_since_us = 0
-                    c.release_retry_target = None
-                if not c.overload_since_us or stamp - c.overload_since_us < policy.overload_ms * 1000:
-                    continue
-                # An explicit opening command has priority over ordinary unloading.
-                if c.held_raw is None:
-                    if index > 0 and requested[side][index] >= actual:
-                        continue
-                    return fail(side, index, "persistent load outside adaptive hold")
-                if busy:
-                    continue
-                origin = c.held_raw if c.release_origin is None else c.release_origin
-                # Following an incomplete step, retry beyond the previous target
-                # rather than repeatedly commanding the same ineffective position.
-                base = max(actual, c.release_retry_target) if c.release_retry_target is not None else actual
-                target = base + policy.release_step_raw
-                if c.steps >= policy.max_steps or target > min(1000, origin + policy.max_release_raw):
-                    return fail(side, index, "release step/distance budget exhausted")
-                if c.adjust_started_us and now - c.adjust_started_us >= policy.adjust_timeout_ms * 1000:
-                    return fail(side, index, "adjustment time budget exhausted")
-                c.phase, c.phase_started_us = "moving", now
-                c.release_origin, c.release_from, c.release_target = origin, actual, target
-                c.adjust_started_us = c.adjust_started_us or now
-                c.steps += 1
-                c.overload_since_us = c.low_force_since_us = 0
-                effective[side][index] = target
-                busy = True
-        for side in stopped_sides:
-            # Stop rotation and any bending channels that reached their target
-            # without a contact hold too. Latch against repeated old commands;
-            # pending state is committed only after the writes succeed.
-            effective[side] = [-1] * 6
-            for index, c in enumerate(pending[side]):
-                c.stop_requested_raw = requested[side][index]
-        return effective
 
     def command_context(self, now: int, command: dict[str, Any] | None = None) -> dict[str, Any]:
         context = {
@@ -1225,33 +927,23 @@ class Rh56FtpNode:
                 raw_by_side[side] = normalized_to_raw(values)
             requested = raw_by_side
             raw_by_side, pending_holds = self._closing_targets(requested, now)
-            raw_by_side = self._holding_targets(raw_by_side, pending_holds, requested, now)
-            stopped_sides = {side for side in SIDES if any(
-                old.phase == "moving" and new.phase == "settling"
-                for old, new in zip(self.closing_holds[side], pending_holds[side]))}
-            try:
-                self._write_targets(raw_by_side, force_all_channels=stopped_sides)
-            except Exception:
-                # One hand may already have moved before the other write failed.
-                # Never retry from a new actual position without accounting for that step.
-                if self.hold_control.enabled and not self.hold_control_error:
-                    self.hold_control_error = "Modbus write failed during hold control"
-                    self.diag.emit("hold_control_failed", reason=self.hold_control_error,
-                                   last_write_error=self.last_write_error, requested_raw=requested,
-                                   attempted_raw=raw_by_side, applied_raw=dict(self._angle_applied),
-                                   command=self.command_context(now, command), traceback=traceback.format_exc(limit=8))
-                raise
-            # Failed writes must not acknowledge or latch a new held position.
-            for side in stopped_sides:
-                self.diag.emit("release_hand_stopped", key=f"release_stop:{side}", throttle_us=0, side=side)
-            if self.hold_control.enabled:
-                for side in SIDES:
-                    for index, channel in enumerate(pending_holds[side]):
-                        if channel.phase != self.closing_holds[side][index].phase:
-                            self.diag.emit("hold_phase_changed", key=f"hold_phase:{side}:{index}", throttle_us=0,
-                                           previous_phase=self.closing_holds[side][index].phase,
-                                           **self._hold_context(side, index, channel, now, requested[side][index]))
+            self._observe_faults(now, pending_holds)
+            if self.hold_control_error:
+                raw_by_side = self._fault_targets()
+                for channels in pending_holds.values():
+                    for channel in channels:
+                        channel.phase = "failed"
+            self._write_targets(raw_by_side)
+            # Commit a new hold only after successful writes, preserving retry/ack semantics.
+            for side in SIDES:
+                for index, channel in enumerate(pending_holds[side]):
+                    if channel.phase != self.closing_holds[side][index].phase:
+                        self.diag.emit("hold_phase_changed", key=f"hold_phase:{side}:{index}", throttle_us=0,
+                                       previous_phase=self.closing_holds[side][index].phase,
+                                       **self._hold_context(side, index, channel, now, requested[side][index]))
             self.closing_holds = pending_holds
+            if self.hold_control_error:
+                self._report_fault_response()
             self.requested_targets = {side: [value / 1000.0 for value in requested[side]] for side in SIDES}
             for side in SIDES:
                 data = self.snapshots[side].data
@@ -1264,7 +956,7 @@ class Rh56FtpNode:
             self._safe_applied = False
             self._safe_required = False
         else:
-            self._safe_pose()
+            self._safe_pose(now=now)
             self.last_targets = {side: [] for side in SIDES}
             self.requested_targets = {side: [] for side in SIDES}
         self.guard = candidate
@@ -1272,6 +964,9 @@ class Rh56FtpNode:
 
     def supervise(self, now: int | None = None) -> None:
         now = monotonic_us() if now is None else now
+        if self.feedback_only:
+            return
+        self._observe_faults(now)
         if self.command_valid and self.guard.expired(now, self.command_timeout_us):
             self.diag.emit("command_watchdog_expired", receive_age_ms=age_ms(now, self.guard.last_recv_mono_us),
                            origin_age_ms=age_ms(now, self.guard.origin_mono_us),
@@ -1279,7 +974,7 @@ class Rh56FtpNode:
             self._safe_required = True
         if self._safe_required and not self._safe_applied:
             try:
-                self._safe_pose()
+                self._safe_pose(now=now)
             except Exception as exc:
                 self.diag.emit("safe_pose_failed", reason=f"{type(exc).__name__}: {exc}")
                 # Keep the requirement pending so the next loop retries the
@@ -1325,8 +1020,7 @@ class Rh56FtpNode:
             fresh = link is not None and snapshot.fresh(now, self.feedback_timeout_us)
             if fresh:
                 measured = self._canonical_state(snapshot.data or {})
-                measurement_valid = bool(measured["drive_position_normalized"]) and not (
-                    self.hold_control.enabled and snapshot.error)
+                measurement_valid = bool(measured["drive_position_normalized"]) and not snapshot.error
                 if link is not None:
                     configured_fresh.append(measurement_valid)
                 error_codes = measured["error_codes"]
@@ -1409,8 +1103,11 @@ class Rh56FtpNode:
             hand["closing_hold_position_normalized"] = [
                 channel.held_raw / 1000.0 if channel.held_raw is not None else None
                 for channel in self.closing_holds[side]]
-            hand["hold_control"] = [{"phase": c.phase, "steps": c.steps, "release_target_raw": c.release_target}
+            hand["hold_control"] = [{"phase": c.phase}
                                     for c in self.closing_holds[side]]
+            hand["fault_protection"] = {"fault_channels": dict(self.fault_channels[side]),
+                                        "fault_count": len(self.fault_channels[side]),
+                                        "open_requested": side in self._fault_open_sides}
         accepted = None
         if self.guard.authorized:
             accepted = {
@@ -1588,7 +1285,7 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
         node.connect()
         if not node.feedback_only:
             try:
-                node._safe_pose()
+                node._safe_pose(force_open=True)
             except Exception as exc:
                 node.diag.emit("startup_safe_pose_failed", reason=f"{type(exc).__name__}: {exc}")
         reader = threading.Thread(target=feedback_read_loop, args=(node, reader_stop, period_us),
@@ -1648,7 +1345,7 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
             reader.join(timeout=5.0)
         try:
             if not node.feedback_only:
-                node._safe_pose()
+                node._safe_pose(force_open=True)
         except Exception as exc:
             node.diag.emit("shutdown_safe_pose_failed", reason=f"{type(exc).__name__}: {exc}")
         node.close()
@@ -1662,7 +1359,7 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, help="YAML 配置文件（speed、force、hold_control）；显式命令行参数优先")
+    parser.add_argument("--config", type=Path, help="YAML 配置文件（speed、force、threshold、right_host、left_host）；显式命令行参数优先")
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5556", help="hand.command SUB connects to bus egress")
     parser.add_argument("--state-endpoint", default="tcp://127.0.0.1:5555", help="hand.state PUB connects to bus ingress")
     parser.add_argument("--right-host", default=None)
@@ -1680,10 +1377,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="所有已连接手的六路速度设定，0..1000（默认 500）")
     parser.add_argument("--force", type=int, default=None,
                         help="所有已连接手的六路力阈值设定，0..3000（默认 500）")
-    parser.add_argument("--closing-hold-ms", type=int, default=5000,
-                        help="五个弯曲通道持续握紧且运动很小的停止观察窗口（默认 5000 ms）")
-    parser.add_argument("--closing-motion-raw", type=int, default=10,
-                        help="握紧停滞窗口内允许的最大位置范围及目标残差容差（默认 10，范围 0..999）")
+    parser.add_argument("--closing-hold-ms", type=int, default=10000,
+                        help="闭合位置误差连续超过阈值的观察时间（默认 10000 ms）")
+    parser.add_argument("--threshold", "--closing-motion-raw", dest="closing_motion_raw", type=int, default=None,
+                        help="握紧位置误差阈值，寄存器刻度（默认 10，范围 0..999）")
     parser.add_argument("--diagnostic-interval-s", type=float, default=1.0,
                         help="JSON 模式的异常详情汇总间隔秒数（默认 1；0 关闭汇总）")
     parser.add_argument("--log-format", choices=("text", "json"), default="text",
@@ -1695,9 +1392,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             import yaml
             settings = yaml.safe_load(args.config.read_text(encoding="utf-8"))
-            if not isinstance(settings, dict) or set(settings) - {"speed", "force", "hold_control"}:
-                raise ValueError("配置必须为仅包含 speed、force、hold_control 的映射")
-            HoldControl.parse(settings.get("hold_control", {}))
+            if not isinstance(settings, dict) or set(settings) - {"speed", "force", "threshold", "right_host", "left_host"}:
+                raise ValueError("配置必须为仅包含 speed、force、threshold、right_host、left_host 的映射")
         except ImportError:
             parser.error("读取 --config 需要 PyYAML")
         except (OSError, ValueError, yaml.YAMLError) as exc:
@@ -1705,6 +1401,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args.speed = _register_setting(args.speed if args.speed is not None else settings.get("speed", DEFAULT_SPEED), "speed", 1000)
         args.force = _register_setting(args.force if args.force is not None else settings.get("force", DEFAULT_FORCE), "force", 3000)
+        args.closing_motion_raw = _register_setting(
+            args.closing_motion_raw if args.closing_motion_raw is not None else settings.get("threshold", 10),
+            "threshold", 999)
+        for name in ("right_host", "left_host"):
+            value = getattr(args, name)
+            if value is None and name in settings:
+                value = settings[name]
+                if not isinstance(value, str):
+                    raise ValueError(f"{name} 必须为字符串（空字符串禁用该手）")
+                setattr(args, name, value)
     except ValueError as exc:
         parser.error(str(exc))
     if not math.isfinite(args.modbus_timeout) or args.modbus_timeout <= 0:
@@ -1740,7 +1446,7 @@ def main(argv: list[str] | None = None) -> int:
                        feedback_only=args.feedback_only, speed=args.speed, force=args.force,
                        diagnostic_interval_s=args.diagnostic_interval_s,
                        closing_hold_ms=args.closing_hold_ms, closing_motion_raw=args.closing_motion_raw,
-                       hold_control=settings.get("hold_control"), log_format=args.log_format)
+                       log_format=args.log_format)
     return run_node(node, args.endpoint, args.state_endpoint, args.state_hz)
 
 

@@ -19,11 +19,14 @@ def port():
 
 
 def main():
-    bus, manipulator, core, root = sys.argv[1:]
+    bus, manipulator, core, root = sys.argv[1:5]
+    hand_warnings = '--hand-warnings' in sys.argv[5:]
     root = Path(root)
     directory = Path(tempfile.mkdtemp(prefix="aviator-fsm-test-"))
     print(f"FSM process logs: {directory}", flush=True)
     config = yaml.safe_load((root / "config/system.yaml").read_text())
+    if hand_warnings:
+        config['core_hand'].update(enabled=True, publisher_id='unavailable_test_hand', completion_timeout_ms=500)
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot["viewer"] = False
     robot["settle_duration"] = .15
@@ -35,6 +38,12 @@ def main():
     config["manipulator_service"] = endpoints[2]
     config["robot"] = "robot.yaml"
     (directory / "system.yaml").write_text(yaml.safe_dump(config))
+    device_config = dict(config)
+    if hand_warnings:
+        # Simulation uses its configured hand publisher; use a distinct identity
+        # so Core really receives no matching hand feedback during the full cycle.
+        device_config['core_hand'] = {**config['core_hand'], 'publisher_id': 'simulated_test_hand'}
+    (directory / "device-system.yaml").write_text(yaml.safe_dump(device_config))
     (directory / "robot.yaml").write_text(yaml.safe_dump(robot))
     children, logs = [], []
     context = zmq.Context()
@@ -71,7 +80,7 @@ def main():
     try:
         start("bus", [bus, "--input", endpoints[0], "--output", endpoints[1],
                       "--lock-file", str(directory / "bus.lock")])
-        start("manipulator", [manipulator, "--config", str(directory / "system.yaml"), "--headless", "--no-camera"])
+        start("manipulator", [manipulator, "--config", str(directory / "device-system.yaml"), "--headless", "--no-camera"])
         arguments = [core, "--config", str(directory / "system.yaml"), "--console"]
         process = start("core", arguments)
         wait_state("READY", 30)  # Init/enable completed; no automatic home.
@@ -101,6 +110,8 @@ def main():
         command("LEAVE_WHEEL")
         wait_state("RELEASING", 3)
         wait_state("STANDBY", 30)
+        if hand_warnings:
+            assert 'Core hand warning:' in (directory / 'core.log').read_text()
         command("emergency")
         state = wait_state("EMERGENCY_STOP", 3)
         assert state["brake_requested"] and not state["brake_confirmed"]

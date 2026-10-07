@@ -1,9 +1,24 @@
 #include "HandLink.hpp"
+#include "Logger.hpp"
 
 namespace aviator {
 HandLink::~HandLink() { stop(); }
+void HandLink::warnLocked(const std::string& reason) {
+    if (reason.empty()) return;
+    const auto now = monotonic_us();
+    if (reason != last_warning_ || now - warning_at_ >= 10000000) {
+        Logger::warn("Core hand warning: {}; hand action unavailable, Core continues without hand confirmation", reason);
+        last_warning_ = reason;
+        warning_at_ = now;
+    }
+}
 void HandLink::configure(const std::filesystem::path& path) {
-    control_.configure(path);
+    try { control_.configure(path); }
+    catch (const std::exception& e) {
+        control_ = HandControl{}; // Disable only the unusable hand connection.
+        control_.fail(std::string("Invalid hand configuration: ") + e.what());
+        warnLocked(control_.fault(monotonic_us()));
+    }
 }
 void HandLink::start(zmq::context_t& context, const MotionConfig& config, const std::string& session,
                      const std::atomic<uint64_t>& heartbeat, bool allowed) {
@@ -11,9 +26,15 @@ void HandLink::start(zmq::context_t& context, const MotionConfig& config, const 
     // Configuration and ownership are established before exposing the worker.
     allowed_ = allowed;
     stopping_ = false;
-    thread_ = std::thread([this, &context, config, session, &heartbeat] {
-        io(context, config, session, heartbeat);
-    });
+    try {
+        thread_ = std::thread([this, &context, config, session, &heartbeat] {
+            io(context, config, session, heartbeat);
+        });
+    } catch (const std::exception& e) {
+        failed_ = true;
+        control_.fail(std::string("Hand IO startup failed: ") + e.what());
+        warnLocked(control_.fault(monotonic_us()));
+    }
 }
 void HandLink::stop() {
     {
@@ -32,49 +53,54 @@ void HandLink::allow(bool allowed) {
 }
 uint64_t HandLink::request(bool close) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (stopping_ || failed_) throw std::runtime_error("Hand IO worker unavailable: " + control_.fault(monotonic_us()));
-    if (!allowed_) throw std::runtime_error("Core hand authorization revoked");
-    control_.request(close, monotonic_us());
+    if (!allowed_) throw MotionCancelled();
+    if (stopping_ || failed_) { warnLocked("Hand IO worker unavailable: " + control_.fault(monotonic_us())); return 0; }
+    try { control_.request(close, monotonic_us()); }
+    catch (const std::exception& e) { control_.fail(e.what()); warnLocked(e.what()); return 0; }
     changed_.notify_all();
     return ++version_;
 }
 uint64_t HandLink::beginApproach() {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (stopping_ || failed_) throw std::runtime_error("Hand IO worker unavailable");
-    if (!allowed_) throw std::runtime_error("Core hand authorization revoked");
+    if (!allowed_) throw MotionCancelled();
+    if (stopping_ || failed_) { warnLocked("Hand IO worker unavailable"); return 0; }
     const auto now = monotonic_us();
-    if (const auto reason = control_.fault(now); !reason.empty()) throw std::runtime_error(reason);
-    control_.beginApproach(now);
+    if (const auto reason = control_.fault(now); !reason.empty()) { warnLocked(reason); return 0; }
+    try { control_.beginApproach(now); }
+    catch (const std::exception& e) { control_.fail(e.what()); warnLocked(e.what()); return 0; }
     changed_.notify_all();
     return ++version_;
 }
 void HandLink::approachProgress(uint64_t version, const std::array<double, 2>& progress) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (stopping_ || failed_) throw std::runtime_error("Hand IO worker unavailable");
-    if (!allowed_) throw std::runtime_error("Core hand authorization revoked");
-    if (version != version_) throw std::runtime_error("Hand target superseded");
+    if (!allowed_) throw MotionCancelled();
+    if (!version) return;
+    if (stopping_ || failed_) { warnLocked("Hand IO worker unavailable"); return; }
+    if (version != version_) { warnLocked("Hand target superseded"); return; }
     const auto now = monotonic_us();
-    if (const auto reason = control_.fault(now); !reason.empty()) throw std::runtime_error(reason);
-    control_.approachProgress(progress, now);
+    if (const auto reason = control_.fault(now); !reason.empty()) { warnLocked(reason); return; }
+    try { control_.approachProgress(progress, now); }
+    catch (const std::exception& e) { control_.fail(e.what()); warnLocked(e.what()); return; }
     changed_.notify_all();
 }
-void HandLink::wait(uint64_t version, const std::atomic<bool>* cancel) {
+bool HandLink::wait(uint64_t version, const std::atomic<bool>* cancel) {
     std::unique_lock<std::mutex> lock(mutex_);
     while (true) {
-        if (cancel && cancel->load()) throw std::runtime_error("Motion stopped during hand completion");
-        if (stopping_) throw std::runtime_error("Hand IO worker stopped");
-        if (!allowed_) throw std::runtime_error("Core hand authorization revoked");
-        if (version != version_) throw std::runtime_error("Hand target superseded");
+        if ((cancel && cancel->load()) || !allowed_) throw MotionCancelled();
+        if (!version) return false;
+        if (stopping_) { warnLocked("Hand IO worker stopped"); return false; }
+        if (version != version_) { warnLocked("Hand target superseded"); return false; }
         const auto now = monotonic_us(); // Sample only AFTER acquiring the target/feedback lock.
         const auto reason = control_.fault(now);
-        if (!reason.empty()) { control_.fail(reason); throw std::runtime_error(reason); }
-        if (control_.complete(now)) return;
+        if (!reason.empty()) { control_.fail(reason); warnLocked(reason); return false; }
+        if (control_.complete(now)) return true;
         changed_.wait_for(lock, std::chrono::milliseconds(5));
     }
 }
 void HandLink::fail(const std::string& reason) {
     std::lock_guard<std::mutex> lock(mutex_);
     control_.fail(reason);
+    warnLocked(reason);
     changed_.notify_all();
 }
 std::string HandLink::fault() const {
@@ -121,6 +147,7 @@ void HandLink::io(zmq::context_t& context, const MotionConfig& config, const std
             if (allowed_ && !failed_) {
                 if (auto command = control_.command(now, origin, session))
                     publishMessage(pub, *command);
+                warnLocked(control_.fault(now));
             }
             // Publication is serialized with target replacement/revocation. On return
             // from allow(false), no old snapshot can be published by this worker.
@@ -131,6 +158,7 @@ void HandLink::io(zmq::context_t& context, const MotionConfig& config, const std
         std::lock_guard<std::mutex> lock(mutex_);
         failed_ = true; // Unlike a command failure, the worker cannot accept another target.
         control_.fail(std::string("Hand IO failed: ") + e.what());
+        warnLocked(control_.fault(monotonic_us()));
         changed_.notify_all();
     }
 }

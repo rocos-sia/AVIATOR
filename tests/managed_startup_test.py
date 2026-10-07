@@ -22,7 +22,8 @@ def main():
     config = yaml.safe_load((root / 'config/system.yaml').read_text())
     # Only Core's kinematic initialization uses this file; no hardware backend is instantiated.
     config['robot'] = str(root / 'config/robot.yaml')
-    config['core_hand'] = {'enabled': False}
+    # No hand device is started: its timeout must warn without blocking READY.
+    config['core_hand'] = {'enabled': True, 'completion_timeout_ms': 500}
     endpoints = [f'tcp://127.0.0.1:{port()}' for _ in range(3)]
     assert len(set(endpoints)) == 3
     config['bus'] = dict(publish=endpoints[0], subscribe=endpoints[1])
@@ -110,6 +111,7 @@ def main():
         thread.start(); assert ready.wait(2)
         process = start('core', [core, '--config', str(path), '--console'])
         assert state('READY', require_valid=True)['ready']
+        assert 'Core hand warning:' in (directory / 'core.log').read_text()
         assert operations == ['describe', 'authorize', 'enable'], operations
         # After READY, stale RT feedback must revoke readiness even if status messages arrive.
         stale.set()
@@ -120,7 +122,7 @@ def main():
         process.stdin.write('quit\n'); process.stdin.flush()
         assert process.wait(timeout=5) == 0
         assert not failures, failures
-        print('PASS: startup enables then waits in READY away from home; stale feedback trips SAFE (mock device only)', flush=True)
+        print('PASS: missing hand warns but startup reaches READY; stale arm feedback still trips SAFE (mock device only)', flush=True)
     finally:
         stop.set()
         if thread.ident is not None: thread.join()

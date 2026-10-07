@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
         auto cleanup = [&] { done = true; heartbeat.join(); };
         try {
             const std::string mode = argv[2];
-            if (mode == "synchronized") {
+            if (mode == "synchronized" || mode == "synchronized_drop" || mode == "no_close") {
                 link.enable(Side::Left);
                 std::vector<JointFrame> frames(1001);
                 for (size_t k = 0; k < frames.size(); ++k) {
@@ -52,20 +52,24 @@ int main(int argc, char** argv) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                 bool fresh;
                 const auto snapshot = link.snapshot(fresh);
-                if ((mode == "dropped" || mode == "heartbeat" || mode == "arm_failure") && (!link.graspState().fault || !snapshot.fault))
-                    throw std::runtime_error("Lost hand feedback/heartbeat not propagated");
+                if (mode == "arm_failure" && (!link.graspState().fault || !snapshot.fault))
+                    throw std::runtime_error("Arm IO fault not propagated");
+                if ((mode == "dropped" || mode == "heartbeat") && (link.graspState().fault || snapshot.fault))
+                    throw std::runtime_error("Hand warning propagated as arm/Core fault");
                 if (mode == "heartbeat") {
-                    const auto error = link.graspState().fault_reason;
+                    const auto error = link.diagnostics();
                     if (error.find("age_us=") == std::string::npos || error.find("limit_us=100000") == std::string::npos)
                         throw std::runtime_error("Missing actual heartbeat age diagnostic: " + error);
                 } else cleanup();
             } else {
-                bool rejected = false;
-                try { link.enable(Side::Left); } catch (const std::exception& e) {
-                    rejected = true; std::cout << "Expected rejection: " << e.what() << '\n';
-                }
+                link.enable(Side::Left);
+                bool fresh;
+                if (link.snapshot(fresh).fault || link.graspState().fault)
+                    throw std::runtime_error("Hand warning blocked Core readiness");
+                link.sendGraspCommand(GraspCommand::Lock);
+                link.sendGraspCommand(GraspCommand::Unlock);
+                link.disable(Side::Left);
                 cleanup();
-                if (!rejected) throw std::runtime_error("Bad hand state allowed arm enable");
             }
         } catch (...) { if (!done.exchange(true)) heartbeat.join(); throw; }
         std::cout << "RemoteLink hand integration passed\n";
