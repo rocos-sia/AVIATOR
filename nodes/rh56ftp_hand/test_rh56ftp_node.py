@@ -783,6 +783,31 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(state["hands"]["right"]["temperature"], [35] * 6)
         self.assertNotIn("touch", json.dumps(state).lower())
 
+    def test_compact_state_fields_for_fresh_stale_and_unconfigured_hands(self):
+        node, links = self.make_node()
+        data = {key: [offset + i for i in range(6)] for key, offset in
+                (("angle", 100), ("force", 200), ("current", 300),
+                 ("err", 0), ("status", 10), ("temp", 30))}
+        links["right"].read_state = lambda: data
+        node.links["left"] = None
+        states = [node.make_state(node.clock_now)]
+        node.read_states(now=node.clock_now)
+        states += [node.make_state(node.clock_now),
+                   node.make_state(node.clock_now + node.feedback_timeout_us)]
+        self.assertTrue(states[1]["valid"])  # Only configured hands participate.
+        for state in states:
+            for hand in state["hands"].values():
+                for field in ("angle", "angle_raw", "err", "error", "status_code", "status_values",
+                              "temp", "enabled", "joint_position", "joint_velocity"):
+                    self.assertNotIn(field, hand)
+                for field in ("drive_position_raw", "error_codes", "status_codes", "temperature"):
+                    self.assertEqual(len(hand[field]), 6 if hand["feedback_available"] else 0)
+        hand = states[1]["hands"]["right"]
+        for source, field in (("angle", "drive_position_raw"), ("err", "error_codes"),
+                              ("status", "status_codes"), ("temp", "temperature")):
+            self.assertEqual(hand[field], list(reversed(data[source])))
+        self.assertEqual(hand["error_code"], 5)
+
     def test_state_capture_cannot_mix_new_measurement_with_older_envelope_time(self):
         node, _ = self.make_node()
         node.read_states(now=node.clock_now)
@@ -1208,7 +1233,31 @@ class ClosingFaultTests(unittest.TestCase):
                     self.assertEqual(node._angle_applied[side], expected)
                 self.assertFalse(node.command_valid)
                 self.assertIn("device error 32", node.hold_control_error)
-                self.assertFalse(node.make_state(node.clock_now)["valid"])
+                self.assertTrue(node.make_state(node.clock_now)["valid"])
+
+    def test_feedback_validity_recovers_without_clearing_motion_protection(self):
+        for code in (2, 4, 16):  # Overtemperature, overcurrent, device communication error.
+            with self.subTest(code=code):
+                node, _ = self.make_node()
+                self.tick(node, errors=[code, 0, 0, 0, 0, 0])
+                fault = node.hold_control_error
+                self.assertTrue(fault)
+                self.tick(node)
+                state = node.make_state(node.clock_now)
+                self.assertTrue(state["valid"])
+                self.assertTrue(all(hand["valid"] for hand in state["hands"].values()))
+                self.assertEqual(state["hold_control_error"], fault)
+                self.assertEqual(node._angle_applied, {side: [-1] * 6 for side in module.SIDES})
+                for invalid in ("stale", "read_failed", "future", "bad_position"):
+                    snapshot = node.snapshots["left"]
+                    stamp = node.clock_now - node.feedback_timeout_us if invalid == "stale" else (
+                        node.clock_now + 1 if invalid == "future" else node.clock_now)
+                    node.snapshots["left"] = replace(snapshot, sample_mono_us=stamp,
+                        error="TCP timeout" if invalid == "read_failed" else "",
+                        data={**snapshot.data, "angle": [1001] * 6} if invalid == "bad_position" else snapshot.data)
+                    self.assertFalse(node.make_state(node.clock_now)["valid"])
+                    node.snapshots["left"] = snapshot
+                    self.assertTrue(node.make_state(node.clock_now)["valid"])
 
 
     def test_fault_hold_write_failure_is_retried(self):

@@ -237,8 +237,7 @@ aviator::Message Simulation::handState(std::uint64_t now, const std::string& pub
     for (const char* name : {"left", "right"}) {
         auto& h = out.body["hands"][name];
         h["status"] = hand_valid_ ? "ACTIVE" : "READY";
-        h["enabled"] = hand_valid_;
-        h["angle"] = h["angle_raw"] = h["drive_position_raw"];
+        h.erase("enabled");
         h["requested_drive_position_normalized"] = Json::array();
         h["closing_hold_active"] = Json::array();
         h["closing_hold_position_normalized"] = Json::array();
@@ -247,10 +246,10 @@ aviator::Message Simulation::handState(std::uint64_t now, const std::string& pub
             h["closing_hold_active"].push_back(hold.held >= 0);
             h["closing_hold_position_normalized"].push_back(hold.held >= 0 ? Json(hold.held / 1000.0) : Json(nullptr));
         }
-        for (const char* field : {"err", "error", "error_codes", "status_code", "status_values", "status_codes"})
+        for (const char* field : {"error_codes", "status_codes"})
             h[field] = std::array<int, 6>{};
         // Hardware-only telemetry is unavailable; never invent physical sensor readings.
-        for (const char* field : {"force", "current", "temp", "temperature"}) h[field] = Json::array();
+        for (const char* field : {"force", "current", "temperature"}) h[field] = Json::array();
         h["feedback_samples"] = out.header.sequence;
         h["feedback_io_errors"] = 0;
         h["feedback_last_error"] = "";

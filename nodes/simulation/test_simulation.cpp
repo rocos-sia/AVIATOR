@@ -161,6 +161,13 @@ void managed_hand_test(const std::string& path) {
     std::string error, payload;
     check(sim.handCommand(m, now, error), "RH56FTP grasp setpoint accepted");
     auto feedback = sim.handState(now, "rh56ftp_hand");
+    for (const char* side : {"left", "right"}) {
+        const auto& hand = feedback.body["hands"][side];
+        for (const char* field : {"angle", "angle_raw", "err", "error", "status_code", "status_values", "temp", "enabled"})
+            check(!hand.contains(field), "hand state contains retired aliases");
+        check(hand["error_codes"].size() == 6 && hand["status_codes"].size() == 6 &&
+              hand["temperature"].empty(), "compact hand telemetry missing");
+    }
     check(feedback.header.publisher_id == "rh56ftp_hand" && feedback.body["command_valid"] == true,
           "hardware-compatible hand identity/validity");
     check(feedback.body["accepted_command"]["sample_mono_us"] == now, "ACK retains command sample timestamp");

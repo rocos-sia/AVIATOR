@@ -430,7 +430,30 @@ Frame0：`hand.command`。
 
 每侧最多保留一个未完成读请求，六路全部收齐后才原子替换快照，不混合不同轮次。CAN 没有事务序号，无法完全区分跨轮次延迟的同寄存器响应。Core 判断 hand 状态时同时检查顶层状态接收年龄、每侧 `sample_mono_us`、`valid` 和确认字段。
 
-### 9.3 完整 Frame1 示例
+### 9.3 RH56FTP Modbus TCP 后端差异
+
+`rh56ftp_hand` 使用相同的 `HandState` 信封。顶层 `valid` 是所有**已配置**手的每侧
+`valid` 的逻辑与：反馈新鲜、最近读取无 I/O 错误且六路位置在 `[0,1000]` 内。
+未配置侧仍发布 `valid=false`，但不参与顶层汇总；反馈恢复后顶层自动恢复 true。
+`hold_control_error` 为独立的故障锁存字符串（无故障时为空），不再影响测量 `valid`；
+Core 单独检查该字段，非空时禁止以该反馈确认动作完成。锁存保护仍需重连/重启解除，
+有效反馈不表示运动保护已解除。设备故障码非零时每侧 `status=ERROR`。
+
+每侧仅发布 `drive_position_raw`、`drive_position_normalized`、`force`、`current`、
+`current_register_raw`、`error_codes`、`status_codes`、`temperature` 这些测量数组，
+均按 AVIATOR 六路顺序。`current` 为有符号电流，`current_register_raw` 为原始无符号字；
+`temperature` 单位为 ℃。`error_code` 保留为六路故障码最大值供 Monitor 汇总，
+具体故障位须查看 `error_codes`，不将最大值解释为按位合并结果。
+未配置或过期时测量数组为 `[]`。每侧采样基准为 `host_modbus_read`；
+尚未接纳命令时 `accepted_command=null`，接纳后另含 `control_epoch`。
+
+已删除重复字段 `angle`、`angle_raw`、`err`、`error`、`status_code`、`status_values`、`temp`，
+以及重复顶层 `command_valid` 的 `enabled` 和始终为 null 的 `joint_position/joint_velocity`。
+外部消费者应迁移到保留字段；`simulation` 的手状态同步删除上述别名及 `enabled`，
+仍保留其能够计算的仿真关节量。CAN 后端 `aviator_hand` 的字段不变。
+握持、故障保护与反馈计数等诊断字段见 [RH56FTP 节点说明](../nodes/rh56ftp_hand/README.md)。
+
+### 9.4 完整 Frame1 示例（CAN 后端）
 
 Frame0：`hand.state`。
 

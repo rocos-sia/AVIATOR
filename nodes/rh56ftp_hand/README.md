@@ -13,8 +13,21 @@ RH56FTP 的自由度顺序是 `[小指, 无名指, 中指, 食指, 拇指弯曲,
 AVIATOR 的 `[拇指侧摆, 拇指弯曲, 食指, 中指, 无名指, 小指]`。角度寄存器值按 `0..1000`
 归一化到 `drive_position_normalized`。
 
-每侧状态同时保留 `angle`、`force`、`current`、`err`、`status_code`、`temp`（以及
-`error`、`status_values` 别名），数组均已转换为 AVIATOR 顺序；触觉字段不出现在消息中。
+每侧测量数组均为 AVIATOR 顺序，协议只保留以下名称：
+
+| 字段 | 含义 |
+|---|---|
+| `drive_position_raw` / `drive_position_normalized` | 六路位置寄存器刻度及其除以 1000 的归一化值。 |
+| `force` / `current` | 六路受力及有符号电流反馈。 |
+| `current_register_raw` | 电流寄存器原始无符号字，供诊断符号转换。 |
+| `error_codes` / `status_codes` | 六路设备故障位掩码及状态码。 |
+| `temperature` | 六路温度，单位 ℃。 |
+| `error_code` | 六路故障码最大值，供 Monitor 汇总显示；逐路故障以 `error_codes` 为准。 |
+
+删除重复别名 `angle`、`angle_raw`、`err`、`error`、`status_code`、`status_values`、`temp`；
+删除重复软件命令状态 `enabled`（使用顶层 `command_valid`）及始终为 null 的
+`joint_position`、`joint_velocity`。外部订阅者须迁移到上述名称；触觉字段不出现在消息中。
+未配置或反馈过期时测量数组为空，每侧 `valid=false`，不伪造设备值。
 
 ## 启动
 
@@ -135,7 +148,12 @@ YAML 顶层 `threshold` 同时配置位置偏差和稳定变化范围阈值，�
 不再触发软件负载阈值保护、补握或松开动作。设备模式 0 的力阈值按 `force.grasp/hold` 切换，
 设备自身上报的堵转、过流、过温等故障码仍按以下规则处理。
 
-设备错误或无效位置会锁存 `hold_control_error`，发布 `hand.state.valid=false`。
+设备错误或无效位置会锁存 `hold_control_error`。顶层 `hand.state.valid` 只汇总已配置手的
+反馈有效性：所有已配置手均有新鲜、读取成功且位置合法的反馈时为 true，与每侧 `valid`
+一致；未配置的一侧不参与汇总。通信或位置反馈恢复后自动恢复 true，不受历史故障锁存影响。
+设备故障由 `error_codes` 和 `status=ERROR` 表达，有效测量不代表设备无故障。
+Core 另外检查 `hold_control_error`，非空时仍不将反馈用于动作完成判定。
+部署时须同步更新 Core 和手节点，以保持这一保护判断。
 部分自由度故障时，双手请求六路 `-1` 停止；后续超时、无效命令和重复位置命令不会张开。
 只有某只手同一轮新鲜、读取成功的反馈中六个自由度（含侧摆）均有独立故障证据，
 才对该手发送 `[500,1000,1000,1000,1000,1000]` 安全张开目标，另一只手保持停止。

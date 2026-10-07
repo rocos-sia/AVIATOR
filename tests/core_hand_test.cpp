@@ -43,6 +43,20 @@ int main(int argc, char** argv) {
         };
         auto state = feedback(command, now + 1, 1);
         {
+            auto protected_hand = create();
+            protected_hand.request(true, now);
+            auto cmd = *protected_hand.command(now, now, session);
+            auto m = feedback(cmd, now + 1, 1);
+            m.body["hold_control_error"] = "left[0]: device error 4";
+            protected_hand.receive(m, now + 1, session);
+            check(!protected_hand.fresh(now + 1) && !protected_hand.complete(now + 1),
+                  "valid measurements bypassed latched hand protection");
+            m = feedback(cmd, now + 2, 2);
+            m.body["hold_control_error"] = "";
+            protected_hand.receive(m, now + 2, session);
+            check(protected_hand.complete(now + 2), "cleared hand protection still blocks feedback");
+        }
+        {
             auto monitored = create();
             monitored.startMonitoring(now);
             check(monitored.messageFault(now + 1000000).empty(), "message timeout before >1s");

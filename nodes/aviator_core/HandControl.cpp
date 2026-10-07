@@ -102,7 +102,8 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
         const auto publisher = ack.at("publisher_id").get<std::string>();
         const auto seq = ack.at("sequence").get<uint64_t>();
         const auto stamp = ack.at("sample_mono_us").get<uint64_t>();
-        bool valid = m.header.valid;
+        // RH56FTP measurement validity is independent of its latched motion fault.
+        bool valid = m.header.valid && m.body.value("hold_control_error", std::string{}).empty();
         for (const char* side : {"left", "right"}) {
             const auto& hand = m.body.at("hands").at(side);
             if (!hand.at("valid").get<bool>()) { valid = false; continue; }
