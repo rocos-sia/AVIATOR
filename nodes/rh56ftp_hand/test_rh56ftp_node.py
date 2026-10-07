@@ -1225,7 +1225,7 @@ class ClosingFaultTests(unittest.TestCase):
                 if path == "watchdog":
                     node.supervise(now=node.clock_now + node.command_timeout_us)
                 elif path == "invalid_command":
-                    self.tick(node, valid=False)
+                    self.tick(node, valid=False, errors=[0, 0, 32, 0, 0, 0])
                 else:
                     node._safe_pose(force_open=True)  # Explicit normal shutdown.
                 for side in module.SIDES:
@@ -1235,19 +1235,24 @@ class ClosingFaultTests(unittest.TestCase):
                 self.assertIn("device error 32", node.hold_control_error)
                 self.assertTrue(node.make_state(node.clock_now)["valid"])
 
-    def test_feedback_validity_recovers_without_clearing_motion_protection(self):
+    def test_device_fault_recovers_and_next_command_opens(self):
         for code in (2, 4, 16):  # Overtemperature, overcurrent, device communication error.
             with self.subTest(code=code):
                 node, _ = self.make_node()
                 self.tick(node, errors=[code, 0, 0, 0, 0, 0])
                 fault = node.hold_control_error
                 self.assertTrue(fault)
-                self.tick(node)
+                opened = [.5, 1, 1, 1, 1, 1]
+                self.tick(node, target=opened)
                 state = node.make_state(node.clock_now)
                 self.assertTrue(state["valid"])
                 self.assertTrue(all(hand["valid"] for hand in state["hands"].values()))
-                self.assertEqual(state["hold_control_error"], fault)
-                self.assertEqual(node._angle_applied, {side: [-1] * 6 for side in module.SIDES})
+                self.assertEqual(state["hold_control_error"], "")
+                self.assertTrue(state["command_valid"])
+                self.assertEqual(node._angle_applied, {side: [500, 1000, 1000, 1000, 1000, 1000]
+                                                      for side in module.SIDES})
+                self.assertTrue(all(c.phase == "tracking" for channels in node.closing_holds.values() for c in channels))
+                self.assertEqual(sum(c.args[0] == "hold_control_recovered" for c in node.diag.emit.call_args_list), 1)
                 for invalid in ("stale", "read_failed", "future", "bad_position"):
                     snapshot = node.snapshots["left"]
                     stamp = node.clock_now - node.feedback_timeout_us if invalid == "stale" else (
@@ -1260,11 +1265,84 @@ class ClosingFaultTests(unittest.TestCase):
                     self.assertTrue(node.make_state(node.clock_now)["valid"])
 
 
+    def test_fault_recovery_requires_healthy_feedback_from_all_configured_hands(self):
+        for invalid in ("missing", "stale", "read_failed", "future", "bad_position", "other_fault"):
+            with self.subTest(invalid=invalid):
+                node, _ = self.make_node()
+                self.tick(node, errors={"left": [4, 0, 0, 0, 0, 0], "right": [0] * 6})
+                fault = node.hold_control_error
+                node.clock_now += 20000
+                healthy = {side: replace(snapshot, data={**snapshot.data, "err": [0] * 6},
+                                          sample_mono_us=node.clock_now)
+                           for side, snapshot in node.snapshots.items()}
+                node.snapshots = dict(healthy)
+                snapshot = healthy["right"]
+                if invalid == "missing":
+                    node.snapshots["right"] = module.Snapshot()
+                elif invalid == "stale":
+                    node.snapshots["right"] = replace(snapshot, sample_mono_us=node.clock_now-node.feedback_timeout_us)
+                elif invalid == "future":
+                    node.snapshots["right"] = replace(snapshot, sample_mono_us=node.clock_now+1)
+                elif invalid == "read_failed":
+                    node.snapshots["right"] = replace(snapshot, error="TCP timeout")
+                else:
+                    key, values = ("angle", [1001] * 6) if invalid == "bad_position" else ("err", [2] * 6)
+                    node.snapshots["right"] = replace(snapshot, data={**snapshot.data, key: values})
+                node.supervise(now=node.clock_now)
+                self.assertTrue(node.hold_control_error)
+                self.assertFalse(any(c.args[0] == "hold_control_recovered" for c in node.diag.emit.call_args_list))
+                node.snapshots = healthy
+                node.supervise(now=node.clock_now)
+                self.assertEqual(node.make_state(node.clock_now)["hold_control_error"], "")
+                self.assertTrue(node.make_state(node.clock_now)["valid"])
+                self.assertEqual(node.diag.emit.call_args_list[-1].kwargs["previous_error"], fault)
+
+    def test_supervision_recovers_without_replaying_old_targets_and_fault_can_recur(self):
+        node, links = self.make_node()
+        self.hold(node)
+        self.tick(node, errors=[4] * 6)
+        node.supervise(now=node.clock_now)
+        writes = {side: len(link.writes) for side, link in links.items()}
+        node.clock_now += 20000
+        node.snapshots = {side: replace(snapshot, data={**snapshot.data, "err": [0] * 6},
+                                        sample_mono_us=node.clock_now)
+                         for side, snapshot in node.snapshots.items()}
+        node.supervise(now=node.clock_now)
+        self.assertEqual(node.hold_control_error, "")
+        self.assertFalse(node.command_valid)
+        self.assertFalse(node._fault_open_sides)
+        self.assertEqual({side: len(link.writes) for side, link in links.items()}, writes)
+        for _ in range(3):
+            node.supervise(now=node.clock_now)
+        self.assertEqual(sum(c.args[0] == "hold_control_recovered" for c in node.diag.emit.call_args_list), 1)
+        self.tick(node, target=[.7] * 6)
+        self.assertTrue(node.command_valid)
+        self.assertEqual(node._angle_applied, {side: [700] * 6 for side in module.SIDES})
+        self.assertTrue(all(c.phase == "tracking" for channels in node.closing_holds.values() for c in channels))
+        self.tick(node, errors=[0, 2, 0, 0, 0, 0])
+        self.assertIn("device error 2", node.hold_control_error)
+        self.assertEqual(node._angle_applied, {side: [-1] * 6 for side in module.SIDES})
+        self.assertFalse(node._fault_open_sides)
+
+    def test_unconfigured_hand_does_not_prevent_recovery(self):
+        node, _ = self.make_node()
+        node.links["right"] = node.read_links["right"] = None
+        self.tick(node, errors=[4, 0, 0, 0, 0, 0])
+        node.snapshots["right"] = module.Snapshot()
+        left = node.snapshots["left"]
+        node.snapshots["left"] = replace(left, data={**left.data, "err": [0] * 6})
+        node.supervise(now=node.clock_now)
+        self.assertEqual(node.hold_control_error, "")
+        self.assertTrue(node.make_state(node.clock_now)["valid"])
+
     def test_fault_hold_write_failure_is_retried(self):
         node, links = self.make_node()
         self.hold(node)
         self.tick(node, target=[.2] + [0] * 5)  # Resume reached rotation before fault stop.
         node.hold_control_error = "left[2]: device error 32"
+        snapshot = node.snapshots["left"]
+        node.snapshots["left"] = replace(snapshot,
+            data={**snapshot.data, "err": module.canonical_to_rh([0, 0, 32, 0, 0, 0])})
         links["left"].fail_writes = True
         node.supervise(now=node.clock_now + node.command_timeout_us)
         self.assertFalse(node._safe_applied)
@@ -1333,9 +1411,11 @@ class ClosingFaultTests(unittest.TestCase):
         node.supervise(now=node.clock_now)
         self.assertEqual(node._angle_applied["left"], [500, 1000, 1000, 1000, 1000, 1000])
         self.assertEqual(node._angle_applied["right"], [-1] * 6)
-        # Once confirmed and opened, disappearing device errors must not reclose it.
+        # A new valid target can close again once all configured hands recover.
         self.tick(node)
-        self.assertEqual(node._angle_applied["left"], [500, 1000, 1000, 1000, 1000, 1000])
+        self.assertEqual(node.hold_control_error, "")
+        self.assertFalse(node._fault_open_sides)
+        self.assertEqual(node._angle_applied["left"], [400, 0, 0, 0, 0, 0])
 
 
     def test_stale_failed_read_and_future_feedback_cannot_authorize_opening(self):

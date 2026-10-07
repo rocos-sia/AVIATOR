@@ -218,7 +218,8 @@ class DiagnosticLog:
             "feedback_recovered": "反馈已恢复",
             "modbus_connect_failed": "设备连接失败", "feedback_read_failed": "读取反馈失败",
             "modbus_write_failed": "写入设备失败", "feedback_reader_failed": "反馈线程退出",
-            "hold_control_failed": "握持保护触发，已锁存故障，按各手故障范围执行保护",
+            "hold_control_failed": "握持保护触发，按各手故障范围执行保护",
+            "hold_control_recovered": "握持故障已恢复，后续有效指令恢复控制",
             "fault_safe_pose_applied": "已确认本手同轮六路故障，已发送安全张开目标（拇指侧摆 500，其余五路 1000）",
             "fault_hold_applied": "故障保护保持，未满足本手同轮六路故障条件，已请求六路停止（-1）",
             "device_error": "设备故障", "reject command": "指令被拒绝",
@@ -239,7 +240,7 @@ class DiagnosticLog:
         channels = dict(zip(CHANNEL_NAMES, ("拇指侧摆", "拇指弯曲", "食指", "中指", "无名指", "小指")))
         title = phases.get(fields.get("phase"), "握持阶段变化") if event == "hold_phase_changed" else titles.get(event, event)
         if event == "feedback_recovered" and fields.get("hold_control_error"):
-            title = "反馈已恢复，但握持故障仍锁存"
+            title = "反馈已恢复，握持故障尚未全部解除"
         location = sides.get(fields.get("side"), "") + channels.get(fields.get("channel_name"), "")
         parts = [f"{location} {title}".strip()]
 
@@ -375,7 +376,7 @@ class DiagnosticLog:
             emit = (Logger.error if event.endswith("_failed") or event == "device_error" or
                     (event == "hold_phase_changed" and fields.get("phase") == "failed") else
                     Logger.info if event in ("health", "configuration", "configuration_loaded", "setting_write",
-                                             "feedback_recovered", "hold_phase_changed")
+                                             "feedback_recovered", "hold_control_recovered", "hold_phase_changed")
                     else Logger.warn)
             message = (json.dumps(record, ensure_ascii=False, allow_nan=False) if self.log_format == "json"
                        else self._text(event, reason, record))
@@ -758,8 +759,9 @@ class Rh56FtpNode:
                     raise
         self.last_write_error = ""
 
-    def _observe_faults(self, now: int, pending: dict[str, list[ClosingHold]] | None = None) -> None:
+    def _observe_faults(self, now: int, pending: dict[str, list[ClosingHold]] | None = None) -> bool:
         """Count independent channel faults from one fresh snapshot per hand, never failed phases."""
+        all_clear = True
         for side, link in self.links.items():
             faults = {}
             snapshot = self.snapshots[side]
@@ -772,6 +774,11 @@ class Rh56FtpNode:
                         faults[index] = f"device error {code}"
                     elif not 0 <= actual <= 1000:
                         faults[index] = "invalid position feedback"
+            elif link is not None:
+                # Missing/failed/stale reads cannot prove that a device recovered.
+                all_clear = False
+            if faults:
+                all_clear = False
             self.fault_channels[side] = faults
             if faults and not self.hold_control_error:
                 index = next(iter(faults))
@@ -785,7 +792,19 @@ class Rh56FtpNode:
                 self._fault_open_sides.add(side)
                 self._safe_applied = False
         if self.hold_control_error:
+            if all_clear:
+                previous_error = self.hold_control_error
+                self.hold_control_error = ""
+                self._fault_open_sides.clear()
+                self._reset_closing_holds()
+                # Reapply normal settings and positions on the next valid command.
+                # Do not resume a pre-fault target from supervision alone.
+                self._settings_applied.clear()
+                self._angle_applied.clear()
+                self.diag.emit("hold_control_recovered", throttle_us=0, previous_error=previous_error)
+                return True
             self._safe_required = True
+        return False
 
     def _fault_targets(self) -> dict[str, list[int]]:
         return {side: normalized_to_raw(list(DEFAULT_SAFE_POSE)) if side in self._fault_open_sides else [-1] * 6
@@ -999,7 +1018,9 @@ class Rh56FtpNode:
                 raw_by_side[side] = normalized_to_raw(values)
             requested = raw_by_side
             raw_by_side, pending_holds = self._closing_targets(requested, now)
-            self._observe_faults(now, pending_holds)
+            if self._observe_faults(now, pending_holds):
+                # Recovery reset old holds; don't commit the pre-recovery copies.
+                raw_by_side, pending_holds = self._closing_targets(requested, now)
             if self.hold_control_error:
                 raw_by_side = self._fault_targets()
                 for channels in pending_holds.values():
