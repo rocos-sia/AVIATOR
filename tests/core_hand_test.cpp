@@ -42,6 +42,33 @@ int main(int argc, char** argv) {
             return m;
         };
         auto state = feedback(command, now + 1, 1);
+        {
+            auto monitored = create();
+            monitored.startMonitoring(now);
+            check(monitored.messageFault(now + 1000000).empty(), "message timeout before >1s");
+            check(!monitored.messageFault(now + 1000001).empty(), "missing startup messages not detected");
+            auto m = feedback(command, now + 1000002, 1);
+            m.header.valid = false;
+            for (const char* side : {"left", "right"}) m.body["hands"][side]["valid"] = false;
+            monitored.receive(m, now + 1000002, session);
+            check(!monitored.fresh(now + 1000002), "invalid feedback unexpectedly valid");
+            check(monitored.messageFault(now + 2000002).empty(), "invalid messages treated as missing");
+            monitored.revoke();
+            check(!monitored.messageFault(now + 2000003).empty(), "revocation hid message timeout");
+            auto duplicate = m;
+            duplicate.header.sample_mono_us = now + 2000003;
+            monitored.receive(duplicate, now + 2000003, session);
+            check(!monitored.messageFault(now + 2000003).empty(), "replayed sequence refreshed watchdog");
+            auto foreign = feedback(command, now + 2000004, 2);
+            foreign.header.publisher_id = "other_hand";
+            monitored.receive(foreign, now + 2000004, session);
+            check(!monitored.messageFault(now + 2000004).empty(), "foreign publisher refreshed watchdog");
+            monitored.receive(feedback(command, now + 2000005, 2), now + 2000005, session);
+            check(monitored.messageFault(now + 2000005).empty(), "resumed messages did not clear timeout");
+            HandControl disabled;
+            disabled.startMonitoring(now);
+            check(disabled.messageFault(now + 2000000).empty(), "disabled hand raised message timeout");
+        }
         auto wrong = state; wrong.header.publisher_id = "manipulator";
         h.receive(wrong, now + 1, session); check(!h.complete(now + 1), "synthetic feedback accepted");
         h.receive(state, now + 1, session); check(h.complete(now + 1), "close ack rejected");

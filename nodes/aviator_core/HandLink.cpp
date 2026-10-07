@@ -26,6 +26,7 @@ void HandLink::start(zmq::context_t& context, const MotionConfig& config, const 
     // Configuration and ownership are established before exposing the worker.
     allowed_ = allowed;
     stopping_ = false;
+    control_.startMonitoring(monotonic_us());
     try {
         thread_ = std::thread([this, &context, config, session, &heartbeat] {
             io(context, config, session, heartbeat);
@@ -106,6 +107,10 @@ void HandLink::fail(const std::string& reason) {
 std::string HandLink::fault() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return control_.fault(monotonic_us());
+}
+std::string HandLink::messageFault() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return control_.messageFault(monotonic_us());
 }
 HandLink::Status HandLink::status() const {
     std::lock_guard<std::mutex> lock(mutex_);

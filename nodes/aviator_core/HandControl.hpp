@@ -18,6 +18,8 @@ public:
     bool complete(uint64_t now) const;
     bool fresh(uint64_t now) const;
     std::string fault(uint64_t now) const;
+    void startMonitoring(uint64_t now) { monitor_started_ = now; }
+    std::string messageFault(uint64_t now) const;
     const Json& body() const { return body_; }
     uint64_t sample() const { return sample_; }
     uint64_t sequence() const { return state_sequence_; }
@@ -32,6 +34,7 @@ private:
     uint64_t timeout_ = 5000000, feedback_timeout_ = 500000;
     uint64_t requested_ = 0, first_sequence_ = 0, command_sequence_ = 0, next_ = 0;
     uint64_t received_ = 0, sample_ = 0, state_sequence_ = 0, accepted_at_ = 0;
+    uint64_t monitor_started_ = 0;
     double tolerance_ = .03;
     Json body_ = Json::object();
 };

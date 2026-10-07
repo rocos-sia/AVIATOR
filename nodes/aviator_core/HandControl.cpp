@@ -79,6 +79,14 @@ bool HandControl::fresh(uint64_t now) const {
     return valid_ && received_ && now >= received_ && now >= sample_ &&
            now - received_ < feedback_timeout_ && now - sample_ < feedback_timeout_;
 }
+std::string HandControl::messageFault(uint64_t now) const {
+    // Message presence is independent of hand validity, ACKs and active targets.
+    // Revoking motion on ERROR must not clear this fault before messages resume.
+    const auto last = received_ ? received_ : monitor_started_;
+    if (enabled_ && monitor_started_ && now > last && now - last > 1000000)
+        return "hand.state message timeout (>1000 ms): publisher=" + publisher_;
+    return {};
+}
 void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
     if (m.topic != Topic::hand_state || m.header.publisher_id != publisher_ ||
         m.header.clock_id != local_clock_id() || m.header.sample_mono_us > now ||

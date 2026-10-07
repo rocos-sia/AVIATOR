@@ -20,12 +20,12 @@ def port():
 
 def main():
     bus, manipulator, core, root = sys.argv[1:5]
-    hand_warnings = '--hand-warnings' in sys.argv[5:]
+    hand_timeout = '--hand-timeout' in sys.argv[5:]
     root = Path(root)
     directory = Path(tempfile.mkdtemp(prefix="aviator-fsm-test-"))
     print(f"FSM process logs: {directory}", flush=True)
     config = yaml.safe_load((root / "config/system.yaml").read_text())
-    if hand_warnings:
+    if hand_timeout:
         config['core_hand'].update(enabled=True, publisher_id='unavailable_test_hand', completion_timeout_ms=500)
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot["viewer"] = False
@@ -39,7 +39,7 @@ def main():
     config["robot"] = "robot.yaml"
     (directory / "system.yaml").write_text(yaml.safe_dump(config))
     device_config = dict(config)
-    if hand_warnings:
+    if hand_timeout:
         # Simulation uses its configured hand publisher; use a distinct identity
         # so Core really receives no matching hand feedback during the full cycle.
         device_config['core_hand'] = {**config['core_hand'], 'publisher_id': 'simulated_test_hand'}
@@ -83,6 +83,17 @@ def main():
         start("manipulator", [manipulator, "--config", str(directory / "device-system.yaml"), "--headless", "--no-camera"])
         arguments = [core, "--config", str(directory / "system.yaml"), "--console"]
         process = start("core", arguments)
+        if hand_timeout:
+            state = wait_state("ERROR", 10)
+            assert 'hand.state message timeout' in state['current_error'], state
+            command("RESET_ERROR")
+            time.sleep(.2)
+            assert 'hand.state message timeout' in wait_state("ERROR", 3)['current_error']
+            command("quit")
+            assert process.wait(timeout=10) == 0
+            assert '[error]' in (directory / 'core.log').read_text()
+            print("PASS: missing hand messages cause managed FSM ERROR", flush=True)
+            return
         wait_state("READY", 30)  # Init/enable completed; no automatic home.
         command("GRASP_WHEEL")
         time.sleep(.1)
@@ -110,8 +121,6 @@ def main():
         command("LEAVE_WHEEL")
         wait_state("RELEASING", 3)
         wait_state("STANDBY", 30)
-        if hand_warnings:
-            assert 'Core hand warning:' in (directory / 'core.log').read_text()
         command("emergency")
         state = wait_state("EMERGENCY_STOP", 3)
         assert state["brake_requested"] and not state["brake_confirmed"]

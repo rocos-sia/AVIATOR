@@ -22,7 +22,7 @@ def main():
     config = yaml.safe_load((root / 'config/system.yaml').read_text())
     # Only Core's kinematic initialization uses this file; no hardware backend is instantiated.
     config['robot'] = str(root / 'config/robot.yaml')
-    # No hand device is started: its timeout must warn without blocking READY.
+    # Invalid but continuously arriving hand messages warn without blocking READY.
     config['core_hand'] = {'enabled': True, 'completion_timeout_ms': 500}
     endpoints = [f'tcp://127.0.0.1:{port()}' for _ in range(3)]
     assert len(set(endpoints)) == 3
@@ -34,6 +34,7 @@ def main():
     stop = threading.Event()
     ready = threading.Event()
     stale = threading.Event()
+    missing_hand = threading.Event()
     failures = []
     operations = []
     posture = json.loads((root / 'config/posture.json').read_text())
@@ -73,6 +74,14 @@ def main():
                            arms={side: dict(joint_position=q[7 * i:7 * (i + 1)], joint_velocity=[0.] * 7 if enabled else None, enabled=enabled)
                                  for i, side in enumerate(('left', 'right'))})
                 pub.send_multipart([b'arm.state', json.dumps(msg).encode()])
+                if not missing_hand.is_set():
+                    hand = dict(msg_type='HandState', version='1.0', sequence=sequence,
+                                timestamp=time.time_ns() // 1000, sample_mono_us=now, valid=False,
+                                clock_id=clock, publisher_id='inspire_hand', session_id=session,
+                                feedback_only=False, command_valid=False,
+                                accepted_command=dict(publisher_id='', sequence=0, sample_mono_us=0),
+                                hands={side: dict(valid=False) for side in ('left', 'right')})
+                    pub.send_multipart([b'hand.state', json.dumps(hand).encode()])
                 stop.wait(.005)
         except BaseException as exc:
             failures.append(exc)
@@ -113,16 +122,30 @@ def main():
         assert state('READY', require_valid=True)['ready']
         assert 'Core hand warning:' in (directory / 'core.log').read_text()
         assert operations == ['describe', 'authorize', 'enable'], operations
-        # After READY, stale RT feedback must revoke readiness even if status messages arrive.
+        # Missing messages must trip ERROR independently of feedback validity.
+        missing_hand.set()
+        state('ERROR')
+        assert 'hand.state message timeout' in (directory / 'core.log').read_text()
+        assert '[error]' in (directory / 'core.log').read_text()
+        process.stdin.write('RESET_ERROR\n'); process.stdin.flush()
+        time.sleep(.15)
+        state('ERROR')
+        missing_hand.clear()
+        time.sleep(.15)
+        process.stdin.write('RESET_ERROR\n'); process.stdin.flush()
+        state('SAFE', require_valid=True)
+        # After recovery, stale RT feedback must revoke readiness even if status messages arrive.
         stale.set()
-        state('SAFE')
+        deadline = time.monotonic() + 3
+        while state('SAFE')['ready']:
+            assert time.monotonic() < deadline, 'stale arm feedback retained readiness'
         process.stdin.write('GRASP_WHEEL\n'); process.stdin.flush()
         time.sleep(.1)
         assert operations.count('enable') == 1, operations
         process.stdin.write('quit\n'); process.stdin.flush()
         assert process.wait(timeout=5) == 0
         assert not failures, failures
-        print('PASS: missing hand warns but startup reaches READY; stale arm feedback still trips SAFE (mock device only)', flush=True)
+        print('PASS: invalid hand messages warn; missing messages trip ERROR and require recovery/reset; stale arm trips SAFE', flush=True)
     finally:
         stop.set()
         if thread.ident is not None: thread.join()

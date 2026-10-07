@@ -30,6 +30,7 @@ public:
     bool wait(uint64_t version, const std::atomic<bool>* cancel = nullptr);
     void fail(const std::string&);
     std::string fault() const;
+    std::string messageFault() const;
     Status status() const;
 private:
     void warnLocked(const std::string& reason); // Hand failures are advisory to Core; mutex_ held.

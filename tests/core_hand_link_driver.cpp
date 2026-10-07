@@ -49,12 +49,14 @@ int main(int argc, char** argv) {
                 link.sendGraspCommand(GraspCommand::Lock);
                 if (mode == "revoke") link.allowMotion(false);
                 if (mode == "heartbeat") cleanup();
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                std::this_thread::sleep_for(std::chrono::milliseconds(mode == "dropped" ? 1300 : 1000));
                 bool fresh;
                 const auto snapshot = link.snapshot(fresh);
                 if (mode == "arm_failure" && (!link.graspState().fault || !snapshot.fault))
                     throw std::runtime_error("Arm IO fault not propagated");
-                if ((mode == "dropped" || mode == "heartbeat") && (link.graspState().fault || snapshot.fault))
+                if (mode == "dropped" && (!snapshot.fault || snapshot.error.find("hand.state message timeout") == std::string::npos))
+                    throw std::runtime_error("Missing hand message timeout fault");
+                if (mode == "heartbeat" && (link.graspState().fault || snapshot.fault))
                     throw std::runtime_error("Hand warning propagated as arm/Core fault");
                 if (mode == "heartbeat") {
                     const auto error = link.diagnostics();
