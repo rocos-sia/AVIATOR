@@ -30,6 +30,26 @@ conda activate rh56-pendant
 
 //5、启动core
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_core_managed --config config/system.yaml 
+// 相机随动测试：用下列独立 Core 替换第5步，不要同时运行其他 Core；无需 flight_gateway。
+// 先启动 bus、manipulator、手节点及第6步相机，再运行此入口；启动后自动使能、接近把手并锁定。
+// 无真实手时，第4步可替换为 python3 nodes/rh56ftp_hand/fake_rh56ftp_hand.py --config config/rh56ftp_hand.yaml。
+// 构建：cmake --build build/release --target aviator_core_camera_servo -j2
+// 启动：./build/release/bin/aviator_core_camera_servo --config config/system.yaml --camera-id cockpit
+// 关节阻抗刚度沿用 robot.yaml；servoWheel(angle=-theta_rad, displacement=-translation_along_axis_m-0.085, v=1)。
+// 位移 -0.085/0/+0.085 m -> 目标 0/-0.085/-0.170 m；角度限幅 ±0.87266 rad，位移限幅 [-0.170,0] m。
+// --camera-timeout-ms 200（默认）：按本机相机原始采样时间判断过期；无效/过期时停止刷新，Servo 超时减速并保持。
+// 新鲜有效观测恢复后自动继续随动；Ctrl+C 停止、解锁并下使能。
+// 相机随动一键启动（独立脚本，不改原有 start_aviator.sh；替代手动启动整套测试节点）：
+// ./scripts/start_camera_servo.sh --dry-run       # 只预览命令，不启动节点
+// ./scripts/start_camera_servo.sh --fake-hand     # 真实机械臂和相机 + 模拟手
+// ./scripts/start_camera_servo.sh                 # 真实机械臂、相机和手
+// ./scripts/start_camera_servo.sh --fake-hand --logger  # 加录制，输出 logs/camera_servo_时间.mcap
+// 默认 build/release/bin，可用 AVIATOR_BIN 覆盖；使用 config/system.yaml、camera-id=cockpit。
+// 自动启动 Bus、Manipulator（sudo）、手、Camera（--show --print-pose）、Monitor 和 Chrome，最后启动测试 Core。
+// --logger 时 Logger 先于 Camera 启动；无需 Gateway。CAMERA_TIMEOUT_MS 默认200，允许20..1000。
+// 日志及本次独立 session 位于 /tmp/aviator-camera-servo.*，不改写 /tmp/aviator_session.uuid。
+// Ctrl+C 先停止 Core，最多等15秒完成减速/解锁/下使能，再停止其他节点；保持终端打开。
+// 与 start_aviator.sh 共用互斥锁；先停止手动启动的节点，避免端口占用或多个 Core 同时控制。
 //6、启动camera
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ~/miniconda3/envs/apriltag_realsense/bin/python nodes/camera/main.py   --config config/camera.yaml --recording-config config/recording.yaml   --camera-id cockpit --session "$(cat /tmp/aviator_session.uuid)"   --show --print-pose
 

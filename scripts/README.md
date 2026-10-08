@@ -37,6 +37,36 @@ Manipulator 在独立会话内直接认证，停止时也直接认证，不依�
 `/tmp/aviator_session.uuid` 不存在或为空时生成 UUID，否则沿用现有值。
 `--dry-run` 只打印启动命令，不启动节点、不请求 sudo、不写文件。
 
+## 相机随动测试
+
+独立脚本 `start_camera_servo.sh` 启动相机随动测试，原有启动脚本保持不变：
+
+```bash
+./scripts/start_camera_servo.sh --dry-run       # 预览启动命令
+./scripts/start_camera_servo.sh --fake-hand     # 真实机械臂、相机 + 模拟手
+./scripts/start_camera_servo.sh                 # 真实机械臂、相机和手
+./scripts/start_camera_servo.sh --fake-hand --logger  # 同时记录 MCAP
+```
+
+脚本从任意目录调用均可，使用 `config/system.yaml`，依次启动 Bus、Manipulator
+（sudo）、RH56FTP、相机、Monitor 和 Chrome，最后启动 `aviator_core_camera_servo`；
+不需要 Gateway。Core 会自动使能、接近并锁定把手，再根据 `cockpit` 相机的
+`steering_wheel` 在关节阻抗模式下随动。角度取 `-theta_rad`，位移取
+`-translation_along_axis_m - 0.085` 并限幅到 `[-0.170, 0]` m。
+启动前先停止手动运行的节点；此脚本与 `start_aviator.sh` 使用同一互斥锁。
+
+默认二进制目录为 `build/release/bin`（可通过 `AVIATOR_BIN` 覆盖），Monitor 默认
+也使用此目录。Python 环境同上，可设置 `CONDA_ROOT`、`HAND_PYTHON`、
+`CAMERA_PYTHON`、`MONITOR_BIN` 和 `START_DELAY`（默认 2 秒）。
+`CAMERA_TIMEOUT_MS` 控制相机观测有效期，默认 200 ms，范围为 20–1000 ms。
+相机带 `--show --print-pose`，需要桌面显示环境。sudo 认证沿用原脚本的标准输入方式。
+
+日志保存在输出的 `/tmp/aviator-camera-servo.*` 目录，每次生成独立 session 并保存在
+该目录，不改写 `/tmp/aviator_session.uuid`。默认不录制图像；`--logger` 会在相机前
+启动 Logger，并将记录保存到 `logs/camera_servo_时间.mcap`。
+保持终端打开；Ctrl+C 先停止 Core，最多等待 15 秒完成减速、解锁和下使能，再停止
+其他节点。`--dry-run` 仅预览，不启动节点、不请求 sudo、不写文件；`--help` 查看完整用法。
+
 ## 安装 apt 依赖（Ubuntu 22.04）
 
 ```bash
