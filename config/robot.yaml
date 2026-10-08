@@ -45,10 +45,10 @@ posture: posture.json
 # Ruckig 自动计算时长；以下为关节峰值约束，两臂共用同步轨迹。
 # Managed STANDBY requires actual joint positions within this tolerance of home (rad).
 home_position_tolerance: 0.15
-home_speed: 0.2          # 当前位置 → home，rad/s
-approach_speed: 0.2      # home → 最终抓握位置，rad/s
-joint_acceleration: 0.5  # Home、连续抓握接近关节加速度上限，rad/s²
-joint_jerk: 1.0          # Home、连续抓握接近关节加加速度上限，rad/s³
+home_speed: 0.8          # 当前位置 → home，rad/s
+approach_speed: 0.8      # home → 最终抓握位置，rad/s
+joint_acceleration: 1.5  # Home、连续抓握接近关节加速度上限，rad/s²
+joint_jerk: 2.0          # Home、连续抓握接近关节加加速度上限，rad/s³
 
 # 松开后的笛卡尔撤离时长，单位 s，必须 >= 1。
 # 抓握接近使用 Ruckig 自动计算时长，不使用此参数。
@@ -62,31 +62,31 @@ planning_period: 0.05
 # 各机械臂关节的轨迹规划速度上限，单位 rad/s。
 # Home/Approach/MoveWheel 取本值与 URDF 限位中的较小值。
 # Servo 不按 joint_speed/joint_acceleration/joint_jerk 拦截，仍保留底层指令防跳变保护。
-joint_speed: 1.9
+joint_speed: 2.9
 
 # 后端故障/通信失效时的关节制动加速度上限，单位 rad/s²。
 # 正常 Servo 停止/输入超时由 Ruckig 按下列轮盘加速度和 jerk 约束减速。
 # 双臂用同一个减速比例；停止后保持最终指令，不跳到实测角度。
 # 反馈故障或制动路径不安全时直接停止 SDK 控制。
-stop_acceleration: 2.0
+stop_acceleration: 4.0
 
 # 不按关节跟踪偏差中止运动；仍检查反馈时效、关节限位和 SDK 故障。
 # Direct Demo 的 home 仅确认停稳；Managed 回 home 另检查 home_position_tolerance，超时停止。
 
 # 运动结束后的开环驻留时间，单位 s。统一仿真与真机：只按时间等待运动收尾，
 # 不校验轮盘是否停稳；期间保留取消/故障/肘部安全检查。
-settle_duration: 0.3
+settle_duration: 0.2
 
 # v=1 时的轮盘速度上限；MoveWheel 自动协调时间并受各关节速度进一步约束。
-wheel_angular_speed: 1.8   # rad/s
-wheel_linear_speed: 0.5   # m/s
+wheel_angular_speed: 3.8   # rad/s
+wheel_linear_speed: 2.5   # m/s
 
 # Servo 在线规划的轮盘加速度、加加速度上限；换目标时继承当前速度/加速度。
 # 以下为保守起始值，不能仅增大轮盘约束而忽略关节限位和奇异位形。
-wheel_angular_acceleration: 2.0  # rad/s²
-wheel_linear_acceleration: 1.0 # m/s²
-wheel_angular_jerk: 4.0        # rad/s³
-wheel_linear_jerk: 2.0       # m/s³
+wheel_angular_acceleration: 6.0  # rad/s²
+wheel_linear_acceleration: 4.0 # m/s²
+wheel_angular_jerk: 10.0        # rad/s³
+wheel_linear_jerk: 8.0       # m/s³
 
 # 在线规划块周期，必须是整毫秒；Core 提前缓存约 80..100 ms。
 # 连续 q/dq/ddq 曲线按 1 ms 采样原样发送，两臂共用执行游标。
