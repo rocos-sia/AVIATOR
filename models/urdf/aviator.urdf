@@ -6,7 +6,7 @@
   </material>
 
   <material name="grey">
-    <color rgba="0.5 0.5 0.5 1"/>
+    <color rgba="0.5 0.5 0.5 1.0"/>
   </material>
 
   <material name="blue">
@@ -22,21 +22,38 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="../meshes/Cessna/aircraft.STL" scale="1 1 1"/>
+        <mesh filename="../meshes/Cessna/aircraft_visual.STL" scale="1 1 1"/>
       </geometry>
-      <material name="orange"/>
+      <material name="grey"/>
     </visual>
-    <collision>
+    <!-- <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
         <mesh filename="../meshes/Cessna/aircraft.STL" scale="1 1 1"/>
       </geometry>
-    </collision>
+    </collision> -->
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <mass value="1.0"/>
       <inertia ixx="0.01" ixy="0.0" ixz="0.0" iyy="0.01" iyz="0.0" izz="0.01"/>
     </inertial>
+  </link>
+
+  
+  <joint name="fixed_shell" type="fixed">
+    <parent link="aircraft"/>
+    <child link="shell"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="shell">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../meshes/Cessna/shell.STL" scale="1 1 1"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
   </link>
 
   <joint name="roll_input_joint" type="revolute">
@@ -62,14 +79,14 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="../meshes/Cessna/steering_wheel.STL" scale="1 1 1"/>
+        <mesh filename="../meshes/Cessna/steering_wheel_qr.STL" scale="1 1 1"/>
       </geometry>
       <material name="blue"/>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="../meshes/Cessna/steering_wheel.STL" scale="1 1 1"/>
+        <mesh filename="../meshes/Cessna/steering_wheel_qr.STL" scale="1 1 1"/>
       </geometry>
     </collision>
     <inertial>
@@ -78,6 +95,47 @@
       <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
     </inertial>
   </link>
+
+
+  <joint name="roll_input_joint_2" type="revolute">
+    <parent link="aircraft"/>
+    <child link="dummy_link_2"/>
+    <mimic joint="roll_input_joint" multiplier="1.0"/>
+    <origin xyz="0 0.47 0" rpy="1.5707 0 -1.5707"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-0.87266" upper="0.87266" effort="10.0" velocity="1.0"/>
+  </joint>
+
+  <link name="dummy_link_2" />
+
+  <joint name="pitch_input_joint_2" type="prismatic">
+    <parent link="dummy_link_2"/>
+    <child link="steering_wheel_2"/>
+    <mimic joint="pitch_input_joint" multiplier="1.0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-0.170" upper="0" effort="10.0" velocity="1.0"/>
+  </joint>
+
+  <!-- Steering Wheel 2 -->
+  <link name="steering_wheel_2">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../meshes/Cessna/steering_wheel_2.STL" scale="1 1 1"/>
+      </geometry>
+      <material name="blue"/>
+    </visual>
+
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+    </inertial>
+  </link>
+
+
+
 
   <joint name="left_arm_base" type="fixed">
     <parent link="aircraft"/>
