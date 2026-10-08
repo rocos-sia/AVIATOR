@@ -234,6 +234,11 @@ if(TARGET aviator_core_control)
       ${CMAKE_CURRENT_SOURCE_DIR}/core_hand_process_test.py
       $<TARGET_FILE:aviator_core_hand_link_driver> $<TARGET_FILE:aviator_bus>)
     set_tests_properties(core_hand_process PROPERTIES TIMEOUT 60)
+    add_test(NAME core_fake_rh56ftp_process COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/core_hand_process_test.py
+      $<TARGET_FILE:aviator_core_hand_link_driver> $<TARGET_FILE:aviator_bus>
+      ${PROJECT_SOURCE_DIR}/nodes/rh56ftp_hand/fake_rh56ftp_hand.py)
+    set_tests_properties(core_fake_rh56ftp_process PROPERTIES TIMEOUT 30)
   endif()
 endif()
 

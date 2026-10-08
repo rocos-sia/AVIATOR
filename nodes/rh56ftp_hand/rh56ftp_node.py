@@ -1431,8 +1431,12 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(argv: list[str] | None = None, *, simulated: bool = False) -> int:
+    parser = argparse.ArgumentParser(description=(
+        "Fake RH56FTP 双手节点：复用真实协议，仅模拟设备，不连接 Modbus。" if simulated else __doc__))
+    if simulated:
+        parser.add_argument("--motion-rate", type=float, default=2.0,
+                            help="speed=500 时每秒归一化位移（默认 2，即全行程 0.5 秒）")
     parser.add_argument("--config", type=Path, help="YAML 配置文件（speed、force、threshold、right_host、left_host）；显式命令行参数优先")
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5556", help="hand.command SUB connects to bus egress")
     parser.add_argument("--state-endpoint", default="tcp://127.0.0.1:5555", help="hand.state PUB connects to bus ingress")
@@ -1515,7 +1519,19 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--force 必须为 0..3000 的整数")
     if not math.isfinite(args.diagnostic_interval_s) or args.diagnostic_interval_s < 0:
         parser.error("--diagnostic-interval-s 必须为非负有限数")
-    hand_ip, hand_port, hand_link = load_handlink()
+    if simulated:
+        from fake_rh56ftp_hand import FakeHandLink, FakeRh56FtpNode
+        if not math.isfinite(args.motion_rate) or args.motion_rate <= 0:
+            parser.error("--motion-rate 必须为正有限数")
+        hand_ip, hand_port = "simulated-right", 6000
+        if args.left_host is None:
+            args.left_host = "simulated-left"
+        def hand_link(host, port, timeout):
+            return FakeHandLink(host, port, timeout, motion_rate=args.motion_rate)
+        node_type = FakeRh56FtpNode
+    else:
+        hand_ip, hand_port, hand_link = load_handlink()
+        node_type = Rh56FtpNode
     right_host = hand_ip if args.right_host is None else args.right_host
     right_port = hand_port if args.right_port is None else args.right_port
     if args.left_host and args.left_port is None:
@@ -1526,11 +1542,12 @@ def main(argv: list[str] | None = None) -> int:
         "right": hand_link(right_host, right_port, args.modbus_timeout) if right_host else None,
         "left": hand_link(args.left_host, args.left_port, args.modbus_timeout) if args.left_host else None,
     }
-    read_links = {
+    # Simulated reads and writes share the same in-memory device and its lock.
+    read_links = command_links if simulated else {
         "right": hand_link(right_host, right_port, args.modbus_timeout) if right_host else None,
         "left": hand_link(args.left_host, args.left_port, args.modbus_timeout) if args.left_host else None,
     }
-    node = Rh56FtpNode(command_links, read_links=read_links, publisher_id=args.publisher_id,
+    node = node_type(command_links, read_links=read_links, publisher_id=args.publisher_id,
                        command_timeout_ms=args.command_timeout_ms,
                        feedback_timeout_ms=args.feedback_timeout_ms,
                        feedback_only=args.feedback_only, speed=args.speed, force=args.force,
@@ -1539,6 +1556,8 @@ def main(argv: list[str] | None = None) -> int:
                        closing_hold_ms=args.closing_hold_ms, closing_motion_raw=args.closing_motion_raw,
                        log_format=args.log_format)
     parameters = dict(vars(args))
+    if simulated:
+        parameters["simulated"] = True
     parameters.update(config=str(args.config.resolve()) if args.config else None,
                       right_host=right_host, right_port=right_port, left_host=args.left_host or "",
                       configured_mode=POSITION_FORCE_PROTECTION_MODE, safe_pose=list(DEFAULT_SAFE_POSE))

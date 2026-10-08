@@ -250,4 +250,38 @@ python3 nodes/aviator_hand/hand_command.py
 
 ## 仿真替代
 
+### 只替换灵巧手
+
+`fake_rh56ftp_hand.py` 是可独立运行的双手替代节点，不连接 Modbus、不依赖
+`pymodbus`。需要 `pyzmq`；使用 `--config` 时还需要 `PyYAML`。
+在 Bus 启动后，用它替换真实 RH56FTP 节点即可，Core 与其他节点保持现有配置：
+
+```bash
+python3 nodes/rh56ftp_hand/fake_rh56ftp_hand.py --config config/rh56ftp_hand.yaml
+
+# 一键启动：真实机械臂和相机 + 模拟双手
+./scripts/start_aviator.sh --fake-hand
+```
+
+一键启动沿用 `HAND_PYTHON`；可将它设为装有上述依赖的 Python 完整路径。
+不要同时运行真实手节点或提供手反馈的 `simulation`；`--fake-hand` 与
+`--simulation` 互斥，避免同一发布者产生两份反馈。
+
+fake 复用真实节点的命令校验、发布者/epoch 绑定、ACK、状态周期、逐通道保持和
+超时张开逻辑，支持 `NORMALIZED_POSITION` 和 `GRASP_SETPOINT`。
+默认 `publisher_id=rh56ftp_hand`，SUB/PUB 端点及全部原有参数保持兼容。
+无配置时默认启用左右双手；配置和命令行中的非空 host 仅作为标签，不访问该地址，
+空字符串仍禁用对应手。Core 的正常双手流程需要左右手都启用。
+Core 重启更换 control_epoch 后，也应重启 fake 节点重新绑定。
+
+启动位置为 `[0.5,1,1,1,1,1]`。各通道按限速连续跟随目标，默认在 `speed=500`
+时全行程耗时 0.5 秒；`--motion-rate 2` 表示此速度设定下每秒归一化位移为 2，
+实际模拟速率按 `speed/500` 缩放，速度为 0 时不动。
+部分写入的 `None` 不改变通道，`-1` 停止在当前位置，后续新目标可恢复运动。
+力、电流及错误码为 0，温度为 30℃；不模拟接触、负载、温升或机械抓握，
+`grasp_verified` 始终为 false。反馈字段与真手兼容，并增加 `simulated=true`，
+每侧 `position_source=simulated`、`sample_time_basis=host_simulation`，用于区分数据来源。
+
+### 整机仿真
+
 `simulation --config config/system.yaml` 在一个进程中提供臂服务与兼容的手部消息/ACK；仿真时不启动本节点或 manipulator。Core 手部控制使用相同的 `core_hand` 配置，不再按 backend 跳过。详见 [simulation](../simulation/README.md)。
