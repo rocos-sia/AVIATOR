@@ -6,24 +6,28 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
 DRY_RUN=false
 SIMULATION=false
+FAKE_HAND=false
 HEADLESS=false
 LOGGER=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
         --simulation) SIMULATION=true ;;
+        --fake-hand) FAKE_HAND=true ;;
         --headless) HEADLESS=true ;;
         --logger) LOGGER=true ;;
         -h|--help)
-            echo '用法: ./scripts/start_aviator.sh [--simulation] [--headless] [--logger] [--dry-run]'
+            echo '用法: ./scripts/start_aviator.sh [--simulation | --fake-hand] [--headless] [--logger] [--dry-run]'
             echo '默认启动 Rokae + RH56FTP，加载 config/system.yaml。'
             echo '--simulation 使用单个仿真进程替代设备节点，加载 config/system-simulation.yaml。'
+            echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂和相机照常启动。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '环境变量: AVIATOR_BIN, CONDA_ROOT, HAND_PYTHON, CAMERA_PYTHON, MONITOR_BIN, START_DELAY'
             exit 0 ;;
         *) echo "未知参数: $arg" >&2; exit 2 ;;
     esac
 done
+$FAKE_HAND && $SIMULATION && { echo '--fake-hand 与 --simulation 不能同时使用' >&2; exit 2; }
 $HEADLESS && ! $SIMULATION && { echo '--headless 仅适用于 --simulation' >&2; exit 2; }
 SYSTEM_CONFIG=config/system.yaml
 if $SIMULATION; then
@@ -37,6 +41,10 @@ fi
 
 CONDA_ROOT=${CONDA_ROOT:-$HOME/miniconda3}
 HAND_PYTHON=${HAND_PYTHON:-$CONDA_ROOT/envs/rh56-pendant/bin/python3}
+HAND_NODE=nodes/rh56ftp_hand/rh56ftp_node.py
+if $FAKE_HAND; then
+    HAND_NODE=nodes/rh56ftp_hand/fake_rh56ftp_hand.py
+fi
 CAMERA_PYTHON=${CAMERA_PYTHON:-$CONDA_ROOT/envs/apriltag_realsense/bin/python}
 MONITOR_BIN=${MONITOR_BIN:-$AVIATOR_BIN/aviator_monitor}
 START_DELAY=${START_DELAY:-2}
@@ -113,7 +121,7 @@ if ! $DRY_RUN; then
     else
         commands+=(sudo)
         executables+=("$AVIATOR_BIN/manipulator" "$HAND_PYTHON" "$CAMERA_PYTHON")
-        files+=(config/camera.yaml config/rh56ftp_hand.yaml nodes/rh56ftp_hand/rh56ftp_node.py nodes/camera/main.py)
+        files+=(config/camera.yaml config/rh56ftp_hand.yaml "$HAND_NODE" nodes/rh56ftp_hand/rh56ftp_node.py nodes/camera/main.py)
     fi
     for command in "${commands[@]}"; do
         command -v "$command" >/dev/null || { echo "缺少命令: $command" >&2; exit 1; }
@@ -151,7 +159,7 @@ if $SIMULATION; then
 else
     start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config "$SYSTEM_CONFIG"
     start rh56ftp env PATH="$(dirname "$HAND_PYTHON"):$PATH" "$HAND_PYTHON" \
-        nodes/rh56ftp_hand/rh56ftp_node.py --config config/rh56ftp_hand.yaml
+        "$HAND_NODE" --config config/rh56ftp_hand.yaml
 fi
 start gateway "$AVIATOR_BIN/flight_gateway"
 start core "$AVIATOR_BIN/aviator_core_managed" --config "$SYSTEM_CONFIG"

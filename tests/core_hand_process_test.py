@@ -18,7 +18,7 @@ def port():
         return s.getsockname()[1]
 
 
-def run(driver, bus, mode):
+def run(driver, bus, mode, fake_node=None):
     with tempfile.TemporaryDirectory(prefix='core-hand-process-') as directory:
         root = Path(directory)
         endpoints = [f'tcp://127.0.0.1:{port()}' for _ in range(3)]
@@ -39,6 +39,9 @@ core_hand:
     left: [0.9, 0.8, 0.7, 0.6, 0.5, 0.4]
     right: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
 ''')
+        if fake_node:
+            config.write_text(config.read_text().replace(
+                '  enabled: true', '  enabled: true\n  publisher_id: rh56ftp_hand'))
         if mode == 'no_close':
             config.write_text(config.read_text().split('  close:')[0])
         if mode == 'bad_config':
@@ -50,6 +53,8 @@ core_hand:
         sub.subscribe(b'hand.command')
         sub.subscribe(b'flight.state')
         sub.subscribe(b'arm.command')
+        if fake_node:
+            sub.subscribe(b'hand.state')
         rep.bind(endpoints[2])
         server = str(uuid.uuid4())
         node = str(uuid.uuid4())
@@ -69,8 +74,13 @@ core_hand:
         stalled_targets = []
         bus_process = subprocess.Popen([bus, '--input', endpoints[0], '--output', endpoints[1],
                                        '--lock-file', str(root / 'bus.lock')], stdout=subprocess.DEVNULL)
-        child = None
+        child = hand_process = None
+        hand_log = (root / 'fake-hand.log').open('w+')
         try:
+            if fake_node:
+                hand_process = subprocess.Popen([
+                    sys.executable, str(fake_node), '--endpoint', endpoints[1],
+                    '--state-endpoint', endpoints[0]], stdout=hand_log, stderr=subprocess.STDOUT)
             time.sleep(.2)
             child = subprocess.Popen([driver, str(config), mode], stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, text=True,
@@ -81,8 +91,12 @@ core_hand:
                             sample_mono_us=time.monotonic_ns()//1000, sequence=seq,
                             clock_id=clock, publisher_id=publisher, session_id=session, valid=True)
             while child.poll() is None and time.monotonic() < until:
+                if hand_process:
+                    assert hand_process.poll() is None, 'fake hand process exited'
                 now = time.monotonic()
-                if rep.poll(0):
+                # Consume queued device feedback before asserting service ordering.
+                # Core may already have received the sample that completed opening.
+                if rep.poll(0) and not (fake_node and sub.poll(5)):
                     request = rep.recv_json()
                     op = request['operation']
                     operations.append(op)
@@ -93,7 +107,8 @@ core_hand:
                     elif op == 'authorize': result = dict(control_epoch=str(uuid.uuid4()))
                     elif op == 'enable':
                         if mode not in ('missing', 'readonly', 'foreign', 'invalid', 'stale', 'stuck_open', 'bad_config'):
-                            assert actual == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]), 'arm enabled before actual opening'
+                            assert all(abs(v-w) <= (.03 if fake_node else 0) for pose in actual.values()
+                                       for v,w in zip(pose, [.5, 1, 1, 1, 1, 1])), 'arm enabled before actual opening'
                         enabled = True
                         result = dict(target=[0]*14)
                     elif op == 'disable': enabled = False
@@ -104,7 +119,8 @@ core_hand:
                         locked_at = now
                     elif op == 'unlock':
                         if mode in ('normal', 'isolation', 'invalid_recovery', 'synchronized', 'no_close'):
-                            assert actual == dict(left=[.5, 1, 1, 1, 1, 1], right=[.5, 1, 1, 1, 1, 1]), 'software unlock before actual opening'
+                            assert all(abs(v-w) <= (.03 if fake_node else 0) for pose in actual.values()
+                                       for v,w in zip(pose, [.5, 1, 1, 1, 1, 1])), f'software unlock before actual opening: {actual}'
                         locked = False
                     elif op == 'stop': result = dict(target=[0]*14)
                     else: raise AssertionError(op)
@@ -113,6 +129,11 @@ core_hand:
                 while sub.poll(0):
                     topic, data = sub.recv_multipart()
                     message = json.loads(data)
+                    if topic == b'hand.state':
+                        if message['publisher_id'] == 'rh56ftp_hand' and message['valid']:
+                            assert message['simulated']
+                            actual = {side: message['hands'][side]['drive_position_normalized'] for side in targets}
+                        continue
                     if topic == b'arm.command':
                         last_arm = now
                         if mode in ('synchronized', 'synchronized_drop', 'no_close') and message['total_ticks'] == 1000:
@@ -122,7 +143,7 @@ core_hand:
                         continue
                     if topic == b'flight.state':
                         if message['freshness']['hand']['valid']:
-                            assert message['hands']['left']['position_source'] == 'angle_act_register'
+                            assert message['hands']['left']['position_source'] == ('simulated' if fake_node else 'angle_act_register')
                             aggregate_seen = True
                         continue
                     captured.append(message)
@@ -161,7 +182,7 @@ core_hand:
                         if close_seen: unlock_seen = True
                         first_open = True
                     ack = {key: message[key] for key in ack}
-                if first_open and now - last_change > .15 and mode != 'stuck_open':
+                if not fake_node and first_open and now - last_change > .15 and mode != 'stuck_open':
                     actual = {key: list(value) for key, value in targets.items()}
                 if now >= next_state:
                     next_state = now + .02
@@ -184,7 +205,7 @@ core_hand:
                     synthetic = header('HandState', 'manipulator', server)
                     synthetic['hands'] = dict(left=dict(position_source='synthetic'), right={})
                     pub.send_multipart([b'hand.state', json.dumps(synthetic).encode()])
-                    if (mode != 'missing' and not (mode == 'dropped' and locked_at and now - locked_at > .1)
+                    if (not fake_node and mode != 'missing' and not (mode == 'dropped' and locked_at and now - locked_at > .1)
                             and not (mode == 'synchronized_drop' and trajectory_at and now - trajectory_at > .1)):
                         m = header('HandState', 'inspire_hand', node)
                         owned = dict(ack)
@@ -214,6 +235,8 @@ core_hand:
                 print('no_arm: constructor failure cleaned up both IO threads', flush=True)
                 return
             assert child.returncode == 0, output
+            if fake_node:
+                assert 'Core hand warning' not in output, output
             if mode == 'synchronized':
                 assert partial_seen and close_seen and unlock_seen and aggregate_seen
                 assert cursor == 1000 and len(stalled_targets) >= 5
@@ -253,11 +276,27 @@ core_hand:
             print(mode + ': ' + output.strip(), flush=True)
         finally:
             if child and child.poll() is None: child.kill(); child.wait()
+            if hand_process:
+                hand_process.terminate()
+                try:
+                    hand_process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    hand_process.kill()
+                    hand_process.wait()
+                hand_log.seek(0)
+                hand_output = hand_log.read()
+            hand_log.close()
             bus_process.terminate(); bus_process.wait(timeout=3)
             for sock in (pub,sub,rep): sock.close(0)
             ctx.term()
+            if hand_process:
+                assert hand_process.returncode == 0, hand_output
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 4:
+        for scenario in ('normal', 'synchronized'):
+            run(sys.argv[1], sys.argv[2], scenario, fake_node=sys.argv[3])
+        sys.exit(0)
     for scenario in ('synchronized', 'normal', 'missing', 'readonly', 'foreign', 'invalid', 'invalid_recovery', 'stale', 'stuck_open', 'bad_config', 'no_close', 'synchronized_drop', 'dropped', 'revoke', 'isolation', 'heartbeat', 'arm_failure', 'no_arm'):
         run(*sys.argv[1:], scenario)

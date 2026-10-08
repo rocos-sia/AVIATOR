@@ -9,6 +9,7 @@ RH56FTP、Core、Camera、Monitor，打开全屏 Chrome；指定 `--logger` 时�
 ./scripts/start_aviator.sh --dry-run
 ./scripts/start_aviator.sh
 ./scripts/start_aviator.sh --logger  # 开启日志记录
+./scripts/start_aviator.sh --fake-hand  # 真实机械臂和相机 + 模拟 RH56FTP 双手
 ```
 
 脚本可从任意目录调用。启动前检查文件，通过标准输入自动提交脚本内配置的 sudo 密码；
@@ -29,6 +30,10 @@ Manipulator 在独立会话内直接认证，停止时也直接认证，不依�
 `build/bin/aviator_monitor`。可通过 `CONDA_ROOT`、`HAND_PYTHON`、
 `CAMERA_PYTHON`、`MONITOR_BIN`、`START_DELAY` 环境变量覆盖。
 脚本直接使用环境 Python 并设置 PATH，不执行自定义 Conda 激活钩子。
+`--fake-hand` 使用同一个 `HAND_PYTHON`，仅需 `pyzmq` 和 `PyYAML`，不需要
+`pymodbus` 或手设备连接。它保留 `config/system.yaml` 的 Core 配置，
+手节点替换为 [fake_rh56ftp_hand.py](../nodes/rh56ftp_hand/fake_rh56ftp_hand.py)，
+其余启动流程照常执行。不能与 `--simulation` 同时使用，因为整机仿真已经提供手反馈。
 `/tmp/aviator_session.uuid` 不存在或为空时生成 UUID，否则沿用现有值。
 `--dry-run` 只打印启动命令，不启动节点、不请求 sudo、不写文件。
 
