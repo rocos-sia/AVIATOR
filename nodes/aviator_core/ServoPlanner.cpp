@@ -1,4 +1,5 @@
 #include "ServoPlanner.hpp"
+#include "Logger.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -113,7 +114,22 @@ std::vector<JointFrame> ServoPlanner::advance(double angle, double displacement,
         input_.max_velocity[i] = speed_[i] * ratio;
     ruckig::Trajectory<2> trajectory;
     auto result = planner_.calculate(input_, trajectory);
-    require(result >= 0, "Servo Ruckig failed: " + std::to_string(int(result)));
+    if (result == ruckig::Result::ErrorSynchronizationCalculation &&
+        std::isfinite(trajectory.get_duration()) && trajectory.get_duration() >= 0) {
+        // Step 2 can fail numerically at an extremal synchronization time,
+        // including near-rest residuals. Retry once with one command block of
+        // slack, preserving the current state, constraints and Time synchronization.
+        auto retry = input_;
+        retry.minimum_duration = trajectory.get_duration() + period_;
+        result = planner_.calculate(retry, trajectory);
+        if (result >= 0)
+            Logger::warn("Servo Ruckig synchronization recovered with minimum_duration={} s input:{}",
+                         *retry.minimum_duration, retry.to_string());
+    }
+    if (result < 0)
+        throw std::runtime_error("Servo Ruckig failed: " + std::to_string(int(result)) +
+                                 " period=" + std::to_string(period_) +
+                                 " stop=" + std::to_string(stop) + " input:" + input_.to_string());
     std::array<double, 2> p{}, v{}, a{};
     trajectory.at_time(period_, p, v, a);
     JointFrame end = endpoint(p, v, a);

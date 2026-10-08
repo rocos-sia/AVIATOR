@@ -3,6 +3,7 @@
 #include "aviator/GraspTools.hpp"
 #include <filesystem>
 #include <iostream>
+#include <random>
 #include <yaml-cpp/yaml.h>
 using namespace aviator;
 pinocchio::SE3 frame(const YAML::Node& n) {
@@ -18,7 +19,9 @@ int main(int argc, char** argv) {
         auto posture =
             YAML::LoadFile((root / "config" / config["posture"].as<std::string>()).string());
         auto grasp = YAML::LoadFile((root / "config" / config["grasp"].as<std::string>()).string());
-        double lo = 85 * M_PI / 180, hi = 94 * M_PI / 180;
+        const double margin = posture["joint2_planning_margin_deg"].as<double>() * M_PI / 180;
+        double lo = posture["joint2_limits_deg"][0].as<double>() * M_PI / 180 + margin;
+        double hi = posture["joint2_limits_deg"][1].as<double>() * M_PI / 180 - margin;
         auto kin = makePinIkKinematics(
             (root / "config" / config["urdf"].as<std::string>()).string(), lo, hi);
         auto origin = frame(grasp["wheel_origin"]);
@@ -109,6 +112,38 @@ int main(int argc, char** argv) {
         if (!fast.stopped() || (peak_a <= .5 && peak_j <= 1))
             throw std::runtime_error("Fast scenario: stopped=" + std::to_string(fast.stopped()) + " a=" + std::to_string(peak_a) + " j=" + std::to_string(peak_j));
         std::cout << "Fast Servo passed beyond old dynamic caps; joint peaks a=" << peak_a << " j=" << peak_j << '\n';
+        // Keyboard targets ramp at 50 Hz, then remain held. With the configured
+        // limits, seed 98 reaches a deceleration synchronization failure at tick 790
+        // in Ruckig 0.15.3 without the synchronization retry.
+        start.displacement = -.085;
+        for (int side = 0; side < 2; ++side) {
+            std::array<double, 7> q{}, out{};
+            std::copy_n(start.q.begin() + side * 7, 7, q.begin());
+            if (!kin->solveIk(static_cast<Side>(side), q, target(side, 0, start.displacement), out))
+                throw std::runtime_error("Keyboard initial IK");
+            std::copy(out.begin(), out.end(), start.q.begin() + side * 7);
+        }
+        ServoPlanner keyboard(*kin, target, check, origin, start, .02,
+                              {1.8, .5}, {2., 1.}, {4., 2.});
+        std::mt19937 random(98);
+        std::array<int, 2> direction{};
+        double a = 0, d = start.displacement;
+        previous = start;
+        for (int k = 0; k < 950; ++k) {
+            if (k % 50 == 0)
+                for (auto& value : direction) value = int(random() % 3) - 1;
+            a = std::clamp(a + direction[0] * (-.87266 * .02), -.87266, .87266);
+            d = std::clamp(d + direction[1] * .085 * .02, -.170, 0.);
+            const auto block = keyboard.advance(a, d, 1, false);
+            if (block.front().q != previous.q || block.front().dq != previous.dq ||
+                block.front().ddq != previous.ddq)
+                throw std::runtime_error("Keyboard Servo block boundary discontinuity");
+            previous = block.back();
+        }
+        for (int k = 0; k < 200 && !keyboard.stopped(); ++k)
+            keyboard.advance(a, d, 1, true);
+        if (!keyboard.stopped()) throw std::runtime_error("Keyboard scenario did not stop");
+        std::cout << "Keyboard held-target synchronization regression passed\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';
