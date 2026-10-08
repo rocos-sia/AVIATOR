@@ -41,12 +41,14 @@ def main():
     fov = np.degrees(2 * np.arctan(np.array([width, height]) / (2 * np.array([fx, fy]))))
     np.testing.assert_allclose(fov, [90, 65], atol=1e-4)
     option = mj.MjvOption()
-    option.geomgroup[1] = 0  # Same housing exclusion as the production RGB camera.
+    option.geomgroup[1] = 0  # Preserve the renderer's legacy housing-group exclusion.
     max_center_offset = np.zeros(2)
+    max_board_occlusion = 0.0
     camera_pose = None
-    # Black border is 80 mm wide; the full texture includes a 10 mm white margin.
-    border = np.array([[-.04, -.04, .0005], [.04, -.04, .0005],
-                       [.04, .04, .0005], [-.04, .04, .0005]])
+    np.testing.assert_allclose(model.geom_size[tag], [.075, .075, .0005], atol=1e-12)
+    # Black border is 120 mm wide; the full texture includes a 15 mm white margin.
+    border = np.array([[-.06, -.06, .0005], [.06, -.06, .0005],
+                       [.06, .06, .0005], [-.06, .06, .0005]])
     board = border.copy()
     board[:, :2] *= 1.25  # Also check the entire white margin for occlusion.
     with mj.Renderer(model, height=height, width=width) as renderer:
@@ -56,6 +58,8 @@ def main():
                 mj.mj_resetDataKeyframe(model, data, model.key("aviator_home").id)
                 data.qpos[model.jnt_qposadr[roll]] = angle
                 data.qpos[model.jnt_qposadr[pitch]] = displacement
+                data.qpos[model.joint("roll_input_joint_2").qposadr] = angle
+                data.qpos[model.joint("pitch_input_joint_2").qposadr] = displacement
                 mj.mj_forward(model, data)
                 pose = np.r_[data.cam_xpos[camera], data.cam_xmat[camera]]
                 if camera_pose is None:
@@ -99,9 +103,11 @@ def main():
                 visible = ((segmentation[:, :, 0] == tag) &
                            (segmentation[:, :, 1] == int(mj.mjtObj.mjOBJ_GEOM)))
                 occluded = 1 - np.mean(visible[mask])
+                max_board_occlusion = max(max_board_occlusion, occluded)
                 assert occluded <= .001, (angle, displacement, occluded)
-                print(f"PASS roll={angle:.5f}, pitch={displacement:.3f}: ID 0, 80 mm, board visible")
+                print(f"PASS roll={angle:.5f}, pitch={displacement:.3f}: ID 0, 120 mm, board visible")
     print(f"Max tag-center displacement from image center: {max_center_offset.round(2)} pixels")
+    print(f"Max board occlusion after raster-edge exclusion: {max_board_occlusion:.6%}")
     print(f"PASS 33 rendered poses on MuJoCo {mj.__version__}; camera fixed, tag follows wheel")
 
 

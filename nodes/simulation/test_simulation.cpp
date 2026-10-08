@@ -36,6 +36,16 @@ aviator::Message command(Simulation& sim,aviator::Topic topic,std::uint64_t now,
 }
 void model_test(const std::string& path) {
     Simulation sim(path,{"aviator_core",core,epoch,"flight_gateway",origin,200000});
+    sim.setInitialWheel(.2, -.12);
+    for (const char* name : {"roll_input_joint", "pitch_input_joint"}) {
+        const int leader = mj_name2id(sim.model(), mjOBJ_JOINT, name);
+        const int follower = mj_name2id(sim.model(), mjOBJ_JOINT, (std::string(name) + "_2").c_str());
+        check(follower >= 0, "second wheel joint exists");
+        check(std::abs(sim.data()->qpos[sim.model()->jnt_qposadr[leader]] -
+                       sim.data()->qpos[sim.model()->jnt_qposadr[follower]]) < 1e-12,
+              "initial wheel pose includes mimic joints");
+    }
+    sim.setInitialWheel(0, -.085);
     const auto now=aviator::monotonic_us(); std::string error,payload;
     auto m=command(sim,aviator::Topic::arm_command,now,1);
     const double initial=m.body["arms"]["left"]["joint_position"][0];

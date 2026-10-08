@@ -88,14 +88,18 @@ Python RealSense + ChArUco/AprilTag 节点。`config/camera.yaml` 的 `detector.
 
 ## 识别模式
 
-在 [camera.yaml](../../config/camera.yaml) 中将 `detector.type` 设为 `charuco` 或 `apriltag`，修改后重启相机节点。当前配置为 `charuco`，不是同时检测两种码。
+在 [camera.yaml](../../config/camera.yaml) 中将 `detector.type` 设为 `charuco` 或 `apriltag`，修改后重启相机节点。当前配置为 `apriltag`，不是同时检测两种码。
 
 | 模式 | 当前对应参数 | 识别要求 |
 | --- | --- | --- |
 | `charuco` | `board_size: [5, 5]`、`DICT_4X4_50`、方格边长 0.016 m、码边长 0.015 m、`min_corners: 6` | 使用尺寸和字典匹配的 ChArUco 棋盘；5×5 指格子数。单张普通 ArUco 码不能替代整块棋盘的位姿估计。 |
-| `apriltag` | `tag36h11`、`tag_id: 0`、`tag_size_m: 0.05` | 只处理目标 ID，边长应与实际打印的码匹配。 |
+| `apriltag` | `tag36h11`、`tag_id: 0`、`tag_size_m: 0.12` | 对应 [Apriltag120id0.pdf](../../docs/Apriltag120id0.pdf)，120 mm 为黑边外尺寸，不含白边；含白边纸面为 150 mm。 |
 
 AprilTag 的 `use_distortion: false` 沿用参考示例的零畸变假设；若彩色图像未经去畸变，应依据标定结果改为 `true`。`charuco.min_corners` 及其命令行覆盖仅在 ChArUco 模式使用。配置不需要的检测器不会初始化。板尺寸填写错误会导致位姿尺度错误，即使画面上能识别到码。
+
+打印时使用实际尺寸（100%），不要缩放到适合页面；实测黑边外尺寸应为 120×120 mm。
+更换纸张后重启相机节点。已有方向盘标定文件不自动缩放；如果标签中心、安装姿态改变，
+或原标定使用了错误的码尺寸，应重新标定零位和运动轴。
 
 两种模式都发布 `status`、`confidence`、相机坐标系下的 `pose`，位置单位为 m；额外的 `detector` 标明当前模式。AprilTag 在识别到目标码时还附带 `tag_id` 和原始 `decision_margin`。AprilTag 的 `confidence` 是 `decision_margin / confidence_margin` 截断到 `[0,1]` 的启发式值，不是概率；低于 `min_decision_margin` 或 PnP 失败时 `status=SEARCHING`、`valid=false`、`pose=null`。AprilTag 位姿坐标轴沿用所提供示例的四角点顺序。
 

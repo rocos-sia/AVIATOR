@@ -1,5 +1,18 @@
 # 项目配置脚本
 
+## MuJoCo STL 拆分
+
+[split_stl.py](split_stl.py) 使用 Python 标准库将二进制 STL 按每件最多 200,000 面
+无损拆分，以满足 MuJoCo 的 STL 加载限制。保留面顺序、坐标、法线和属性字节，
+拒绝不完整文件及覆盖已有输出，不修改源文件。
+
+```powershell
+python scripts\split_stl.py models\meshes\Cessna\aircraft_visual.STL models\meshes\Cessna\mjcf
+```
+
+仓库已包含生成的两件显示网格，正常使用无需重复运行。更新源模型时，先将旧输出
+移至备份目录，再重新生成，并运行 `python tests\mjcf_urdf_test.py` 核对一致性。
+
 ## 一键启动
 
 按 [启动流程](../docs/启动流程.txt) 启动 Bus、Manipulator（sudo）、Gateway、

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
 
 namespace simulation {
 namespace {
@@ -124,6 +125,12 @@ bool Simulation::command(const aviator::Message& message, std::uint64_t now, std
 void Simulation::setInitialWheel(double angle, double displacement) {
     data()->qpos[model()->jnt_qposadr[roll_]] = angle;
     data()->qpos[model()->jnt_qposadr[pitch_]] = displacement;
+    // Older/custom models may omit the second wheel.
+    for (const auto& [name, value] : {std::pair{"roll_input_joint_2", angle},
+                                     std::pair{"pitch_input_joint_2", displacement}}) {
+        const int joint = mj_name2id(model(), mjOBJ_JOINT, name);
+        if (joint >= 0) data()->qpos[model()->jnt_qposadr[joint]] = value;
+    }
     mj_forward(model(), data());
 }
 bool Simulation::handCommand(const aviator::Message& message, std::uint64_t now, std::string& error) {

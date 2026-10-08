@@ -58,6 +58,8 @@ if(BUILD_TESTING)
     execute_process(COMMAND ${Python3_EXECUTABLE} -c "import mujoco, numpy, yaml"
       RESULT_VARIABLE SIMULATION_CONTACT_PYTHON_DEPS OUTPUT_QUIET ERROR_QUIET)
     if(SIMULATION_CONTACT_PYTHON_DEPS EQUAL 0)
+      add_test(NAME simulation_urdf_sync COMMAND ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/mjcf_urdf_test.py)
       add_test(NAME simulation_grasp_contact COMMAND ${Python3_EXECUTABLE}
         ${PROJECT_SOURCE_DIR}/tests/mjcf_grasp_contact_test.py)
       add_test(NAME simulation_grasp_contact_offset COMMAND ${Python3_EXECUTABLE}
