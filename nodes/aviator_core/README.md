@@ -345,6 +345,38 @@ Managed 进入 SAFE 等保护状态时，RemoteLink 撤销普通轨迹发布并�
 
 `main_servo.cpp` 生成 `aviator_core_servo`。先 Enable → ApproachHandles → LockHandles，再订阅 `flight.command`，以 `robot.yaml` 的 `servo_period` 更新 ServoWheel。它与原 `aviator_core` 是二选一的控制入口，同一 Manipulator 不要同时启动两个 Core。
 
+### 相机方向盘随动测试
+
+`main_camera_servo.cpp` 生成独立入口 `aviator_core_camera_servo`，启动后自动执行
+Enable → ApproachHandles → LockHandles，然后订阅 Bus 的 `camera.detection`。
+真机仍由 Manipulator 使用关节阻抗执行，刚度读取 `robot.yaml` 的
+`rokae.joint_stiffness`。此入口无需 flight_gateway；同一 Manipulator 只运行一个 Core。
+
+```bash
+cmake --build build/release --target aviator_core_camera_servo -j2
+# 先启动 Bus、Manipulator、RH56FTP（或 fake 手）及相机节点。
+./build/release/bin/aviator_core_camera_servo --config config/system.yaml --camera-id cockpit
+```
+
+只接受 `publisher_id=camera`、指定 `camera_id` 的观测，并要求消息与
+`steering_wheel.valid` 有效、坐标为有限数。按 Monitor 的模型映射调用小写直接接口：
+`servoWheel(clamp(-theta_rad, -0.87266, 0.87266),
+clamp(-translation_along_axis_m - 0.085, -0.170, 0), 1.0)`。
+角度单位 rad、位移单位 m；相机轴向位移 -0.085/0/+0.085 分别对应
+0/-0.085/-0.170，目标为绝对位置，不叠加 `wheel_initial`。越界时限幅并打印提示。
+
+更新周期沿用 `servo_period`，复用现有 IK、碰撞检查及 Ruckig Servo 规划。
+`--camera-timeout-ms` 默认 200（允许 20..1000），检查本机 `clock_id` 和原始
+`sample_mono_us`，同时拒绝未来时间、重复/倒退序号及倒退采样时间。
+这比 Monitor 按接收时间显示更严格，积压帧不能持续刷新控制目标。
+接近完成前的帧不参与随动；相机重启后可用新 session 和新鲜采样恢复。
+若固定复用 `--session` 且序号从头开始，应同时重启此测试 Core，或为相机换一个 session。
+不使用 `axis_match` 作为额外门槛，也不回退到原始 `pose`。
+
+本相机的无效观测立即停止刷新目标，断流则在相机超时后停止刷新；Servo 随后按
+`servo_timeout` 减速并保持锁定（不是收到无效帧就瞬时停住）。新鲜有效观测恢复后，
+等待减速完成即可自动继续；运动故障则退出。Ctrl+C 停止 Servo、解锁并下使能。
+
 先启动 Bus、Manipulator 和 flight_gateway，再直接启动：
 
 ```bash
