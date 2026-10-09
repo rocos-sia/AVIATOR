@@ -80,12 +80,15 @@ int main(int argc, char** argv) try {
     check(argc == 4, "Usage: driver server|client config success|failure|cancel|heartbeat|timeout|unchanged|fallback");
     const auto config = loadMotionConfig(argv[2]);
     const std::string mode = argv[3];
+    const bool after_servo = mode == "latest_impedance" || mode == "latest_heartbeat" || mode == "latest_cancel";
+    const bool lose_heartbeat = mode == "heartbeat" || mode == "latest_heartbeat";
+    const bool cancel_switch = mode == "cancel" || mode == "latest_cancel";
     if (std::string(argv[1]) == "server") {
         std::signal(SIGINT, signalStop); std::signal(SIGTERM, signalStop);
         DeviceSettings settings(config);
         PausingDevice device(settings, mode);
         DeviceServerOptions options;
-        if (mode == "latest") options.servo = [](const JointFrame& f) { return std::make_unique<LatestProbe>(f); };
+        if (mode == "latest" || after_servo) options.servo = [](const JointFrame& f) { return std::make_unique<LatestProbe>(f); };
         return runDeviceServer(device, config, settings, options, interrupted);
     }
     RemoteLink link(config);
@@ -143,12 +146,28 @@ int main(int argc, char** argv) try {
         std::cout << "PASS latest overwrite / timeout / stop / reentry / planning fault" << std::endl;
         return 0;
     }
+    if (after_servo) {
+        link.latestServo({.1, -.085, 1, monotonic_us(), false});
+        const auto deadline = monotonic_us() + 1000000;
+        for (;;) {
+            link.heartbeat();
+            bool fresh;
+            const auto state = link.snapshot(fresh);
+            check(!state.fault, state.error.c_str());
+            if (fresh && state.servo_active) break;
+            check(monotonic_us() < deadline, "Servo did not start before impedance test");
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        auto finish = std::async(std::launch::async, [&] { link.finishLatestServo(); });
+        while (finish.wait_for(std::chrono::milliseconds(2)) != std::future_status::ready) link.heartbeat();
+        finish.get();
+    }
     const auto target = link.jointTargets();
     auto task = std::async(std::launch::async, [&] { link.setImpedanceProfile(true); });
     bool observed_pause = false, cancelled = false;
     auto until = monotonic_us() + 7000000;
     while (task.wait_for(std::chrono::milliseconds(5)) != std::future_status::ready) {
-        if (mode != "heartbeat") link.heartbeat();
+        if (!lose_heartbeat) link.heartbeat();
         bool fresh = false, status = false;
         const auto state = link.snapshot(fresh, &status);
         if (!cancelled && !fresh && status && state.impedance_switching && !state.fault) {
@@ -156,7 +175,7 @@ int main(int argc, char** argv) try {
             check(managedResourcesReady("STIFFNESS", state, fresh, status), "RT pause lost readiness");
             check(!link.graspState().fault, "RT pause fabricated a feedback fault");
             check(state.target == target, "held target changed during pause");
-            if (mode == "cancel" && !cancelled) { link.allowMotion(false); cancelled = true; }
+            if (cancel_switch && !cancelled) { link.allowMotion(false); cancelled = true; }
         }
         check(monotonic_us() < until, "profile operation hung");
     }
@@ -164,7 +183,7 @@ int main(int argc, char** argv) try {
     try { task.get(); } catch (const std::exception& e) { failed = true; std::cout << e.what() << '\n'; }
     const bool unchanged = mode == "unchanged" || mode == "fallback";
     check(observed_pause, "Following must execute the lifecycle even with unchanged stiffness");
-    const bool successful = mode == "success" || unchanged;
+    const bool successful = mode == "success" || mode == "latest_impedance" || unchanged;
     check(failed != successful, "wrong profile result");
     if (successful) {
         bool fresh, status;

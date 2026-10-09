@@ -278,13 +278,14 @@ bool RemoteLink::latestServo(const ServoGoal& goal) {
     if (!latest_supported_ || !enabled_ || state_.fault || !error_.empty() || !feedback_valid_ ||
         now - received_ >= config_.timeout_us || now - sample_ >= config_.timeout_us)
         throw std::runtime_error("Latest servo feedback unavailable: " + state_.error + error_);
-    if (latest_mode_ && state_.id == trajectory_id_ && state_.servo_stopped && !state_.servo_active)
+    if (latest_mode_ && !latest_finished_ && state_.id == trajectory_id_ && state_.servo_stopped && !state_.servo_active)
         return false; // The device timed out first; let Core finish this run before accepting another.
-    if (!latest_mode_) {
+    if (!latest_mode_ || latest_finished_) {
         trajectory_.reset();
         stream_.clear();
         streaming_ = false;
         latest_mode_ = true;
+        latest_finished_ = false;
         latest_goal_ = goal;
         ++trajectory_id_;
     } else if (!latest_goal_.stop) latest_goal_ = goal;
@@ -306,7 +307,9 @@ void RemoteLink::finishLatestServo() {
         if (std::chrono::steady_clock::now() >= until) throw std::runtime_error("Latest servo stop timeout");
         changed_.wait_for(lock, std::chrono::milliseconds(2));
     }
-    publishing_ = latest_mode_ = false;
+    // Keep publishing stop=true with the owner's heartbeat through the impedance switch.
+    // The next Servo run must use a new ID; the stopped ID cannot resume motion.
+    latest_finished_ = true;
 }
 void RemoteLink::beginStream(const std::vector<JointFrame> &frames) {
     std::lock_guard<std::mutex> lock(mutex_);

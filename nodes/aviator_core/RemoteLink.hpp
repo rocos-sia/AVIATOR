@@ -68,7 +68,7 @@ class RemoteLink final : public DataLink {
     std::shared_ptr<const std::vector<JointFrame>> trajectory_;
     std::deque<JointFrame> stream_;
     uint64_t stream_first_ = 0;
-    bool latest_supported_ = false, latest_mode_ = false;
+    bool latest_supported_ = false, latest_mode_ = false, latest_finished_ = false;
     ServoGoal latest_goal_;
     bool streaming_ = false, stream_finished_ = false;
     uint64_t synchronized_hand_version_ = 0;
