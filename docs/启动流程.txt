@@ -64,6 +64,10 @@ rocos@rocos-controller:~/Documents/GitHub/AVIATOR/build/bin$ google-chrome-stabl
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_logger --config config/recording.yaml --output recording.mcap
 
 // 独立静态抓握工具校准（不是上面运行流程中的一步）
+// 图形界面：先退出其他控制节点，再运行 ./scripts/start_grasp_calibration_ui.sh
+// 首次构建：cmake --build build --target aviator_grasp_tool_session aviator_bus -j2
+// 界面可管理节点、手部开合、关节空间拖动及校准写回；加 --dry-run 可演示且不连接硬件、不写回。
+// 点击准备环境会张开双手；结束会话/关闭页面会请求结束拖动并张开双手。
 // 先退出 Core 和 Manipulator，不要运行 start_aviator.sh 或相机随动 Core。
 // 手动示教让双手握住轮盘把手，结束示教运动并保持双臂、轮盘静止。
 // 工具不使能、不切模式、不发运动指令，但 SDK 断连本身会停止机械臂运动，不能与运动/控制程序同时运行。

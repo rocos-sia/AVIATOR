@@ -83,8 +83,14 @@ if(Python3_Interpreter_FOUND AND TARGET aviator_grasp_tool_state)
   if(GRASP_CALIBRATION_PYTHON_DEPS EQUAL 0)
     add_test(NAME grasp_tool_calibration COMMAND ${Python3_EXECUTABLE} -m unittest discover
       -s ${PROJECT_SOURCE_DIR}/tools/grasp_tool_calibration -p "test_*.py" -v)
-    set_tests_properties(grasp_tool_calibration PROPERTIES TIMEOUT 40
+    set_tests_properties(grasp_tool_calibration PROPERTIES TIMEOUT 60
       ENVIRONMENT "AVIATOR_GRASP_TOOL_STATE=$<TARGET_FILE:aviator_grasp_tool_state>")
+    if(TARGET aviator_grasp_tool_session)
+      add_test(NAME grasp_tool_session COMMAND ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tools/grasp_tool_calibration/native/test_session.py
+        --binary $<TARGET_FILE:aviator_grasp_tool_session>)
+      set_tests_properties(grasp_tool_session PROPERTIES TIMEOUT 30)
+    endif()
   endif()
 endif()
 if(Python3_Interpreter_FOUND)

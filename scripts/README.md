@@ -80,6 +80,20 @@ Manipulator 在独立会话内直接认证，停止时也直接认证，不依�
 保持终端打开；Ctrl+C 先停止 Core，最多等待 15 秒完成减速、解锁和下使能，再停止
 其他节点。`--dry-run` 仅预览，不启动节点、不请求 sudo、不写文件；`--help` 查看完整用法。
 
+## 静态抓握校准界面
+
+```bash
+cmake --build build --target aviator_grasp_tool_session aviator_bus -j2
+./scripts/start_grasp_calibration_ui.sh --dry-run  # 打开模拟设备界面，禁止写回
+./scripts/start_grasp_calibration_ui.sh            # 打开真机界面，点击准备后才连接
+```
+
+界面管理自己的 Bus、机械手和相机节点，支持左右手开合、双臂关节空间自由拖动、
+相机或手动轮盘输入，以及静态校准预览和备份写回。默认打开 `http://127.0.0.1:8766`。
+准备前退出已有控制节点；准备会张开双手，结束会话也会请求结束拖动并张开双手。
+解释器、配置与操作说明见 [抓握校准工具](../tools/grasp_tool_calibration/README.md)。
+此脚本的 `--dry-run` 会运行可交互模拟界面，与其他启动脚本的命令预览不同。
+
 ## 安装 apt 依赖（Ubuntu 22.04）
 
 ```bash

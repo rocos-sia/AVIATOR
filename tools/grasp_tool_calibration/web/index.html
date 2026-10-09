@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="calibration-token" content="__CALIBRATION_TOKEN__">
+  <title>AVIATOR · 双手抓握校准</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div><p class="eyebrow">AVIATOR / CALIBRATION</p><h1>双手抓握校准</h1><p class="subtitle">拖动就位，静态采样，更新左右手的工具位姿。</p></div>
+      <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">连接界面服务中</span><span id="phase" class="badge">待连接</span></div>
+    </header>
+    <div id="dry-run" class="notice simulation" hidden>模拟模式 · 不连接真实设备，使用模拟关节和轮盘数据，禁止写回配置。</div>
+    <div id="error" class="notice error" role="alert" hidden></div>
+    <div id="status-message" class="notice status" role="status" hidden></div>
+
+    <section class="card setup">
+      <div class="section-heading"><div><p class="step">01 / 准备</p><h2>校准环境</h2></div><span id="session-state" class="muted">尚未准备</span></div>
+      <div class="setup-controls">
+        <label>轮盘位形来源<select id="wheel-source"><option value="camera">相机实时测量</option><option value="manual">手动填写</option></select></label>
+        <button id="prepare" class="primary" type="button">准备环境 · 双手张开</button>
+        <button id="stop" class="stop" type="button" disabled>结束会话 · 结束拖动并张开双手</button>
+      </div>
+      <p class="hint">自动管理本工具启动的 Bus、机械手和相机节点。准备前请退出 Core、Manipulator 和其他设备控制程序。</p>
+      <div id="nodes" class="node-strip"></div>
+      <details class="configuration"><summary>配置与设备地址</summary><dl id="config-list"></dl></details>
+    </section>
+
+    <div class="work-grid">
+      <section class="card controls">
+        <div class="section-heading"><div><p class="step">02 / 示教</p><h2>手与机械臂</h2></div><span id="hand-ready" class="badge">等待机械手</span></div>
+        <div class="both-controls"><span>双侧操作</span><div class="button-row"><button type="button" data-action="hand" data-side="both" data-pose="open" disabled>双手张开</button><button type="button" data-action="hand" data-side="both" data-pose="close" disabled>双手握紧</button></div><div class="button-row"><button type="button" data-action="drag_start" data-side="both" disabled>开启双臂拖动</button><button type="button" data-action="drag_stop" data-side="both" disabled>结束双臂拖动</button></div></div>
+        <div class="arm-grid">
+          <article class="arm" data-arm="left"><div class="arm-heading"><h3>左侧</h3><span id="left-arm-state" class="badge">未连接</span></div><p id="left-arm-detail" class="arm-detail">等待连接机械臂</p><div class="button-row"><button type="button" data-action="drag_start" data-side="left" disabled>开启拖动</button><button type="button" data-action="drag_stop" data-side="left" disabled>结束拖动</button></div><div class="divider"></div><p id="left-hand-state" class="arm-detail">机械手：等待反馈</p><div class="button-row"><button type="button" data-action="hand" data-side="left" data-pose="open" disabled>张开</button><button type="button" data-action="hand" data-side="left" data-pose="close" disabled>握紧</button></div><details><summary>目标 / 反馈</summary><pre id="left-hand-detail">—</pre></details></article>
+          <article class="arm" data-arm="right"><div class="arm-heading"><h3>右侧</h3><span id="right-arm-state" class="badge">未连接</span></div><p id="right-arm-detail" class="arm-detail">等待连接机械臂</p><div class="button-row"><button type="button" data-action="drag_start" data-side="right" disabled>开启拖动</button><button type="button" data-action="drag_stop" data-side="right" disabled>结束拖动</button></div><div class="divider"></div><p id="right-hand-state" class="arm-detail">机械手：等待反馈</p><div class="button-row"><button type="button" data-action="hand" data-side="right" data-pose="open" disabled>张开</button><button type="button" data-action="hand" data-side="right" data-pose="close" disabled>握紧</button></div><details><summary>目标 / 反馈</summary><pre id="right-hand-detail">—</pre></details></article>
+        </div>
+        <p class="hint">拖动使用手动模式、下电、关节空间自由拖动；保留机械臂末端拖动按钮的要求。结束后不自动上电。采样前须结束双臂拖动并保持轮盘静止。</p>
+        <p class="hint">“指令已确认”表示机械手节点接收了命令，不能证明双手已实际握住把手。</p>
+      </section>
+
+      <section class="card capture">
+        <div class="section-heading"><div><p class="step">03 / 采样</p><h2>轮盘位形</h2></div><span id="camera-state" class="badge">等待测量</span></div>
+        <div id="camera-input">
+          <div class="measurements"><div><span>Core 角度</span><strong id="wheel-angle">—</strong><small>°</small></div><div><span>Core 位移</span><strong id="wheel-displacement">—</strong><small>m</small></div></div>
+          <p id="camera-reason" class="hint">准备环境后接收相机测量。</p>
+          <dl class="raw-camera"><dt>相机 θ</dt><dd id="raw-theta">—</dd><dt>相机轴向平移</dt><dd id="raw-travel">—</dd><dt>数据年龄</dt><dd id="camera-age">—</dd></dl>
+          <div class="formula">angle = −θ<br>displacement = −translation − 0.085 m</div>
+        </div>
+        <div id="manual-input" hidden><label>轮盘角度 / °<input id="angle-deg" type="number" value="0" min="-49.99986" max="49.99986" step="any"></label><label>推拉位移 / m<input id="displacement-m" type="number" value="-0.085" min="-0.17" max="0" step="0.001"></label><p class="hint">直接填写 Core 坐标中的实际位形。角度约 ±50°，位移 −0.170～0 m；不再进行相机转换。</p></div>
+        <div class="capture-bottom"><div class="capture-progress"><span id="sample-status">等待双臂就位</span><span id="sample-count"></span></div><progress id="sample-progress" max="20" value="0"></progress><button id="sample" class="primary wide" type="button" disabled>保持静止并采样预览</button><p class="hint">检查关节、法兰与轮盘的静止程度，并在相机模式下校验时间同步。</p></div>
+      </section>
+    </div>
+
+    <section class="card results">
+      <div class="section-heading"><div><p class="step">04 / 写回</p><h2>工具位姿预览</h2></div><button id="save" class="primary" type="button" disabled>备份并写回 grasp.json</button></div>
+      <p id="result-empty" class="empty">完成静态采样后，在此比较左右工具的原始值与校准值。</p>
+      <div id="result-content" hidden><p id="result-summary" class="hint"></p><div id="result-tables" class="result-grid"></div><p class="hint">位置单位 m；四元数顺序 [w, x, y, z]。重建残差验证本次反算关系，不能作为独立精度测量。</p></div>
+      <p id="save-hint" class="hint">写回仅更新 tool.left / tool.right，保留原文件备份。后续控制程序重新启动后使用新参数。</p>
+      <p id="backup" class="backup" hidden></p>
+    </section>
+
+    <section class="card logs-card"><div class="section-heading"><h2>会话日志</h2><span class="muted">最新状态与操作结果</span></div><pre id="logs" role="log" aria-live="off">等待服务响应…</pre></section>
+    <footer>页面关闭或心跳失联约 10 秒后，工具会结束自有拖动并张开双手。SDK 断连本身也会停止机械臂运动。</footer>
+  </main>
+</body>
+</html>
