@@ -290,6 +290,12 @@ if(TARGET aviator_core_control AND Python3_Interpreter_FOUND AND FSM_PYTHON_DEPS
   set_tests_properties(impedance_lifecycle PROPERTIES TIMEOUT 70)
 endif()
 
+aviator_add_test_executable(aviator_command_pacer_test command_pacer_test.cpp)
+target_include_directories(aviator_command_pacer_test PRIVATE ../nodes/manipulator)
+target_link_libraries(aviator_command_pacer_test PRIVATE Threads::Threads)
+add_test(NAME command_pacer COMMAND aviator_command_pacer_test)
+set_tests_properties(command_pacer PROPERTIES TIMEOUT 5)
+
 aviator_add_test_executable(aviator_target_trace_test target_trace_test.cpp)
 target_include_directories(aviator_target_trace_test PRIVATE ../nodes/manipulator)
 target_link_libraries(aviator_target_trace_test PRIVATE Threads::Threads)

@@ -1,6 +1,7 @@
 #include "Logger.hpp"
 #include "rokae_sdk.hpp"
 #include "TargetTrace.hpp"
+#include "CommandPacer.hpp"
 #include <fstream>
 #include <iomanip>
 #include <unistd.h>
@@ -43,6 +44,7 @@ public:
     std::atomic<int> thread_policy{-1}, thread_priority{-1};
     bool timing_reported = false;
     std::chrono::steady_clock::time_point previous_callback{};
+    CommandPacer command_pacer;
     std::thread receiver;
     std::atomic<bool> receiver_stop{false};
     std::mutex sample_mutex;
@@ -322,6 +324,7 @@ void RokaeArm::prepare() {
     s.max_callback_us = 0;
     s.thread_policy = s.thread_priority = -1;
     s.previous_callback = {};
+    s.command_pacer.reset();
     s.timing_reported = false;
     const char *stage = "check realtime scheduling permission";
     try {
@@ -386,7 +389,7 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
             }
             s.previous_callback = began;
             ++s.callbacks;
-            // Sending is paced by the SDK command loop, independent of state arrivals.
+            // Read the latest state independently of SDK callback/state-arrival frequency.
             // Never wait for feedback in the RT callback; retain the previous snapshot
             // briefly if the receiver is publishing, without changing its timestamp.
             {
@@ -398,12 +401,16 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
                 throw std::runtime_error("Realtime feedback snapshot expired (>100 ms)");
             auto q = callback(sample);
             std::copy(q.begin(), q.end(), command.joints.begin());
-            s.target_trace.push({static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                began.time_since_epoch()).count()), s.callbacks.load(std::memory_order_relaxed),
-                s.loop_epoch, q, sample.position, sample.velocity});
             const double elapsed = std::chrono::duration<double, std::micro>(
                 std::chrono::steady_clock::now() - began).count();
             s.max_callback_us.store(std::max(s.max_callback_us.load(std::memory_order_relaxed), elapsed), std::memory_order_relaxed);
+            // Some SDK runs invoke this at 2 kHz. Every return sends a command,
+            // even without a new target; cap releases at 1 kHz before SDK filtering.
+            // Exclude this intentional wait from callback work-time statistics.
+            const auto sent = s.command_pacer.wait();
+            s.target_trace.push({static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                sent.time_since_epoch()).count()), s.callbacks.load(std::memory_order_relaxed),
+                s.loop_epoch, q, sample.position, sample.velocity});
             return command; // SDK 接口按值接收 JointPosition；复用填充缓存，返回仍由 SDK 类型管理。
           } catch (...) {
             std::lock_guard<std::mutex> lock(s.error_mutex);
@@ -491,6 +498,7 @@ void RokaeArm::resumeImpedance(const std::function<void()>& check) {
         {rokae::RtSupportedFields::jointPos_m, rokae::RtSupportedFields::jointVel_m,
          rokae::RtSupportedFields::tcpPose_m});
     s.previous_callback = {}; // Recheck the resumed thread, exclude the intentional pause.
+    s.command_pacer.reset();
     // Discard queued feedback before resuming the existing callback and held target.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
     while (s.robot.updateRobotState(std::chrono::steady_clock::duration::zero())) {
