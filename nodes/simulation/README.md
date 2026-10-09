@@ -194,3 +194,7 @@ python3 tests/simulation_camera_stream_test.py build/debug/bin/simulation . --gu
 
 `--gui` 测试需要 X11、xwininfo；传 `--output-dir /tmp/camera-test` 时保存接收图像
 和检测消息，桌面测试还用 ImageMagick 的 import 保存窗口截图。
+
+完整构建的连续 CONTROL 与 Manipulator 共用 `WHEEL_SERVO/LATEST_TARGET` 执行器：只保留最新轮盘目标，按 1 ms 步长运行 Ruckig + 双臂 IK，不预填充轨迹。有限的回零/抓取/释放仍走原轨迹协议。速度、加速度、jerk 和可选碰撞检查从同一 robot.yaml 加载，`servo_prefill_ms` / `servo_lookahead_ms` 不参与新通道。
+
+`AVIATOR_COMMUNICATION_ONLY=ON` 的轻量仿真构建不加载机器人规划库，因此不声明 latest_servo 能力，仅保留原窗口接口。验证最新目标链路应使用完整构建的 simulation。

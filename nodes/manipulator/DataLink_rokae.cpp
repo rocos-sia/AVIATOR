@@ -266,11 +266,12 @@ class RokaeDataLink final : public DataLink {
             joint_vel_[i] = sample.velocity;
             tcp_pose_[i] = sample.tcp;
             tcp_pose_valid_[i] = joint_vel_valid_[i] = true;
-            const double now = monotonic();
-            if (feedback_time_[i] > 0)
-                max_feedback_gap_[i] = std::max(max_feedback_gap_[i], now - feedback_time_[i]);
-            feedback_time_[i] = now;
-            ++feedback_count_[i];
+            if (sample.received_time != feedback_time_[i]) {
+                if (feedback_time_[i] > 0)
+                    max_feedback_gap_[i] = std::max(max_feedback_gap_[i], sample.received_time - feedback_time_[i]);
+                feedback_time_[i] = sample.received_time;
+                ++feedback_count_[i];
+            }
             std::array<double, 7> q{};
             std::copy_n(target_.begin() + 7 * i, 7, q.begin());
             const int bad = excessiveJointStep(sent_[i], q, vel_limit_[i]);

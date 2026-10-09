@@ -55,6 +55,12 @@ struct JointFrame {
     std::array<double, 2> hand_closure{{-1, -1}};
 };
 
+struct ServoGoal {
+    double angle = 0, displacement = 0, speed_ratio = 1;
+    uint64_t input_sample = 0; // Original Core input time; retransmission must not refresh it.
+    bool stop = false;
+};
+
 // 数据链接抽象接口：臂IO + 抓取IO + 周期同步
 class DataLink {
   public:
@@ -65,6 +71,10 @@ class DataLink {
         throw std::runtime_error("Trajectory streaming requires the Core network adapter");
     }
     virtual void stopTrajectory() {}
+    virtual bool latestServoSupported() const { return false; }
+    // False means the device already stopped this run; finish before starting a new ID.
+    virtual bool latestServo(const ServoGoal&) { throw std::runtime_error("Latest servo unavailable"); }
+    virtual void finishLatestServo() { throw std::runtime_error("Latest servo unavailable"); }
     virtual void beginStream(const std::vector<JointFrame>&) { throw std::runtime_error("Stream unavailable"); }
     virtual void appendStream(const std::vector<JointFrame>&) { throw std::runtime_error("Stream unavailable"); }
     virtual size_t streamAhead() const { throw std::runtime_error("Stream unavailable"); }

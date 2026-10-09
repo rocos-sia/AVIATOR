@@ -43,15 +43,73 @@ public:
     std::atomic<int> thread_policy{-1}, thread_priority{-1};
     bool timing_reported = false;
     std::chrono::steady_clock::time_point previous_callback{};
-    // startMove can block while state packets accumulate. With state-driven
-    // callbacks disabled, the SDK does not flush them on startLoop(). Drain here
-    // after startMove, before the callback applies its normal per-cycle limit.
-    void drainBeforeLoop() {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(3);
-        while (robot.updateRobotState(std::chrono::steady_clock::duration::zero())) {
-            if (std::chrono::steady_clock::now() >= deadline)
-                throw std::runtime_error("Realtime state queue did not drain within 3 ms before startLoop");
-        }
+    std::thread receiver;
+    std::atomic<bool> receiver_stop{false};
+    std::mutex sample_mutex;
+    RokaeSample latest_sample, callback_sample;
+    RokaeSample readSample() {
+        RokaeSample sample;
+        auto read = [&](const char* field, auto& value) {
+            const int rc = robot.getStateData(field, value);
+            if (rc) throw std::runtime_error(std::string("getStateData(") + field + ") returned " + std::to_string(rc));
+        };
+        read(rokae::RtSupportedFields::jointPos_m, sample.position);
+        read(rokae::RtSupportedFields::jointVel_m, sample.velocity);
+        read(rokae::RtSupportedFields::tcpPose_m, sample.tcp);
+        sample.received_time = std::chrono::duration<double>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        return sample;
+    }
+    void stopReceiver() {
+        receiver_stop = true;
+        if (receiver.joinable()) receiver.join();
+    }
+    // Sole SDK state consumer while running. Drop intermediate frames; only the
+    // newest fully decoded snapshot reaches controlLoop. The SDK's internal
+    // transport queue cannot be removed through its public interface.
+    void startReceiver() {
+        receiver_stop = false;
+        const auto drain = [&] {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+            while (robot.updateRobotState(std::chrono::steady_clock::duration::zero())) {
+                if (receiver_stop) return;
+                if (std::chrono::steady_clock::now() >= deadline)
+                    throw std::runtime_error("State receiver cannot catch up within 100 ms");
+            }
+        };
+        // startMove may have accumulated feedback. Seed from the latest packet
+        // before starting callbacks, without concurrent SDK state access.
+        if (!robot.updateRobotState(std::chrono::milliseconds(100)))
+            throw std::runtime_error("No realtime feedback before startLoop");
+        drain();
+        latest_sample = callback_sample = readSample();
+        receiver = std::thread([this] {
+            try {
+                auto fresh = std::chrono::steady_clock::now();
+                while (!receiver_stop) {
+                    if (!robot.updateRobotState(std::chrono::milliseconds(3))) {
+                        if (std::chrono::steady_clock::now() - fresh > std::chrono::milliseconds(100))
+                            throw std::runtime_error("Realtime feedback receiver timeout (>100 ms)");
+                        continue;
+                    }
+                    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+                    while (!receiver_stop && robot.updateRobotState(std::chrono::steady_clock::duration::zero())) {
+                        if (std::chrono::steady_clock::now() >= deadline)
+                            throw std::runtime_error("State receiver cannot catch up within 100 ms");
+                    }
+                    if (receiver_stop) break;
+                    auto sample = readSample();
+                    {
+                        std::lock_guard<std::mutex> lock(sample_mutex);
+                        latest_sample = sample;
+                    }
+                    fresh = std::chrono::steady_clock::now();
+                }
+            } catch (...) {
+                std::lock_guard<std::mutex> lock(error_mutex);
+                if (!callback_error) callback_error = std::current_exception();
+            }
+        });
     }
     std::string timing() const {
         return "RT callbacks=" + std::to_string(callbacks.load()) +
@@ -161,6 +219,7 @@ public:
         };
         if (looping) attempt("stopLoop (includes asynchronous SDK errors)", [&] { rt->stopLoop(); looping = false; });
         if (moving) attempt("stopMove", [&] { rt->stopMove(); moving = false; });
+        stopReceiver();
         if (receiving) { robot.stopReceiveRobotState(); receiving = false; }
         if (powered) attempt("power off", [&] {
             std::error_code ec;
@@ -327,24 +386,16 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
             }
             s.previous_callback = began;
             ++s.callbacks;
-            // Let the SDK command channel pace sends (useStateDataInLoop=false).
-            // A restarted state stream has produced 2 kHz callbacks in hardware;
-            // consume its queued feedback here without sending a command per frame.
-            if (!s.robot.updateRobotState(std::chrono::milliseconds(3)))
-                throw std::runtime_error("Realtime state timeout in control callback");
-            for (unsigned drained = 0;
-                 s.robot.updateRobotState(std::chrono::steady_clock::duration::zero()); ++drained) {
-                if (drained >= 31)
-                    throw std::runtime_error("Realtime state backlog exceeded callback drain limit");
+            // Sending is paced by the SDK command loop, independent of state arrivals.
+            // Never wait for feedback in the RT callback; retain the previous snapshot
+            // briefly if the receiver is publishing, without changing its timestamp.
+            {
+                std::unique_lock<std::mutex> lock(s.sample_mutex, std::try_to_lock);
+                if (lock.owns_lock()) s.callback_sample = s.latest_sample;
             }
-            RokaeSample sample;
-            auto read = [&](const char *field, auto &value) {
-                const int rc = s.robot.getStateData(field, value);
-                if (rc != 0) throw std::runtime_error(std::string("getStateData(") + field + ") returned " + std::to_string(rc));
-            };
-            read(rokae::RtSupportedFields::jointPos_m, sample.position);
-            read(rokae::RtSupportedFields::jointVel_m, sample.velocity);
-            read(rokae::RtSupportedFields::tcpPose_m, sample.tcp);
+            const auto& sample = s.callback_sample;
+            if (std::chrono::duration<double>(began.time_since_epoch()).count() - sample.received_time > .1)
+                throw std::runtime_error("Realtime feedback snapshot expired (>100 ms)");
             auto q = callback(sample);
             std::copy(q.begin(), q.end(), command.joints.begin());
             s.target_trace.push({static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
@@ -392,8 +443,8 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
         s.moving = true;
         stage = "startMove(jointImpedance)";
         s.rt->startMove(rokae::RtControllerMode::jointImpedance);
-        stage = "drain state after startMove";
-        s.drainBeforeLoop();
+        stage = "start latest-state receiver";
+        s.startReceiver();
         s.looping = true;
         stage = "startLoop";
         ++s.loop_epoch;
@@ -418,6 +469,7 @@ void RokaeArm::pauseImpedance() {
         throw std::runtime_error("Impedance update requires active realtime hold: " + s.endpoint);
     s.rt->stopLoop(); s.looping = false;
     s.rt->stopMove(); s.moving = false;
+    s.stopReceiver();
     s.robot.stopReceiveRobotState(); s.receiving = false;
 }
 void RokaeArm::setPausedStiffness(const std::array<double, 7>& stiffness) {
@@ -451,7 +503,7 @@ void RokaeArm::resumeImpedance(const std::function<void()>& check) {
     s.moving = true;
     s.rt->startMove(rokae::RtControllerMode::jointImpedance);
     check();
-    s.drainBeforeLoop();
+    s.startReceiver();
     check();
     s.looping = true;
     ++s.loop_epoch;

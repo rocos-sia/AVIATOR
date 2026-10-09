@@ -6,6 +6,9 @@
 #include "camera_output.hpp"
 #include "camera_window.hpp"
 #include "device_server.hpp"
+#ifdef AVIATOR_HAVE_DEVICE_SERVO
+#include "DeviceServo.hpp"
+#endif
 #include "simulation.hpp"
 #include <atomic>
 #include <cmath>
@@ -150,6 +153,9 @@ int main(int argc, char** argv) try {
     aviator::MuJoCoDirectDataLink device(sim.model(), sim.data(), settings.path("urdf").string(),
                                          tools, joint_stiffness, [&] { sim.applyHands(aviator::monotonic_us()); });
     aviator::DeviceServerOptions options;
+#ifdef AVIATOR_HAVE_DEVICE_SERVO
+    aviator::configureDeviceServo(options, settings);
+#endif
     options.name = "simulation";
     options.tcp_frames = {"aircraft", "aircraft"};
     options.wheel_measurement = true;

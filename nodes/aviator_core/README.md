@@ -12,7 +12,7 @@
 两个原 Core 使用小写接口绕过整机业务状态机，不能把它们的执行器阶段当作十二状态整机状态。
 真实手开合与 HandLink 独立通信线程保留。设备入口均不依赖 safety.json；同一 Manipulator 只运行一个设备控制 Core。
 
-Core 负责 PIN-IK、Pinocchio 碰撞检查和 Ruckig 规划，通过 RemoteLink 与设备节点通信，不直接加载 xCore SDK 或创建 MuJoCo 窗口。
+Core 负责有限动作的 PIN-IK、Pinocchio 碰撞检查和 Ruckig 规划；连续 Servo 由设备端复用同一规划器逐周期执行。Core 通过 RemoteLink 与设备节点通信，不直接加载 xCore SDK 或创建 MuJoCo 窗口。
 
 ## 离线状态机测试入口
 
@@ -168,7 +168,7 @@ cmake --build build --target aviator_core_managed -j2
 仅保持现有参考，需要相应策略授权，不是柔顺控制。保护/退出撤销手目标后仍沿用手节点的默认张开 safe_pose，
 不能宣称满足设计文档的保护时抓握保持。真实硬件策略需另行落实。本次实现和验证没有驱动真机。
 
-FOLLOWING 保持抓握结束时的关节指令目标与 wheel 参考；从 CONTROL 返回时，先按既有 Servo 流程减速，保持停止后的最后指令，不回到抓握位置。Managed Core 不订阅相机目标，仅 CONTROL 使用手柄调用 `ServoWheel`（rad/m）。进入 FOLLOWING 后异步切换到 `rokae.following_joint_stiffness`（缺省沿用 `rokae.joint_stiffness`）；进入 CONTROL 或释放前恢复 `rokae.joint_stiffness`。切换期间 `task_phase=STIFFNESS`、`settled=false`，停止轨迹执行，保留最后关节指令和 wheel 参考。真机依次暂停 loop、停止 RT 运动、设置刚度、清理积压状态，然后恢复同一目标的运动循环；保留已有状态订阅和回调，不重复调用 startReceiveRobotState 或 setControlLoop，不下电、不退出 RtCommand。始终复用现有 RT 控制器和保持目标，不重新连接、上电或初始化 RT；FOLLOWING 请求即使两组数值相同也执行完整切换；恢复 default 时若数值相同则不暂停循环。恢复状态驱动的回调前清理积压反馈，并在恢复后的首个回调检查实时线程优先级。独立 `change_stiffness` 和 `aviator_core_camera_servo` 示例不受影响。
+FOLLOWING 保持抓握结束时的关节指令目标与 wheel 参考；从 CONTROL 返回时，先按既有 Servo 流程减速，保持停止后的最后指令，不回到抓握位置。Managed Core 不订阅相机目标，仅 CONTROL 使用手柄调用 `ServoWheel`（rad/m）。进入 FOLLOWING 后异步切换到 `rokae.following_joint_stiffness`（缺省沿用 `rokae.joint_stiffness`）；进入 CONTROL 或释放前恢复 `rokae.joint_stiffness`。切换期间 `task_phase=STIFFNESS`、`settled=false`，停止轨迹执行，保留最后关节指令和 wheel 参考。真机依次 stopLoop、stopMove、停止独立反馈线程并 stopReceiveRobotState、设置刚度，再 startReceiveRobotState、startMove、恢复最新状态接收线程及 startLoop。重新注册的回调使用 `useStateDataInLoop=false`，SDK 控制器、连接和保持目标不重新初始化；FOLLOWING 即使数值相同也执行完整切换，default 数值相同则不暂停。恢复后的首个回调检查实时线程优先级。独立 `change_stiffness` 和 `aviator_core_camera_servo` 示例不受影响。
 
 `start_control` 恢复返回 COMPLETED 并直接进入 CONTROL；COMPLETED 表示状态转换完成。默认刚度在已有执行器线程槽异步恢复，期间 `settled=false`、控制接纳关闭，主线程继续处理输入、服务和保护。默认刚度恢复且新反馈到达后放行原有 Servo 流程，只接受恢复后的新鲜输入；后续手柄输入不再触发阻抗切换。恢复期间 EXIT_CONTROL 立即进入 FOLLOWING，取消恢复并等待执行器退出后应用 Following 刚度；急停、输入失效或恢复失败不会被迟到结果解除。阻抗服务期限为 5 秒，期间状态心跳仍有效，旧 RT 样本保留原时间戳，不作为新反馈。任一臂切换失败会停止双臂并进入 ERROR。SAFE 会撤销运动授权，因此此时保持停止，默认刚度在后续获准恢复、回零或释放前设置；ERROR／急停不为改刚度重启运动，重新使能时使用默认刚度。
 
@@ -335,31 +335,17 @@ quit
 
 Ruckig 0.15.3 的 `-111` 表示时间同步求解失败。目标保持或减速接近目标时，极小的浮点残差
 可能使同步时间落在数值退化边界。Servo 仅对该错误重试一次：保留原始位置、速度、加速度、
-目标、运动约束和 `Time` 同步，将最短轨迹时长设为失败求解的时长加一个 `servo_period`。
+目标、运动约束和 `Time` 同步，将最短轨迹时长设为失败求解的时长加一个规划步长（最新目标模式为 1 ms）。
 重试成功记录 `Servo Ruckig synchronization recovered` 及完整输入；其他错误或重试失败仍
 进入原有 FAULT 处理，并输出错误码、周期、停止标志和完整规划输入，供复现排查。
 
-Servo 缓冲由 `robot.yaml` 的两个参数控制，省略时均为 80 ms，修改后重启 Core 生效：
+生产 Core/Manipulator/Simulation 使用 `WHEEL_SERVO / LATEST_TARGET` 通道：Core 每 10 ms 发布当前最新的轮盘角度、位移、速度倍率和输入接纳时间，不发送未来关节轨迹，不预填充。设备执行线程每次双臂消费上一条指令后，用 1 ms 步长执行一次 Ruckig 和双臂 IK，随后下发唯一的下一条指令。未执行的旧目标被新目标覆盖；已生成的当前位置、速度和加速度连续继承，不能直接把新目标当作关节指令。
 
-- `servo_prefill_ms`：启动流式执行前准备的轨迹时长，整数 1～250 ms。
-  按 `servo_period` 向上取整到整块，实际预填充也必须不超过 250 ms；例如 30 ms 周期下配置 80，实际为 90 ms。
-  配置小于一个规划块时仍预填充一整块，例如 20 ms 周期下配置 1，实际为 20 ms。
-- `servo_lookahead_ms`：相对设备反馈游标的剩余轨迹补充阈值，整数至少 1 ms。
-  上限为 `250 - servo_period*1000 - 5` ms，为整块追加和历史点预留容量；20 ms 周期时上限为 225 ms。
-  低于阈值就追加一整块，因此默认正常提前量约 80～100 ms（50 ms 周期时可到 130 ms）。
+`servo_prefill_ms` / `servo_lookahead_ms` 已从生产配置删除，最新目标模式不读取它们。`servo_period` 仍用于直接摇杆/相机入口的目标更新节拍；设备规划步长固定 1 ms。为兼容离线 DataLink 和旧设备，原有限轨迹及旧流式接口保留，仅 `describe.capabilities.latest_servo=true` 的设备走新通道；完整构建的两个设备节点均声明此能力，轻量 communication-only 仿真保留旧窗口接口。启动日志显示实际所选模式。
 
-启动日志打印配置值、实际预填充和块周期。两个参数可独立调整，不要求预填充大于运行阈值。
-例如配置 `servo_prefill_ms: 60`、`servo_lookahead_ms: 40`，在 20 ms 周期下启动预填充为 60 ms，正常运行提前量约 40～60 ms。
-两个参数均已取消 60 ms 下限，仍禁止零缓冲；配置通过校验不代表该缓冲足以支撑实际运行，较短缓冲对规划耗时与调度抖动更敏感。
-Core 队列上限仍为 250 ms，已提交样本不可改写。
+`servo_timeout` 使用 Core 接纳输入时记录的单调时间，通信重发不会刷新它；输入超时或正常退出 CONTROL 从当前规划状态直接按 Ruckig 速度模式减速，不排空历史轨迹。已停止的同一 Servo ID 不会被迟到目标重新启动；重新跟踪建立更大的 ID。停稳确认同时包含执行器已提交的最终关节目标与 wheel 参考。SAFE 撤销运动授权并请求设备本地停止，心跳和反馈继续；规划/SDK 故障保留停止双臂及错误锁存。
 
-ZMQ 每帧最多 81 个原始 1 ms 样本，附带 q/dq/ddq，公共 JSON 报文上限为 128 KiB；Manipulator 不再对 Servo 做 2 ms 线性插值，两臂共用执行游标。窗口包含反馈游标前的 4 个历史点，实际未来余量还需扣除反馈与传输延迟；50 ms 命令 watchdog 保持不变。缓冲耗尽、通信超时、限位或 SDK 故障仍会停止并报错，不能重复旧点伪装成正常执行。RT 回调不做 IK、Ruckig 或 JSON 编解码。
-
-持续 Servo 的 `first_tick` / `total_ticks` 是累计的 1 ms 索引，不受普通预规划轨迹的 3,600,000 tick（一小时）长度预算限制，因此不会在连续运行一小时或 24 小时时因累计索引被拒收。内存仍由滚动窗口和 Core 队列限制，线上的整数仍受 uint53 精确范围约束。`motion_protocol` 回归覆盖 1、24、48 小时边界前后的窗口及结束条件；`control_nodes_servo_window` 验证大累计长度经实际总线进入仿真执行器后仍能执行、停止并触发原有看门狗。这些加速边界测试不等同于真机连续 24 小时稳定性测试。
-
-Managed 进入 SAFE 等保护状态时，RemoteLink 撤销普通轨迹发布并异步请求设备本地停止，期间继续接收反馈和更新 Core 心跳。Servo 的取消会退出补窗/排空等待，设备确认停止后保持当前指令；输入恢复不会自动重新授权。正常 EXIT_CONTROL 仍使用规划器减速。更新窗口协议后需同时重编译并重启 Core、Manipulator、Bus，以及读取 arm.command 的相关节点。
-
-`robot.yaml` 新增 `wheel_angular_acceleration`、`wheel_linear_acceleration`、`wheel_angular_jerk`、`wheel_linear_jerk`。Servo 继续按 `wheel_*_speed` 及这些轮盘加速度/jerk 参数规划；移除关节动态上限检查不代表生成的关节轨迹满足原动态上限。Rokae 后端按 URDF 速度限制的单周期防跳变检查和控制器自身保护仍保留。正常 Stop/输入超时在已提交的短缓冲之后按 Ruckig 速度模式减速至零，再保持最终位置；完成制动需要时间。通信或规划故障走后端独立制动，此时不承诺正常规划的 C2 衔接。C2 指规划曲线，真实机械臂仍受离散采样、RT 调度、阻抗刚度和负载影响。
+轮盘速度、加速度、jerk 配置沿用当前数值；没有通过放宽约束提速。URDF 单周期防跳变、关节限位、可选碰撞检查、50 ms 命令和 100 ms 来源 watchdog 仍有效。RT 回调不做 IK、Ruckig 或 JSON。1 ms 是规划步长，调度/计算超时只延长执行、不追赶旧轨迹，实际频率需看 `Motion timing`；移除预填充不等于零物理响应时间。更新后需要同时重编译并重启 Core 和设备节点。
 
 设备轨迹采用 `local.task`：已显式使能的本地任务，由 Core 主线程持续监督。它与 flight.command 分开授权，不伪造 FLIGHT/JOYSTICK 输入。普通 Demo/交互入口的 flight.state 中 control_source=NONE，task_phase 表达本地任务阶段，缺失手部和视觉反馈报告无效。
 

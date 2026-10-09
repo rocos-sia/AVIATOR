@@ -1,4 +1,6 @@
 #include "ServoPlanner.hpp"
+#include "DeviceServo.hpp"
+#include <chrono>
 #include "aviator/backend.hpp"
 #include "aviator/GraspTools.hpp"
 #include <filesystem>
@@ -144,6 +146,34 @@ int main(int argc, char** argv) {
             keyboard.advance(a, d, 1, true);
         if (!keyboard.stopped()) throw std::runtime_error("Keyboard scenario did not stop");
         std::cout << "Keyboard held-target synchronization regression passed\n";
+        // Production factory: 1 ms planning, current robot constraints, rapid target
+        // replacement, continuous q/dq/ddq, input-speed changes and controlled stop.
+        DeviceSettings settings(loadMotionConfig(root / "config/system.yaml"));
+        DeviceServerOptions options;
+        configureDeviceServo(options, settings);
+        auto latest = options.servo(start);
+        previous = start;
+        double total_us = 0, max_us = 0;
+        unsigned count = 0;
+        for (int k = 0; k < 4000; ++k) {
+            const bool stopping = k >= 1600;
+            ServoGoal goal{(k / 80) % 2 ? -.08 : .08, -.085, k < 800 ? 1. : .5, 1, stopping};
+            const auto began = std::chrono::steady_clock::now();
+            const auto current = latest->step(goal);
+            const double us = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - began).count();
+            total_us += us; max_us = std::max(max_us, us); ++count;
+            for (int j = 0; j < 14; ++j) {
+                if (std::abs(current.q[j] - previous.q[j] - .0005 * (current.dq[j] + previous.dq[j])) > 1e-7 ||
+                    std::abs(current.dq[j] - previous.dq[j] - .0005 * (current.ddq[j] + previous.ddq[j])) > 1e-5)
+                    throw std::runtime_error("Latest 1 ms Servo derivative discontinuity");
+            }
+            check(current);
+            previous = current;
+            if (stopping && latest->stopped()) break;
+        }
+        if (!latest->stopped()) throw std::runtime_error("Latest Servo did not stop");
+        std::cout << "Latest 1 ms Servo passed: steps=" << count << " mean_us=" << total_us/count
+                  << " max_us=" << max_us << " (wall time includes scheduler jitter)\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

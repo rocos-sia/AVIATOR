@@ -105,12 +105,11 @@ class Aviator::Impl {
         for (int i = 0; i < 2; ++i)
             require(std::isfinite(wheel_acceleration_[i]) && wheel_acceleration_[i] > 0 &&
                     std::isfinite(wheel_jerk_[i]) && wheel_jerk_[i] > 0, "Invalid wheel acceleration/jerk");
-        require(std::abs(servo_period_ * 1000 - std::round(servo_period_ * 1000)) < 1e-8,
-                "servo_period must be an integer number of milliseconds");
-        servo_buffer_ = ServoBufferConfig::load(config, servo_period_);
-        aviator::Logger::info("Servo buffer: prefill_ms={} effective_prefill_ms={} lookahead_ms={} block_ms={}",
-            servo_buffer_.prefill_ms, servo_buffer_.effective_prefill_ms,
-            servo_buffer_.lookahead_ms, std::llround(servo_period_ * 1000));
+        if (!datalink_->latestServoSupported()) {
+            servo_buffer_ = ServoBufferConfig::load(config, servo_period_);
+            aviator::Logger::info("Legacy Servo buffer: prefill_ms={} lookahead_ms={} block_ms={}",
+                servo_buffer_.effective_prefill_ms, servo_buffer_.lookahead_ms, std::llround(servo_period_ * 1000));
+        } else aviator::Logger::info("Servo: latest target, device Ruckig at 1 ms, no prefill/lookahead");
 
         // 加载抓取配置
         std::string config_dir = std::filesystem::absolute(config_file_).parent_path().string();
@@ -405,7 +404,7 @@ class Aviator::Impl {
         }
     }
 
-    // Only validate/publish a target here. IK, collision checks and execution run in servoLoop.
+    // Only validate/publish a target here. Production Servo planning runs in the device executor.
     void servoWheel(double angle, double displacement, double v) {
         validateWheelInput(angle, displacement, v);
         std::lock_guard<std::mutex> mailbox(servo_mutex_);
@@ -624,6 +623,33 @@ class Aviator::Impl {
     }
 
     void runServo() {
+        if (datalink_->latestServoSupported()) {
+            bool timed_out = false;
+            for (;;) {
+                if (cancel_ || shutdown_ || servoExpired()) {
+                    timed_out = !cancel_ && !shutdown_;
+                    break;
+                }
+                ServoTarget command;
+                { std::lock_guard<std::mutex> lock(servo_mutex_); command = servo_target_; }
+                const auto stamp = std::chrono::duration_cast<std::chrono::microseconds>(
+                    command.received.time_since_epoch()).count();
+                if (!datalink_->latestServo({command.angle, command.displacement, command.v,
+                        static_cast<uint64_t>(stamp), false})) {
+                    timed_out = true;
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            datalink_->finishLatestServo();
+            last_target_ = datalink_->jointTargets();
+            last_velocity_ = {};
+            const auto wheel = datalink_->graspState();
+            wheel_angle_ = wheel.angle;
+            wheel_displacement_ = wheel.displacement;
+            if (timed_out) setMotionError(ServoTimeout().what());
+            return;
+        }
         JointFrame last{last_target_, wheel_angle_, wheel_displacement_};
         ServoPlanner planner(*kinematics_,
             [this](int side, double a, double d) { return target(side, a, d); },

@@ -11,6 +11,23 @@ namespace {
 volatile std::sig_atomic_t interrupted = 0;
 void signalStop(int) { interrupted = 1; }
 void check(bool ok, const char* reason) { if (!ok) throw std::runtime_error(reason); }
+// Protocol/executor test double. Real Ruckig/IK is exercised by servo_planner_test.
+class LatestProbe final : public DeviceServo {
+    JointFrame frame_;
+    bool stopped_ = false;
+public:
+    explicit LatestProbe(JointFrame f) : frame_(f) {}
+    JointFrame step(const ServoGoal& g) override {
+        if (g.angle == .4) {
+            std::cout << "SERVO_STEP_FAILURE" << std::endl;
+            throw std::runtime_error("injected servo planning failure");
+        }
+        stopped_ = g.stop;
+        if (!stopped_) { frame_.angle = g.angle; frame_.displacement = g.displacement; }
+        return frame_;
+    }
+    bool stopped() const override { return stopped_; }
+};
 // No hardware. Deliberately suspend feedback longer than the 50 ms RT watchdog.
 class PausingDevice final : public DataLink {
     ArmFeedback feedback_;
@@ -67,11 +84,65 @@ int main(int argc, char** argv) try {
         std::signal(SIGINT, signalStop); std::signal(SIGTERM, signalStop);
         DeviceSettings settings(config);
         PausingDevice device(settings, mode);
-        return runDeviceServer(device, config, settings, {}, interrupted);
+        DeviceServerOptions options;
+        if (mode == "latest") options.servo = [](const JointFrame& f) { return std::make_unique<LatestProbe>(f); };
+        return runDeviceServer(device, config, settings, options, interrupted);
     }
     RemoteLink link(config);
     link.enable(Side::Left);
     for (int i = 0; i < 30; ++i) { link.heartbeat(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+    if (mode == "latest") {
+        check(link.latestServoSupported(), "latest capability missing");
+        auto wait = [&](auto predicate) {
+            const auto deadline = monotonic_us() + 2000000;
+            for (;;) {
+                link.heartbeat();
+                bool fresh;
+                const auto state = link.snapshot(fresh);
+                check(!state.fault, state.error.c_str());
+                if (fresh && predicate(state)) return state;
+                check(monotonic_us() < deadline, "latest state timeout");
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+        };
+        // All targets change within one publish period; only the last matters.
+        for (int k = 0; k < 1000; ++k)
+            link.latestServo({k == 999 ? -.2 : .2, -.085, 1, monotonic_us(), false});
+        const auto active = wait([](const DeviceState& s) { return s.servo_active && s.angle == -.2; });
+        // Repeated publication must not refresh the original input timestamp.
+        const auto stopped = wait([](const DeviceState& s) { return s.servo_stopped && !s.servo_active; });
+        check(stopped.servo_input_sample == active.servo_input_sample, "heartbeat refreshed input timestamp");
+        check(!link.latestServo({.3, -.05, 1, monotonic_us(), false}), "device timeout not surfaced to Core");
+        for (int i = 0; i < 40; ++i) { link.heartbeat(); std::this_thread::sleep_for(std::chrono::milliseconds(2)); }
+        bool fresh; auto state = link.snapshot(fresh);
+        check(state.servo_stopped && state.angle == -.2, "late goal restarted stopped servo ID");
+        link.finishLatestServo();
+        link.latestServo({.1, -.1, 1, monotonic_us(), false});
+        state = wait([](const DeviceState& s) { return s.servo_active && s.angle == .1; });
+        check(state.id > stopped.id, "new Servo did not get new ID");
+        auto done = std::async(std::launch::async, [&] { link.finishLatestServo(); });
+        while (done.wait_for(std::chrono::milliseconds(2)) != std::future_status::ready) link.heartbeat();
+        done.get();
+        link.latestServo({.2, -.1, 1, monotonic_us(), false});
+        wait([](const DeviceState& s) { return s.servo_active; });
+        // Protection stop clears latest output; allowMotion does not replay it.
+        link.allowMotion(false);
+        wait([](const DeviceState& s) { return !s.servo_active && !s.stopping; });
+        for (int i = 0; i < 40; ++i) { link.heartbeat(); std::this_thread::sleep_for(std::chrono::milliseconds(2)); }
+        link.allowMotion(true);
+        check(!link.snapshot(fresh).servo_active, "reauthorization replayed old servo");
+        link.latestServo({.4, -.1, 1, monotonic_us(), false});
+        for (int i = 0; i < 300; ++i) {
+            link.heartbeat();
+            state = link.snapshot(fresh);
+            if (state.fault && !state.enabled[0] && !state.enabled[1]) break;
+            check(i < 299, "planning fault did not disable both arms");
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        check(state.error.find("injected servo planning failure") != std::string::npos, "lost planning fault");
+        std::cout << "PASS latest overwrite / timeout / stop / reentry / planning fault" << std::endl;
+        return 0;
+    }
     const auto target = link.jointTargets();
     auto task = std::async(std::launch::async, [&] { link.setImpedanceProfile(true); });
     bool observed_pause = false, cancelled = false;

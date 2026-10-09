@@ -2,6 +2,7 @@
 #include "aviator/GraspTools.hpp"
 #include "aviator/backend.hpp"
 #include "device_server.hpp"
+#include "DeviceServo.hpp"
 #include <cmath>
 using namespace aviator;
 namespace {
@@ -62,7 +63,9 @@ int main(int argc, char** argv) try {
     device->setWheelReference(settings.initial_wheel.angle, settings.initial_wheel.displacement);
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
-    const int result = runDeviceServer(*device, config, settings, {}, interrupted);
+    DeviceServerOptions options;
+    configureDeviceServo(options, settings);
+    const int result = runDeviceServer(*device, config, settings, options, interrupted);
     Logger::info("Manipulator stopped result={}", result);
     return result;
 } catch (const std::exception& e) {

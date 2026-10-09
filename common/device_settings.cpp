@@ -38,6 +38,8 @@ DeviceSettings::DeviceSettings(const MotionConfig& config)
         lower[i] = std::max(lower[i], posture["joint2_limits_deg"][0].as<double>() * M_PI / 180);
         upper[i] = std::min(upper[i], posture["joint2_limits_deg"][1].as<double>() * M_PI / 180);
     }
+    const double servo_timeout = robot["servo_timeout"].as<double>(.25);
+    require(std::isfinite(servo_timeout) && servo_timeout > 0, "Invalid servo timeout");
     braking = robot["stop_acceleration"].as<double>();
     require(std::isfinite(braking) && braking > 0, "Invalid braking acceleration");
 }

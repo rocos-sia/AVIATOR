@@ -1130,7 +1130,7 @@ system.yaml 统一配置总线与服务端点，开发默认服务 tcp://127.0.0
 
 ### 19.2 JOINT_TRAJECTORY / SYNCHRONIZED_TICKS
 
-本地执行采用明确能力字段 `execution:"SYNCHRONIZED_TICKS"`，其他模式拒绝。它补充第 6.3 节的执行约定：
+有限轨迹采用明确能力字段 `execution:"SYNCHRONIZED_TICKS"`；连续 Servo 使用下述 `LATEST_TARGET` 模式。它补充第 6.3 节的执行约定：
 
 - arm.command 以 100 Hz 更新窗口，双侧每条 2—32 个点，time_from_start_us 为 0、2000、4000…，均含完整 7 轴位置和速度。
 - 新增 trajectory_id（当前 epoch 内递增）、first_tick、total_ticks，tick 单位 1 ms；first_tick/total_ticks 为偶数，total_ticks 不超过 3,600,000。每个窗口最多覆盖 62 ms。
@@ -1143,6 +1143,29 @@ system.yaml 统一配置总线与服务端点，开发默认服务 tcp://127.0.0
 arm.state.execution 包含 trajectory_id、tick、target[14]、stopping、fault、error。accepted_command 仍只表示接纳；执行游标表示指令进度，不能用作实际到位证明。software_lock 表示软件操作阶段，wheel_reference 表示当前指令参考。只有 MuJoCo 发布 wheel_measurement，供观测与独立仿真测试使用。
 
 Managed 入口的 Rokae 待机就绪判据使用 arm.state 的 `status_mono_us`（同机单调微秒，设备状态发布时间）；未使能时 RT 采样可以无效。Managed flight.state.valid 表示整机状态发布依据及 Core 拥有线程更新有效，机械臂采样时效仍通过 freshness.arm.valid 单独报告；这允许 Gateway 在未使能时自动识别 Core，不表示机械臂数据有效。只有 UNINITIALIZED/INITIALIZED/DISABLED、无进行中轨迹和无停止任务时允许此判据。开始运动后仍检查原始采样时间及 valid，不使用 status_mono_us 给关节/TCP 采样续期。旧 Manipulator 不提供该字段，需与 Core 一起升级。
+
+### 19.2.1 WHEEL_SERVO / LATEST_TARGET
+
+`describe.capabilities.latest_servo=true` 表示支持设备端在线规划。`arm.command.body` 使用：
+
+```json
+{
+  "mode": "WHEEL_SERVO", "execution": "LATEST_TARGET",
+  "control_epoch": "本次授权 UUID", "config_id": "配置摘要",
+  "trajectory_id": 12,
+  "angle": 0.1, "displacement": -0.085, "speed_ratio": 1.0,
+  "input_sample_mono_us": 123456789, "stop": false,
+  "origin": {"publisher_id": "aviator_core", "session_id": "Core 会话",
+    "sequence": 10, "sample_mono_us": 123456789,
+    "clock_id": "同机时钟", "topic": "local.task"}
+}
+```
+
+角度范围 ±0.87266 rad，位移 [-0.170,0] m，倍率 (0,1]；所有数值须有限，ID/时间为正 uint53。`input_sample_mono_us` 是 Core 接纳本次目标的时间，不是通信重发时间，且不得晚于消息采样时间。同一 Servo ID 的输入时间不得倒退；包序号、控制授权、生命周期屏障和 origin 检查沿用有限轨迹规则。
+
+接收线程覆盖最新目标槽；执行线程保留同一个 Ruckig 状态，每步生成一个 1 ms 双臂关节指令，不预计算未来窗口。新 ID 只允许从上一动作停稳处开始，不重置实测姿态。`stop=true` 或输入超过 servo_timeout 触发有界 Ruckig 减速，同一 ID 的停止状态锁存，迟到目标不能重启。命令或 origin watchdog 失效仍锁存故障并停止双臂。回零/抓取/释放及旧流式能力继续使用 19.2 的窗口。
+
+`arm.state.execution` 增加 `servo_active`、`servo_stopped`、`servo_input_sample_mono_us`。tick 为已生成的累计指令步，target 与 wheel_reference 是最后指令；servo_stopped 表示最终指令已被设备消费且规划速度/加速度归零，不是机械实际到位证明。SDK 状态由独立线程读取并覆盖快照，发布仍为 100 Hz，不回放积压状态；原时间戳与失效判据保留。
 
 ### 19.3 服务与生命周期
 

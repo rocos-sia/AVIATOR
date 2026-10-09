@@ -18,7 +18,7 @@ rokae:
   # 真机和仿真共用双臂关节刚度；顺序为 J1...J7，单位 Nm/rad。
   # 仿真附加阻尼为 80*sqrt(K/1000) Nm·s/rad，修改后重启生效。
   joint_stiffness: [500, 500, 500, 500, 50, 50, 50]
-  # FOLLOWING 暂与默认刚度相同，用于排查切换流程；仍执行暂停、设置和恢复。
+  # FOLLOWING 使用下列刚度；即使与默认数值相同，也执行暂停、设置和恢复。
   # 退出时恢复 joint_stiffness，缺省时沿用默认刚度。
   following_joint_stiffness: [500, 500, 500, 500, 50, 50, 0.01]
   # joint_stiffness: [0.01, 500, 0.01, 0.01, 0.01, 0.01, 0.01]
@@ -33,7 +33,7 @@ rokae:
 urdf: ../models/urdf/aviator.urdf
 # 碰撞检查也使用上述完整 URDF，无需独立碰撞模型或 SRDF。
 # 检查接口目前只提供双臂/轮盘位置，手指按 URDF 零位检查。
-# Core 规划碰撞检查，仿真/真机共用；省略时默认 true。
+# Core 有限轨迹及设备端 Servo 的规划碰撞检查，仿真/真机共用；省略时默认 true。
 # false 跳过所有规划碰撞检查（含自碰撞、双臂互碰和环境碰撞），不加载碰撞模型。
 # 关节位置限位、通信超时和 SDK 故障检查仍生效；不改变控制器自身保护。
 collision_check_enabled: false
@@ -92,15 +92,10 @@ wheel_linear_acceleration: 4.0 # m/s²
 wheel_angular_jerk: 20.0        # rad/s³
 wheel_linear_jerk: 12.0       # m/s³
 
-# 在线规划块周期，必须是整毫秒（10..50 ms）；以下缓冲配置修改后重启 Core 生效。
-# 连续 q/dq/ddq 曲线按 1 ms 采样原样发送，两臂共用执行游标。
+# CONTROL 使用最新目标覆盖：Core 不预填充或发送未来 Servo 轨迹。
+# manipulator/simulation 每次双臂消费完成后，以 1 ms 步长执行一次 Ruckig + IK。
+# servo_period 只控制直接摇杆/相机入口的目标更新节拍及旧后端兼容路径；不增加执行提前量。
 servo_period: 0.01
-# 启动前预填充的轨迹时长；整数 1..250 ms，向上取整到规划块后也不能超过 250 ms。
-# 小于一个规划块时仍预填充一整块（当前20 ms）。
-servo_prefill_ms: 40
-# 运行时相对反馈游标的补充阈值；低于此值就追加一整块轨迹，不改写已提交样本。
-# 整数 >=1，且 <=250-servo_period*1000-5（当前20 ms周期时上限225 ms）。
-# 当前40对应约40..60 ms，实际余量还需扣除反馈/传输延迟；较小值更易耗尽缓冲。
-servo_lookahead_ms: 40
-# 按实际接收时间计时；超时后执行已提交的短缓冲，再按 jerk 约束减速并保持锁定。
+# 原 servo_prefill_ms / servo_lookahead_ms 已从生产配置移除，最新目标模式不读取它们。
+# 按 Core 接纳输入的单调时间计时，重发目标不续期；超时立即开始 Ruckig 减速后保持。
 servo_timeout: 0.25

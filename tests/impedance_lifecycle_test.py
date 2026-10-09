@@ -9,7 +9,7 @@ from robot_state_machine_process_test import port
 
 bus, driver, root = sys.argv[1:]
 root = Path(root)
-for mode in ("success", "failure", "cancel", "heartbeat", "timeout", "unchanged", "fallback"):
+for mode in ("success", "failure", "cancel", "heartbeat", "timeout", "unchanged", "fallback", "latest"):
     folder = Path(tempfile.mkdtemp(prefix=f"aviator-impedance-{mode}-"))
     print(folder, flush=True)
     config = yaml.safe_load((root / "config/system.yaml").read_text())
@@ -43,6 +43,8 @@ for mode in ("success", "failure", "cancel", "heartbeat", "timeout", "unchanged"
         server_log = (folder / "server.log").read_text()
         expected_resumes = 2 if mode == "success" else (1 if mode in ("unchanged", "fallback") else 0)
         assert server_log.count("RESUMED") == expected_resumes, server_log
+        if mode == "latest":
+            assert server_log.count("SERVO_STEP_FAILURE") == 1, server_log
     finally:
         for child in reversed(children):
             child.terminate()

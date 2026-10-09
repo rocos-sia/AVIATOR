@@ -512,7 +512,8 @@ int main(int argc, char **argv) {
                     if (flight_stage == 3 && position_hold)
                         check(std::abs(reference_angle + .174532) < .003 &&
                               std::abs(reference_displacement + .0935) < .0005 && min_angle < -.16,
-                              "Static negative step did not reach its target");
+                              "Static negative step did not reach its target: reference=" + std::to_string(reference_angle) +
+                                  " displacement=" + std::to_string(reference_displacement) + " measured_min=" + std::to_string(min_angle));
                     if (stopping_stage) {
                         check(text.find("Servo command timeout") != std::string::npos,
                               "Replayed old samples kept Servo alive");

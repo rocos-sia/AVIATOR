@@ -30,6 +30,9 @@ class RemoteLink final : public DataLink {
     void setJointPositions(const Joints &) override;
     void runTrajectory(const std::vector<JointFrame> &, const std::atomic<bool> &) override;
     void stopTrajectory() override;
+    bool latestServoSupported() const override { return latest_supported_; }
+    bool latestServo(const ServoGoal&) override;
+    void finishLatestServo() override;
     void beginStream(const std::vector<JointFrame>&) override;
     void appendStream(const std::vector<JointFrame>&) override;
     size_t streamAhead() const override;
@@ -65,6 +68,8 @@ class RemoteLink final : public DataLink {
     std::shared_ptr<const std::vector<JointFrame>> trajectory_;
     std::deque<JointFrame> stream_;
     uint64_t stream_first_ = 0;
+    bool latest_supported_ = false, latest_mode_ = false;
+    ServoGoal latest_goal_;
     bool streaming_ = false, stream_finished_ = false;
     uint64_t synchronized_hand_version_ = 0;
     uint64_t trajectory_id_ = 0, start_ = 0, received_ = 0, sample_ = 0, ack_ = 0;

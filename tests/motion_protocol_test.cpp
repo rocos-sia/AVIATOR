@@ -36,6 +36,29 @@ int main() {
             std::ofstream(robot_file) << "wheel_initial: " << invalid << '\n';
             rejected([&] { loadInitialWheel(robot_file); });
         }
+        {
+            ServoCommand goal;
+            goal.id = goal.sequence = 1;
+            goal.sample = goal.origin_sample = monotonic_us();
+            goal.goal = {.2, -.085, .5, goal.sample - 1000, false};
+            auto message = motionMessage(Topic::arm_command, "aviator_core", session, 1);
+            message.header.sample_mono_us = goal.sample;
+            message.body = encodeServo(goal, session, epoch);
+            std::string bytes, why;
+            check(encode(message, bytes, why), why.c_str());
+            Message decoded;
+            check(decode("arm.command", bytes, decoded, why), why.c_str());
+            const auto result = decodeServo(decoded);
+            check(result.goal.input_sample == goal.goal.input_sample && result.goal.angle == .2 &&
+                  result.goal.displacement == -.085 && result.goal.speed_ratio == .5, "Latest goal roundtrip");
+            for (const auto& [key, value] : std::vector<std::pair<std::string, Json>>{
+                    {"angle", .873}, {"angle", "0"}, {"displacement", .001}, {"speed_ratio", 0},
+                    {"input_sample_mono_us", goal.sample + 1}, {"input_sample_mono_us", -1},
+                    {"trajectory_id", 1.5}, {"stop", 1}}) {
+                auto bad = decoded; bad.body[key] = value;
+                rejected([&] { decodeServo(bad); });
+            }
+        }
         Joints lo, hi, speed;
         lo.fill(-3);
         hi.fill(3);

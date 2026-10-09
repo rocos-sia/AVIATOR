@@ -33,6 +33,10 @@ target_link_libraries(aviator_simulation_camera PUBLIC aviator_simulation_model 
   aviator_transport glfw PkgConfig::SIMULATION_EGL OpenGL::GL PRIVATE PkgConfig::AVIATOR_VIDEO)
 add_executable(simulation main.cpp Viewer.cpp)
 target_link_libraries(simulation PRIVATE aviator_simulation_camera aviator_simulation_device)
+if(TARGET aviator_core_control)
+  target_link_libraries(simulation PRIVATE aviator_core_control)
+  target_compile_definitions(simulation PRIVATE AVIATOR_HAVE_DEVICE_SERVO=1)
+endif()
 # JSON templates from these units also participate in device protocol decoding.
 # Keep the camera-enabled Debug executable within the existing 50 ms watchdog.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

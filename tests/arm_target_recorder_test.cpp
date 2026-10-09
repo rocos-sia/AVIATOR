@@ -60,6 +60,13 @@ void unit() {
     check(r["joint_position"] == s["execution"]["target"], "used first point instead of cursor");
     check(r["joint_velocity"] == std::vector<double>(14, .1) && r["joint_acceleration"] == std::vector<double>(14, .2), "derivatives/order");
     check(r["sample_mono_us"] == 1010000 && r["source_state"]["sample_mono_us"] == 999000, "execution/measurement times conflated");
+    auto latest = c;
+    latest["mode"] = "WHEEL_SERVO"; latest["execution"] = "LATEST_TARGET";
+    latest.erase("arms"); latest.erase("first_tick"); latest.erase("total_ticks");
+    r = correlate(latest, s);
+    check(r["valid"] && r["reason"] == "device_reported_latest_target" &&
+          r["joint_position"] == s["execution"]["target"] &&
+          !r["derivatives_available"] && r["joint_velocity"].is_null(), "latest target recording");
     auto relabeled = s;
     relabeled["accepted_command"]["session_id"] = "different-text-marker";
     check(correlate(c, relabeled)["valid"], "session label blocked target recording");

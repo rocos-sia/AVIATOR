@@ -6,6 +6,7 @@
 #include <string>
 namespace aviator {
 struct RokaeSample {
+    double received_time = 0; // Monotonic receipt time; repeated reads retain this timestamp.
     std::array<double, 7> position{}, velocity{};
     std::array<double, 16> tcp{};
 };

@@ -22,6 +22,9 @@ struct Shared {
     DeviceState state;
     ArmFeedback feedback;
     TrajectoryWindow window;
+    ServoCommand servo;
+    bool has_servo = false;
+    std::string servo_instance;
     std::string window_instance, accepted_instance;
     bool has_window = false, revoke = false;
     std::atomic<bool> quit{false};
@@ -57,6 +60,9 @@ Json armState(const DeviceState& s, const ArmFeedback& f, const DeviceServerOpti
     }
     b["execution"] = {{"trajectory_id", s.id},  {"tick", s.cursor}, {"target", s.target},
                       {"stopping", s.stopping}, {"fault", s.fault}, {"error", s.error}};
+    b["execution"]["servo_active"] = s.servo_active;
+    b["execution"]["servo_stopped"] = s.servo_stopped;
+    b["execution"]["servo_input_sample_mono_us"] = s.servo_input_sample;
     b["execution"]["impedance_switching"] = s.impedance_switching;
     b["execution"]["impedance_profile"] = s.impedance_profile;
     b["software_lock"] = s.locked;
@@ -68,12 +74,16 @@ Json armState(const DeviceState& s, const ArmFeedback& f, const DeviceServerOpti
 }
 void executor(Shared& shared, DataLink& device, const MotionConfig& config, const Joints& lo,
               const Joints& hi, const Joints& speed, double braking, WheelReference initial,
-              const DeviceSettings& settings) {
+              const DeviceSettings& settings, const DeviceServerOptions& options) {
     DeviceState state;
     state.angle = initial.angle;
     state.displacement = initial.displacement;
     auto current_stiffness = settings.default_stiffness;
     TrajectoryWindow active{};
+    std::unique_ptr<DeviceServo> servo;
+    ServoCommand goal;
+    bool servo_stop = false, servo_step_valid = true;
+    const double servo_timeout = settings.robot["servo_timeout"].as<double>(.25);
     std::string active_instance;
     bool have = false;
     uint64_t last_message = 0, highest_trajectory = 0;
@@ -101,15 +111,67 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                 failure = std::current_exception();
             }
         have = false;
+        servo.reset();
+        state.servo_active = state.servo_stopped = false;
         state.id = state.cursor = 0;
         if (failure)
             std::rethrow_exception(failure);
     };
     Joints velocity{};
+    uint64_t servo_report = 0, servo_steps = 0, servo_work_us = 0, servo_max_us = 0;
+    auto servoStep = [&] {
+        auto command = goal.goal;
+        command.stop = servo_stop;
+        // A failed solve/write may have advanced planner state without submitting
+        // a command. Do not attempt another trajectory from that uncertain state.
+        servo_step_valid = false;
+        const auto began = monotonic_us();
+        const auto f = servo->step(command);
+        const auto elapsed = monotonic_us() - began;
+        ++servo_steps;
+        servo_work_us += elapsed;
+        servo_max_us = std::max(servo_max_us, elapsed);
+        if (began - servo_report >= 1000000) {
+            Logger::info("Servo timing trajectory={} steps={} plan_mean_us={} plan_max_us={} input_age_ms={}",
+                state.id, servo_steps, double(servo_work_us) / servo_steps, servo_max_us,
+                double(began - goal.goal.input_sample) / 1000);
+            servo_report = began;
+            servo_steps = servo_work_us = servo_max_us = 0;
+        }
+        for (size_t j = 0; j < 14; ++j) {
+            require(std::isfinite(f.q[j]) && std::isfinite(f.dq[j]) && std::isfinite(f.ddq[j]) &&
+                        f.q[j] >= lo[j] && f.q[j] <= hi[j],
+                    "Latest servo joint continuity/limit violation");
+        }
+        device.setJointPositions(f.q);
+        device.setWheelReference(f.angle, f.displacement);
+        state.target = f.q;
+        state.angle = f.angle;
+        state.displacement = f.displacement;
+        velocity = f.dq;
+        ++state.cursor;
+        servo_step_valid = true;
+    };
     auto stop = [&] {
         // Local bounded deceleration from the last command; never jump to measured q.
         state.stopping = true;
         snapshot();
+        if (servo && state.servo_active) {
+            require(servo_step_valid, "Cannot plan braking after a failed Servo step");
+            servo_stop = true;
+            const auto deadline = monotonic_us() + 5000000;
+            device.commandDeadline(double(deadline) / 1e6);
+            do {
+                require(monotonic_us() < deadline, "Latest servo braking timeout");
+                device.waitTick();
+                servoStep();
+                if (state.cursor % 5 == 0) snapshot();
+            } while (!servo->stopped());
+            device.waitTick();
+            velocity = {};
+        }
+        servo.reset();
+        state.servo_active = state.servo_stopped = false;
         double duration = 0;
         for (double v : velocity)
             duration = std::max(duration, std::abs(v) / braking);
@@ -143,6 +205,9 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
         std::string key;
         Json request;
         TrajectoryWindow incoming;
+        ServoCommand incoming_servo;
+        std::string servo_instance;
+        bool new_servo = false;
         std::string incoming_instance;
         bool new_window = false, revoke = false;
         {
@@ -166,6 +231,12 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                 shared.has_window = false;
                 new_window = true;
             }
+            if (shared.has_servo) {
+                incoming_servo = shared.servo;
+                servo_instance = shared.servo_instance;
+                shared.has_servo = false;
+                new_servo = true;
+            }
             revoke = shared.revoke;
             shared.revoke = false;
         }
@@ -182,6 +253,8 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                         disable();
                         throw;
                     }
+                    servo.reset();
+                    state.servo_active = state.servo_stopped = false;
                     // Every enable starts with the configured default, including simulation.
                     device.setJointStiffness(settings.default_stiffness, [] {});
                     current_stiffness = settings.default_stiffness;
@@ -198,6 +271,9 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                 } else if (op == "set_impedance_profile") {
                     require(!state.fault && state.enabled[0] && state.enabled[1],
                             "Impedance update requires healthy enabled arms");
+                    require(!state.servo_active, "Finish servo before changing impedance");
+                    servo.reset();
+                    state.servo_stopped = false;
                     require(!have || (state.cursor >= active.total && (!active.streaming || active.finished)),
                             "Finish the trajectory before changing impedance");
                     for (double v : velocity) require(std::abs(v) < 1e-8, "Impedance update requires a held target");
@@ -243,7 +319,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                     state.locked = false;
                 } else if (op == "stop") {
                     stop();
-                    result["target"] = state.target;
+                    result = {{"target", state.target}, {"angle", state.angle}, {"displacement", state.displacement}};
                 } else if (op == "lock" || op == "unlock") {
                     if (op == "lock")
                         require(device.isEnabled(Side::Left) && device.isEnabled(Side::Right),
@@ -264,9 +340,9 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                     throw std::runtime_error("Unknown device operation");
                 if (op == "stop" || op == "disable" || op == "enable" || op == "reset_fault" || op == "set_impedance_profile") {
                     shared.accept_after = monotonic_us();
-                    new_window = false;
+                    new_window = new_servo = false;
                     std::lock_guard<std::mutex> lock(shared.mutex);
-                    shared.has_window = false;
+                    shared.has_window = shared.has_servo = false;
                 }
                 snapshot();
                 std::lock_guard<std::mutex> lock(shared.mutex);
@@ -277,7 +353,40 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
             if (revoke && (state.enabled[0] || state.enabled[1]))
                 throw std::runtime_error("Core command invalid or expired");
             const auto now = monotonic_us();
+            if (new_servo && !state.fault) {
+                require(bool(options.servo), "Latest servo unavailable");
+                require(now >= incoming_servo.sample && now - incoming_servo.sample < config.timeout_us &&
+                            now >= incoming_servo.origin_sample &&
+                            now - incoming_servo.origin_sample < config.origin_timeout_us,
+                        "Stale latest servo command");
+                require(device.isEnabled(Side::Left) && device.isEnabled(Side::Right),
+                        "Servo received while disabled");
+                if (incoming_servo.id != state.id) {
+                    require(incoming_servo.id > highest_trajectory && !state.servo_active &&
+                            (!have || state.cursor >= active.total), "Previous motion still active/retired servo");
+                    for (double v : velocity) require(std::abs(v) < 1e-8, "Servo must start at rest");
+                    servo = options.servo(JointFrame{state.target, state.angle, state.displacement});
+                    state.id = highest_trajectory = incoming_servo.id;
+                    state.cursor = 0;
+                    servo_report = now;
+                    servo_steps = servo_work_us = servo_max_us = 0;
+                    state.servo_active = true;
+                    state.servo_stopped = servo_stop = false;
+                    servo_step_valid = true;
+                    have = false;
+                }
+                require(bool(servo), "Servo ID conflicts with finite trajectory");
+                require(incoming_servo.goal.input_sample >= goal.goal.input_sample || state.cursor == 0,
+                        "Servo input timestamp regressed");
+                goal = incoming_servo;
+                servo_stop = servo_stop || goal.goal.stop;
+                state.servo_input_sample = goal.goal.input_sample;
+                state.sequence = goal.sequence;
+                active_instance = servo_instance;
+                if (state.servo_active) last_message = now;
+            }
             if (new_window && !state.fault) {
+                require(!state.servo_active, "Finite trajectory received during latest servo");
                 require(now >= incoming.sample && now - incoming.sample < config.timeout_us &&
                             now >= incoming.origin_sample &&
                             now - incoming.origin_sample < config.origin_timeout_us,
@@ -292,10 +401,13 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                     for (size_t j = 0; j < 14; ++j)
                         require(std::abs(incoming.frames[0].q[j] - state.target[j]) < 1e-7,
                                 "New trajectory starts away from last command");
+                    servo.reset();
+                    state.servo_stopped = false;
                     state.id = incoming.id;
                     highest_trajectory = incoming.id;
                     state.cursor = 0;
                 } else {
+                    require(!servo, "Finite trajectory ID conflicts with latest servo");
                     require(incoming.streaming == active.streaming, "Trajectory mode changed");
                     if (active.streaming)
                         require(incoming.total >= active.total, "Servo total regressed");
@@ -332,7 +444,25 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                         1e6 +
                     0.02);
             }
-            if (have && !state.fault) {
+            if (servo && state.servo_active && !state.fault) {
+                require(now >= goal.sample && now - goal.sample < config.timeout_us &&
+                        now >= goal.origin_sample && now - goal.origin_sample < config.origin_timeout_us,
+                        "Latest servo command watchdog expired");
+                if (now >= goal.goal.input_sample &&
+                    now - goal.goal.input_sample >= uint64_t(servo_timeout * 1e6)) servo_stop = true;
+                device.commandDeadline(double(std::min(goal.sample + config.timeout_us,
+                    goal.origin_sample + config.origin_timeout_us)) / 1e6 + .02);
+                device.waitTick();
+                servoStep();
+                if (servo_stop && servo->stopped()) {
+                    device.waitTick();
+                    state.servo_active = false;
+                    state.servo_stopped = true;
+                    velocity = {};
+                    last_message = 0;
+                    device.commandDeadline(0);
+                }
+            } else if (have && !state.fault) {
                 require(now >= active.sample && now - active.sample < config.timeout_us &&
                             now >= active.origin_sample &&
                             now - active.origin_sample < config.origin_timeout_us,
@@ -458,7 +588,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
     shared.state.angle = initial_wheel.angle;
     shared.state.displacement = initial_wheel.displacement;
     std::thread worker(
-        [&] { executor(shared, device, config, lo, hi, speed, braking, initial_wheel, settings); });
+        [&] { executor(shared, device, config, lo, hi, speed, braking, initial_wheel, settings, options); });
     struct Join {
         Shared& s;
         std::thread& t;
@@ -537,7 +667,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                                        {"q", state.q},
                                        {"speed", speed},
                                        {"config_id", config.config_id},
-                                       {"capabilities", {{"status_before_enable", true}, {"impedance_profiles", true}}}};
+                                       {"capabilities", {{"status_before_enable", true}, {"impedance_profiles", true}, {"latest_servo", bool(options.servo)}}}};
                 else if (op == "get_result") {
                     const auto& params = req.at("parameters");
                     require(params.size() == 2u + params.count("server_session") +
@@ -603,7 +733,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                             policy.timeout_us = config.timeout_us;
                             policy.origin_timeout_us = config.origin_timeout_us;
                             guard = std::make_unique<InputGuard>(policy);
-                            shared.has_window = false;
+                            shared.has_window = shared.has_servo = false;
                             Operation operation;
                             operation.request = req;
                             operation.status = "COMPLETED";
@@ -682,8 +812,14 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                 require(m.body.at("config_id") == config.config_id, "config_id mismatch");
                 require(m.body.at("origin").at("topic") == "local.task",
                         "Only explicitly authorized local tasks supported");
-                auto window = decodeWindow(m, lo, hi, speed);
-                require(window.sample >= shared.accept_after.load(),
+                const bool latest = m.body.at("mode") == "WHEEL_SERVO";
+                ServoCommand servo_command;
+                TrajectoryWindow window;
+                if (latest) {
+                    require(bool(options.servo), "Latest servo unavailable");
+                    servo_command = decodeServo(m);
+                } else window = decodeWindow(m, lo, hi, speed);
+                require(m.header.sample_mono_us >= shared.accept_after.load(),
                         "Command predates lifecycle barrier");
                 if (!guard->accept(m, monotonic_us(), error)) {
                     if (error == "invalid business data") {
@@ -693,8 +829,20 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                     throw std::runtime_error(error);
                 }
                 std::lock_guard<std::mutex> lock(shared.mutex);
+                if (latest) {
+                    shared.control_alive = servo_command.origin_sample;
+                    if (shared.state.impedance_switching || servo_command.id <= shared.retired_trajectory.load()) continue;
+                    if (shared.has_servo && shared.servo.id == servo_command.id)
+                        servo_command.goal.stop = servo_command.goal.stop || shared.servo.goal.stop;
+                    shared.has_window = false;
+                    shared.servo = servo_command;
+                    shared.servo_instance = m.header.session_id;
+                    shared.has_servo = true;
+                    continue;
+                }
                 shared.control_alive = window.origin_sample;
                 if (shared.state.impedance_switching || window.id <= shared.retired_trajectory.load()) continue;
+                shared.has_servo = false;
                 shared.window = window;
                 shared.window_instance = m.header.session_id;
                 shared.has_window = true;

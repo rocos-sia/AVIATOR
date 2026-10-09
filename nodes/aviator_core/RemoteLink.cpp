@@ -7,6 +7,7 @@ RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), sess
     const auto info = callService(context_, c, serviceRequest(session_, "describe", Json::object()));
     if (info.at("config_id") != c.config_id)
         throw std::runtime_error("Core/device config_id mismatch");
+    latest_supported_ = info.value("capabilities", Json::object()).value("latest_servo", false);
     hand_.configure(c.system);
     aviator::Logger::info("Core hand control: {}",
         (hand_.enabled() ? "dedicated ZMQ worker (50 Hz)" : "disabled by configuration"));
@@ -158,6 +159,7 @@ void RemoteLink::setImpedanceProfile(bool following) {
         if (!motion_allowed_) throw MotionCancelled();
         if (result.at("target").get<Joints>() != state_.target)
             throw std::runtime_error("Impedance update changed held target");
+        latest_mode_ = false;
         streaming_ = false;
         stream_.clear();
         trajectory_ = std::make_shared<const std::vector<JointFrame>>(
@@ -192,6 +194,7 @@ void RemoteLink::disable(Side) {
     enabled_ = false;
     state_.enabled = {false, false};
     trajectory_.reset();
+    latest_mode_ = false;
     streaming_ = false;
     stream_.clear();
 }
@@ -256,6 +259,7 @@ uint64_t RemoteLink::sendGraspCommand(GraspCommand c) {
         enabled_ = false;
         publishing_ = false;
         trajectory_.reset();
+        latest_mode_ = false;
         streaming_ = false;
         stream_.clear();
         state_.fault = false;
@@ -267,6 +271,43 @@ uint64_t RemoteLink::sendGraspCommand(GraspCommand c) {
 void RemoteLink::setJointPositions(const Joints &) {
     throw std::runtime_error("Core must stream a planned trajectory");
 }
+bool RemoteLink::latestServo(const ServoGoal& goal) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!motion_allowed_) throw MotionCancelled();
+    const auto now = monotonic_us();
+    if (!latest_supported_ || !enabled_ || state_.fault || !error_.empty() || !feedback_valid_ ||
+        now - received_ >= config_.timeout_us || now - sample_ >= config_.timeout_us)
+        throw std::runtime_error("Latest servo feedback unavailable: " + state_.error + error_);
+    if (latest_mode_ && state_.id == trajectory_id_ && state_.servo_stopped && !state_.servo_active)
+        return false; // The device timed out first; let Core finish this run before accepting another.
+    if (!latest_mode_) {
+        trajectory_.reset();
+        stream_.clear();
+        streaming_ = false;
+        latest_mode_ = true;
+        latest_goal_ = goal;
+        ++trajectory_id_;
+    } else if (!latest_goal_.stop) latest_goal_ = goal;
+    publishing_ = true;
+    return true;
+}
+void RemoteLink::finishLatestServo() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (!motion_allowed_) throw MotionCancelled();
+    if (!latest_mode_) return;
+    latest_goal_.stop = true;
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (state_.id != trajectory_id_ || !state_.servo_stopped || state_.servo_active) {
+        if (!motion_allowed_) throw MotionCancelled();
+        const auto now = monotonic_us();
+        if (state_.fault || !error_.empty() || !feedback_valid_ ||
+            now - received_ >= config_.timeout_us || now - sample_ >= config_.timeout_us)
+            throw std::runtime_error("Latest servo stop failed: " + state_.error + error_);
+        if (std::chrono::steady_clock::now() >= until) throw std::runtime_error("Latest servo stop timeout");
+        changed_.wait_for(lock, std::chrono::milliseconds(2));
+    }
+    publishing_ = latest_mode_ = false;
+}
 void RemoteLink::beginStream(const std::vector<JointFrame> &frames) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!motion_allowed_) throw MotionCancelled();
@@ -276,6 +317,7 @@ void RemoteLink::beginStream(const std::vector<JointFrame> &frames) {
     for (size_t j = 0; j < 14; ++j)
         if (std::abs(frames.front().q[j] - state_.target[j]) > 1e-7)
             throw std::runtime_error("Servo prefill does not start at last device command");
+    latest_mode_ = false;
     stream_.assign(frames.begin(), frames.end());
     stream_first_ = 0;
     streaming_ = true;
@@ -357,6 +399,7 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
         hand_version = hand_.beginApproach(); // Validate close targets before starting arm motion.
         hand_.approachProgress(hand_version, frames.front().hand_closure);
     }
+    latest_mode_ = false;
     streaming_ = false;
     stream_.clear();
     trajectory_ = data;
@@ -405,9 +448,12 @@ void RemoteLink::stopTrajectory() {
     }
     auto result = operation("stop");
     std::lock_guard<std::mutex> lock(mutex_);
+    latest_mode_ = false;
     streaming_ = false;
     stream_.clear();
     state_.target = result.at("target").get<Joints>();
+    state_.angle = result.value("angle", state_.angle);
+    state_.displacement = result.value("displacement", state_.displacement);
     trajectory_ = std::make_shared<const std::vector<JointFrame>>(
         3, JointFrame{state_.target, state_.angle, state_.displacement});
     ++trajectory_id_;
@@ -493,6 +539,9 @@ void RemoteLink::io() {
                 state.fault = e.at("fault");
                 state.error = e.at("error");
                 state.stopping = e.at("stopping");
+                state.servo_active = e.value("servo_active", false);
+                state.servo_stopped = e.value("servo_stopped", false);
+                state.servo_input_sample = e.value("servo_input_sample_mono_us", uint64_t(0));
                 state.impedance_switching = e.value("impedance_switching", false);
                 state.impedance_profile = e.value("impedance_profile", "default");
                 state.locked = m.body.at("software_lock");
@@ -515,10 +564,18 @@ void RemoteLink::io() {
                 next = next && now - next < config_.period_us ? next + config_.period_us
                                                               : now + config_.period_us;
                 TrajectoryWindow w;
-                bool send_window = false;
+                bool send_window = false, send_servo = false;
+                ServoCommand servo;
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
-                    if (publishing_ && streaming_) {
+                    if (publishing_ && latest_mode_) {
+                        servo.goal = latest_goal_;
+                        servo.id = trajectory_id_;
+                        servo.sequence = ++command_seq;
+                        servo.origin_sample = heartbeat_;
+                        servo.sample = monotonic_us();
+                        send_servo = true;
+                    } else if (publishing_ && streaming_) {
                         trimStreamHistory();
                         w.streaming = true;
                         w.finished = stream_finished_;
@@ -556,17 +613,19 @@ void RemoteLink::io() {
                         send_window = true;
                     }
                 }
-                if (send_window) {
+                if (send_window || send_servo) {
                     // Serialize the final publication with cancellation. Once allowMotion(false)
                     // returns, no previously prepared ordinary window can be published.
                     std::lock_guard<std::mutex> lock(mutex_);
-                    if (!motion_allowed_ && !impedance_deadline_) continue;
+                    if ((!motion_allowed_ && !impedance_deadline_) || !publishing_ ||
+                        trajectory_id_ != (send_servo ? servo.id : w.id) || latest_mode_ != send_servo) continue;
                     const auto publish_time = monotonic_us();
-                    auto m = motionMessage(Topic::arm_command, "aviator_core", session_, w.sequence,
-                                           motion_allowed_ && publish_time >= w.origin_sample &&
-                                               publish_time - w.origin_sample < config_.origin_timeout_us);
-                    m.header.sample_mono_us = w.sample;
-                    m.body = encodeWindow(w, session_, epoch_);
+                    const auto origin = send_servo ? servo.origin_sample : w.origin_sample;
+                    auto m = motionMessage(Topic::arm_command, "aviator_core", session_, send_servo ? servo.sequence : w.sequence,
+                                           motion_allowed_ && publish_time >= origin &&
+                                               publish_time - origin < config_.origin_timeout_us);
+                    m.header.sample_mono_us = send_servo ? servo.sample : w.sample;
+                    m.body = send_servo ? encodeServo(servo, session_, epoch_) : encodeWindow(w, session_, epoch_);
                     m.body["config_id"] = config_.config_id;
                     publishMessage(pub, m);
                 }

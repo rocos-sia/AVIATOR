@@ -42,6 +42,12 @@ struct TrajectoryWindow {
 Json encodeWindow(const TrajectoryWindow &, const std::string &session, const std::string &epoch);
 TrajectoryWindow decodeWindow(const Message &, const Joints &lower, const Joints &upper,
                               const Joints &max_velocity);
+struct ServoCommand {
+    ServoGoal goal;
+    uint64_t id = 0, sequence = 0, sample = 0, origin_sample = 0;
+};
+Json encodeServo(const ServoCommand&, const std::string& session, const std::string& epoch);
+ServoCommand decodeServo(const Message&);
 struct DeviceState {
     Joints q{}, dq{}, target{};
     std::array<double, 14> tcp{}; // each side: x,y,z,qx,qy,qz,qw
@@ -51,6 +57,8 @@ struct DeviceState {
     double angle = 0, displacement = 0;
     double measured_angle = 0, measured_displacement = 0;
     bool locked = false, fault = false, stopping = false;
+    bool servo_active = false, servo_stopped = false;
+    uint64_t servo_input_sample = 0;
     bool impedance_switching = false;
     std::string impedance_profile = "default";
     std::string error;

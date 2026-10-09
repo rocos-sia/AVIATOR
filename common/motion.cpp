@@ -151,6 +151,40 @@ Json callService(zmq::context_t &ctx, const MotionConfig &cfg, const Json &reque
     throw std::runtime_error(
         "Service deadline expired; operation result is UNKNOWN, do not repeat with a new request_id");
 }
+Json encodeServo(const ServoCommand& c, const std::string& session, const std::string& epoch) {
+    return {{"mode", "WHEEL_SERVO"}, {"execution", "LATEST_TARGET"},
+        {"control_epoch", epoch}, {"trajectory_id", c.id},
+        {"angle", c.goal.angle}, {"displacement", c.goal.displacement},
+        {"speed_ratio", c.goal.speed_ratio}, {"input_sample_mono_us", c.goal.input_sample},
+        {"stop", c.goal.stop},
+        {"origin", {{"publisher_id", "aviator_core"}, {"session_id", session},
+            {"sequence", c.sequence}, {"sample_mono_us", c.origin_sample},
+            {"clock_id", local_clock_id()}, {"topic", "local.task"}}}};
+}
+ServoCommand decodeServo(const Message& m) {
+    const auto& b = m.body;
+    require(b.at("mode") == "WHEEL_SERVO" && b.at("execution") == "LATEST_TARGET", "Invalid servo mode");
+    auto integer = [](const Json& v) -> uint64_t {
+        require(v.is_number_integer() && v.get<double>() > 0 && v.get<double>() <= max_json_integer,
+                "Invalid servo timestamp/identity");
+        return v.get<uint64_t>();
+    };
+    ServoCommand c;
+    c.id = integer(b.at("trajectory_id")); c.sequence = m.header.sequence;
+    c.sample = m.header.sample_mono_us;
+    c.origin_sample = integer(b.at("origin").at("sample_mono_us"));
+    c.goal.input_sample = integer(b.at("input_sample_mono_us"));
+    c.goal.angle = b.at("angle").get<double>();
+    c.goal.displacement = b.at("displacement").get<double>();
+    c.goal.speed_ratio = b.at("speed_ratio").get<double>();
+    c.goal.stop = b.at("stop").get<bool>();
+    require(c.goal.input_sample <= c.sample && std::isfinite(c.goal.angle) &&
+            std::abs(c.goal.angle) <= 0.87266 && std::isfinite(c.goal.displacement) &&
+            c.goal.displacement >= -0.170 && c.goal.displacement <= 0 &&
+            std::isfinite(c.goal.speed_ratio) && c.goal.speed_ratio > 0 && c.goal.speed_ratio <= 1,
+            "Invalid servo goal");
+    return c;
+}
 Json encodeWindow(const TrajectoryWindow &w, const std::string &session, const std::string &epoch) {
     Json b = {{"mode", "JOINT_TRAJECTORY"},
               {"execution", "SYNCHRONIZED_TICKS"},

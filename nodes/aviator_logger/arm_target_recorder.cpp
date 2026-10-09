@@ -29,7 +29,8 @@ void ArmTargetRecorder::command(std::string_view payload) {
     Message m; std::string error;
     if (!decode("arm.command", payload, m, error) || !m.header.valid) { ++malformed_; return; }
     try {
-        if (m.body.at("mode") != "JOINT_TRAJECTORY" || m.body.at("execution") != "SYNCHRONIZED_TICKS")
+        if (!((m.body.at("mode") == "JOINT_TRAJECTORY" && m.body.at("execution") == "SYNCHRONIZED_TICKS") ||
+              (m.body.at("mode") == "WHEEL_SERVO" && m.body.at("execution") == "LATEST_TARGET")))
             throw std::invalid_argument("unsupported command");
         const auto epoch = m.body.at("control_epoch").get<std::string>();
         for (auto& w : windows_) {
@@ -96,6 +97,18 @@ std::optional<Json> ArmTargetRecorder::state(std::string_view payload) {
         if (b.at("config_id") != m.body.at("config_id") || integer(b.at("trajectory_id")) != id)
             return missing("trajectory_or_config_mismatch");
         if (found->header.sample_mono_us > observed) return missing("command_newer_than_state");
+        if (b.at("execution") == "LATEST_TARGET") {
+            // No joint trajectory is sent on this channel. Record the device's
+            // reported planned position explicitly, never reconstruct it from
+            // the wheel goal or substitute measured joint velocities.
+            out["joint_position"] = values(e.at("target"), 14);
+            out["streaming"] = true;
+            out["source_command"]["sample_mono_us"] = found->header.sample_mono_us;
+            out["valid"] = true;
+            out["reason"] = "device_reported_latest_target";
+            ++matched_;
+            return out;
+        }
         const auto first = integer(b.at("first_tick")), total = integer(b.at("total_ticks"));
         if (tick < first || tick > total) return missing("cursor_outside_window");
         const bool streaming = b.value("streaming", false);

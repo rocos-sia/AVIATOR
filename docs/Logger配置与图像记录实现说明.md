@@ -125,3 +125,5 @@ python nodes/camera/main.py \
 本次通信构建的 16 项 CTest 全部通过；Python 源码语法检查、`git diff --check` 和临时安装目录检查也通过。验证环境使用 yaml-cpp 0.7.0、Protobuf 3.12.4、libavcodec 58.134.100、libavutil 56.70.100、libswscale 5.9.100、Zstd 1.4.8。
 
 测试不能替代 D436 实机验收。当前开发机无 NVIDIA GPU（仅 Intel 核显），NVENC 后端无法在此验证；软件编码路径已按 1280x720@30 实测选定（libx264 约 4.6–6.5 倍实时，libx265 约 2.5 倍），仍需在目标机器复验实际流组合、长时间编码吞吐、峰值队列/内存、慢盘和源端丢帧。当前仍为单文件，不含分卷、周期持久化、通用原始设备信封、恢复工具和完整状态发布。
+
+连续 CONTROL 的 `WHEEL_SERVO/LATEST_TARGET` 不携带关节轨迹窗口。compact 模式关联已接纳的目标身份后，记录设备 `execution.target`，reason 为 `device_reported_latest_target`，速度/加速度为 null、derivatives_available=false；这代表设备报告的规划指令，不是从轮盘目标独立重建的轨迹，也不等同于 SDK 发包或机械实测。full 模式保留原始目标消息。
