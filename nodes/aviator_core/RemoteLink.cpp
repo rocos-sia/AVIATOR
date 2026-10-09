@@ -157,20 +157,19 @@ void RemoteLink::setImpedanceProfile(bool following) {
         const auto result = operation("set_impedance_profile", {{"profile", following ? "following" : "default"}});
         std::unique_lock<std::mutex> lock(mutex_);
         if (!motion_allowed_) throw MotionCancelled();
-        if (result.at("target").get<Joints>() != state_.target)
-            throw std::runtime_error("Impedance update changed held target");
+        const auto target = result.at("target").get<Joints>();
         latest_mode_ = false;
         streaming_ = false;
         stream_.clear();
         trajectory_ = std::make_shared<const std::vector<JointFrame>>(
-            3, JointFrame{state_.target, state_.angle, state_.displacement});
+            3, JointFrame{target, state_.angle, state_.displacement});
         ++trajectory_id_;
         start_ = monotonic_us();
         publishing_ = true;
         if (!changed_.wait_for(lock, std::chrono::milliseconds(500), [&] {
             return !motion_allowed_ || state_.fault || !error_.empty() ||
                 (feedback_valid_ && sample_ > began && state_.id == trajectory_id_ &&
-                 state_.cursor >= 2 && !state_.impedance_switching &&
+                 state_.cursor >= 2 && state_.target == target && !state_.impedance_switching &&
                  state_.impedance_profile == (following ? "following" : "default"));
         })) throw std::runtime_error("No fresh hold feedback after impedance update");
         if (!motion_allowed_) throw MotionCancelled();

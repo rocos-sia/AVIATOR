@@ -1,4 +1,4 @@
-"""FOLLOWING switches impedance while preserving targets despite camera/joystick input."""
+"""FOLLOWING holds the rebased impedance target despite camera/joystick input."""
 import json
 import os
 from pathlib import Path
@@ -174,8 +174,8 @@ def main():
              .02 < m["wheel_reference"]["angle"] < .15 and
              max(abs(v) for side in ("left", "right")
                  for v in m["arms"][side]["joint_velocity"]) > .1)
-        # Exit while moving: preserve the *completed deceleration* target, not the
-        # last displayed CONTROL sample or the original grasp target.
+        # Exit while moving: decelerate, then rebase the hold to measured joints.
+        # Do not replay the last displayed CONTROL sample or original grasp target.
         operation("exit_control")
         stopped = state("FOLLOWING")
         flight_target = (.2, -.06)  # Neither input source may move the held target now.
@@ -192,7 +192,7 @@ def main():
             else:
                 assert output.count("Joint stiffness update profile=following") == 2, output
                 assert output.count("Joint stiffness update profile=default") == 2, output
-        print("PASS: FOLLOWING holds grasp/stopped CONTROL targets, ignores camera, switches following/default stiffness without target jumps", flush=True)
+        print("PASS: FOLLOWING holds rebased targets, ignores camera, switches following/default stiffness and returns to STANDBY", flush=True)
     finally:
         quit_publish.set(); publisher.join()
         for child in reversed(children):

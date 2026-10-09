@@ -19,9 +19,10 @@ ServoPlanner::ServoPlanner(Kinematics& kinematics, Target target, Check check,
       axis_(wheel_origin.rotation() * Eigen::Vector3d::UnitZ()),
       center_(wheel_origin.translation()), last_(start), period_(period), speed_(speed),
       planner_(period) {
-    // Preserve the sub-micrometre residual of the accepted starting IK solution.
-    // Correcting that residual in the first 20 ms would create a jerk spike.
-    // This uses the last COMMAND's FK, never measured TCP/grasp feedback.
+    // Anchor the wheel-relative motion to the accepted holding command, including
+    // a measured-position rebase during impedance switching. Correcting its offset
+    // to nominal handle geometry on the first step would create a command jump.
+    check_(start);
     std::array<pinocchio::SE3, 2> offsets;
     for (int side = 0; side < 2; ++side) {
         std::array<double, 7> q;
@@ -29,9 +30,6 @@ ServoPlanner::ServoPlanner(Kinematics& kinematics, Target target, Check check,
         pinocchio::SE3 actual;
         require(kinematics_.solveFk(static_cast<Side>(side), q, actual), "Servo initial FK failed");
         const auto desired = target_(side, start.angle, start.displacement);
-        require((actual.translation() - desired.translation()).norm() <= 2e-6 &&
-                    rotationError(actual, desired) <= 2e-6,
-                "Servo initial command is inconsistent with wheel reference");
         offsets[side] = desired.inverse() * actual;
     }
     const auto original_target = target_;

@@ -536,6 +536,8 @@ class Aviator::Impl {
             Logger::info("{}", target_log.str());
             datalink_->setImpedanceProfile(following);
             if (cancelled) throw MotionCancelled();
+            last_target_ = datalink_->jointTargets();
+            last_velocity_ = {};
             default_impedance_confirmed_ = !following;
             setState(previous);
         } catch (const MotionCancelled&) {

@@ -95,6 +95,7 @@ class DataLink {
     virtual void disable(Side side) = 0;  // 失败抛 std::runtime_error
 
     // Non-RT, dual-arm lifecycle operation. check() must run between SDK stages.
+    // Rebase the hold to fresh measured joints before changing stiffness; read back jointTargets().
     // force_reapply executes the lifecycle even when the requested values are unchanged.
     virtual void setJointStiffness(const std::array<double, 7>&, const std::function<void()>&,
                                    bool force_reapply = false) {

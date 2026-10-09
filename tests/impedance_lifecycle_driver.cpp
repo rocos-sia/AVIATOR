@@ -70,6 +70,8 @@ public:
         }
         if (mode_ == "failure") throw std::runtime_error("injected right arm restart failure");
         guard();
+        if (mode_ == "rebase") feedback_.q[10] -= .2; // Right J4 displaced during compliant hold.
+        feedback_.target = feedback_.q;
         stiffness_ = stiffness;
         waitTick();
         std::cout << "RESUMED " << stiffness[6] << std::endl;
@@ -183,17 +185,22 @@ int main(int argc, char** argv) try {
     try { task.get(); } catch (const std::exception& e) { failed = true; std::cout << e.what() << '\n'; }
     const bool unchanged = mode == "unchanged" || mode == "fallback";
     check(observed_pause, "Following must execute the lifecycle even with unchanged stiffness");
-    const bool successful = mode == "success" || mode == "latest_impedance" || unchanged;
+    const bool successful = mode == "success" || mode == "latest_impedance" || mode == "rebase" || unchanged;
     check(failed != successful, "wrong profile result");
     if (successful) {
         bool fresh, status;
         auto state = link.snapshot(fresh, &status);
         check(fresh && !state.impedance_switching && state.impedance_profile == "following", "restart not confirmed");
-        check(state.target == target, "restart changed held target");
+        auto expected = target;
+        if (mode == "rebase") expected[10] -= .2;
+        check(state.target == expected && link.jointTargets() == expected, "restart did not synchronize measured hold");
         auto restore = std::async(std::launch::async, [&] { link.setImpedanceProfile(false); });
         while (restore.wait_for(std::chrono::milliseconds(5)) != std::future_status::ready) link.heartbeat();
         restore.get();
-        check(link.snapshot(fresh).impedance_profile == "default", "default profile not restored");
+        state = link.snapshot(fresh);
+        check(state.impedance_profile == "default", "default profile not restored");
+        if (mode == "rebase") expected[10] -= .2;
+        check(state.target == expected && link.jointTargets() == expected, "default restoration replayed old target");
     } else {
         for (int i = 0; i < 200; ++i) {
             link.heartbeat();

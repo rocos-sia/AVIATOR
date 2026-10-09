@@ -311,6 +311,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                         device.commandDeadline(0);
                     }
                     state.impedance_profile = profile;
+                    state.target = device.jointTargets(); // The lifecycle may rebase the hold to measured joints.
                     result = {{"profile", profile}, {"stiffness", stiffness}, {"target", state.target}};
                     Logger::info("Joint stiffness update profile={} values={}", profile, Json(stiffness).dump());
                 } else if (op == "disable") {

@@ -53,6 +53,28 @@ int main(int argc, char** argv) {
                                          std::to_string(f.q[8] * 180 / M_PI) +
                                          " wheel=" + std::to_string(f.angle));
         };
+        // A stiffness switch accepts the displaced measured pose as the new hold.
+        // Holding the same wheel reference must not pull it back to nominal geometry.
+        auto rebased = start;
+        rebased.q[10] -= .2;
+        ServoPlanner rebased_planner(*kin, target, check, origin, rebased, .001,
+                                     {.4, .04}, {.05, .005}, {.05, .005});
+        const auto held = rebased_planner.advance(rebased.angle, rebased.displacement, 1, false);
+        for (const auto& f : held)
+            for (int j = 0; j < 14; ++j)
+                if (std::abs(f.q[j] - rebased.q[j]) > 1e-10 || std::abs(f.dq[j]) > 1e-10)
+                    throw std::runtime_error("Rebased Servo hold jumped to nominal geometry");
+        auto rebased_previous = held.back();
+        for (int k = 0; k < 100; ++k) {
+            const auto block = rebased_planner.advance(.01, 0, 1, false);
+            if (block.front().q != rebased_previous.q || block.front().dq != rebased_previous.dq ||
+                block.front().ddq != rebased_previous.ddq)
+                throw std::runtime_error("Rebased Servo boundary discontinuity");
+            for (int j = 0; j < 14; ++j)
+                if (std::abs(block.back().q[j] - block.front().q[j]) > .001)
+                    throw std::runtime_error("Rebased Servo command jumped more than 1 mrad in 1 ms");
+            rebased_previous = block.back();
+        }
         ServoPlanner planner(*kin, target, check, origin, start, .02, {.4, .04}, {.05, .005},
                              {.05, .005});
         JointFrame previous = start;

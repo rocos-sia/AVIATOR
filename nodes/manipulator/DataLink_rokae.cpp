@@ -360,9 +360,27 @@ class RokaeDataLink final : public DataLink {
                 }
             };
             stage("pause", [](RokaeArm& arm) { arm.pauseImpedance(); });
+            // Both loops are stopped: refresh from the controller, not the pre-pause cache.
+            std::array<double, 7> measured[2];
+            for (int side = 0; side < 2; ++side) {
+                check();
+                measured[side] = arms_[side]->position();
+                for (double q : measured[side]) require(std::isfinite(q), "Invalid impedance hold position");
+            }
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                for (int side = 0; side < 2; ++side) {
+                    // Rebase the step-check baseline only while RT is paused.
+                    sent_[side] = measured[side];
+                    std::copy(measured[side].begin(), measured[side].end(), target_.begin() + side*7);
+                }
+            }
+            std::ostringstream hold_log;
+            hold_log << std::setprecision(17) << "Impedance hold rebased to measured target_rad=[";
+            const auto held = jointTargets();
+            for (size_t j = 0; j < held.size(); ++j) hold_log << (j ? "," : "") << held[j];
+            Logger::info("{}]", hold_log.str());
             stage("set", [&](RokaeArm& arm) { arm.setPausedStiffness(stiffness); });
-            // Preserve target_, sent_, and validity: the startup callback's first-frame
-            // initialization must NOT replace the held command with measured positions.
             const double resumed_after = monotonic();
             stage("resume", [&](RokaeArm& arm) { arm.resumeImpedance(check); });
             const double until = monotonic() + 0.5;

@@ -301,6 +301,7 @@ void MuJoCoDirectDataLink::setJointStiffness(const std::array<double, 7>& stiffn
     check();
     std::lock_guard<std::mutex> lock(mutex_);
     require(enabled_[0] && enabled_[1] && !fault_, "Stiffness update requires healthy enabled arms");
+    for (int i = 0; i < 14; ++i) target_[i] = data_->qpos[joint_qpos_adr_[i]];
     joint_stiffness_ = stiffness;
     for (int i = 0; i < 14; ++i)
         model_->dof_damping[joint_dof_adr_[i]] = original_damping_[i] +
