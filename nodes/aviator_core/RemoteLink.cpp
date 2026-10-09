@@ -223,8 +223,9 @@ void RemoteLink::setJointPositions(const Joints &) {
 void RemoteLink::beginStream(const std::vector<JointFrame> &frames) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!motion_allowed_) throw MotionCancelled();
-    if (!enabled_ || state_.fault || !error_.empty() || frames.size() < 61 || frames.size() > 251)
-        throw std::runtime_error("Servo requires a healthy device and 60..250 ms prefill");
+    // The wire protocol requires total_ticks >= 2; Core always supplies at least one planning block.
+    if (!enabled_ || state_.fault || !error_.empty() || frames.size() < 3 || frames.size() > servo_queue_points)
+        throw std::runtime_error("Servo requires a healthy device and 2..250 ms prefill");
     for (size_t j = 0; j < 14; ++j)
         if (std::abs(frames.front().q[j] - state_.target[j]) > 1e-7)
             throw std::runtime_error("Servo prefill does not start at last device command");
@@ -241,7 +242,9 @@ void RemoteLink::appendStream(const std::vector<JointFrame> &frames) {
     if (!motion_allowed_) throw MotionCancelled();
     if (!streaming_ || stream_finished_ || state_.fault || !error_.empty())
         throw std::runtime_error("Servo stream unavailable: " + error_ + state_.error);
-    if (frames.size() < 2 || stream_.size() + frames.size() > 251)
+    // Also trim here so append capacity does not depend on the publisher's next tick.
+    trimStreamHistory();
+    if (frames.size() < 2 || stream_.size() + frames.size() > servo_queue_points)
         throw std::runtime_error("Servo queue exceeds 250 ms budget");
     for (size_t j = 0; j < 14; ++j)
         if (std::abs(stream_.back().q[j] - frames.front().q[j]) > 1e-9 ||
@@ -252,6 +255,13 @@ void RemoteLink::appendStream(const std::vector<JointFrame> &frames) {
         std::abs(stream_.back().displacement - frames.front().displacement) > 1e-9)
         throw std::runtime_error("Servo append wheel reference changed");
     stream_.insert(stream_.end(), frames.begin() + 1, frames.end());
+}
+void RemoteLink::trimStreamHistory() {
+    const uint64_t cursor = state_.id == trajectory_id_ ? state_.cursor : 0;
+    while (stream_.size() > 2 && stream_first_ + servo_history_ticks < cursor) {
+        stream_.pop_front();
+        ++stream_first_;
+    }
 }
 size_t RemoteLink::streamAhead() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -460,11 +470,7 @@ void RemoteLink::io() {
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
                     if (publishing_ && streaming_) {
-                        const uint64_t cursor = state_.id == trajectory_id_ ? state_.cursor : 0;
-                        while (stream_.size() > 2 && stream_first_ + 4 < cursor) {
-                            stream_.pop_front();
-                            ++stream_first_;
-                        }
+                        trimStreamHistory();
                         w.streaming = true;
                         w.finished = stream_finished_;
                         w.id = trajectory_id_;

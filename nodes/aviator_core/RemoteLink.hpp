@@ -43,6 +43,7 @@ class RemoteLink final : public DataLink {
     friend struct RemoteLinkTestAccess; // Fault injection: block arm IO without blocking hand IO.
     Json operation(const std::string &);
     void io();
+    void trimStreamHistory(); // Caller holds mutex_; retain four samples behind feedback cursor.
     void handTarget(bool close);
     MotionConfig config_;
     HandLink hand_;
