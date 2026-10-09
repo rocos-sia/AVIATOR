@@ -29,6 +29,8 @@ Json callService(zmq::context_t &, const MotionConfig &, const Json &request);
 // Fixed capacity transport window. Only typed data crosses into the executor.
 // Tick cursor, not wall-clock catch-up, is authoritative for both arms.
 inline constexpr size_t servo_window_points = 81;
+inline constexpr size_t servo_queue_points = 251; // 250 ms plus the shared starting sample.
+inline constexpr size_t servo_history_ticks = 4;
 struct TrajectoryWindow {
     bool streaming = false, finished = false;
     // Streaming first/total are cumulative 1 ms indices across rolling windows;

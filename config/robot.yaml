@@ -17,7 +17,8 @@ rokae:
   grasp_mode: open_loop
   # 真机和仿真共用双臂关节刚度；顺序为 J1...J7，单位 Nm/rad。
   # 仿真附加阻尼为 80*sqrt(K/1000) Nm·s/rad，修改后重启生效。
-  joint_stiffness: [500, 500, 500, 500, 50, 50, 50]
+  joint_stiffness: [500, 500, 500, 500, 50, 50, 0.1]
+  # joint_stiffness: [0.01, 500, 0.01, 0.01, 0.01, 0.01, 0.01]
   # 每臂分别指定控制器 IP 和上位机本地 IP；本地地址须已配置在对应网卡上。
   # 建议使用有线连接；此处配置不会修改上位机网卡地址。
   left_ip: 192.168.1.160
@@ -85,11 +86,18 @@ wheel_linear_speed: 2.5   # m/s
 # 以下为保守起始值，不能仅增大轮盘约束而忽略关节限位和奇异位形。
 wheel_angular_acceleration: 6.0  # rad/s²
 wheel_linear_acceleration: 4.0 # m/s²
-wheel_angular_jerk: 10.0        # rad/s³
-wheel_linear_jerk: 8.0       # m/s³
+wheel_angular_jerk: 20.0        # rad/s³
+wheel_linear_jerk: 12.0       # m/s³
 
-# 在线规划块周期，必须是整毫秒；Core 提前缓存约 80..100 ms。
+# 在线规划块周期，必须是整毫秒（10..50 ms）；以下缓冲配置修改后重启 Core 生效。
 # 连续 q/dq/ddq 曲线按 1 ms 采样原样发送，两臂共用执行游标。
-servo_period: 0.02
+servo_period: 0.01
+# 启动前预填充的轨迹时长；整数 1..250 ms，向上取整到规划块后也不能超过 250 ms。
+# 小于一个规划块时仍预填充一整块（当前20 ms）。
+servo_prefill_ms: 40
+# 运行时相对反馈游标的补充阈值；低于此值就追加一整块轨迹，不改写已提交样本。
+# 整数 >=1，且 <=250-servo_period*1000-5（当前20 ms周期时上限225 ms）。
+# 当前40对应约40..60 ms，实际余量还需扣除反馈/传输延迟；较小值更易耗尽缓冲。
+servo_lookahead_ms: 40
 # 按实际接收时间计时；超时后执行已提交的短缓冲，再按 jerk 约束减速并保持锁定。
 servo_timeout: 0.25

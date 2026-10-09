@@ -33,6 +33,7 @@ AviatorRobot_simple/build
 *.mp4
 /examples/aviator_clearance_hand/out
 /examples/aviator_t6_joystick/build
+/examples/change_stiffness/build
 *.TXT
 *.TXT
 /outputs/hand_mount_check
@@ -41,3 +42,6 @@ AviatorRobot_simple/build
 /third_party/RH56FTP/ROS2/inspire_hand_485_ros2/inspire_hand/src/log
 /third_party/RH56FTP/ROS2/inspire_hand_485_ros2/inspire_hand/src/serial-foxy/build
 /_rokae_log_
+
+
+

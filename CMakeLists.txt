@@ -53,6 +53,7 @@ endif()
 #------------------------------------------------------------------------------
 add_subdirectory(common)
 add_subdirectory(nodes)
+add_subdirectory(tools/grasp_tool_calibration)
 
 #------------------------------------------------------------------------------
 # Examples

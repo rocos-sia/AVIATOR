@@ -62,3 +62,23 @@ rocos@rocos-controller:~/Documents/GitHub/AVIATOR/build/bin$ google-chrome-stabl
 
 //9、日志打印
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_logger --config config/recording.yaml --output recording.mcap
+
+// 独立静态抓握工具校准（不是上面运行流程中的一步）
+// 先退出 Core 和 Manipulator，不要运行 start_aviator.sh 或相机随动 Core。
+// 手动示教让双手握住轮盘把手，结束示教运动并保持双臂、轮盘静止。
+// 工具不使能、不切模式、不发运动指令，但 SDK 断连本身会停止机械臂运动，不能与运动/控制程序同时运行。
+// 首次配置：cmake -S . -B build
+// 构建：cmake --build build --target aviator_grasp_tool_state -j2
+// 相机模式只保留第1步 Bus 和第6步 Camera；默认读取 config/robot.yaml 及其 grasp 路径。
+// 预览（不改 grasp.json；--report 保存采样及计算报告）：
+// ~/miniconda3/envs/apriltag_realsense/bin/python tools/grasp_tool_calibration/calibrate.py --wheel-source camera --camera-id cockpit --report /tmp/grasp-tool-preview.json
+// 确认预览后，保持静止重新采样并备份、写回 grasp.json：
+// ~/miniconda3/envs/apriltag_realsense/bin/python tools/grasp_tool_calibration/calibrate.py --wheel-source camera --camera-id cockpit --write --report /tmp/grasp-tool-written.json
+// 报告先于写回生成；write_requested 只表示写回意图，以控制台的“已写回”和备份路径判断是否成功。
+// 相机转换：angle=-theta_rad，displacement=-translation_along_axis_m-0.085；超限拒绝，不限幅。
+// 手动输入直接使用 Core 角度/位移，不需 Bus 和 Camera（默认仍连接机械臂读实测关节）：
+// ~/miniconda3/envs/apriltag_realsense/bin/python tools/grasp_tool_calibration/calibrate.py --wheel-source manual --angle-deg 0 --displacement-m -0.085
+// 手动模式也可加 --write；位移单位 m，范围 [-0.170,0]；角度支持 --angle-rad 代替 --angle-deg。
+// 默认采样20组、间隔50 ms；相机需与工具同机运行，采样/静止阈值选项见下方 README。
+// 新 tool 的四元数顺序为 [w,x,y,z]；建议换轮盘位形只预览复核，下一次启动 Core 时加载新参数。
+// 离线关节文件、采样报告及计算说明：tools/grasp_tool_calibration/README.md

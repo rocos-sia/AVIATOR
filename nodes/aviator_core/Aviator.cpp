@@ -1,6 +1,7 @@
 #include "Logger.hpp"
 #include "aviator/Aviator.hpp"
 #include "ServoPlanner.hpp"
+#include "ServoBufferConfig.hpp"
 #include "aviator/Kinematics.hpp"
 #include "aviator/CollisionChecker.hpp"
 #include "aviator/backend.hpp"
@@ -106,6 +107,10 @@ class Aviator::Impl {
                     std::isfinite(wheel_jerk_[i]) && wheel_jerk_[i] > 0, "Invalid wheel acceleration/jerk");
         require(std::abs(servo_period_ * 1000 - std::round(servo_period_ * 1000)) < 1e-8,
                 "servo_period must be an integer number of milliseconds");
+        servo_buffer_ = ServoBufferConfig::load(config, servo_period_);
+        aviator::Logger::info("Servo buffer: prefill_ms={} effective_prefill_ms={} lookahead_ms={} block_ms={}",
+            servo_buffer_.prefill_ms, servo_buffer_.effective_prefill_ms,
+            servo_buffer_.lookahead_ms, std::llround(servo_period_ * 1000));
 
         // 加载抓取配置
         std::string config_dir = std::filesystem::absolute(config_file_).parent_path().string();
@@ -586,7 +591,7 @@ class Aviator::Impl {
             wheel_origin_, last, servo_period_,
             {wheel_angular_speed_, wheel_linear_speed_}, wheel_acceleration_, wheel_jerk_);
         // Immutable future samples; the executor advances one shared dual-arm tick.
-        // Keep 80..100 ms ahead instead of waiting for every 20 ms block to finish.
+        // Refill below the configured lead; each append contributes one whole block.
         std::vector<JointFrame> prefill{last};
         bool started = false, stopping = false, timed_out = false;
         for (;;) {
@@ -594,7 +599,7 @@ class Aviator::Impl {
                 stopping = true;
                 timed_out = !cancel_ && !shutdown_;
             }
-            if (started && datalink_->streamAhead() >= 80) {
+            if (started && datalink_->streamAhead() >= servo_buffer_.lookahead_ms) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 continue;
             }
@@ -605,7 +610,7 @@ class Aviator::Impl {
             if (started) datalink_->appendStream(frames);
             else {
                 prefill.insert(prefill.end(), frames.begin() + 1, frames.end());
-                if (prefill.size() >= 81) {
+                if (prefill.size() >= servo_buffer_.effective_prefill_ms + 1) {
                     datalink_->beginStream(prefill);
                     started = true;
                 }
@@ -934,6 +939,7 @@ class Aviator::Impl {
     double settle_duration_;
     double wheel_angular_speed_, wheel_linear_speed_;
     double servo_period_, servo_timeout_;
+    ServoBufferConfig servo_buffer_;
     std::array<double, 2> wheel_acceleration_, wheel_jerk_;
     double approach_distance_, hand_closing_distance_;
 

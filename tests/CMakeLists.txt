@@ -77,6 +77,16 @@ add_test(NAME monitor_state COMMAND aviator_monitor_test)
 add_test(NAME monitor_help COMMAND aviator_monitor --help)
 set_tests_properties(monitor_state monitor_help PROPERTIES TIMEOUT 5)
 find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND AND TARGET aviator_grasp_tool_state)
+  execute_process(COMMAND ${Python3_EXECUTABLE} -c "import numpy, yaml, zmq"
+    RESULT_VARIABLE GRASP_CALIBRATION_PYTHON_DEPS OUTPUT_QUIET ERROR_QUIET)
+  if(GRASP_CALIBRATION_PYTHON_DEPS EQUAL 0)
+    add_test(NAME grasp_tool_calibration COMMAND ${Python3_EXECUTABLE} -m unittest discover
+      -s ${PROJECT_SOURCE_DIR}/tools/grasp_tool_calibration -p "test_*.py" -v)
+    set_tests_properties(grasp_tool_calibration PROPERTIES TIMEOUT 40
+      ENVIRONMENT "AVIATOR_GRASP_TOOL_STATE=$<TARGET_FILE:aviator_grasp_tool_state>")
+  endif()
+endif()
 if(Python3_Interpreter_FOUND)
   add_test(NAME monitor_http COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/monitor_http_test.py
@@ -208,6 +218,10 @@ if(TARGET aviator_core_control)
   target_link_libraries(aviator_servo_planner_test PRIVATE aviator_core_control ruckig::ruckig)
   add_test(NAME servo_planner COMMAND aviator_servo_planner_test ${PROJECT_SOURCE_DIR})
   set_tests_properties(servo_planner PROPERTIES TIMEOUT 60)
+  aviator_add_test_executable(aviator_servo_buffer_test servo_buffer_test.cpp)
+  target_link_libraries(aviator_servo_buffer_test PRIVATE aviator_core_control)
+  add_test(NAME servo_buffer COMMAND aviator_servo_buffer_test)
+  set_tests_properties(servo_buffer PROPERTIES TIMEOUT 15)
   aviator_add_test_executable(aviator_grasp_tools_test grasp_tools_test.cpp)
   target_link_libraries(aviator_grasp_tools_test PRIVATE aviator_core_control)
   if(TARGET aviator_simulation_device)
