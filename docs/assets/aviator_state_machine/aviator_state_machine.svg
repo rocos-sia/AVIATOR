@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="2390" viewBox="0 0 2600 2390">
+<defs><marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto-start-reverse"><path d="M2 2 L10 6 L2 10" fill="none" stroke="#282b30" stroke-width="1.5"/></marker></defs>
+<style>text{font-family:'Microsoft YaHei','Arial',sans-serif;fill:#282b30} .event{fill:#e35c5c;font-weight:700;paint-order:stroke;stroke:white;stroke-width:12;stroke-linejoin:round} .note{fill:#687080} .guard{fill:#687080;paint-order:stroke;stroke:white;stroke-width:10} .edge{fill:none;stroke:#282b30;stroke-width:2.6;marker-end:url(#arrow)} .action{font-style:italic;font-weight:600;paint-order:stroke;stroke:white;stroke-width:9}</style>
+<rect width="100%" height="100%" fill="white"/>
+<title>AVIATOR 整机状态机流转图</title><desc>依据 RobotStateMachine.hpp 和 Aviator::Managed，含十二状态、六操作、异步任务、保护及恢复路径。下方 HOMING 与 RELEASING 是上方同名状态的引用。</desc>
+<text x="85" y="82" font-size="44" text-anchor="start" class="" font-weight="700">AVIATOR 整机状态机</text>
+<text x="85" y="127" font-size="25" text-anchor="start" class="note">Managed 模式 · 12 个状态 · 6 个外部操作 · 单任务异步执行</text>
+<text x="2515" y="83" font-size="22" text-anchor="end" class="note">与当前代码一致</text>
+<path d="M244 285 C335 285 404 285 496 285" class="edge"/>
+<text x="365" y="260" font-size="24" text-anchor="middle" class="event">Boot</text>
+<text x="365" y="291" font-size="21" text-anchor="middle" class="guard">[G0]</text>
+<path d="M624 265 C676 238 714 225 750 225" class="edge" stroke-dasharray="5 6"/>
+<text x="692" y="207" font-size="22" text-anchor="middle" class="action">initialize</text>
+<path d="M1030 225 C1090 225 1118 264 1166 278" class="edge"/>
+<text x="1100" y="210" font-size="22" text-anchor="middle" class="event">Done [D1]</text>
+<path d="M1294 285 C1400 285 1455 285 1556 285" class="edge"/>
+<text x="1425" y="254" font-size="22" text-anchor="middle" class="event">ENTER_STANDBY</text>
+<text x="1425" y="285" font-size="21" text-anchor="middle" class="guard">[G1]</text>
+<path d="M1684 264 C1740 235 1767 225 1795 225" class="edge" stroke-dasharray="5 6"/>
+<text x="1738" y="207" font-size="22" text-anchor="middle" class="action">home</text>
+<path d="M2145 225 C2180 225 2215 264 2286 278" class="edge"/>
+<text x="2200" y="204" font-size="22" text-anchor="middle" class="event">Done [D1]</text>
+<path d="M2377 241 C2485 105 2185 105 2305 243" class="edge"/>
+<text x="2330" y="176" font-size="21" text-anchor="middle" class="event">ENTER_STANDBY</text>
+<text x="2467" y="217" font-size="20" text-anchor="middle" class="note">幂等</text>
+<path d="M2350 401 C2350 478 2350 556 2350 662" class="edge"/>
+<text x="2350" y="511" font-size="24" text-anchor="middle" class="event">GRASP_WHEEL</text>
+<text x="2350" y="542" font-size="21" text-anchor="middle" class="guard">[G2]</text>
+<path d="M2286 710 C2210 710 2160 710 2110 710" class="edge" stroke-dasharray="5 6"/>
+<text x="2195" y="682" font-size="22" text-anchor="middle" class="action">grasp</text>
+<path d="M1750 710 C1570 710 1400 710 1234 710" class="edge"/>
+<text x="1500" y="684" font-size="24" text-anchor="middle" class="event">Done [D2]</text>
+<path d="M1106 679 C961 522 760 523 600 677" class="edge"/>
+<text x="846" y="565" font-size="24" text-anchor="middle" class="event">START_CONTROL</text>
+<text x="846" y="596" font-size="21" text-anchor="middle" class="guard">[G3]</text>
+<path d="M615 732 C790 845 935 845 1105 739" class="edge"/>
+<text x="850" y="819" font-size="24" text-anchor="middle" class="event">EXIT_CONTROL</text>
+<text x="850" y="850" font-size="21" text-anchor="middle" class="guard">[following_authorized]</text>
+<path d="M1205 666 C1375 448 1420 755 1234 720" class="edge"/>
+<text x="1410" y="567" font-size="22" text-anchor="middle" class="event">EXIT_CONTROL</text>
+<text x="1410" y="598" font-size="21" text-anchor="middle" class="note">幂等</text>
+<path d="M1170 831 C1170 905 1170 980 1170 1052" class="edge"/>
+<text x="1350" y="924" font-size="23" text-anchor="middle" class="event">LEAVE_WHEEL</text>
+<text x="1350" y="958" font-size="23" text-anchor="middle" class="event">或 ENTER_STANDBY</text>
+<text x="1350" y="991" font-size="22" text-anchor="middle" class="note">[G4]</text>
+<path d="M1234 1100 C1325 1100 1370 1100 1450 1100" class="edge" stroke-dasharray="5 6"/>
+<text x="1345" y="1068" font-size="23" text-anchor="middle" class="action">release</text>
+<path d="M1790 1100 C2100 1100 2500 1110 2500 820 L2500 456 C2500 345 2470 285 2414 285" class="edge"/>
+<text x="2155" y="1065" font-size="24" text-anchor="middle" class="event">Done [D3]</text>
+<text x="2180" y="1140" font-size="23" text-anchor="middle" class="note">释放、撤离并回 home 后到达 STANDBY</text>
+<ellipse cx="180" cy="285" rx="64" ry="48" fill="#d7b958" stroke="#6288d5" stroke-width="2.3"/>
+<text x="180" y="368" font-size="29" text-anchor="middle" class="" font-weight="700">INIT</text>
+<text x="180" y="400" font-size="22" text-anchor="middle" class="note">初始状态</text>
+<ellipse cx="560" cy="285" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="560" y="368" font-size="29" text-anchor="middle" class="" font-weight="700">INITIALIZING</text>
+<text x="560" y="400" font-size="22" text-anchor="middle" class="note">初始化 / 使能</text>
+<rect x="750.0" y="185" width="280" height="80" rx="39" fill="#eae3fb" stroke="#282b30" stroke-width="2.3" stroke-dasharray="4 5"/>
+<text x="890" y="226" font-size="26" text-anchor="middle" class="" font-weight="600">initialize task</text>
+<text x="890" y="254" font-size="20" text-anchor="middle" class="note">init → enable</text>
+<ellipse cx="1230" cy="285" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="1230" y="368" font-size="29" text-anchor="middle" class="" font-weight="700">READY</text>
+<text x="1230" y="400" font-size="22" text-anchor="middle" class="note">准备完成，保持当前位置</text>
+<ellipse cx="1620" cy="285" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="1620" y="368" font-size="29" text-anchor="middle" class="" font-weight="700">HOMING</text>
+<text x="1620" y="400" font-size="22" text-anchor="middle" class="note">回 home / 到位确认</text>
+<rect x="1795.0" y="185" width="350" height="80" rx="39" fill="#eae3fb" stroke="#282b30" stroke-width="2.3" stroke-dasharray="4 5"/>
+<text x="1970" y="226" font-size="26" text-anchor="middle" class="" font-weight="600">home task</text>
+<text x="1970" y="254" font-size="20" text-anchor="middle" class="note">enable if needed → moveHome</text>
+<ellipse cx="2350" cy="285" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="2350" y="368" font-size="29" text-anchor="middle" class="" font-weight="700">STANDBY</text>
+<text x="2350" y="400" font-size="22" text-anchor="middle" class="note">已到 home 且停稳</text>
+<ellipse cx="2350" cy="710" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="2350" y="793" font-size="29" text-anchor="middle" class="" font-weight="700">GRASPING</text>
+<text x="2350" y="825" font-size="22" text-anchor="middle" class="note">接近 / 抓握</text>
+<rect x="1750.0" y="670" width="360" height="80" rx="39" fill="#eae3fb" stroke="#282b30" stroke-width="2.3" stroke-dasharray="4 5"/>
+<text x="1930" y="711" font-size="26" text-anchor="middle" class="" font-weight="600">grasp task</text>
+<text x="1930" y="739" font-size="20" text-anchor="middle" class="note">prepareGrasp → approach → lock</text>
+<ellipse cx="1170" cy="710" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="1170" y="793" font-size="29" text-anchor="middle" class="" font-weight="700">FOLLOWING</text>
+<text x="1170" y="825" font-size="22" text-anchor="middle" class="note">保持参考 / 当前未实现柔顺控制</text>
+<ellipse cx="550" cy="710" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="550" y="793" font-size="29" text-anchor="middle" class="" font-weight="700">CONTROL</text>
+<text x="550" y="825" font-size="22" text-anchor="middle" class="note">唯一接纳主动操控目标的状态</text>
+<ellipse cx="1170" cy="1100" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="1170" y="1183" font-size="29" text-anchor="middle" class="" font-weight="700">RELEASING</text>
+<text x="1170" y="1215" font-size="22" text-anchor="middle" class="note">松手 / 撤离 / 回 home</text>
+<rect x="1450.0" y="1060" width="340" height="80" rx="39" fill="#eae3fb" stroke="#282b30" stroke-width="2.3" stroke-dasharray="4 5"/>
+<text x="1620" y="1101" font-size="26" text-anchor="middle" class="" font-weight="600">release task</text>
+<text x="1620" y="1129" font-size="20" text-anchor="middle" class="note">releaseHandles → moveHome</text>
+<text x="100" y="958" font-size="26" text-anchor="start" class="" font-weight="700">转换守卫</text>
+<text x="100" y="1001" font-size="21" text-anchor="start" class="">G0  任务空闲，且无急停锁存</text>
+<text x="100" y="1040" font-size="21" text-anchor="start" class="">G1  ready + settled + clear_of_wheel + 任务空闲</text>
+<text x="100" y="1079" font-size="21" text-anchor="start" class="">G2  ready + settled + following_authorized + 任务空闲</text>
+<text x="100" y="1118" font-size="21" text-anchor="start" class="">G3  G2 + source_authorized + input_ready</text>
+<text x="100" y="1157" font-size="21" text-anchor="start" class="">G4  ready + settled + release_authorized + 任务空闲</text>
+<text x="100" y="1196" font-size="21" text-anchor="start" class="">G5  fault_cleared + settled + executor_idle + 无急停锁存</text>
+<text x="100" y="1263" font-size="21" text-anchor="start" class="note">任务空闲 = job == none 且 executor_idle</text>
+<path d="M85 1310 H2515" stroke="#e3e6ec" stroke-width="2"/>
+<text x="85" y="1366" font-size="31" text-anchor="start" class="" font-weight="700">保护与恢复</text>
+<text x="2515" y="1366" font-size="22" text-anchor="end" class="note">保护先于完成事件和普通请求；下方状态集合用于合并同类连线</text>
+<ellipse cx="459" cy="1440" rx="34" ry="26" fill="#527bc5"/><ellipse cx="501" cy="1440" rx="34" ry="26" fill="#fde4e5" stroke="#6288d5" stroke-width="2"/>
+<text x="480" y="1498" font-size="25" text-anchor="middle" class="" font-weight="700">运行状态集合</text>
+<text x="480" y="1529" font-size="20" text-anchor="middle" class="note">READY / HOMING / STANDBY / GRASPING</text>
+<text x="480" y="1558" font-size="20" text-anchor="middle" class="note">FOLLOWING / CONTROL / RELEASING</text>
+<ellipse cx="1249" cy="1440" rx="34" ry="26" fill="#527bc5"/><ellipse cx="1291" cy="1440" rx="34" ry="26" fill="#fde4e5" stroke="#6288d5" stroke-width="2"/>
+<text x="1270" y="1498" font-size="25" text-anchor="middle" class="" font-weight="700">可进入故障的状态集合</text>
+<text x="1270" y="1529" font-size="20" text-anchor="middle" class="note">除 ERROR、EMERGENCY_STOP 外的全部状态</text>
+<text x="1270" y="1558" font-size="20" text-anchor="middle" class="note">ERROR 再次 Fault：仅更新诊断</text>
+<ellipse cx="2179" cy="1440" rx="34" ry="26" fill="#527bc5"/><ellipse cx="2221" cy="1440" rx="34" ry="26" fill="#fde4e5" stroke="#6288d5" stroke-width="2"/>
+<text x="2200" y="1498" font-size="25" text-anchor="middle" class="" font-weight="700">任意非急停状态</text>
+<text x="2200" y="1529" font-size="20" text-anchor="middle" class="note">包括 SAFE、ERROR 和所有过渡状态</text>
+<path d="M480 1594 L480 1652" class="edge"/>
+<text x="480" y="1630" font-size="23" text-anchor="middle" class="event">SafetyLost</text>
+<path d="M1270 1594 L1270 1652" class="edge"/>
+<text x="1270" y="1630" font-size="23" text-anchor="middle" class="event">Fault</text>
+<path d="M2200 1565 L2200 1652" class="edge"/>
+<text x="2200" y="1628" font-size="23" text-anchor="middle" class="event">Emergency</text>
+<ellipse cx="480" cy="1700" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="480" y="1783" font-size="29" text-anchor="middle" class="" font-weight="700">SAFE</text>
+<text x="480" y="1815" font-size="22" text-anchor="middle" class="note">等待显式恢复</text>
+<ellipse cx="1270" cy="1700" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="1270" y="1783" font-size="29" text-anchor="middle" class="" font-weight="700">ERROR</text>
+<text x="1270" y="1815" font-size="22" text-anchor="middle" class="note">记录错误 / 取消任务 / 请求停止</text>
+<ellipse cx="2200" cy="1700" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="2200" y="1783" font-size="29" text-anchor="middle" class="" font-weight="700">EMERGENCY_STOP</text>
+<text x="2200" y="1815" font-size="22" text-anchor="middle" class="note">当前实例锁存，无退出路径</text>
+<path d="M1206 1700 C1000 1700 780 1700 544 1700" class="edge"/>
+<text x="875" y="1670" font-size="24" text-anchor="middle" class="event">RESET_ERROR</text>
+<text x="875" y="1701" font-size="21" text-anchor="middle" class="guard">[G5]</text>
+<path d="M445 1740 C395 1818 310 1865 280 1924" class="edge"/>
+<text x="248" y="1878" font-size="21" text-anchor="middle" class="event">ENTER_STANDBY [G1]</text>
+<path d="M517 1740 C571 1818 652 1865 680 1924" class="edge"/>
+<text x="718" y="1878" font-size="21" text-anchor="middle" class="event">LEAVE_WHEEL [G4]</text>
+<ellipse cx="280" cy="1970" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="280" y="2053" font-size="29" text-anchor="middle" class="" font-weight="700">HOMING</text>
+<text x="280" y="2085" font-size="22" text-anchor="middle" class="note">上方同名状态</text>
+<ellipse cx="680" cy="1970" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
+<text x="680" y="2053" font-size="29" text-anchor="middle" class="" font-weight="700">RELEASING</text>
+<text x="680" y="2085" font-size="22" text-anchor="middle" class="note">上方同名状态</text>
+<text x="1250" y="1898" font-size="22" text-anchor="middle" class="">Fault：执行失败、任务超时、阻断故障或后置条件不满足</text>
+<text x="1250" y="1936" font-size="22" text-anchor="middle" class="">SafetyLost：当前模式所需资源、授权或输入失效</text>
+<text x="1250" y="1974" font-size="22" text-anchor="middle" class="">CONTROL 输入期限 100 ms；输入恢复不会自动恢复操控</text>
+<text x="2200" y="1898" font-size="24" text-anchor="middle" class="action">cancel + stop + request_brake</text>
+<text x="2200" y="1937" font-size="22" text-anchor="middle" class="note">物理手刹尚未接入</text>
+<text x="2200" y="1975" font-size="22" text-anchor="middle" class="note">软件锁存不跨进程重启保存</text>
+<text x="85" y="2324" font-size="20" text-anchor="start" class="note">Done 均校验 generation、任务类型及 executor_idle；D1: ready + settled + clear_of_wheel；D2: ready + following_authorized；D3: settled + clear_of_wheel。</text>
+<text x="85" y="2360" font-size="20" text-anchor="start" class="note">依据 nodes/aviator_core/include/aviator/RobotStateMachine.hpp 与 Aviator::Managed；紫色框表示异步动作，完成箭头属于其前置过渡状态。</text>
+<path d="M85 2270 H2515" stroke="#e3e6ec" stroke-width="2"/>
+<ellipse cx="100" cy="2222" rx="30" ry="22" fill="#d7b958" stroke="#6288d5" stroke-width="2"/>
+<text x="145" y="2230" font-size="22" text-anchor="start" class="">初始状态</text>
+<ellipse cx="370" cy="2222" rx="30" ry="22" fill="#fde4e5" stroke="#6288d5" stroke-width="2"/>
+<text x="415" y="2230" font-size="22" text-anchor="start" class="">过渡状态</text>
+<ellipse cx="640" cy="2222" rx="30" ry="22" fill="#527bc5" stroke="#6288d5" stroke-width="2"/>
+<text x="685" y="2230" font-size="22" text-anchor="start" class="">稳定 / 保护状态</text>
+<rect x="920" y="2200" width="70" height="44" rx="22" fill="#eae3fb" stroke="#282b30" stroke-width="2" stroke-dasharray="4 5"/>
+<text x="1005" y="2230" font-size="22" text-anchor="start" class="">异步执行</text>
+<path d="M1200 2222 H1300" class="edge"/>
+<text x="1320" y="2230" font-size="22" text-anchor="start" class="">事件 / 状态流转</text>
+<path d="M1590 2222 H1690" class="edge" stroke-dasharray="5 6"/>
+<text x="1710" y="2230" font-size="22" text-anchor="start" class="">动作提交</text>
+<text x="1995" y="2230" font-size="22" text-anchor="start" class="note">[G] 转换条件    [D] 完成条件</text>
+</svg>
