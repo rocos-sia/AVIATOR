@@ -37,7 +37,7 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
         const auto device = connection->snapshot(fresh, &status_fresh);
         const auto phase = instance ? instance->GetState() : "UNINITIALIZED";
         s.ready = managedResourcesReady(phase, device, fresh, status_fresh);
-        s.settled = s.ready && !device.stopping && (!revoked || device.id == 0);
+        s.settled = s.ready && !device.stopping && !device.impedance_switching && (!revoked || device.id == 0);
         s.fault_cleared = fresh && !device.fault;
         if (device.fault) s.fault = device.error.empty() ? "Manipulator blocking fault" : device.error;
         if (instance) {

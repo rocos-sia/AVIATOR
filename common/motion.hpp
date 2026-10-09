@@ -51,6 +51,8 @@ struct DeviceState {
     double angle = 0, displacement = 0;
     double measured_angle = 0, measured_displacement = 0;
     bool locked = false, fault = false, stopping = false;
+    bool impedance_switching = false;
+    std::string impedance_profile = "default";
     std::string error;
 };
 } // namespace aviator

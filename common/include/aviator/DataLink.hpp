@@ -1,5 +1,7 @@
 #pragma once
 #include <array>
+#include <functional>
+#include <cmath>
 #include <atomic>
 #include <vector>
 #include <stdexcept>
@@ -8,6 +10,12 @@
 #include <string>
 
 namespace aviator {
+
+inline void validateJointStiffness(const std::array<double, 7>& values) {
+    for (size_t j = 0; j < values.size(); ++j)
+        if (!std::isfinite(values[j]) || values[j] <= 0 || values[j] > (j < 4 ? 3000 : 300))
+            throw std::runtime_error("Invalid joint stiffness on J" + std::to_string(j + 1));
+}
 
 enum class Side { Left = 0, Right = 1 };
 enum class GraspCommand { Lock, Unlock, ResetFault };
@@ -75,6 +83,16 @@ class DataLink {
     virtual bool isEnabled(Side side) const = 0;
     virtual void enable(Side side) = 0;   // 失败抛 std::runtime_error
     virtual void disable(Side side) = 0;  // 失败抛 std::runtime_error
+
+    // Non-RT, dual-arm lifecycle operation. check() must run between SDK stages.
+    // force_reapply executes the lifecycle even when the requested values are unchanged.
+    virtual void setJointStiffness(const std::array<double, 7>&, const std::function<void()>&,
+                                   bool force_reapply = false) {
+        throw std::runtime_error("Runtime joint stiffness unavailable");
+    }
+    virtual void setImpedanceProfile(bool /*following*/) {
+        throw std::runtime_error("Impedance profiles require the Core network adapter");
+    }
 
     // 抓取IO
     virtual GraspState graspState() const = 0;

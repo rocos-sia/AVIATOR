@@ -215,6 +215,7 @@ class Aviator::Impl {
                 "Drive enable failed");
 
         // 后端首帧已对齐实测值，此后只沿指令轨迹衔接，不重新赋值为反馈位置。
+        default_impedance_confirmed_ = true;
         last_target_ = datalink_->jointTargets();
         last_velocity_ = {};
         last_angle_velocity_ = last_displacement_velocity_ = 0;
@@ -507,6 +508,45 @@ class Aviator::Impl {
             setState(enabled ? (feedback.locked == 3 ? "LOCKED" : "ENABLED") : "DISABLED");
         }
         // The Core owns subsequent motion authorization; do not restart a trajectory here.
+    }
+
+    void setImpedanceProfile(bool following, const std::atomic<bool>& cancelled) {
+        if (!following && default_impedance_confirmed_) return;
+        // EXIT_CONTROL already requested the normal Servo deceleration. Wait for it
+        // without blocking the Managed owner, which continues protection/heartbeats.
+        while (GetState() == "SERVO") {
+            require(!cancelled, "Impedance task cancelled while waiting for Servo stop");
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+        require(lock.owns_lock() && !servo_active_, "Executor busy during impedance update");
+        require(!cancelled, "Impedance task cancelled");
+        const auto previous = GetState();
+        require(previous == "LOCKED" || previous == "ENABLED", "Impedance update requires stable enabled executor");
+        setState("STIFFNESS");
+        try {
+            // A cancelled request may have reached the device: require a confirmed
+            // default restoration before the next home/release even if this call fails.
+            default_impedance_confirmed_ = false;
+            std::ostringstream target_log;
+            target_log << std::setprecision(17) << "Core impedance target profile=" << (following ? "following" : "default")
+                       << " target_rad=[";
+            const auto held = datalink_->jointTargets();
+            for (size_t j = 0; j < held.size(); ++j) target_log << (j ? "," : "") << held[j];
+            target_log << ']';
+            Logger::info("{}", target_log.str());
+            datalink_->setImpedanceProfile(following);
+            if (cancelled) throw MotionCancelled();
+            default_impedance_confirmed_ = !following;
+            setState(previous);
+        } catch (const MotionCancelled&) {
+            setState(previous); // The Managed protection path owns the stop/revoke.
+            throw;
+        } catch (const std::exception& e) {
+            setMotionError(e.what());
+            setState("FAULT");
+            throw;
+        }
     }
 
     void stop() noexcept {
@@ -924,6 +964,7 @@ class Aviator::Impl {
     std::unique_ptr<DataLink> datalink_;
     std::unique_ptr<Kinematics> kinematics_;
     std::unique_ptr<CollisionChecker> collision_checker_;
+    bool default_impedance_confirmed_ = true; // Accessed only by the serialized executor worker.
     bool collision_check_enabled_ = true;
 
     std::string config_file_;
@@ -1010,17 +1051,22 @@ public:
                 if (s.fault.empty()) s.fault = "Executor entered FAULT without a diagnostic";
             }
         }
-        if (machine_.acceptsControl()) {
+        if (machine_.acceptsControl() && !restoring_default_) {
             const auto now = managedNow();
-            const auto last = input_at_ ? input_at_ : machine_.controlSince();
+            const auto last = input_at_ ? input_at_ : std::max(machine_.controlSince(), control_ready_at_);
             s.input_ready = s.input_ready && now >= last && now - last < 100000;
         }
         return s;
     }
     SystemStatus status() const {
         owner();
+        auto conditions = snapshot();
+        // A transition is published before its worker starts. Pending tasks must
+        // never briefly advertise a settled FOLLOWING state to service clients.
+        conditions.executor_idle = conditions.executor_idle && machine_.job() == fsm::Job::none;
+        conditions.settled = conditions.settled && conditions.executor_idle;
         return {machine_.state(), machine_.currentError(), machine_.lastError(), machine_.stateCode(),
-                machine_.generation(), machine_.acceptsControl(), brake_requested_, snapshot()};
+                machine_.generation(), machine_.acceptsControl() && !restoring_default_, brake_requested_, conditions};
     }
     void init() {
         owner();
@@ -1036,17 +1082,32 @@ public:
         options_.heartbeat();
         machine_.supervise(snapshot(), managedNow()); // Fault/emergency precedes completion.
         if (worker_.valid() && worker_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            try { worker_.get(); completion_ = active_; }
-            catch (const std::exception& e) { machine_.failed(active_->generation, e.what()); }
-            catch (...) { machine_.failed(active_->generation, "Unknown executor failure"); }
-            active_.reset();
+            if (restoring_default_) {
+                try {
+                    worker_.get();
+                    if (restore_generation_ == machine_.generation() && machine_.acceptsControl()) {
+                        control_ready_at_ = managedNow();
+                        input_at_ = 0;
+                    }
+                } catch (const std::exception& e) {
+                    if (restore_generation_ == machine_.generation()) machine_.fault(e.what());
+                } catch (...) {
+                    if (restore_generation_ == machine_.generation()) machine_.fault("Default impedance restoration failed");
+                }
+                restoring_default_ = false;
+            } else {
+                try { worker_.get(); completion_ = active_; }
+                catch (const std::exception& e) { machine_.failed(active_->generation, e.what()); }
+                catch (...) { machine_.failed(active_->generation, "Unknown executor failure"); }
+                active_.reset();
+            }
         }
         if (completion_) {
             if (completion_->generation != machine_.generation()) completion_.reset();
             else {
                 auto s = snapshot();
                 if (s.settled || completion_->job == fsm::Job::grasp) {
-                    machine_.done(completion_->generation, s);
+                    machine_.done(completion_->generation, s, managedNow());
                     completion_.reset();
                 }
             }
@@ -1056,25 +1117,57 @@ public:
     fsm::Reply request(fsm::Operation operation) {
         update();
         const auto reply = machine_.request(operation, snapshot(), managedNow());
-        if (reply == fsm::Reply::completed && operation == fsm::Operation::start_control) input_at_ = 0;
+        if (reply == fsm::Reply::completed && operation == fsm::Operation::start_control) {
+            // Keep START_CONTROL's original direct state transition. Restore the
+            // profile on the existing executor slot; the owner keeps supervising
+            // input, protection and services while targets are temporarily gated.
+            input_at_ = 0;
+            timing_input_at_ = 0;
+            timing_inputs_ = 0;
+            restoring_default_ = true;
+            restore_generation_ = machine_.generation();
+            cancelled_ = false;
+            try {
+                worker_ = std::async(std::launch::async, [this] {
+                    executor_.setImpedanceProfile(false, cancelled_);
+                });
+            } catch (const std::exception& e) {
+                restoring_default_ = false;
+                machine_.fault(e.what());
+            }
+        }
         if (reply == fsm::Reply::completed && operation == fsm::Operation::reset_error) {
             try { executor_.acknowledgeFault(); }
             catch (const std::exception& e) { machine_.fault(e.what()); }
         }
         effects();
         if ((reply == fsm::Reply::accepted ||
-             (reply == fsm::Reply::completed && operation == fsm::Operation::reset_error)) &&
+             (reply == fsm::Reply::completed && (operation == fsm::Operation::reset_error ||
+                                               operation == fsm::Operation::start_control))) &&
             std::string(machine_.state()) == "ERROR") return fsm::Reply::capability_unavailable;
         return reply;
     }
     bool servo(double angle, double displacement, double speed, uint64_t sample) {
         update();
         const auto now = managedNow();
-        if (!machine_.acceptsControl() || sample < machine_.controlSince() || sample > now ||
+        if (!machine_.acceptsControl() || restoring_default_ ||
+            sample < std::max(machine_.controlSince(), control_ready_at_) || sample > now ||
             now - sample >= 100000 || (input_at_ && sample <= input_at_)) return false;
         try {
             executor_.servoWheel(angle, displacement, speed);
             input_at_ = sample; // Never refresh the lease with a replayed old target.
+            ++timing_inputs_;
+            if (!timing_input_at_) timing_input_at_ = now;
+            if (now - timing_input_at_ >= 1000000) {
+                const auto actual = executor_.GetStatus();
+                Logger::info("Control timing input_hz={:.1f} input_age_ms={:.2f} "
+                    "requested_angle_rad={:.5f} reference_angle_rad={:.5f} "
+                    "requested_displacement_m={:.5f} reference_displacement_m={:.5f} speed_ratio={:.3f}",
+                    timing_inputs_ * 1e6 / (now - timing_input_at_), (now - sample) / 1000.0,
+                    angle, actual.angle, displacement, actual.displacement, speed);
+                timing_inputs_ = 0;
+                timing_input_at_ = now;
+            }
             return true;
         } catch (const std::exception& e) {
             machine_.fault(e.what()); effects(); return false;
@@ -1101,6 +1194,8 @@ private:
     void effects() {
         protection();
         report(); // Publish the transition before submitting a blocking executor task.
+        // EXIT_CONTROL can cancel restoration and queue Following while it drains.
+        if (worker_.valid()) return;
         if (auto task = machine_.takeTask()) {
             machine_.supervise(snapshot(), managedNow());
             if (task->generation != machine_.generation()) { protection(); report(); return; }
@@ -1120,12 +1215,16 @@ private:
                         if (executor_.GetState() == "INITIALIZED" || executor_.GetState() == "DISABLED") {
                             executor_.enable(); check();
                         }
+                        executor_.setImpedanceProfile(false, cancelled_); check();
                         executor_.moveHome();
                     } else if (job == fsm::Job::grasp) {
                         executor_.prepareGrasp(); check();
                         executor_.approachHandles(true); check();
                         executor_.lockHandles();
+                    } else if (job == fsm::Job::following_impedance) {
+                        executor_.setImpedanceProfile(true, cancelled_);
                     } else if (job == fsm::Job::release) {
+                        executor_.setImpedanceProfile(false, cancelled_); check();
                         executor_.releaseHandles(); check();
                         executor_.moveHome(); // STANDBY always means home has been reached.
                     }
@@ -1143,7 +1242,10 @@ private:
     std::optional<fsm::Task> active_, completion_;
     std::atomic<bool> cancelled_{false};
     bool booted_ = false, brake_requested_ = false;
+    bool restoring_default_ = false;
+    uint64_t restore_generation_ = 0, control_ready_at_ = 0;
     uint64_t input_at_ = 0;
+    uint64_t timing_input_at_ = 0, timing_inputs_ = 0;
 };
 
 Aviator::Aviator(std::unique_ptr<DataLink> datalink, std::unique_ptr<Kinematics> kinematics,

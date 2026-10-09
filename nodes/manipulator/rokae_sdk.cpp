@@ -1,5 +1,9 @@
 #include "Logger.hpp"
 #include "rokae_sdk.hpp"
+#include "TargetTrace.hpp"
+#include <fstream>
+#include <iomanip>
+#include <unistd.h>
 #include <rokae/utility.h>
 #include <rokae/robot.h>
 #include <stdexcept>
@@ -26,6 +30,10 @@ public:
     std::shared_ptr<rokae::RtMotionControlCobot<7>> rt;
     std::array<double, 7> stiffness{};
     std::string endpoint;
+    std::function<rokae::JointPosition()> control_loop;
+    TargetTrace target_trace;
+    uint64_t loop_epoch = 0, trace_serial = 0;
+    bool trace_written = false;
     mutable std::mutex error_mutex;
     std::exception_ptr callback_error;
     bool powered = false, receiving = false, moving = false, looping = false, prepared = false;
@@ -35,14 +43,23 @@ public:
     std::atomic<int> thread_policy{-1}, thread_priority{-1};
     bool timing_reported = false;
     std::chrono::steady_clock::time_point previous_callback{};
+    // startMove can block while state packets accumulate. With state-driven
+    // callbacks disabled, the SDK does not flush them on startLoop(). Drain here
+    // after startMove, before the callback applies its normal per-cycle limit.
+    void drainBeforeLoop() {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(3);
+        while (robot.updateRobotState(std::chrono::steady_clock::duration::zero())) {
+            if (std::chrono::steady_clock::now() >= deadline)
+                throw std::runtime_error("Realtime state queue did not drain within 3 ms before startLoop");
+        }
+    }
     std::string timing() const {
-        // return "RT callbacks=" + std::to_string(callbacks.load()) +
-        //     " max_gap_ms=" + std::to_string(max_gap_ms.load()) +
-        //     " max_callback_us=" + std::to_string(max_callback_us.load()) +
-        //     " scheduling_policy=" + std::to_string(thread_policy.load()) +
-        //     " priority=" + std::to_string(thread_priority.load()) +
-        //     " requested_FIFO_priority=" + std::to_string(rt_priority);
-        return "";
+        return "RT callbacks=" + std::to_string(callbacks.load()) +
+            " max_gap_ms=" + std::to_string(max_gap_ms.load()) +
+            " max_callback_us=" + std::to_string(max_callback_us.load()) +
+            " scheduling_policy=" + std::to_string(thread_policy.load()) +
+            " priority=" + std::to_string(thread_priority.load()) +
+            " requested_FIFO_priority=" + std::to_string(rt_priority);
     }
     // 只在 startMove 被拒绝、实时回调尚未启动时查询，保留清理前的实际状态。
     void printStartFailure() {
@@ -83,6 +100,53 @@ public:
             aviator::Logger::error("{}controller_log id={} time={} content={} repair={}",
                 prefix, log.id, log.timestamp, log.content, log.repair);
     }
+    // Called only on the non-RT stop path, after stopLoop has joined the producer.
+    void writeTargetTrace() noexcept {
+        if (!target_trace.armed() || trace_written) return;
+        try {
+            target_trace.poll();
+            const auto path = "/tmp/aviator-target-trace-" + std::to_string(getpid()) + "-" +
+                std::to_string(reinterpret_cast<uintptr_t>(this)) + "-" + std::to_string(++trace_serial) + ".csv";
+            std::ofstream out(path);
+            out.exceptions(std::ios::failbit | std::ios::badbit);
+            out << std::setprecision(17) << "# endpoint=" << endpoint
+                << "\n# boundary=application_callback_return_before_sdk_filter"
+                << "\n# trigger_mono_us=" << target_trace.trigger()
+                << "\n# dropped_frames_since_enable=" << target_trace.dropped()
+                << "\n# capture_capacity_reached=" << target_trace.full()
+                << "\n# expected_target_rad=";
+            for (double q : target_trace.expected()) out << q << ' ';
+            out << "\nmono_us,callback,loop_epoch";
+            for (const auto* group : {"target_rad", "measured_rad", "velocity_rad_s"})
+                for (int j = 1; j <= 7; ++j) out << ',' << group << j;
+            out << '\n';
+            double max_change = 0, max_error = 0, max_step = 0;
+            size_t post = 0;
+            const TargetTraceFrame* previous = nullptr;
+            for (const auto& f : target_trace.frames()) {
+                out << f.mono_us << ',' << f.callback << ',' << f.loop_epoch;
+                for (const auto* q : {&f.target, &f.measured, &f.velocity})
+                    for (double v : *q) out << ',' << v;
+                out << '\n';
+                if (f.mono_us >= target_trace.trigger()) {
+                    ++post;
+                    for (int j = 0; j < 7; ++j) {
+                        max_change = std::max(max_change, std::abs(f.target[j] - target_trace.expected()[j]));
+                        max_error = std::max(max_error, std::abs(f.target[j] - f.measured[j]));
+                        if (previous) max_step = std::max(max_step, std::abs(f.target[j] - previous->target[j]));
+                    }
+                }
+                previous = &f;
+            }
+            out.close();
+            trace_written = true;
+            Logger::info("Target trace endpoint={} file={} post_frames={} dropped={} capacity_reached={} "
+                "max_target_change_rad={} max_target_step_rad={} max_tracking_error_rad={}",
+                endpoint, path, post, target_trace.dropped(), target_trace.full(), max_change, max_step, max_error);
+        } catch (const std::exception& e) {
+            try { Logger::error("Target trace export failed endpoint={}: {}", endpoint, e.what()); } catch (...) {}
+        }
+    }
     void stop() {
         std::exception_ptr error;
         auto attempt = [&](const char *action, auto fn) {
@@ -105,6 +169,7 @@ public:
             powered = false;
         });
         prepared = false;
+        writeTargetTrace();
         if (!timing_reported && callbacks.load() > 0) {
             timing_reported = true;
             // 只在停止周期线程后输出；不在实时回调中打印。
@@ -167,6 +232,22 @@ std::string RokaeArm::diagnostics() const {
     } else result += " callback_error=none captured (SDK errors may be reported by stopLoop)";
     return result + " " + impl_->timing();
 }
+RokaeTiming RokaeArm::timing() const {
+    const auto& s = *impl_;
+    return {s.callbacks.load(std::memory_order_relaxed),
+            s.max_gap_ms.load(std::memory_order_relaxed),
+            s.max_callback_us.load(std::memory_order_relaxed),
+            s.thread_policy.load(std::memory_order_relaxed),
+            s.thread_priority.load(std::memory_order_relaxed)};
+}
+void RokaeArm::beginTargetTrace(const std::array<double, 7>& expected) {
+    auto& s = *impl_;
+    const auto now = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (s.target_trace.begin(now, expected))
+        Logger::info("Target trace armed endpoint={} trigger_mono_us={} boundary=callback_return", s.endpoint, now);
+}
+void RokaeArm::pollTargetTrace() { impl_->target_trace.poll(); }
 bool RokaeArm::motionFailed() const {
     std::lock_guard<std::mutex> lock(impl_->error_mutex);
     return bool(impl_->callback_error) || (impl_->rt && impl_->rt->hasMotionError());
@@ -175,6 +256,8 @@ void RokaeArm::prepare() {
     auto &s = *impl_;
     if (s.prepared) return;
     { std::lock_guard<std::mutex> lock(s.error_mutex); s.callback_error = nullptr; }
+    s.target_trace.reset();
+    s.trace_written = false;
     s.callbacks = 0;
     s.max_gap_ms = 0;
     s.max_callback_us = 0;
@@ -225,10 +308,10 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
     try {
         prepare();
         stage = "setControlLoop";
-        s.rt->setControlLoop(std::function<rokae::JointPosition()>([&s, callback, command = rokae::JointPosition(7)]() mutable {
+        s.control_loop = [&s, callback, command = rokae::JointPosition(7)]() mutable {
           const auto began = std::chrono::steady_clock::now();
           try {
-            if (s.callbacks.load(std::memory_order_relaxed) == 0) {
+            if (s.previous_callback == std::chrono::steady_clock::time_point{}) {
                 int policy = -1;
                 sched_param parameters{};
                 const int rc = pthread_getschedparam(pthread_self(), &policy, &parameters);
@@ -244,6 +327,16 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
             }
             s.previous_callback = began;
             ++s.callbacks;
+            // Let the SDK command channel pace sends (useStateDataInLoop=false).
+            // A restarted state stream has produced 2 kHz callbacks in hardware;
+            // consume its queued feedback here without sending a command per frame.
+            if (!s.robot.updateRobotState(std::chrono::milliseconds(3)))
+                throw std::runtime_error("Realtime state timeout in control callback");
+            for (unsigned drained = 0;
+                 s.robot.updateRobotState(std::chrono::steady_clock::duration::zero()); ++drained) {
+                if (drained >= 31)
+                    throw std::runtime_error("Realtime state backlog exceeded callback drain limit");
+            }
             RokaeSample sample;
             auto read = [&](const char *field, auto &value) {
                 const int rc = s.robot.getStateData(field, value);
@@ -254,6 +347,9 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
             read(rokae::RtSupportedFields::tcpPose_m, sample.tcp);
             auto q = callback(sample);
             std::copy(q.begin(), q.end(), command.joints.begin());
+            s.target_trace.push({static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                began.time_since_epoch()).count()), s.callbacks.load(std::memory_order_relaxed),
+                s.loop_epoch, q, sample.position, sample.velocity});
             const double elapsed = std::chrono::duration<double, std::micro>(
                 std::chrono::steady_clock::now() - began).count();
             s.max_callback_us.store(std::max(s.max_callback_us.load(std::memory_order_relaxed), elapsed), std::memory_order_relaxed);
@@ -263,7 +359,8 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
             if (!s.callback_error) s.callback_error = std::current_exception();
             throw;
           }
-        }), Impl::rt_priority, true);
+        };
+        s.rt->setControlLoop(s.control_loop, Impl::rt_priority, false);
 
         // 对齐官方 getCurrentJointPos：消费已排队的实时状态，再读取当前位置。
         // 此时只注册了回调，尚未 startLoop，不会与回调同时读取状态队列。
@@ -295,8 +392,11 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
         s.moving = true;
         stage = "startMove(jointImpedance)";
         s.rt->startMove(rokae::RtControllerMode::jointImpedance);
+        stage = "drain state after startMove";
+        s.drainBeforeLoop();
         s.looping = true;
         stage = "startLoop";
+        ++s.loop_epoch;
         s.rt->startLoop(false);
     } catch (...) {
         auto error = std::current_exception();
@@ -311,6 +411,51 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
         try { s.stop(); } catch (...) {}
         std::rethrow_exception(error);
     }
+}
+void RokaeArm::pauseImpedance() {
+    auto& s = *impl_;
+    if (!s.prepared || !s.powered || !s.receiving || !s.looping || !s.moving)
+        throw std::runtime_error("Impedance update requires active realtime hold: " + s.endpoint);
+    s.rt->stopLoop(); s.looping = false;
+    s.rt->stopMove(); s.moving = false;
+    s.robot.stopReceiveRobotState(); s.receiving = false;
+}
+void RokaeArm::setPausedStiffness(const std::array<double, 7>& stiffness) {
+    auto& s = *impl_;
+    if (!s.prepared || !s.powered || s.receiving || s.looping || s.moving)
+        throw std::runtime_error("Impedance update requires paused motion and stopped state reception");
+    std::error_code ec;
+    s.rt->setJointImpedance(stiffness, ec);
+    check(ec, "setJointImpedance during profile update");
+    // s.stiffness remains the startup/default profile for the next enable().
+}
+void RokaeArm::resumeImpedance(const std::function<void()>& check) {
+    auto& s = *impl_;
+    check();
+    if (!s.prepared || !s.powered || s.receiving || s.looping || s.moving)
+        throw std::runtime_error("Impedance resume requires paused motion and stopped state reception");
+    s.receiving = true; // Ensure cleanup also stops a partially started receiver.
+    s.robot.startReceiveRobotState(std::chrono::milliseconds(1),
+        {rokae::RtSupportedFields::jointPos_m, rokae::RtSupportedFields::jointVel_m,
+         rokae::RtSupportedFields::tcpPose_m});
+    s.previous_callback = {}; // Recheck the resumed thread, exclude the intentional pause.
+    // Discard queued feedback before resuming the existing callback and held target.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    while (s.robot.updateRobotState(std::chrono::steady_clock::duration::zero())) {
+        check();
+        if (std::chrono::steady_clock::now() >= deadline)
+            throw std::runtime_error("Realtime state queue did not drain within 100 ms during impedance resume");
+    }
+    check();
+    s.rt->setControlLoop(s.control_loop, Impl::rt_priority, false);
+    s.moving = true;
+    s.rt->startMove(rokae::RtControllerMode::jointImpedance);
+    check();
+    s.drainBeforeLoop();
+    check();
+    s.looping = true;
+    ++s.loop_epoch;
+    s.rt->startLoop(false);
 }
 void RokaeArm::stop() { impl_->stop(); }
 }

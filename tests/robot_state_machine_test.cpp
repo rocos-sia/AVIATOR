@@ -14,6 +14,11 @@ void state(const RobotStateMachine& m, const char* expected) { check(std::string
 void finish(RobotStateMachine& m, Snapshot s = healthy()) {
     auto task = m.takeTask(); check(bool(task), "missing task");
     check(!m.takeTask(), "task submitted twice"); m.done(task->generation, s);
+    if (m.job() == Job::following_impedance) {
+        auto profile = m.takeTask(); check(bool(profile), "missing following impedance task");
+        check(!m.acceptsControl(), "following impedance enabled control");
+        m.done(profile->generation, s);
+    }
 }
 void following(RobotStateMachine& m) {
     m.boot(healthy(), 1); finish(m);
@@ -39,7 +44,9 @@ int main() try {
     s.following_authorized = false;
     check(m.request(Operation::grasp_wheel, s, 5) == Reply::capability_unavailable, "guard");
     s = healthy(); m.request(Operation::grasp_wheel, s, 6); finish(m); state(m, "FOLLOWING");
-    m.request(Operation::start_control, s, 7); state(m, "CONTROL"); check(m.acceptsControl(), "gate disabled");
+    check(m.request(Operation::start_control, s, 7) == Reply::completed, "control no longer transitions directly");
+    state(m, "CONTROL"); check(m.acceptsControl(), "gate disabled");
+    check(!m.takeTask(), "START_CONTROL created an extra FSM task");
     check(m.controlSince() == 7, "input boundary");
     check(m.request(Operation::leave_wheel, s, 8) == Reply::invalid_state, "control release");
     m.request(Operation::exit_control, s, 9); state(m, "FOLLOWING");
@@ -47,7 +54,7 @@ int main() try {
     s.settled = false;
     check(m.request(Operation::leave_wheel, s, 10) == Reply::busy, "unsettled release");
     m.request(Operation::exit_control, s, 11); check(!m.takeStop(), "idempotent exit repeated stop");
-    s = healthy(); m.request(Operation::leave_wheel, s, 12); state(m, "RELEASING"); finish(m); state(m, "STANDBY");
+    s = healthy(); finish(m); m.request(Operation::leave_wheel, s, 12); state(m, "RELEASING"); finish(m); state(m, "STANDBY");
     m.fault("first"); state(m, "ERROR"); check(m.takeStop(), "fault stop");
     m.fault("second"); check(!m.takeStop() && m.lastError() == "second", "fault repeat");
     s.fault_cleared = false;
@@ -83,7 +90,7 @@ int main() try {
             e.request(Operation::grasp_wheel, s, 3);
             if (wanted != "GRASPING") finish(e);
         }
-        if (wanted == "CONTROL") e.request(Operation::start_control, s, 4);
+        if (wanted == "CONTROL") { e.request(Operation::start_control, s, 4); }
         if (wanted == "RELEASING") e.request(Operation::leave_wheel, s, 4);
         if (wanted == "SAFE" || wanted == "ERROR") e.fault("fault");
         if (wanted == "SAFE") e.request(Operation::reset_error, s, 4);

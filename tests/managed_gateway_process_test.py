@@ -101,7 +101,8 @@ def main():
         raise AssertionError(f"Timed out; last state: {last}")
 
     def state(name, timeout=10):
-        message = wait_for(lambda m: m["system"]["state"] == name, timeout)
+        message = wait_for(lambda m: m["system"]["state"] == name and
+                           (name != "FOLLOWING" or m["system"].get("settled")), timeout)
         if name == "STANDBY":
             actual = message["arms"]["left"]["joint_position"] + message["arms"]["right"]["joint_position"]
             assert max(abs(a - b) for a, b in zip(actual, home)) <= robot.get("home_position_tolerance", .02), message
@@ -234,7 +235,7 @@ def main():
                  abs(m["wheel_reference"]["displacement"] + .08585) < .0004, 20)
         check_monitor_control()
         call(request("leave_wheel"), "REJECTED")
-        call(request("exit_control"), "COMPLETED")
+        call(request("exit_control"), "ACCEPTED")
         wait_for(lambda m: m["system"]["state"] == "FOLLOWING" and m["system"].get("settled"), 15)
         call(request("leave_wheel"), "ACCEPTED")
         state("STANDBY", 120)

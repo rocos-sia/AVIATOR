@@ -51,6 +51,7 @@ struct Device : DataLink {
     bool isEnabled(Side s) const override { return enabled[int(s)]; }
     void enable(Side s) override { enabled[int(s)] = true; }
     void disable(Side s) override { enabled[int(s)] = false; }
+    void setImpedanceProfile(bool) override {}
     GraspState graspState() const override { GraspState g; g.heartbeat = now; g.displacement = displacement; return g; }
     uint64_t sendGraspCommand(GraspCommand c) override { commands.push_back(c); return 0; }
     void waitTick() override { now += .001; }
@@ -81,7 +82,7 @@ void managedReleaseFailure(const fs::path& config) {
     Aviator core(std::move(device), std::move(ik), nullptr, config.string(), options);
     const auto wait = [&](const char* state) {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-        while (core.GetSystemState() != state && std::chrono::steady_clock::now() < deadline) {
+        while ((core.GetSystemState() != state || !core.GetSystemStatus().conditions.settled) && std::chrono::steady_clock::now() < deadline) {
             core.Update();
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
@@ -103,6 +104,85 @@ void managedReleaseFailure(const fs::path& config) {
     check(core.GetSystemStatus().current_error.find("Release FK failed") != std::string::npos,
           "Release failure lost the original diagnostic");
     check(!allowed, "Release failure left commands authorized");
+}
+// Hold a profile RPC open to exercise CONTROL entry independently of SDK/hardware.
+struct ProfileDevice : Device {
+    std::atomic<int> following_calls{0}, default_calls{0};
+    bool fail_default = false;
+    void setImpedanceProfile(bool following) override {
+        if (following) { ++following_calls; return; }
+        ++default_calls;
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        if (fail_default) throw std::runtime_error("Injected default impedance failure");
+    }
+};
+void managedControlEntry(const fs::path& config, const std::string& outcome) {
+    auto device = std::make_unique<ProfileDevice>();
+    auto* observed = device.get();
+    device->q[1] = device->q[8] = M_PI / 2;
+    device->fail_default = outcome == "failure";
+    bool allowed = false, input_ready = true;
+    int heartbeats = 0;
+    ManagedOptions options;
+    options.snapshot = [&] {
+        fsm::Snapshot s;
+        s.ready = s.settled = s.clear_of_wheel = s.following_authorized = true;
+        s.release_authorized = s.source_authorized = s.fault_cleared = s.emergency_known = true;
+        s.input_ready = input_ready;
+        return s;
+    };
+    options.allow_motion = [&](bool value) { allowed = value; };
+    options.heartbeat = [&] { ++heartbeats; };
+    options.request_brake = [] {};
+    Aviator core(std::move(device), std::make_unique<RecordingIk>(), nullptr, config.string(), options);
+    const auto wait = [&](auto predicate) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (!predicate() && std::chrono::steady_clock::now() < deadline) {
+            core.Update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        check(predicate(), "Managed control entry timed out");
+    };
+    const auto settled = [&](const char* state) {
+        return core.GetSystemState() == state && core.GetSystemStatus().conditions.settled;
+    };
+    core.Init(); wait([&] { return settled("READY"); });
+    core.EnterStandby(); wait([&] { return settled("STANDBY"); });
+    core.GraspWheel(); wait([&] { return settled("FOLLOWING"); });
+    check(observed->following_calls == 1, "Following profile missing");
+    const auto before_target = observed->q;
+    const auto sample = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    const auto began = std::chrono::steady_clock::now();
+    check(core.StartControl() == fsm::Reply::completed, "START_CONTROL reply changed");
+    check(std::chrono::steady_clock::now() - began < std::chrono::milliseconds(100), "CONTROL entry blocked owner");
+    check(core.GetSystemState() == "CONTROL", "START_CONTROL stayed in FOLLOWING");
+    check(!core.GetSystemStatus().accepts_control, "Targets allowed during profile restoration");
+    check(!core.ServoWheel(.1, 0, .5, sample), "Target accepted before default stiffness confirmation");
+    // Ensure the call is in flight before injecting protection / an exit request.
+    wait([&] { return observed->default_calls == 1; });
+    const int before_heartbeats = heartbeats;
+    if (outcome == "emergency") core.EmergencyStop("During profile restoration");
+    if (outcome == "input_lost") { input_ready = false; core.Update(); }
+    if (outcome == "exit") {
+        check(core.ExitControl() == fsm::Reply::accepted, "Exit during restoration rejected");
+        check(core.GetSystemState() == "FOLLOWING", "Exit did not leave CONTROL immediately");
+    }
+    if (outcome == "success") {
+        wait([&] { return core.GetSystemStatus().accepts_control; });
+        check(core.GetSystemState() == "CONTROL", "Restoration changed CONTROL state");
+        check(!core.ServoWheel(.1, 0, .5, sample), "Pre-restoration target replayed");
+    } else if (outcome == "exit") {
+        wait([&] { return settled("FOLLOWING"); });
+        check(observed->following_calls == 2, "Cancelled restoration lost Following update");
+    } else {
+        const auto expected = outcome == "failure" ? "ERROR" : outcome == "emergency" ? "EMERGENCY_STOP" : "SAFE";
+        wait([&] { return core.GetSystemState() == expected && core.GetSystemStatus().conditions.executor_idle; });
+        check(!allowed && !core.GetSystemStatus().accepts_control, "Late restoration escaped protection");
+    }
+    check(heartbeats > before_heartbeats + 2, "Restoration blocked supervision/heartbeats");
+    check(observed->default_calls == 1, "Repeated default restoration in CONTROL");
+    check(observed->q == before_target, "Profile restoration reset hold target");
 }
 // Check collision behavior independently of the real model's initial contacts.
 void collisionModelRegression(const fs::path &dir) {
@@ -245,6 +325,8 @@ int main(int argc, char **argv) try {
     }
     runCore(split); runCore(legacy);
     managedReleaseFailure(dir / "robot.yaml");
+    for (const auto* outcome : {"success", "failure", "emergency", "input_lost", "exit"})
+        managedControlEntry(dir / "robot.yaml", outcome);
     // Real deployment geometry + Pinocchio FK/IK, without connecting any device.
     const auto posture = YAML::LoadFile((root / "config/posture.json").string());
     for (double threshold : {.07, .04}) {

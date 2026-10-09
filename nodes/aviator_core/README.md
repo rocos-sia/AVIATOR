@@ -60,15 +60,17 @@ ENTER_STANDBY
 done
 GRASP_WHEEL
 done
+done
 START_CONTROL
 EXIT_CONTROL
+done
 LEAVE_WHEEL
 done
 quit
 ```
 
 对应 `INIT → INITIALIZING → READY → HOMING → STANDBY → GRASPING → FOLLOWING → CONTROL → FOLLOWING → RELEASING → STANDBY`。
-`done` 表示模拟动作完成，不会发送张开、闭合、使能或撤离指令。
+抓握后的第二个 `done` 和 EXIT_CONTROL 后的 `done` 表示 Following 阻抗切换完成。START_CONTROL 直接进入 CONTROL，不创建新的状态机任务。`done` 仅模拟动作完成，不会访问设备。
 
 | 指令 | 作用 |
 | --- | --- |
@@ -116,7 +118,7 @@ ctest --test-dir build -R '^(robot_state_machine|core_sml_demo|core_sml_cli)$' -
 | `Init()` | 内部 Boot → initialize 任务；初始化资源、双臂使能及阻抗配置完成后 READY，保持当前位置，不自动回 home |
 | `EnterStandby()` | ENTER_STANDBY；READY/已脱离的 SAFE → HOMING，实际到 home 并停稳 → STANDBY；STANDBY 幂等；FOLLOWING 先释放撤离再回 home |
 | `GraspWheel()` | GRASP_WHEEL；确认手张开 → approachHandles(from_home=true) → lockHandles；不重复使能或回 home |
-| `StartControl()` | START_CONTROL；检查守卫并建立新输入时间边界 |
+| `StartControl()` | START_CONTROL；直接进入 CONTROL，恢复默认刚度期间暂不接收运动目标，恢复后使用新鲜输入 |
 | `ExitControl()` | EXIT_CONTROL；关闭接纳并非阻塞减速，等 settled 后才能释放/重启操控 |
 | `LeaveWheel()` | LEAVE_WHEEL；releaseHandles 张开撤离 → moveHome，实际回 home 并停稳后 STANDBY |
 | `ResetError()` | RESET_ERROR；故障已排除后确认本地错误，ERROR → SAFE，不调用会隐式解锁/失能的 resetFault |
@@ -165,6 +167,12 @@ cmake --build build --target aviator_core_managed -j2
 **当前接入限制**：未接入独立安全监督器和物理手刹驱动，brake_confirmed 始终为 false，急停时 brake_status=UNAVAILABLE；FOLLOWING
 仅保持现有参考，需要相应策略授权，不是柔顺控制。保护/退出撤销手目标后仍沿用手节点的默认张开 safe_pose，
 不能宣称满足设计文档的保护时抓握保持。真实硬件策略需另行落实。本次实现和验证没有驱动真机。
+
+FOLLOWING 保持抓握结束时的关节指令目标与 wheel 参考；从 CONTROL 返回时，先按既有 Servo 流程减速，保持停止后的最后指令，不回到抓握位置。Managed Core 不订阅相机目标，仅 CONTROL 使用手柄调用 `ServoWheel`（rad/m）。进入 FOLLOWING 后异步切换到 `rokae.following_joint_stiffness`（缺省沿用 `rokae.joint_stiffness`）；进入 CONTROL 或释放前恢复 `rokae.joint_stiffness`。切换期间 `task_phase=STIFFNESS`、`settled=false`，停止轨迹执行，保留最后关节指令和 wheel 参考。真机依次暂停 loop、停止 RT 运动、设置刚度、清理积压状态，然后恢复同一目标的运动循环；保留已有状态订阅和回调，不重复调用 startReceiveRobotState 或 setControlLoop，不下电、不退出 RtCommand。始终复用现有 RT 控制器和保持目标，不重新连接、上电或初始化 RT；FOLLOWING 请求即使两组数值相同也执行完整切换；恢复 default 时若数值相同则不暂停循环。恢复状态驱动的回调前清理积压反馈，并在恢复后的首个回调检查实时线程优先级。独立 `change_stiffness` 和 `aviator_core_camera_servo` 示例不受影响。
+
+`start_control` 恢复返回 COMPLETED 并直接进入 CONTROL；COMPLETED 表示状态转换完成。默认刚度在已有执行器线程槽异步恢复，期间 `settled=false`、控制接纳关闭，主线程继续处理输入、服务和保护。默认刚度恢复且新反馈到达后放行原有 Servo 流程，只接受恢复后的新鲜输入；后续手柄输入不再触发阻抗切换。恢复期间 EXIT_CONTROL 立即进入 FOLLOWING，取消恢复并等待执行器退出后应用 Following 刚度；急停、输入失效或恢复失败不会被迟到结果解除。阻抗服务期限为 5 秒，期间状态心跳仍有效，旧 RT 样本保留原时间戳，不作为新反馈。任一臂切换失败会停止双臂并进入 ERROR。SAFE 会撤销运动授权，因此此时保持停止，默认刚度在后续获准恢复、回零或释放前设置；ERROR／急停不为改刚度重启运动，重新使能时使用默认刚度。
+
+保持流程回归测试：`ctest --test-dir build -R '^following_hold_process$' --output-on-failure`，使用独立端口和 MuJoCo。
 
 ```bash
 ctest --test-dir build -R '^(aviator_managed_api|robot_state_machine|core_sml_demo|core_sml_cli|core_hand)$' --output-on-failure
@@ -245,7 +253,7 @@ Gateway 会用首次成功设备查询建立初始位置，摇杆静止也可提
 | 初始化 | 无需按钮 | INITIALIZING → READY；自动使能并设置阻抗，保持当前位置 |
 | 回 home 待机 | 1 / enter_standby | READY → HOMING → STANDBY；已在 STANDBY 则幂等确认 |
 | 抓握 | 2 / grasp_wheel | ACCEPTED，GRASPING → FOLLOWING |
-| 操控 | 3 / start_control | 输入有效且守卫满足后 CONTROL，连续轴值驱动机器人 |
+| 操控 | 3 / start_control | COMPLETED；输入有效且守卫满足时直接进入 CONTROL，默认刚度恢复后连续轴值驱动机器人 |
 | 退出操控 | 4 / exit_control | FOLLOWING；等待 `system.settled=true` |
 | 释放撤离 | 5 / leave_wheel | ACCEPTED，RELEASING 内完成松手、撤离及回 home → STANDBY |
 | 故障确认 | 6 / reset_error | 仅 ERROR 且故障已消除等条件满足时 → SAFE，不自动回操控 |

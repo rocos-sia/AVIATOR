@@ -88,26 +88,14 @@ int main(int argc, char **argv) {
             moving = false;
             robot.stopReceiveRobotState();
             receiving = false;
-            // robot.setMotionControlMode(MotionControlMode::NrtCommand, ec);
-            // check(ec, "setMotionControlMode(NrtCommand)");
-            // rtCon.reset(); // 退出 RT 后，旧控制器的实时连接不能继续使用。
-            // std::cout << "Left RT mode" << std::endl;
 
-            // if (interrupted.load()) throw std::runtime_error("Interrupted before re-entering RT");
-            // robot.setMotionControlMode(MotionControlMode::RtCommand, ec);
-            // check(ec, "setMotionControlMode(RtCommand)");
-            // robot.setPowerState(true, ec);
-            // check(ec, "setPowerState(true)");
-            // rtCon = robot.getRtMotionController().lock();
-            // if (!rtCon) throw std::runtime_error("No realtime controller after re-entering RT");
-            // 必须在 RT 连接恢复后、startMove 之前设置新刚度。
             rtCon->setJointImpedance({500, 500, 500, 500, 50, 50, 0.1}, ec);
             check(ec, "setJointImpedance(after re-entering RT)");
             std::cout << "J7 stiffness changed: 50 -> 0.1 Nm/rad" << std::endl;
 
             receiving = true;
             robot.startReceiveRobotState(1ms, {RtSupportedFields::jointPos_m});
-            rtCon->setControlLoop(callback); // 继续使用启动时读取的固定目标位置。
+            // rtCon->setControlLoop(callback); // 继续使用启动时读取的固定目标位置。
             if (interrupted.load()) throw std::runtime_error("Interrupted before restarting motion");
             moving = true;
             rtCon->startMove(RtControllerMode::jointImpedance);

@@ -14,7 +14,7 @@ struct ENTER_STANDBY {}; struct GRASP_WHEEL {}; struct START_CONTROL {};
 struct EXIT_CONTROL {}; struct LEAVE_WHEEL {}; struct RESET_ERROR {};
 struct Done { std::uint64_t generation; };
 struct Fault {}; struct SafetyLost {}; struct Emergency {};
-enum class Job { none, initialize, home, grasp, release };
+enum class Job { none, initialize, home, grasp, release, following_impedance };
 struct Context {
   bool ready{}, following_authorized{}, source_authorized{}, input_ready{};
   bool settled{}, clear_of_wheel{}, fault_cleared{}, emergency_latched{};
@@ -61,14 +61,19 @@ struct RobotMachine {
       return e.generation == c.generation && c.job == Job::release &&
              c.settled && c.clear_of_wheel && c.executor_idle;
     };
+    const auto following_done = [](const Done& e, const Context& c) {
+      return e.generation == c.generation && c.job == Job::following_impedance &&
+             c.ready && c.settled && c.following_authorized && c.executor_idle;
+    };
+    const auto following = [](Context& c) { c.begin(Job::following_impedance); };
     const auto initialize = [](Context& c) { c.begin(Job::initialize); };
     const auto home = [](Context& c) { c.begin(Job::home); };
     const auto grasp = [](Context& c) { c.begin(Job::grasp); };
     const auto release = [](Context& c) { c.begin(Job::release); };
     const auto finished = [](Context& c) { c.job = Job::none; };
-    const auto enable = [](Context& c) { c.accepts_control = true; };
+    const auto enable = [](Context& c) { c.job = Job::none; c.accepts_control = true; };
     const auto disable = [](Context& c) {
-      c.accepts_control = false; c.settled = false; c.stop_requested = true;
+      c.begin(Job::following_impedance); c.settled = false; c.stop_requested = true;
     };
     const auto stop = [](Context& c) { c.cancel(); c.stop_requested = true; };
     const auto emergency = [](Context& c) {
@@ -81,7 +86,8 @@ struct RobotMachine {
       state<HOMING> + event<Done>[home_done] / finished = state<STANDBY>,
       state<STANDBY> + event<ENTER_STANDBY> / [] {},
       state<STANDBY> + event<GRASP_WHEEL>[grasp_ok] / grasp = state<GRASPING>,
-      state<GRASPING> + event<Done>[grasp_done] / finished = state<FOLLOWING>,
+      state<GRASPING> + event<Done>[grasp_done] / following = state<FOLLOWING>,
+      state<FOLLOWING> + event<Done>[following_done] / finished,
       state<FOLLOWING> + event<START_CONTROL>[control_ok] / enable = state<CONTROL>,
       state<CONTROL> + event<EXIT_CONTROL>[([](const Context& c) { return c.following_authorized; })] / disable = state<FOLLOWING>,
       state<FOLLOWING> + event<EXIT_CONTROL> / [] {},
@@ -139,7 +145,7 @@ class RobotStateMachine {
   void boot(const Snapshot&, std::uint64_t now);
   void supervise(const Snapshot&, std::uint64_t now);
   Reply request(Operation, const Snapshot&, std::uint64_t now);
-  void done(std::uint64_t generation, const Snapshot&);
+  void done(std::uint64_t generation, const Snapshot&, std::uint64_t now = 0);
   void failed(std::uint64_t generation, const std::string&);
   void fault(const std::string&);
   void safetyLost(const std::string&);
@@ -161,7 +167,7 @@ class RobotStateMachine {
   Context context_;
   sml::sm<RobotMachine> machine_{context_};
   Timeouts timeouts_;
-  std::uint64_t deadline_ = 0, control_since_ = 0;
+  std::uint64_t deadline_ = 0, control_since_ = 0, last_now_ = 0;
   std::string error_, last_error_;
 };
 const char* replyName(Reply);

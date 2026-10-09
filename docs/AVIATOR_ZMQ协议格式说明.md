@@ -821,6 +821,7 @@ system.state 的 valid 表示状态快照本身可信；lifecycle=ERROR 时仍�
 | --- | --- | --- |
 | `enable` | `aviator_core` | `{}`；请求协调显式使能，前置条件通过后产生新 epoch。不能绕过 Core 直接授权手臂。 |
 | `reset_fault` | `manipulator/arms.left` | `{}`；复位仍需故障原因解除，不隐含使能。 |
+| `set_impedance_profile` | `manipulator` | 已实现的 Core 设备服务：`config_id`、`profile`（`default` 或 `following`）；双臂静止保持时切换配置中的关节刚度，返回 `profile/stiffness/target`。Core 使用 5000 ms 期限，重复 request_id 不重复执行。 |
 | `set_source` | `aviator_core` | `source` 为 FLIGHT 或 JOYSTICK；撤销旧授权并重新验证。 |
 | `calibrate` | `camera` 或注册设备组件 | `profile_id` 指定已批准标定流程；未冻结的流程拒绝执行。 |
 | `get_result` | 原服务节点 | `original_request_id/original_client_session_id`；查询同一 client_id 的原请求结果。查询本身使用新的 request_id。 |
@@ -839,6 +840,8 @@ system.state 的 valid 表示状态快照本身可信；lifecycle=ERROR 时仍�
   "operation": "reset_fault", "target": "manipulator/arms.left", "parameters": {}
 }
 ```
+
+设备阻抗切换的观测扩展：`arm.state.execution.impedance_switching` 表示正在重配置，`impedance_profile` 表示最近成功应用的配置（初始为 `default`）。暂停 RT 时消息 `valid=false`，关节样本时间戳不刷新；独立的 `status_mono_us` 表示设备服务仍在运行。Core 仅在本地发起的有界切换任务中允许使用该状态心跳维持资源就绪，不能将旧关节样本作为实时反馈。新轨迹必须等待切换完成，任一臂失败停止双臂。Managed `start_control` 返回 COMPLETED 并直接进入 CONTROL（表示状态转换完成），不创建额外的 CONTROL 状态机任务。默认刚度恢复期间 `settled=false`，暂不接收运动目标；恢复并确认反馈后放行原有 Servo 流程，只接受恢复后的新鲜输入。主线程仍处理输入、服务与保护，迟到的恢复结果不能解除 SAFE／ERROR／急停。阻抗切换复用连接和 RT 控制器，仅暂停与恢复运动循环，不重新初始化 RT。
 
 ### 14.3 ServiceReply
 

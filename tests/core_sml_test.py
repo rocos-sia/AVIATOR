@@ -15,8 +15,8 @@ def run(commands, *expected):
 
 run('done\nENTER_STANDBY\ndone\nSTART_CONTROL\nset following_authorized 0\nGRASP_WHEEL\n'
     'set following_authorized 1\nGRASP_WHEEL\nSTART_CONTROL\ndone\n'
-    'set source_authorized 0\nSTART_CONTROL\nset source_authorized 1\nSTART_CONTROL\n'
-    'LEAVE_WHEEL\nEXIT_CONTROL\nLEAVE_WHEEL\ndone\nquit\n',
+    'done\nset source_authorized 0\nSTART_CONTROL\nset source_authorized 1\nSTART_CONTROL\n'
+    'LEAVE_WHEEL\nEXIT_CONTROL\ndone\nLEAVE_WHEEL\ndone\nquit\n',
     '[reply] START_CONTROL INVALID_STATE', '[reply] GRASP_WHEEL CAPABILITY_UNAVAILABLE',
     '[reply] START_CONTROL BUSY', '[reply] START_CONTROL CAPABILITY_UNAVAILABLE',
     '[event] START_CONTROL: FOLLOWING -> CONTROL', '[reply] LEAVE_WHEEL INVALID_STATE',
@@ -32,11 +32,11 @@ run('done\nENTER_STANDBY\ndone\nGRASP_WHEEL\nfail\nlate_done\nset fault_cleared 
 for commands, transition in [
     ('advance 30000\n', 'INITIALIZING -> ERROR'),
     ('done\nENTER_STANDBY\ndone\nGRASP_WHEEL\nadvance 180000\n', 'GRASPING -> ERROR'),
-    ('done\nENTER_STANDBY\ndone\nGRASP_WHEEL\ndone\nLEAVE_WHEEL\nadvance 180000\n', 'RELEASING -> ERROR'),
+    ('done\nENTER_STANDBY\ndone\nGRASP_WHEEL\ndone\ndone\nLEAVE_WHEEL\nadvance 180000\n', 'RELEASING -> ERROR'),
 ]:
     run(commands + 'late_done\n', transition, 'Task deadline exceeded', '[event] late_done: ERROR -> ERROR')
 
-run('done\nENTER_STANDBY\ndone\nGRASP_WHEEL\ndone\nSTART_CONTROL\nset input_ready 0\n'
+run('done\nENTER_STANDBY\ndone\nGRASP_WHEEL\ndone\ndone\nSTART_CONTROL\nset input_ready 0\n'
     'set input_ready 1\nSTART_CONTROL\n',
     '[event] set input_ready 0: CONTROL -> SAFE', '[event] set input_ready 1: SAFE -> SAFE',
     '[reply] START_CONTROL INVALID_STATE', 'state=SAFE accepts_control=0')

@@ -49,7 +49,7 @@ void RobotStateMachine::snapshot(const Snapshot& s) {
     context_.release_authorized = s.release_authorized;
 }
 void RobotStateMachine::deadline(std::uint64_t now) {
-    const auto duration = context_.job == Job::initialize ? timeouts_.initialize :
+    const auto duration = (context_.job == Job::initialize || context_.job == Job::following_impedance) ? timeouts_.initialize :
                           context_.job == Job::grasp ? timeouts_.grasp :
                           context_.job == Job::home ? timeouts_.home : timeouts_.release;
     if (now > std::numeric_limits<std::uint64_t>::max() - duration) {
@@ -63,6 +63,7 @@ void RobotStateMachine::boot(const Snapshot& s, std::uint64_t now) {
     if (machine_.process_event(Boot{})) deadline(now);
 }
 void RobotStateMachine::supervise(const Snapshot& s, std::uint64_t now) {
+    last_now_ = now;
     snapshot(s);
     if (!s.emergency_known || s.emergency_latched) { emergency("Emergency latched or evidence unavailable"); return; }
     if (machine_.is(sml::state<EMERGENCY_STOP>)) return;
@@ -124,8 +125,10 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
         (op == Operation::reset_error && !s.fault_cleared)) return reply(Reply::invalid_state);
     return reply(Reply::capability_unavailable);
 }
-void RobotStateMachine::done(std::uint64_t generation, const Snapshot& s) {
+void RobotStateMachine::done(std::uint64_t generation, const Snapshot& s, std::uint64_t now) {
     const TransitionLog transition{*this, "Done"};
+    if (!now) now = last_now_;
+    last_now_ = now;
     if (generation != context_.generation || context_.job == Job::none) {
         Logger::debug("Core FSM ignored completion generation={} active_generation={} job={}",
             generation, context_.generation, static_cast<int>(context_.job));
@@ -137,7 +140,10 @@ void RobotStateMachine::done(std::uint64_t generation, const Snapshot& s) {
     if (context_.job == Job::grasp && !s.following_authorized) { safetyLost("Following authorization lost"); return; }
     const auto completed = context_.job;
     if (!machine_.process_event(Done{generation})) fault("Task completed without required postconditions");
-    else if (completed == Job::initialize || completed == Job::home || completed == Job::release) error_.clear();
+    else {
+        if (completed == Job::initialize || completed == Job::home || completed == Job::release) error_.clear();
+        if (context_.job != Job::none) deadline(now);
+    }
 }
 void RobotStateMachine::failed(std::uint64_t generation, const std::string& why) {
     if (context_.job != Job::none && generation == context_.generation) fault(why);

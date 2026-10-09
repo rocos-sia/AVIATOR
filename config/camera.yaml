@@ -26,7 +26,7 @@ visualization:
 apriltag:
   family: "tag36h11"
   tag_id: 0             # 用户提供的 AprilTag 示例只处理 ID=0
-  tag_size_m: 0.12      # Apriltag120id0.pdf 黑边外尺寸，不含白边；按实际打印尺寸校准
+  tag_size_m: 0.08      # Apriltag120id0.pdf 黑边外尺寸，不含白边；按实际打印尺寸校准
   use_distortion: false # 与用户提供示例一致；彩色帧若未经去畸变，应按实际标定改为 true
   min_decision_margin: 0.0
   confidence_margin: 50.0 # decision_margin 达到此值时报告 confidence=1；启发式指标

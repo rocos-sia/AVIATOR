@@ -38,7 +38,7 @@ AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
   `system.yaml` 的 `core_hand.publisher_id`（缺省 `rh56ftp_hand`）。
   Monitor 的来源配置对两种设备相同。
 - 臂服务包括 `describe`、`authorize`、`enable`、`disable`、`stop`、`lock`、
-  `unlock`、`reset_fault`、`get_result`。请求/回复的逻辑 target/server_id
+  `unlock`、`reset_fault`、`set_impedance_profile`、`get_result`。请求/回复的逻辑 target/server_id
   均为 `manipulator`。共享设备服务实现保留请求去重、10 秒期限、轨迹游标、
   50 ms 指令 watchdog、100 ms origin watchdog和本地制动。
 - 臂命令使用 `JOINT_TRAJECTORY` / `SYNCHRONIZED_TICKS`，由 Core 的
@@ -64,7 +64,7 @@ AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
 双臂共用 `robot.yaml` 中 `rokae.joint_stiffness` 的七轴刚度（Nm/rad），
 使用动力学偏置补偿加 `K(q_target-q)` 力矩，允许接触外力造成关节偏移。
 MuJoCo 隐式积分的附加阻尼为 `80*sqrt(K/1000)` Nm·s/rad，并保留 MJCF 原有被动阻尼。
-默认前四轴为 500、末三轴为 50；修改后重启仿真生效。
+默认前四轴为 500、末三轴为 50。Managed FOLLOWING 使用 `rokae.following_joint_stiffness`，进入 CONTROL 或释放前恢复默认刚度；切换同时更新附加阻尼，保持目标不变。配置修改后重启仿真生效。
 该控制律用于近似关节阻抗，不是 Rokae 内部控制器的精确复现。
 手柄已有局部软接触参数；`lock` 的 weld 行为仍按原流程执行。
 `tests/mjcf_grasp_contact_test.py --grip-inset 0.0025` 可在不修改标定目标的情况下，

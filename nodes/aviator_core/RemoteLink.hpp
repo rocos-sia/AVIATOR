@@ -24,6 +24,7 @@ class RemoteLink final : public DataLink {
     bool isEnabled(Side) const override;
     void enable(Side) override;
     void disable(Side) override;
+    void setImpedanceProfile(bool following) override;
     GraspState graspState() const override;
     uint64_t sendGraspCommand(GraspCommand) override;
     void setJointPositions(const Joints &) override;
@@ -41,7 +42,7 @@ class RemoteLink final : public DataLink {
 
   private:
     friend struct RemoteLinkTestAccess; // Fault injection: block arm IO without blocking hand IO.
-    Json operation(const std::string &);
+    Json operation(const std::string &, Json parameters = Json::object());
     void io();
     void trimStreamHistory(); // Caller holds mutex_; retain four samples behind feedback cursor.
     void handTarget(bool close);
@@ -68,6 +69,7 @@ class RemoteLink final : public DataLink {
     uint64_t synchronized_hand_version_ = 0;
     uint64_t trajectory_id_ = 0, start_ = 0, received_ = 0, sample_ = 0, ack_ = 0;
     uint64_t status_sample_ = 0;
+    uint64_t impedance_deadline_ = 0;
     bool enabled_ = false, publishing_ = false, feedback_valid_ = false;
     std::string error_, phase_ = "INIT", source_ = "NONE";
     std::thread thread_;

@@ -295,6 +295,18 @@ void MuJoCoDirectDataLink::enable(Side side) {
     enabled_[static_cast<int>(side)] = true;
 }
 
+void MuJoCoDirectDataLink::setJointStiffness(const std::array<double, 7>& stiffness,
+                                           const std::function<void()>& check, bool /*force_reapply*/) {
+    validateJointStiffness(stiffness);
+    check();
+    std::lock_guard<std::mutex> lock(mutex_);
+    require(enabled_[0] && enabled_[1] && !fault_, "Stiffness update requires healthy enabled arms");
+    joint_stiffness_ = stiffness;
+    for (int i = 0; i < 14; ++i)
+        model_->dof_damping[joint_dof_adr_[i]] = original_damping_[i] +
+            kReferenceDamping * std::sqrt(stiffness[i % 7] / kReferenceStiffness);
+}
+
 void MuJoCoDirectDataLink::disable(Side side) {
     std::lock_guard<std::mutex> lock(mutex_);
     const int offset = sideOffset(side);

@@ -1,4 +1,5 @@
 #include "aviator/backend.hpp"
+#include "Logger.hpp"
 
 #include "rokae_sdk.hpp"
 #include "OpenLoopGrasp.hpp"
@@ -99,9 +100,10 @@ pinocchio::SE3 fixedChainToRoot(const urdf::ModelInterfaceSharedPtr &model,
 class RokaeDataLink final : public DataLink {
   public:
     std::atomic<double> command_deadline_{0};
+    std::array<double, 7> default_stiffness_{}, current_stiffness_{};
     RokaeDataLink(const std::string &urdf_path, const RokaeConfig &config,
                   const GraspGeometry &geometry)
-        : geometry_(geometry) {
+        : default_stiffness_(config.joint_stiffness), current_stiffness_(config.joint_stiffness), geometry_(geometry) {
         require(!config.left_ip.empty() && !config.right_ip.empty(),
                 "rokae.left_ip / rokae.right_ip 未配置");
         require(config.grasp_mode == "open_loop", "当前真机仅支持 rokae.grasp_mode: open_loop");
@@ -226,7 +228,7 @@ class RokaeDataLink final : public DataLink {
         if (!powered_[0] && !powered_[1]) {
             callback_fault_ = false;
             // 两臂的阻塞初始化均在第一个周期线程启动前完成。
-            try { for (auto &arm : arms_) arm->prepare(); }
+            try { for (auto &arm : arms_) arm->prepare(); current_stiffness_ = default_stiffness_; }
             catch (...) {
                 auto error = std::current_exception();
                 for (auto &arm : arms_) { try { arm->stop(); } catch (...) {} }
@@ -316,6 +318,73 @@ class RokaeDataLink final : public DataLink {
         }
     }
 
+    void setJointStiffness(const std::array<double, 7>& stiffness,
+                           const std::function<void()>& check, bool force_reapply = false) override {
+        validateJointStiffness(stiffness);
+        if (!force_reapply && stiffness == current_stiffness_) return;
+        const auto before = captureState();
+        std::array<double, 7> sent[2];
+        uint64_t command, consumed[2];
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            command = command_sequence_;
+            for (int side = 0; side < 2; ++side) { sent[side] = sent_[side]; consumed[side] = consumed_sequence_[side]; }
+        }
+        for (int side = 0; side < 2; ++side) {
+            std::array<double, 7> expected;
+            std::copy_n(before.target.begin() + side*7, 7, expected.begin());
+            arms_[side]->beginTargetTrace(expected);
+            std::ostringstream out;
+            out << std::setprecision(17) << "Impedance target snapshot endpoint=" << endpoints_[side]
+                << " mono_us=" << uint64_t(monotonic()*1e6) << " command=" << command << " consumed=" << consumed[side];
+            const auto values = [&](const char* label, const auto& q) {
+                out << ' ' << label << "=[";
+                for (size_t j = 0; j < q.size(); ++j) out << (j ? "," : "") << q[j];
+                out << ']';
+            };
+            values("expected_target_rad", expected); values("last_callback_target_rad", sent[side]);
+            values("measured_rad", before.position[side]); values("velocity_rad_s", before.velocity[side]);
+            values("requested_stiffness", stiffness);
+            Logger::info("{}", out.str());
+        }
+        require(powered_[0] && powered_[1], "Enable both arms before changing stiffness");
+        try {
+            const auto stage = [&](const char* name, auto operation) {
+                for (int side = 0; side < 2; ++side) {
+                    try { check(); operation(*arms_[side]); }
+                    catch (const std::exception& e) {
+                        throw std::runtime_error("Joint stiffness " + std::string(name) + " " +
+                                                 endpoints_[side] + ": " + e.what());
+                    }
+                }
+            };
+            stage("pause", [](RokaeArm& arm) { arm.pauseImpedance(); });
+            stage("set", [&](RokaeArm& arm) { arm.setPausedStiffness(stiffness); });
+            // Preserve target_, sent_, and validity: the startup callback's first-frame
+            // initialization must NOT replace the held command with measured positions.
+            const double resumed_after = monotonic();
+            stage("resume", [&](RokaeArm& arm) { arm.resumeImpedance(check); });
+            const double until = monotonic() + 0.5;
+            for (;;) {
+                check();
+                for (auto& arm : arms_)
+                    require(!arm->motionFailed(), "SDK failure after impedance restart");
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    if (feedback_time_[0] > resumed_after && feedback_time_[1] > resumed_after) break;
+                }
+                require(monotonic() < until, "Fresh dual-arm feedback timeout after impedance restart");
+                std::this_thread::sleep_for(kTick);
+            }
+            current_stiffness_ = stiffness;
+            timing_at_ = 0; // Exclude the intentional pause from execution-rate samples.
+        } catch (...) {
+            auto error = std::current_exception();
+            for (auto side : {Side::Left, Side::Right}) { try { disable(side); } catch (...) {} }
+            std::rethrow_exception(error);
+        }
+    }
+
     void disable(Side side) override {
         const int i = static_cast<int>(side);
         arms_[i]->stop();
@@ -358,6 +427,8 @@ class RokaeDataLink final : public DataLink {
     // —— 周期同步 ——
 
     void waitTick() override {
+        for (auto& arm : arms_) arm->pollTargetTrace();
+        reportTiming(); // Non-RT executor thread; never format/log in SDK callbacks.
         if (next_tick_ == std::chrono::steady_clock::time_point{})
             next_tick_ = std::chrono::steady_clock::now();
         const auto now = std::chrono::steady_clock::now();
@@ -398,6 +469,43 @@ class RokaeDataLink final : public DataLink {
         double feedback_time[2], max_gap[2];
         uint64_t callbacks[2];
     };
+    void reportTiming() {
+        const double now = monotonic();
+        if (timing_at_ && now - timing_at_ < 1) return;
+        const auto snapshot = captureState();
+        const RokaeTiming rt[2] = {arms_[0]->timing(), arms_[1]->timing()};
+        const double seconds = now - timing_at_;
+        // command_sequence_ is written only by this executor thread.
+        const auto commands = command_sequence_ - timing_commands_;
+        if (timing_at_ && commands && snapshot.powered[0] && snapshot.powered[1]) {
+            for (int side = 0; side < 2; ++side) {
+                // prepare() resets counters; skip windows crossing a new enable.
+                if (rt[side].callbacks < timing_callbacks_[side] ||
+                    snapshot.callbacks[side] < timing_feedback_[side]) continue;
+                double error = 0, speed = 0;
+                int joint = 0;
+                for (int j = 0; j < 7; ++j) {
+                    const double e = std::abs(snapshot.target[side*7+j] - snapshot.position[side][j]);
+                    if (e > error) { error = e; joint = j; }
+                    speed = std::max(speed, std::abs(snapshot.velocity[side][j]));
+                }
+                Logger::info("Motion timing side={} window_s={:.3f} command_hz={:.1f} callback_hz={:.1f} "
+                    "feedback_hz={:.1f} feedback_age_ms={:.2f} max_target_error_rad={:.5f} error_joint={} "
+                    "max_actual_speed_rad_s={:.4f} rt_max_gap_ms={:.3f} rt_max_work_us={:.1f} policy={} priority={}",
+                    side == 0 ? "left" : "right", seconds, commands / seconds,
+                    (rt[side].callbacks - timing_callbacks_[side]) / seconds,
+                    (snapshot.callbacks[side] - timing_feedback_[side]) / seconds,
+                    (now - snapshot.feedback_time[side]) * 1000, error, joint + 1, speed,
+                    rt[side].max_gap_ms, rt[side].max_callback_us, rt[side].policy, rt[side].priority);
+            }
+        }
+        timing_at_ = now;
+        timing_commands_ = command_sequence_;
+        for (int side = 0; side < 2; ++side) {
+            timing_callbacks_[side] = rt[side].callbacks;
+            timing_feedback_[side] = snapshot.callbacks[side];
+        }
+    }
     StateSnapshot captureState() const {
         StateSnapshot snapshot{};
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -521,6 +629,8 @@ class RokaeDataLink final : public DataLink {
     mutable OpenLoopGrasp grasp_;
 
     std::chrono::steady_clock::time_point next_tick_{};
+    double timing_at_ = 0;
+    uint64_t timing_commands_ = 0, timing_callbacks_[2]{}, timing_feedback_[2]{};
 
     // 保护 joint_pos_ / tcp_pose_ / target_ 跨线程访问：
     // 算法线程写 target_、读 joint_pos_；SDK RT 线程（回调）读 target_、写 joint_pos_。

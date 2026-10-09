@@ -9,6 +9,7 @@ struct DeviceSettings {
     std::filesystem::path directory;
     Joints lower{}, upper{}, speed{};
     double braking = 2;
+    std::array<double, 7> default_stiffness{}, following_stiffness{};
     WheelReference initial_wheel;
     explicit DeviceSettings(const MotionConfig&);
     std::filesystem::path path(const char* key) const;

@@ -56,6 +56,9 @@ DeviceState RemoteLink::snapshot(bool& fresh, bool* status_fresh) const {
     if (status_fresh) *status_fresh = received_ && status_sample_ && now >= received_ && now >= status_sample_ &&
         now - received_ < config_.timeout_us && now - status_sample_ < config_.timeout_us && error_.empty();
     auto result = state_;
+    // Only this locally requested, bounded lifecycle operation may use device status
+    // instead of RT samples. Never change `fresh` or fabricate a sample timestamp.
+    result.impedance_switching = impedance_deadline_ && now < impedance_deadline_;
     if (protective_stop_.valid() && protective_stop_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
         result.stopping = true;
     if (!error_.empty()) { result.fault = true; result.error = error_; }
@@ -73,7 +76,7 @@ void RemoteLink::allowMotion(bool allowed) {
     const bool stop = !allowed && motion_allowed_ && enabled_;
     motion_allowed_ = allowed;
     hand_.allow(allowed);
-    if (!allowed) { publishing_ = false; changed_.notify_all(); }
+    if (!allowed) { if (!impedance_deadline_) publishing_ = false; changed_.notify_all(); }
     if (stop) {
         // Keep owner heartbeats and feedback IO alive while the device decelerates.
         // This also covers an idle executor, which has no motion loop to observe cancel.
@@ -87,11 +90,12 @@ void RemoteLink::allowMotion(bool allowed) {
         });
     }
 }
-Json RemoteLink::operation(const std::string &op) {
+Json RemoteLink::operation(const std::string &op, Json parameters) {
     std::lock_guard<std::mutex> lock(service_mutex_);
-    return callService(
-        context_, config_,
-        serviceRequest(session_, op, {{"config_id", config_.config_id}}));
+    parameters["config_id"] = config_.config_id;
+    auto request = serviceRequest(session_, op, parameters);
+    if (op == "set_impedance_profile") request["deadline_ms"] = 5000;
+    return callService(context_, config_, request);
 }
 double RemoteLink::getJointPosition(Side s, int j) const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -136,6 +140,46 @@ void RemoteLink::enable(Side) {
                            [&] { return feedback_valid_ && state_.enabled[0] && state_.enabled[1]; }))
         throw std::runtime_error("No fresh dual-arm feedback after enable");
 }
+void RemoteLink::setImpedanceProfile(bool following) {
+    std::lock_guard<std::mutex> stop_lock(stop_mutex_);
+    uint64_t began;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!motion_allowed_) throw MotionCancelled();
+        if (!enabled_ || state_.fault || !error_.empty())
+            throw std::runtime_error("Impedance update requires healthy enabled arms");
+        if (!state_.impedance_switching && state_.impedance_profile == (following ? "following" : "default")) return;
+        began = monotonic_us();
+        impedance_deadline_ = began + 5500000;
+    }
+    try {
+        const auto result = operation("set_impedance_profile", {{"profile", following ? "following" : "default"}});
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!motion_allowed_) throw MotionCancelled();
+        if (result.at("target").get<Joints>() != state_.target)
+            throw std::runtime_error("Impedance update changed held target");
+        streaming_ = false;
+        stream_.clear();
+        trajectory_ = std::make_shared<const std::vector<JointFrame>>(
+            3, JointFrame{state_.target, state_.angle, state_.displacement});
+        ++trajectory_id_;
+        start_ = monotonic_us();
+        publishing_ = true;
+        if (!changed_.wait_for(lock, std::chrono::milliseconds(500), [&] {
+            return !motion_allowed_ || state_.fault || !error_.empty() ||
+                (feedback_valid_ && sample_ > began && state_.id == trajectory_id_ &&
+                 state_.cursor >= 2 && !state_.impedance_switching &&
+                 state_.impedance_profile == (following ? "following" : "default"));
+        })) throw std::runtime_error("No fresh hold feedback after impedance update");
+        if (!motion_allowed_) throw MotionCancelled();
+        if (state_.fault || !error_.empty()) throw std::runtime_error(state_.error + error_);
+        impedance_deadline_ = 0;
+    } catch (...) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        impedance_deadline_ = 0;
+        throw;
+    }
+}
 void RemoteLink::disable(Side) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -160,7 +204,10 @@ GraspState RemoteLink::graspState() const {
     g.ready = enabled_;
     g.fault = state_.fault || !error_.empty();
     g.fault_reason = error_.empty() ? state_.error : error_;
-    if (enabled_ && (!feedback_valid_ || monotonic_us() - received_ >= config_.timeout_us ||
+    const auto now = monotonic_us();
+    const bool switching = impedance_deadline_ && now < impedance_deadline_ &&
+        status_sample_ && now - status_sample_ < config_.timeout_us && now - received_ < config_.timeout_us;
+    if (enabled_ && !switching && (!feedback_valid_ || monotonic_us() - received_ >= config_.timeout_us ||
                      monotonic_us() - sample_ >= config_.timeout_us)) {
         g.fault = 1;
         g.fault_reason = "arm.state feedback expired";
@@ -446,6 +493,8 @@ void RemoteLink::io() {
                 state.fault = e.at("fault");
                 state.error = e.at("error");
                 state.stopping = e.at("stopping");
+                state.impedance_switching = e.value("impedance_switching", false);
+                state.impedance_profile = e.value("impedance_profile", "default");
                 state.locked = m.body.at("software_lock");
                 state.angle = m.body.at("wheel_reference").at("angle");
                 state.displacement = m.body.at("wheel_reference").at("displacement");
@@ -511,10 +560,10 @@ void RemoteLink::io() {
                     // Serialize the final publication with cancellation. Once allowMotion(false)
                     // returns, no previously prepared ordinary window can be published.
                     std::lock_guard<std::mutex> lock(mutex_);
-                    if (!motion_allowed_) continue;
+                    if (!motion_allowed_ && !impedance_deadline_) continue;
                     const auto publish_time = monotonic_us();
                     auto m = motionMessage(Topic::arm_command, "aviator_core", session_, w.sequence,
-                                           publish_time >= w.origin_sample &&
+                                           motion_allowed_ && publish_time >= w.origin_sample &&
                                                publish_time - w.origin_sample < config_.origin_timeout_us);
                     m.header.sample_mono_us = w.sample;
                     m.body = encodeWindow(w, session_, epoch_);

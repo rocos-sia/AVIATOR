@@ -82,6 +82,8 @@ Python RealSense + ChArUco/AprilTag 节点。`config/camera.yaml` 的 `detector.
 - 默认每 0.5 秒刷新一次，`--pose-print-interval 0.2` 或 `visualization.print_interval_s` 可调整；检测或标定有效性变化立即刷新。用光标上移、清行和 `flush()` 替换同一块内容，行宽按终端宽度裁剪以防换行滚屏。丢码或标定失效时清除旧数值并显示 `unavailable` 及原因。
 - 输出重定向到文件或管道时使用限频的普通文本记录，不写终端光标控制字符；视频预览中的 RPY 仍为度。
 - 窗口按 `q`、Esc 或关闭窗口会结束相机节点；Ctrl+C 同样可以退出。
+  使用 `scripts/start_aviator.sh` 时，相机退出会触发整组节点停止；该脚本显式传入 `--show`，
+  会覆盖配置中的 `visualization.show: false`。运行期间请保留相机窗口。
 
 绘制只作用于图像副本，Logger 收到的原始图像不含叠加文字。预览需要桌面会话和带 GUI 的 OpenCV，
 无需独立显卡；无桌面时可只加 `--print-pose`。打印和预览与检测共用主循环，开启后会增加处理开销。

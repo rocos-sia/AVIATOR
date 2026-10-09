@@ -189,6 +189,10 @@ if(TARGET aviator_core_servo AND TARGET simulation)
         $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR}
         $<TARGET_FILE:aviator_monitor>)
       set_tests_properties(managed_gateway_process PROPERTIES TIMEOUT 300)
+      add_test(NAME following_hold_process COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/following_process_test.py
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
+      set_tests_properties(following_hold_process PROPERTIES TIMEOUT 300)
       add_test(NAME managed_idle_startup COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/managed_startup_test.py
         $<TARGET_FILE:aviator_bus> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
@@ -276,3 +280,18 @@ target_compile_definitions(aviator_arm_target_recorder_test PRIVATE MCAP_COMPRES
 target_link_libraries(aviator_arm_target_recorder_test PRIVATE aviator_recording aviator_transport aviator_runtime Threads::Threads)
 add_test(NAME arm_target_recorder COMMAND aviator_arm_target_recorder_test)
 set_tests_properties(arm_target_recorder PROPERTIES TIMEOUT 20)
+
+if(TARGET aviator_core_control AND Python3_Interpreter_FOUND AND FSM_PYTHON_DEPS EQUAL 0)
+  aviator_add_test_executable(aviator_impedance_lifecycle_driver impedance_lifecycle_driver.cpp)
+  target_link_libraries(aviator_impedance_lifecycle_driver PRIVATE aviator_core_control aviator_device_server)
+  add_test(NAME impedance_lifecycle COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/impedance_lifecycle_test.py
+    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:aviator_impedance_lifecycle_driver> ${PROJECT_SOURCE_DIR})
+  set_tests_properties(impedance_lifecycle PROPERTIES TIMEOUT 70)
+endif()
+
+aviator_add_test_executable(aviator_target_trace_test target_trace_test.cpp)
+target_include_directories(aviator_target_trace_test PRIVATE ../nodes/manipulator)
+target_link_libraries(aviator_target_trace_test PRIVATE Threads::Threads)
+add_test(NAME target_trace COMMAND aviator_target_trace_test)
+set_tests_properties(target_trace PROPERTIES TIMEOUT 15)

@@ -36,6 +36,7 @@ const char* jobName(fsm::Job job) {
     case fsm::Job::home: return "home";
     case fsm::Job::grasp: return "grasp";
     case fsm::Job::release: return "release";
+    case fsm::Job::following_impedance: return "following_impedance";
     default: return "none";
     }
 }
@@ -125,7 +126,7 @@ public:
                 else {
                     // This executor simulates completed retreat; other evidence remains editable.
                     if (task.job == fsm::Job::release) snapshot_.clear_of_wheel = true;
-                    machine_.done(task.generation, snapshot_);
+                    machine_.done(task.generation, snapshot_, now_);
                 }
             }
         } else if (command == "late_done") {
@@ -186,7 +187,8 @@ int main(int argc, char** argv) try {
     if (demo) {
         const std::pair<const char*, const char*> sequence[] = {
             {"done", "READY"}, {"ENTER_STANDBY", "HOMING"}, {"done", "STANDBY"}, {"GRASP_WHEEL", "GRASPING"}, {"done", "FOLLOWING"},
-            {"START_CONTROL", "CONTROL"}, {"EXIT_CONTROL", "FOLLOWING"},
+            {"done", "FOLLOWING"}, {"START_CONTROL", "CONTROL"},
+            {"EXIT_CONTROL", "FOLLOWING"}, {"done", "FOLLOWING"},
             {"LEAVE_WHEEL", "RELEASING"}, {"done", "STANDBY"}};
         for (const auto& [command, expected] : sequence) {
             runtime.command(command);

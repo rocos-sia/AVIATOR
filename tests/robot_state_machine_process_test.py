@@ -77,7 +77,7 @@ def main():
             if sub.poll(100):
                 message = json.loads(sub.recv_multipart()[1])
                 state = message.get("system", {})
-                if state.get("state") == expected:
+                if state.get("state") == expected and (expected != "FOLLOWING" or state.get("settled")):
                     return state
                 if state.get("state") in ("ERROR", "EMERGENCY_STOP"):
                     raise AssertionError(f"Expected {expected}, got {state}")

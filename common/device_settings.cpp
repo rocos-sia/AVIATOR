@@ -15,6 +15,11 @@ std::filesystem::path DeviceSettings::path(const char* key) const {
 DeviceSettings::DeviceSettings(const MotionConfig& config)
     : robot(YAML::LoadFile(config.robot.string())), directory(config.robot.parent_path()),
       initial_wheel(loadInitialWheel(config.robot)) {
+    default_stiffness = robot["rokae"]["joint_stiffness"].as<std::array<double, 7>>();
+    following_stiffness = robot["rokae"]["following_joint_stiffness"]
+        .as<std::array<double, 7>>(default_stiffness);
+    validateJointStiffness(default_stiffness);
+    validateJointStiffness(following_stiffness);
     const auto urdf = urdf::parseURDFFile(path("urdf").string());
     require(bool(urdf), "Cannot load control URDF");
 

@@ -153,11 +153,23 @@ class CameraVisualization:
             if not self.opened:
                 cv2.namedWindow(self.window, cv2.WINDOW_NORMAL)
                 self.opened = True
-            elif cv2.getWindowProperty(self.window, cv2.WND_PROP_VISIBLE) < 1:
-                return False
+            else:
+                try:
+                    visible = cv2.getWindowProperty(self.window, cv2.WND_PROP_VISIBLE)
+                except cv2.error as error:
+                    # Qt can destroy its GUI receiver when the last window is
+                    # closed, raising StsNullPtr instead of returning invisible.
+                    if error.code != cv2.Error.StsNullPtr:
+                        raise
+                    Logger.info("aviator_camera: preview window no longer available; stopping")
+                    return False
+                if visible < 1:
+                    Logger.info("aviator_camera: preview window closed; stopping")
+                    return False
             cv2.imshow(self.window, render_preview(
                 image, detector, result, frame_id, self.fps, warming_up))
             if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
+                Logger.info("aviator_camera: preview q/ESC pressed; stopping")
                 return False
         return True
 

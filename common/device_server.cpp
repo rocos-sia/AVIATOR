@@ -25,7 +25,7 @@ struct Shared {
     std::string window_instance, accepted_instance;
     bool has_window = false, revoke = false;
     std::atomic<bool> quit{false};
-    std::atomic<uint64_t> accept_after{0};
+    std::atomic<uint64_t> accept_after{0}, control_alive{0}, retired_trajectory{0};
 };
 Json armState(const DeviceState& s, const ArmFeedback& f, const DeviceServerOptions& options) {
     Json b;
@@ -57,6 +57,8 @@ Json armState(const DeviceState& s, const ArmFeedback& f, const DeviceServerOpti
     }
     b["execution"] = {{"trajectory_id", s.id},  {"tick", s.cursor}, {"target", s.target},
                       {"stopping", s.stopping}, {"fault", s.fault}, {"error", s.error}};
+    b["execution"]["impedance_switching"] = s.impedance_switching;
+    b["execution"]["impedance_profile"] = s.impedance_profile;
     b["software_lock"] = s.locked;
     b["wheel_reference"] = {{"angle", s.angle}, {"displacement", s.displacement}};
     if (options.wheel_measurement)
@@ -65,10 +67,12 @@ Json armState(const DeviceState& s, const ArmFeedback& f, const DeviceServerOpti
     return b;
 }
 void executor(Shared& shared, DataLink& device, const MotionConfig& config, const Joints& lo,
-              const Joints& hi, const Joints& speed, double braking, WheelReference initial) {
+              const Joints& hi, const Joints& speed, double braking, WheelReference initial,
+              const DeviceSettings& settings) {
     DeviceState state;
     state.angle = initial.angle;
     state.displacement = initial.displacement;
+    auto current_stiffness = settings.default_stiffness;
     TrajectoryWindow active{};
     std::string active_instance;
     bool have = false;
@@ -178,14 +182,61 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                         disable();
                         throw;
                     }
+                    // Every enable starts with the configured default, including simulation.
+                    device.setJointStiffness(settings.default_stiffness, [] {});
+                    current_stiffness = settings.default_stiffness;
+                    state.impedance_profile = "default";
                     state.target = device.jointTargets();
                     velocity = {};
                     state.id = state.cursor = 0;
                     highest_trajectory = 0;
+                    shared.retired_trajectory = 0;
                     have = false;
                     last_message = monotonic_us();
                     device.commandDeadline(double(last_message) / 1e6 + 1.0);
                     result["target"] = state.target;
+                } else if (op == "set_impedance_profile") {
+                    require(!state.fault && state.enabled[0] && state.enabled[1],
+                            "Impedance update requires healthy enabled arms");
+                    require(!have || (state.cursor >= active.total && (!active.streaming || active.finished)),
+                            "Finish the trajectory before changing impedance");
+                    for (double v : velocity) require(std::abs(v) < 1e-8, "Impedance update requires a held target");
+                    const std::string profile = request.at("parameters").at("profile");
+                    const auto& stiffness = profile == "following" ? settings.following_stiffness : settings.default_stiffness;
+                    Logger::info("Impedance request profile={} mono_us={} trajectory_id={} tick={} target_rad={} "
+                        "wheel_angle_rad={} wheel_displacement_m={}", profile, monotonic_us(), state.id, state.cursor,
+                        Json(state.target).dump(), state.angle, state.displacement);
+                    const bool force_reapply = profile == "following";
+                    if (force_reapply || stiffness != current_stiffness) {
+                        const uint64_t deadline = request.at("issued_mono_us").get<uint64_t>() +
+                            request.at("deadline_ms").get<uint64_t>() * 1000;
+                        const auto check = [&] {
+                            const auto now = monotonic_us();
+                            const auto alive = shared.control_alive.load();
+                            require(!shared.quit && now < deadline, "Impedance update cancelled or expired");
+                            require(alive && now >= alive && now - alive < config.origin_timeout_us,
+                                    "Core heartbeat lost during impedance update");
+                            std::lock_guard<std::mutex> lock(shared.mutex);
+                            require(!shared.revoke, "Core authorization revoked during impedance update");
+                        };
+                        check();
+                        state.impedance_switching = true;
+                        snapshot();
+                        // Stop consuming windows, but their validated origin heartbeat stays live.
+                        have = false;
+                        shared.retired_trajectory = highest_trajectory;
+                        device.commandDeadline(double(deadline) / 1e6);
+                        device.setJointStiffness(stiffness, check, force_reapply);
+                        check();
+                        current_stiffness = stiffness;
+                        state.impedance_switching = false;
+                        state.id = state.cursor = 0;
+                        last_message = 0;
+                        device.commandDeadline(0);
+                    }
+                    state.impedance_profile = profile;
+                    result = {{"profile", profile}, {"stiffness", stiffness}, {"target", state.target}};
+                    Logger::info("Joint stiffness update profile={} values={}", profile, Json(stiffness).dump());
                 } else if (op == "disable") {
                     stop();
                     disable();
@@ -211,7 +262,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                     have = false;
                 } else
                     throw std::runtime_error("Unknown device operation");
-                if (op == "stop" || op == "disable" || op == "enable" || op == "reset_fault") {
+                if (op == "stop" || op == "disable" || op == "enable" || op == "reset_fault" || op == "set_impedance_profile") {
                     shared.accept_after = monotonic_us();
                     new_window = false;
                     std::lock_guard<std::mutex> lock(shared.mutex);
@@ -341,6 +392,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                 }
             }
         } catch (const std::exception& e) {
+            state.impedance_switching = false;
             state.fault = true;
             state.error = e.what();
             try {
@@ -406,7 +458,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
     shared.state.angle = initial_wheel.angle;
     shared.state.displacement = initial_wheel.displacement;
     std::thread worker(
-        [&] { executor(shared, device, config, lo, hi, speed, braking, initial_wheel); });
+        [&] { executor(shared, device, config, lo, hi, speed, braking, initial_wheel, settings); });
     struct Join {
         Shared& s;
         std::thread& t;
@@ -485,7 +537,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                                        {"q", state.q},
                                        {"speed", speed},
                                        {"config_id", config.config_id},
-                                       {"capabilities", {{"status_before_enable", true}}}};
+                                       {"capabilities", {{"status_before_enable", true}, {"impedance_profiles", true}}}};
                 else if (op == "get_result") {
                     const auto& params = req.at("parameters");
                     require(params.size() == 2u + params.count("server_session") +
@@ -508,9 +560,12 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                 } else {
                     const auto& params = req.at("parameters");
                     require(params.is_object() &&
-                                params.size() == 1u + params.count("server_session"),
+                                params.size() == 1u + params.count("server_session") + (op == "set_impedance_profile" ? 1u : 0u),
                             "Unexpected service parameters");
                     require(params.at("config_id") == config.config_id, "Configuration mismatch");
+                    if (op == "set_impedance_profile")
+                        require(params.at("profile") == "default" || params.at("profile") == "following",
+                                "Unknown impedance profile");
                     const auto key = id;
                     std::lock_guard<std::mutex> lock(shared.mutex);
                     auto found = shared.operations.find(key);
@@ -534,6 +589,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                                 require(entry.second.status != "RUNNING" &&
                                             entry.second.status != "ACCEPTED",
                                         "Operation in progress");
+                            shared.retired_trajectory = shared.control_alive = 0;
                             epoch = new_session_id();
                             InputPolicy policy;
                             policy.topic = Topic::arm_command;
@@ -556,8 +612,10 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                         } else {
                             require(!epoch.empty(), "Control has not been authorized");
                             require(op == "enable" || op == "disable" || op == "stop" ||
-                                        op == "lock" || op == "unlock" || op == "reset_fault",
+                                        op == "lock" || op == "unlock" || op == "reset_fault" || op == "set_impedance_profile",
                                     "Unknown operation");
+                            // A protection request must cancel any running reconfiguration before restart.
+                            if ((op == "stop" || op == "disable") && shared.state.impedance_switching) shared.revoke = true;
                             shared.operations.emplace(key, Operation{req});
                             shared.pending = key;
                         }
@@ -635,6 +693,8 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                     throw std::runtime_error(error);
                 }
                 std::lock_guard<std::mutex> lock(shared.mutex);
+                shared.control_alive = window.origin_sample;
+                if (shared.state.impedance_switching || window.id <= shared.retired_trajectory.load()) continue;
                 shared.window = window;
                 shared.window_instance = m.header.session_id;
                 shared.has_window = true;
@@ -657,7 +717,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                 accepted_instance = shared.accepted_instance;
             }
             auto m = motionMessage(Topic::arm_state, "manipulator", session, ++seq,
-                                   feedback.valid[0] && feedback.valid[1]);
+                                   feedback.valid[0] && feedback.valid[1] && !state.impedance_switching);
             if (feedback.sample_time[0] > 0 && feedback.sample_time[1] > 0)
                 m.header.sample_mono_us =
                     uint64_t(std::min(feedback.sample_time[0], feedback.sample_time[1]) * 1e6);

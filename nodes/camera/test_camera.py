@@ -125,6 +125,34 @@ class CameraNodeTest(unittest.TestCase):
             visual.close()
             destroy.assert_called_once()
 
+    def test_preview_qt_receiver_destroyed_after_window_close(self):
+        visual = CameraVisualization(show=True)
+        visual.opened = True
+        error = cv2.error("NULL guiReceiver (please create a window)")
+        error.code = cv2.Error.StsNullPtr
+        with patch("visualization.cv2.getWindowProperty", side_effect=error), \
+             patch("visualization.cv2.imshow") as show, \
+             patch("visualization.cv2.namedWindow") as create, \
+             patch("visualization.cv2.waitKey") as wait, \
+             patch("visualization.Logger.info") as log:
+            self.assertFalse(visual.update(None, None, DetectionResult(), 2))
+            show.assert_not_called()
+            create.assert_not_called()
+            wait.assert_not_called()
+            log.assert_called_once()
+        with patch("visualization.cv2.destroyWindow", side_effect=error):
+            visual.close()
+        self.assertFalse(visual.opened)
+
+    def test_preview_unrelated_window_error_is_not_hidden(self):
+        visual = CameraVisualization(show=True)
+        visual.opened = True
+        error = cv2.error("unexpected GUI error")
+        error.code = cv2.Error.StsError
+        with patch("visualization.cv2.getWindowProperty", side_effect=error):
+            with self.assertRaises(cv2.error):
+                visual.update(None, None, DetectionResult(), 2)
+
     def test_terminal_pose_panel_refreshes_in_place_and_clears_lost_values(self):
         class Terminal(io.StringIO):
             flushes = 0

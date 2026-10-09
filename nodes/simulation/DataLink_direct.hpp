@@ -49,6 +49,8 @@ class MuJoCoDirectDataLink final : public DataLink {
     double jointVelLimit(Side side, int axis) const override;
     bool isEnabled(Side side) const override;
     void enable(Side side) override;
+    void setJointStiffness(const std::array<double, 7>&, const std::function<void()>&,
+                           bool force_reapply = false) override;
     void disable(Side side) override;
 
     // 抓取 IO

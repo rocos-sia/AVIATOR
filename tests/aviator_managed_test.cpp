@@ -27,6 +27,14 @@ int main() try {
     check(!managedResourcesReady("INITIALIZED", idle, false, true), "active trajectory bypassed feedback");
     idle.id = 0; idle.stopping = true;
     check(!managedResourcesReady("INITIALIZED", idle, false, true), "stop in progress bypassed feedback");
+    idle = {};
+    idle.enabled = {true, true}; idle.impedance_switching = true;
+    check(managedResourcesReady("STIFFNESS", idle, false, true), "planned RT pause rejected");
+    check(!managedResourcesReady("STIFFNESS", idle, false, false), "lost status hidden by RT pause");
+    idle.fault = true;
+    check(!managedResourcesReady("STIFFNESS", idle, false, true), "SDK fault hidden by RT pause");
+    idle.fault = false; idle.impedance_switching = false;
+    check(!managedResourcesReady("STIFFNESS", idle, false, true), "RT timeout bypassed after switch");
     // No device object; missing configuration intentionally fails before executor IO.
     Aviator direct(nullptr, nullptr, nullptr, "/does-not-exist/aviator-managed-test.yaml");
     rejects([&] { direct.Init(); });
