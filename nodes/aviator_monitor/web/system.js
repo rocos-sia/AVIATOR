@@ -10,6 +10,7 @@ const bytes = value => {
 const rate = value => Number.isFinite(value) ? `${bytes(value)}/s` : '—';
 const icons = {
   cpu:'M6 6h12v12H6z M9 9h6v6H9z M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4',
+  gpu:'M2 5h19v13H2z M5 18v3m4-3v3m4-3v3M21 8h2m-2 5h2 M15 11.5a4 4 0 1 0-8 0 4 4 0 0 0 8 0 M11 7.5v8m-4-4h8',
   memory:'M3 6h18v12H3z M7 9v6m5-6v6m5-6v6M6 18v3m4-3v3m4-3v3m4-3v3',
   disk:'M5 3h14l3 12v6H2v-6z M2 15h20 M6 18h1m3 0h1',
   network:'M7 3v17m-5-5 5 5 5-5M17 21V4m-5 5 5-5 5 5'
@@ -20,13 +21,14 @@ function svgElement(name, attributes = {}) {
   return element;
 }
 const cards = new Map(), charts = new Map();
-for (const [key,label] of [['cpu','CPU'],['memory','内存'],['disk','硬盘'],['network','网络']]) {
+for (const [key,label] of [['cpu','CPU'],['gpu','GPU'],['memory','内存'],['disk','硬盘'],['network','网络']]) {
   const card = document.createElement('div'); card.className = 'resource-summary';
   const icon = svgElement('svg',{viewBox:'0 0 24 24','aria-hidden':'true'});
   icon.append(svgElement('path',{d:icons[key]}));
   const title = document.createElement('span'); title.textContent = label;
   const value = document.createElement('strong'); value.textContent = '—';
   card.append(icon,title,value); $('system-summary').append(card); cards.set(key,value);
+  if (key === 'gpu') { card.title = 'GPU 使用率（可读取设备的平均值；Intel 为可读进程中最繁忙引擎的估算值）'; continue; }
   const panel = document.createElement('section'); panel.className = 'panel resource-panel';
   const heading = document.createElement('h2'); heading.textContent = key === 'memory' ? '内存与交换空间' : label;
   const head = document.createElement('div'); head.className = 'panel-head'; head.append(heading);
@@ -61,6 +63,7 @@ function render(data) {
       `${Math.floor(duration/86400)} 天 ${[duration/3600%24,duration/60%60,duration%60].map(v=>String(Math.floor(v)).padStart(2,'0')).join(':')}`;
   }
   cards.get('cpu').textContent = percent(data?.cpu?.percent);
+  cards.get('gpu').textContent = percent(data?.gpu?.percent);
   cards.get('memory').textContent = percent(data?.memory?.percent);
   cards.get('disk').textContent = `读 ${rate(data?.disk?.read_bytes_per_sec)} · 写 ${rate(data?.disk?.write_bytes_per_sec)}`;
   cards.get('network').textContent = `↓ ${rate(data?.network?.receive_bytes_per_sec)} · ↑ ${rate(data?.network?.send_bytes_per_sec)}`;

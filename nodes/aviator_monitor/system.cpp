@@ -1,9 +1,180 @@
 #include "system.hpp"
 #include <algorithm>
+#include <cmath>
+#include <dlfcn.h>
 #include <fstream>
+#include <set>
 #include <sstream>
 
 namespace monitor {
+namespace {
+// Load the stable NVML ABI optionally: Monitor also runs without a CUDA SDK/driver.
+class NvidiaStats {
+    struct Device;
+    struct Utilization {
+        unsigned gpu, memory;
+    };
+    void* library_ = dlopen("libnvidia-ml.so.1", RTLD_LAZY | RTLD_LOCAL);
+    using Init = int (*)();
+    using Count = int (*)(unsigned*);
+    using Handle = int (*)(unsigned, Device**);
+    using Rates = int (*)(Device*, Utilization*);
+    Init init_ = symbol<Init>("nvmlInit_v2"), shutdown_ = symbol<Init>("nvmlShutdown");
+    Count count_ = symbol<Count>("nvmlDeviceGetCount_v2");
+    Handle handle_ = symbol<Handle>("nvmlDeviceGetHandleByIndex_v2");
+    Rates rates_ = symbol<Rates>("nvmlDeviceGetUtilizationRates");
+    bool ready_ = false;
+    template <typename T> T symbol(const char* name) {
+        return library_ ? reinterpret_cast<T>(dlsym(library_, name)) : nullptr;
+    }
+
+  public:
+    ~NvidiaStats() {
+        if (ready_)
+            shutdown_();
+        if (library_)
+            dlclose(library_);
+    }
+    void sample(double& total, unsigned& samples) {
+        if (!init_ || !shutdown_ || !count_ || !handle_ || !rates_)
+            return;
+        if (!ready_)
+            ready_ = init_() == 0;
+        if (!ready_)
+            return;
+        unsigned count = 0;
+        if (count_(&count) != 0)
+            return;
+        for (unsigned i = 0; i < count; ++i) {
+            Device* device = nullptr;
+            Utilization utilization{};
+            if (handle_(i, &device) == 0 && rates_(device, &utilization) == 0 &&
+                utilization.gpu <= 100) {
+                total += utilization.gpu;
+                ++samples;
+            }
+        }
+    }
+};
+using GpuCounters = std::map<std::string, std::array<std::uint64_t, 2>>;
+void intelGpuSample(const std::filesystem::path& proc, const std::set<std::string>& devices,
+                    GpuCounters& previous, double seconds, double& total, unsigned& samples) {
+    GpuCounters current;
+    std::map<std::string, std::map<std::string, double>> engines;
+    std::set<std::string> clients;
+    std::error_code error;
+    std::filesystem::directory_iterator processes(proc, error), end;
+    for (; !error && processes != end; processes.increment(error)) {
+        const auto pid = processes->path().filename().string();
+        if (pid.empty() || pid.find_first_not_of("0123456789") != std::string::npos)
+            continue;
+        std::error_code fd_error;
+        std::filesystem::directory_iterator files(processes->path() / "fdinfo", fd_error);
+        for (; !fd_error && files != end; files.increment(fd_error)) {
+            std::ifstream file(files->path());
+            std::map<std::string, std::string> fields;
+            std::string line, key, value;
+            while (std::getline(file, line)) {
+                std::istringstream row(line);
+                if (row >> key >> value && key.rfind("drm-", 0) == 0 && key.back() == ':')
+                    fields[key.substr(0, key.size() - 1)] = value;
+            }
+            if ((fields["drm-driver"] != "i915" && fields["drm-driver"] != "xe") ||
+                fields["drm-client-id"].empty() || !devices.count(fields["drm-pdev"]))
+                continue;
+            const auto device = fields["drm-pdev"], client = device + "/" + fields["drm-client-id"];
+            if (!clients.insert(client).second)
+                continue; // dup/fork can share one DRM client.
+            auto number = [&](const std::string& field, std::uint64_t& result) {
+                auto it = fields.find(field);
+                if (it == fields.end() || it->second.empty() ||
+                    it->second.find_first_not_of("0123456789") != std::string::npos)
+                    return false;
+                return bool(std::istringstream(it->second) >> result);
+            };
+            for (const auto& [field, unused] : fields) {
+                const bool cycles = field.rfind("drm-cycles-", 0) == 0;
+                if (!cycles && (field.rfind("drm-engine-", 0) != 0 ||
+                                field.rfind("drm-engine-capacity-", 0) == 0))
+                    continue;
+                const auto engine = field.substr(11);
+                // Prefer time counters when a driver exports both representations.
+                if (cycles && fields.count("drm-engine-" + engine))
+                    continue;
+                std::uint64_t busy = 0, ticks = 0, capacity = 1;
+                if (!number(field, busy) ||
+                    (cycles && !number("drm-total-cycles-" + engine, ticks)))
+                    continue;
+                if (fields.count("drm-engine-capacity-" + engine) &&
+                    (!number("drm-engine-capacity-" + engine, capacity) || !capacity))
+                    continue;
+                const auto id = client + "/" + field + "/" + std::to_string(capacity);
+                current[id] = {busy, ticks};
+                const auto old = previous.find(id);
+                if (old == previous.end() || seconds <= 0)
+                    continue;
+                // DRM counters may briefly go backwards; retain the high water mark.
+                if (busy < old->second[0]) {
+                    current[id][0] = old->second[0];
+                    busy = old->second[0];
+                }
+                if (cycles && ticks <= old->second[1])
+                    continue;
+                const double elapsed = cycles ? double(ticks - old->second[1]) : seconds * 1e9;
+                engines[device][engine] += 100.0 * (busy - old->second[0]) / elapsed / capacity;
+            }
+        }
+    }
+    previous = std::move(current);
+    for (const auto& [device, loads] : engines) {
+        double busiest = 0;
+        for (const auto& [engine, percent] : loads)
+            busiest = std::max(busiest, percent);
+        total += std::clamp(busiest, 0.0, 100.0);
+        ++samples;
+    }
+}
+Json gpuPercent(const std::filesystem::path& proc, const std::filesystem::path& sys,
+                GpuCounters& previous, double seconds) {
+    double total = 0;
+    unsigned samples = 0;
+    // Keep alternate sysfs roots isolated from the host GPU, just like CPU/I/O fixtures.
+    if (sys == "/sys") {
+        static NvidiaStats nvidia;
+        nvidia.sample(total, samples);
+    }
+    std::error_code error;
+    std::set<std::string> intel_devices;
+    std::filesystem::directory_iterator entries(sys / "class/drm", error), end;
+    for (; !error && entries != end; entries.increment(error)) {
+        const auto name = entries->path().filename().string();
+        if (name.rfind("card", 0) != 0 || name.size() == 4 ||
+            name.find_first_not_of("0123456789", 4) != std::string::npos)
+            continue;
+        double percent;
+        if (std::ifstream(entries->path() / "device/gpu_busy_percent") >> percent &&
+            std::isfinite(percent) && percent >= 0 && percent <= 100) {
+            total += percent;
+            ++samples;
+        } else {
+            unsigned vendor = 0;
+            std::error_code path_error;
+            if (std::ifstream(entries->path() / "device/vendor") >> std::hex >> vendor &&
+                vendor == 0x8086) {
+                const auto device =
+                    std::filesystem::canonical(entries->path() / "device", path_error);
+                if (!path_error)
+                    intel_devices.insert(device.filename().string());
+            }
+        }
+    }
+    if (!intel_devices.empty())
+        intelGpuSample(proc, intel_devices, previous, seconds, total, samples);
+    else
+        previous.clear();
+    return samples ? Json(total / samples) : Json(nullptr);
+}
+} // namespace
 Json SystemStats::snapshot(std::uint64_t now) {
     if (!cached_.is_null() && now >= sampled_at_ && now - sampled_at_ < 1000000)
         return cached_;
@@ -14,6 +185,7 @@ Json SystemStats::snapshot(std::uint64_t now) {
         {"uptime_seconds", nullptr},
         {"program_uptime_seconds", now >= started_us_ ? (now - started_us_) / 1000000.0 : 0.0},
         {"cpu", {{"percent", nullptr}, {"cores", Json::array()}}},
+        {"gpu", {{"percent", gpuPercent(proc_, sys_, intel_gpu_, seconds)}}},
         {"memory", nullptr},
         {"swap", nullptr},
         {"disk", nullptr},

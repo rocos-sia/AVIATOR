@@ -36,6 +36,7 @@ export class Viewer {
       $(id).setAttribute('aria-pressed',String($(id).getAttribute('aria-pressed')!=='true')); this.updateHelpers();
     };
     $('robot-opacity').oninput=()=>this.style(); $('cockpit-opacity').oninput=()=>this.style(); $('reload-model').onclick=()=>this.load();
+    for (const id of ['shell-visible','cockpit-visible']) $(id).onchange=()=>this.style();
     this.load();
   }
   resize() {
@@ -79,10 +80,11 @@ export class Viewer {
           if (!object.isMesh) return;
           let link=object; while(link.parent && !link.isURDFLink) link=link.parent;
           const kind=kindFor(link.name);
+          const visibilityControl=({shell:'shell-visible',aircraft:'cockpit-visible'})[link.name];
           const existing=Array.isArray(object.material)?object.material:[object.material];
           const cloned=existing.map(original=>{
             const material=original.clone(); material.side=THREE.DoubleSide;
-            this.materials.push({material,kind,color:material.color.clone()}); return material;
+            this.materials.push({material,kind,color:material.color.clone(),visibilityControl}); return material;
           });
           object.material=Array.isArray(object.material)?cloned:cloned[0];
         });
@@ -253,7 +255,8 @@ export class Viewer {
     const validGroups=new Set(Object.entries(groups).filter(([kind,group])=>
       !this.invalidGroups.has(kind) && this.isLive(group) && group?.current &&
       Object.keys(this.modelJoints(kind,group) ?? {}).length>0).map(([kind])=>kind));
-    for(const {material,kind,color} of this.materials) {
+    for(const {material,kind,color,visibilityControl} of this.materials) {
+      if (visibilityControl) material.visible=$(visibilityControl).checked;
       if (kind==='aircraft') { material.opacity=Number($('cockpit-opacity').value); material.transparent=material.opacity<1; material.depthWrite=!material.transparent; continue; }
       material.color.copy(validGroups.has(kind) ? color : new THREE.Color('#999999'));
       const opacity=kind==='yoke_observation' ? Number($('cockpit-opacity').value) : Number($('robot-opacity').value)/100;

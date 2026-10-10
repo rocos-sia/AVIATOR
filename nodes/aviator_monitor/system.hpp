@@ -18,7 +18,7 @@ class SystemStats {
   private:
     using Counters = std::map<std::string, std::array<std::uint64_t, 2>>;
     std::filesystem::path proc_, sys_;
-    Counters cpu_, disks_, network_;
+    Counters cpu_, disks_, network_, intel_gpu_;
     const std::uint64_t started_us_;
     std::uint64_t sampled_at_ = 0;
     Json cached_;

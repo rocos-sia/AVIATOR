@@ -43,8 +43,24 @@ async function port() { return new Promise(resolve => { const s=net.createServer
       assert(layout.fits,`status fields fit at ${width}px`);
     }
     await page.setViewportSize({width:1440,height:1100});
-    assert.equal(await page.locator('.resource-summary svg').count(),4);
+    assert.equal(await page.locator('.resource-summary svg').count(),5);
+    assert.deepEqual(await page.locator('.resource-summary>span').allTextContents(),['CPU','GPU','内存','硬盘','网络']);
+    const gpuValue = page.locator('.resource-summary strong').nth(1);
+    await page.route('**/api/system',async route=>{
+      const data = await (await route.fetch()).json();
+      data.gpu = {percent:37.5};
+      await route.fulfill({json:data});
+    });
+    await page.waitForFunction(()=>document.querySelectorAll('.resource-summary strong')[1].textContent === '37.5%');
     await page.screenshot({path:path.join(directory,'overview.png')});
+    await page.unroute('**/api/system');
+    await page.route('**/api/system',async route=>{
+      const data = await (await route.fetch()).json();
+      data.gpu = {percent:null};
+      await route.fulfill({json:data});
+    });
+    await page.waitForFunction(()=>document.querySelectorAll('.resource-summary strong')[1].textContent === '—');
+    await page.unroute('**/api/system');
     assert.deepEqual(await page.locator('[role=tab]').allTextContents(),['直观监测','系统消息','系统状态','日志','配置']);
     await page.locator('#tab-messages').focus(); await page.keyboard.press('ArrowRight');
     assert.equal(await page.locator('#tab-resources').getAttribute('aria-selected'),'true');
@@ -67,6 +83,7 @@ async function port() { return new Promise(resolve => { const s=net.createServer
     assert.equal(await page.locator('#system-uptime').textContent(),'—');
     assert.equal(await page.locator('#program-uptime').textContent(),'—');
     assert.equal(await page.locator('.resource-summary strong').first().textContent(),'—');
+    assert.equal(await gpuValue.textContent(),'—');
     await page.unroute('**/api/system');
     await page.waitForFunction(()=>document.querySelector('#system-summary strong').textContent.includes('%'));
     assert.deepEqual(errors,[]);

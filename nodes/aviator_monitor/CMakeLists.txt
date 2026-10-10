@@ -6,7 +6,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS index.html)
 add_library(aviator_monitor_state monitor.cpp overview.cpp config.cpp preview.cpp assets.cpp logs.cpp system.cpp)
 target_include_directories(aviator_monitor_state PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(aviator_monitor_state PUBLIC cxx_std_17)
-target_link_libraries(aviator_monitor_state PUBLIC aviator_service aviator_transport aviator_runtime Threads::Threads yaml-cpp)
+target_link_libraries(aviator_monitor_state PUBLIC aviator_service aviator_transport aviator_runtime Threads::Threads yaml-cpp ${CMAKE_DL_LIBS})
 add_executable(aviator_monitor main.cpp)
 target_include_directories(aviator_monitor PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_definitions(aviator_monitor PRIVATE

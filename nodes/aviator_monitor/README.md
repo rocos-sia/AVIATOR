@@ -38,11 +38,13 @@ GCC/Clang 的 Debug 构建保留调试符号，并对 Monitor 启用 `-O2`。`CO
 
 ## 系统资源监测
 
-状态栏显示运行 Monitor 的 Linux 主机自开机以来的时间（天 / 时:分:秒），旁边的“程序运行”显示自 `aviator_monitor` 进程启动以来的时长，刷新网页不会重置。状态栏各项预留固定宽度，数字采用等宽数字显示，避免内容变化带动相邻项移动。直观监测顶部以图标显示 CPU、内存占用百分比，硬盘读写及网络收发速率。
+状态栏显示运行 Monitor 的 Linux 主机自开机以来的时间（天 / 时:分:秒），旁边的“程序运行”显示自 `aviator_monitor` 进程启动以来的时长，刷新网页不会重置。状态栏各项预留固定宽度，数字采用等宽数字显示，避免内容变化带动相邻项移动。直观监测顶部以图标显示 CPU、GPU、内存占用百分比，硬盘读写及网络收发速率。
 
 “系统状态”页位于“日志”之前，按 CPU（总计及各逻辑核）、内存与交换空间、硬盘、网络分区展示最近 60 秒曲线。每秒通过 `GET /api/system` 读取一次，浏览器在后台时暂停，返回后保留时间缺口；断连时当前值显示 `—`，历史曲线标为旧快照。
 
-后端直接读取 `/proc`，所有客户端共享一秒采样缓存，不增加依赖或采样线程。CPU 和 I/O 使用相邻计数差值，内存使用 `MemTotal - MemAvailable`；磁盘统计 `/sys/block/<设备>/device` 存在的整盘硬件设备，排除分区及 dm/md/loop 重复计数；网络合计所有非回环接口（包含虚拟接口，桥接场景可能重复计量）。速率按 B/s、KiB/s、MiB/s 自动显示。首个速率样本、计数器重置或不可读指标显示 `—`，不伪装成零。
+后端读取 `/proc` 和驱动指标，所有客户端共享一秒采样缓存，不增加采样线程。CPU 和 I/O 使用相邻计数差值，内存使用 `MemTotal - MemAvailable`；磁盘统计 `/sys/block/<设备>/device` 存在的整盘硬件设备，排除分区及 dm/md/loop 重复计数；网络合计所有非回环接口（包含虚拟接口，桥接场景可能重复计量）。速率按 B/s、KiB/s、MiB/s 自动显示。首个速率样本、计数器重置或不可读指标显示 `—`，不伪装成零。
+
+GPU 卡片位于 CPU 与内存之间，`GET /api/system` 的 `gpu.percent` 返回可读取设备使用率的算术平均值。NVIDIA 使用可选的 [NVML 使用率接口](https://docs.nvidia.com/deploy/nvml-api/latest/api/group__nvmlDeviceQueries.html)，运行时加载驱动库，无需 CUDA SDK 构建依赖；Intel 核显或独显支持 `i915` / `xe` 驱动的 [DRM 客户端统计](https://docs.kernel.org/gpu/drm-usage-stats.html)，从可读取的 `/proc/<pid>/fdinfo` 汇总同一设备各引擎的计数差值，去重共享客户端并按引擎容量归一化，以最繁忙引擎估算占用。Intel 统计受进程读取权限限制，不能保证覆盖其他用户或已退出进程的 GPU 工作量，卡片提示注明此口径；无需启动额外采集命令或修改系统权限。支持该指标的其他驱动读取 [sysfs `gpu_busy_percent`](https://kernel.org/doc/html/latest/gpu/amdgpu/thermal.html)。无兼容设备、驱动未就绪、Intel 首次采样或指标不可用时返回 `null`，页面显示 `—`；可观测的空闲设备正常显示 `0.0%`。
 
 ## 节点日志
 
