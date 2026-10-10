@@ -1,6 +1,7 @@
 # flight_gateway 启动时读取本文件；修改后重启生效。
 source: joystick # joystick 同时启用摇杆和键盘；rs422 禁用两者（串口协议尚未实现）
 # SDL 摇杆选择：auto 自动选择第一个具备所需轴的设备，支持热插拔；或填从 0 开始的 SDL 设备索引。
+# 自动选择和指定索引均排除名称含 Keyboard/Mouse（不区分大小写）或“键盘/鼠标”的设备。
 # 无摇杆时仍可使用键盘；键盘无需 device，须聚焦 flight_gateway 输入窗口。
 device: auto
 publish: tcp://127.0.0.1:5555

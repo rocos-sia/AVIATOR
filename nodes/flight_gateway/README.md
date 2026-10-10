@@ -22,7 +22,7 @@ cmake --build build/communication --parallel
 
 构建目录中的程序默认读取编译时定位的源码 `config/flight.yaml`，不依赖当前工作目录。安装后的程序优先读取可执行文件旁的 `../share/aviator/config/flight.yaml`（随 CMake 安装）；该路径不存在时回退源码路径。配置文件必须存在且原有字段完整；新增 `keyboard` 块及其中字段可省略并使用默认值。未知/重复字段、非法按钮事件及超出范围的数值都会导致启动失败。
 
-通过 SDL2 枚举摇杆，默认 `device: auto` 自动选择第一个具备所需轴的设备；无需 `/dev/input` 路径。可填写从 0 开始的 SDL 设备索引（如 `device: 0`），但索引可能随插拔变化。启动及重新连接时打印实际名称、索引和实例 ID。支持热插拔；没有可用摇杆时，聚焦输入窗口仍可使用键盘。更换摇杆通常无需修改设备配置，但不同型号的轴/按钮排列仍需核对。
+通过 SDL2 枚举摇杆，默认 `device: auto` 自动选择第一个具备所需轴的设备；无需 `/dev/input` 路径。自动选择及指定索引均跳过名称含 `Keyboard` / `Mouse`（不区分大小写）或“键盘” / “鼠标”的设备，并记录跳过原因，避免 CHERRY 等键盘的额外 HID 轴被当作飞行输入。此过滤也用于热插拔；不按 SDL 类型一律拒绝 `UNKNOWN`，以兼容普通 USB 摇杆。可填写从 0 开始的 SDL 设备索引（如 `device: 0`），但索引可能随插拔变化。启动及重新连接时打印实际名称、索引和实例 ID。支持热插拔；没有可用摇杆时，聚焦输入窗口仍可使用键盘。更换摇杆通常无需修改设备配置，但不同型号的轴/按钮排列仍需核对。
 
 | YAML 字段 | 默认值 / 含义 |
 | --- | --- |
@@ -107,7 +107,7 @@ Managed Core 的 flight.state.valid 表示设备状态及 Core 拥有线程更�
 ctest --test-dir build/communication --output-on-failure
 ```
 
-`gateway_sdl` 使用 SDL dummy 视频驱动及虚拟摇杆，覆盖无摇杆键盘输入、焦点丢失、轴归一化、双输入优先级、按键重复抑制、热插拔和 RS422 不初始化 SDL。原有解码、键盘积分、协议、配置和服务测试继续保留。可运行：
+`gateway_sdl` 使用 SDL dummy 视频驱动及虚拟摇杆，覆盖键鼠伪摇杆的自动/指定索引过滤、热插拔过滤、普通 UNKNOWN 摇杆兼容、无摇杆键盘输入、焦点丢失、轴归一化、双输入优先级、按键重复抑制、热插拔和 RS422 不初始化 SDL。原有解码、键盘积分、协议、配置和服务测试继续保留。可运行：
 
 ```bash
 ctest --test-dir build/communication -R '^(gateway.*|service)$' --output-on-failure

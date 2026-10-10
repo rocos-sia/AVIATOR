@@ -45,6 +45,8 @@ aviator_add_test_executable(aviator_gateway_sdl_test gateway_sdl_test.cpp
   ../nodes/flight_gateway/sdl_input.cpp ../nodes/flight_gateway/input_help.cpp ../nodes/flight_gateway/gateway.cpp)
 target_include_directories(aviator_gateway_sdl_test PRIVATE ../nodes/flight_gateway)
 target_link_libraries(aviator_gateway_sdl_test PRIVATE aviator_runtime SDL2::SDL2 Freetype::Freetype)
+# SDL 2.0 virtual devices cannot set names; inject names only in this test executable.
+target_link_options(aviator_gateway_sdl_test PRIVATE "-Wl,--wrap=SDL_JoystickNameForIndex")
 add_test(NAME gateway_sdl COMMAND aviator_gateway_sdl_test)
 set_tests_properties(gateway_sdl PROPERTIES TIMEOUT 10 ENVIRONMENT "SDL_VIDEODRIVER=dummy")
 

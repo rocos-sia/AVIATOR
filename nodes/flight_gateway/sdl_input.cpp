@@ -2,6 +2,7 @@
 #include "sdl_input.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <stdexcept>
 
 namespace flight_gateway {
@@ -28,6 +29,15 @@ input_event report(unsigned type, unsigned code, int value, std::uint64_t now) {
 JoystickSample sample(const Config& c) {
     return {{c.roll_axis, -32768, 32767, 0, c.invert_roll},
             {c.pitch_axis, -32768, 32767, 0, c.invert_pitch}};
+}
+bool isKeyboardOrMouse(const char* device_name) {
+    std::string name = device_name ? device_name : "";
+    std::transform(name.begin(), name.end(), name.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    // Some HID keyboards expose axes and are enumerated as UNKNOWN joysticks.
+    // Keep unknown genuine sticks eligible; SDL's joystick type alone is insufficient.
+    return name.find("keyboard") != std::string::npos || name.find("mouse") != std::string::npos ||
+           name.find("键盘") != std::string::npos || name.find("鼠标") != std::string::npos;
 }
 }
 SdlInput::SdlInput(const Config& config, std::function<std::uint64_t()> clock)
@@ -76,6 +86,12 @@ void SdlInput::openJoystick() {
     const bool automatic = config_.device == "auto";
     const int selected = automatic ? 0 : std::stoi(config_.device);
     for (int i = selected; i < SDL_NumJoysticks(); ++i) {
+        const auto* name = SDL_JoystickNameForIndex(i);
+        if (isKeyboardOrMouse(name)) {
+            aviator::Logger::warn("Ignoring SDL joystick index={} name={}: keyboard/mouse device", i, name);
+            if (!automatic) break;
+            continue;
+        }
         SDL_Joystick* candidate = SDL_JoystickOpen(i);
         if (candidate) {
             const auto axes = SDL_JoystickNumAxes(candidate);

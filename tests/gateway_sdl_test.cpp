@@ -1,9 +1,36 @@
 #include "sdl_input.hpp"
 #include <iostream>
+#include <map>
 #include <stdexcept>
 
 namespace {
+std::map<SDL_JoystickID, const char*> device_names;
+}
+extern "C" const char* __real_SDL_JoystickNameForIndex(int index);
+extern "C" const char* __wrap_SDL_JoystickNameForIndex(int index) {
+    const auto it = device_names.find(SDL_JoystickGetDeviceInstanceID(index));
+    return it == device_names.end() ? __real_SDL_JoystickNameForIndex(index) : it->second;
+}
+namespace {
 void check(bool value, const char* reason) { if (!value) throw std::runtime_error(reason); }
+int attachFalseJoystick(const char* name) {
+    const int index = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_UNKNOWN, 2, 11, 0);
+    check(index >= 0, "attach keyboard/mouse with joystick axes");
+    device_names[SDL_JoystickGetDeviceInstanceID(index)] = name;
+    auto* device = SDL_JoystickOpen(index);
+    check(device != nullptr, "open false joystick");
+    check(SDL_JoystickSetVirtualAxis(device, 0, -32768) == 0 &&
+          SDL_JoystickSetVirtualAxis(device, 1, -32768) == 0 &&
+          SDL_JoystickSetVirtualButton(device, 0, 1) == 0, "set false joystick inputs");
+    SDL_JoystickUpdate();
+    SDL_JoystickClose(device);
+    return index;
+}
+void detachVirtualJoysticks() {
+    for (int i = SDL_NumJoysticks() - 1; i >= 0; --i)
+        if (SDL_JoystickIsVirtual(i))
+            check(SDL_JoystickDetachVirtual(i) == 0, "detach test device");
+}
 void focus(bool gained) {
     SDL_Event event{};
     event.type = SDL_WINDOWEVENT;
@@ -31,12 +58,32 @@ int main() {
         config.roll_axis = 0; config.pitch_axis = 1;
         config.keyboard.roll_speed = 10;
         auto now = aviator::monotonic_us();
+        // An explicitly selected keyboard must not inject its full-scale HID axes.
+        for (const char* name : {"CHERRY MX 3.0S Dongle Keyboard", "USB mOuSe", "无线键盘", "无线鼠标"}) {
+            check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) == 0, "initialize virtual input");
+            config.device = std::to_string(attachFalseJoystick(name));
+            flight_gateway::SdlInput selected(config, [&] { return now; });
+            flight_gateway::JoystickSample value{{0, -32768, 32767, 0}, {1, -32768, 32767, 0}};
+            std::vector<unsigned> hits;
+            focus(true);
+            check(selected.poll(value, hits) && value.valid && value.roll_value == 0 &&
+                  value.pitch_value == 0 && hits.empty(), "explicit keyboard/mouse index is rejected");
+            detachVirtualJoysticks();
+            device_names.clear();
+        }
+        config.device = "auto";
+        check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) == 0, "initialize virtual input");
+        attachFalseJoystick("CHERRY MX 3.0S Dongle kEyBoArD");
         flight_gateway::SdlInput input(config, [&] { return now; });
         flight_gateway::JoystickSample sample{{0, -32768, 32767, 0}, {1, -32768, 32767, 0}};
         std::vector<unsigned> pressed;
         auto poll = [&] { check(input.poll(sample, pressed), "unexpected quit"); };
         focus(true); poll();
-        check(sample.fresh(now, 100000) && sample.roll_value == 0, "keyboard-only startup");
+        check(sample.fresh(now, 100000) && sample.roll_value == 0 && sample.pitch_value == 0 &&
+              pressed.empty(), "false joystick is skipped at startup");
+        attachFalseJoystick("USB Mouse"); poll();
+        check(sample.roll_value == 0 && sample.pitch_value == 0 && pressed.empty(),
+              "false joystick is skipped on hotplug");
         key(SDL_SCANCODE_RIGHT, true); poll(); now += 20000; poll();
         check(sample.roll_value > 0, "SDL keyboard ramps");
         key(SDL_SCANCODE_RIGHT, false); poll();
@@ -127,10 +174,11 @@ int main() {
         check(SDL_JoystickDetachVirtual(device) == 0, "detach virtual joystick"); poll();
         check(!sample.valid && !sample.device_connected, "disconnect after focus timeout invalidates input");
         focus(true); poll(); check(sample.valid, "keyboard remains available after joystick removal");
-        check(SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_FLIGHT_STICK, 2, 11, 0) >= 0, "replace joystick");
+        check(SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_UNKNOWN, 2, 11, 0) >= 0, "replace with generic joystick");
         poll(); focus(false); poll(); check(sample.valid, "replacement joystick selected without config change");
         SDL_Event quit{}; quit.type = SDL_QUIT; SDL_PushEvent(&quit);
         check(!input.poll(sample, pressed), "window quit stops input");
+        detachVirtualJoysticks();
         std::cout << "SDL gateway tests passed\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n'; return 1;
