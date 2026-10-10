@@ -26,6 +26,8 @@ class RemoteLink final : public DataLink {
     void disable(Side) override;
     void setImpedanceProfile(bool following) override;
     GraspState graspState() const override;
+    std::array<double, 2> readCameraWheel(const std::string&, uint64_t, uint64_t,
+                                        const std::function<void()>&) override;
     uint64_t sendGraspCommand(GraspCommand) override;
     void setJointPositions(const Joints &) override;
     void runTrajectory(const std::vector<JointFrame> &, const std::atomic<bool> &) override;

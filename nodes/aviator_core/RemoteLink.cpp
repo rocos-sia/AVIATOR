@@ -1,5 +1,6 @@
 #include "Logger.hpp"
 #include "RemoteLink.hpp"
+#include "GraspWheelInput.hpp"
 #include <algorithm>
 #include <cmath>
 namespace aviator {
@@ -218,6 +219,16 @@ GraspState RemoteLink::graspState() const {
     g.displacement = state_.displacement;
     g.ack = ack_;
     return g;
+}
+std::array<double, 2> RemoteLink::readCameraWheel(const std::string& camera_id,
+        uint64_t freshness_us, uint64_t wait_us, const std::function<void()>& check) {
+    return acquireGraspWheel(context_, config_.subscribe, camera_id, freshness_us, wait_us, [&] {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!motion_allowed_ || quit_) throw MotionCancelled();
+        }
+        check();
+    });
 }
 void RemoteLink::handTarget(bool close) {
     if (!hand_.enabled()) return;

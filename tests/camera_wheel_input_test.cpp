@@ -100,6 +100,45 @@ int main() try {
     restarted.header.session_id = "new-camera-run";
     check(input.accept(restarted, 1020000, error), "camera restart rejected");
     check(!input.accept(observation(99, 1010000), 1020000, error), "old session replay accepted");
+    // Grasp uses the same units/sign/offset, but must never clamp a measured pose.
+    for (int kind = 0; kind < 3; ++kind) {
+        CameraWheelInput grasp("cockpit", "local", 200000, 1000000, CameraWheelInput::Mode::Grasp);
+        auto m = observation(1, 1000000, -.15, .04);
+        m.body["steering_wheel"]["axis_match"] = true;
+        check(grasp.accept(m, 1000000, error), error.c_str());
+        near(grasp.target().angle, .15);
+        near(grasp.target().displacement, -.125);
+        m.header.sequence = 2;
+        m.header.sample_mono_us = 1010000;
+        switch (kind) {
+        case 0: m.body["steering_wheel"]["theta_rad"] = 1.; break;
+        case 1: m.body["steering_wheel"]["translation_along_axis_m"] = .086; break;
+        case 2: m.body["steering_wheel"]["translation_along_axis_m"] = -.086; break;
+        }
+        check(!grasp.accept(m, 1010000, error), "invalid grasp observation accepted");
+        check(!grasp.fresh(1010000), "invalid grasp observation left cached target usable");
+        m = observation(3, 1020000, 0, 0);
+        m.body["steering_wheel"]["axis_match"] = nullptr;
+        check(grasp.accept(m, 1020000, error), "zero pose with unknown axis rejected");
+        near(grasp.target().angle, 0);
+        near(grasp.target().displacement, -.085);
+    }
+    // Axis diagnostics must not block an otherwise valid grasp observation.
+    for (int kind = 0; kind < 3; ++kind) {
+        CameraWheelInput grasp("cockpit", "local", 200000, 1000000, CameraWheelInput::Mode::Grasp);
+        auto m = observation(1, 1000000, .082321, .002622);
+        if (kind == 0) m.body["steering_wheel"]["axis_match"] = false;
+        if (kind == 1) m.body["steering_wheel"]["axis_match"] = nullptr;
+        // kind 2 deliberately omits the diagnostic field.
+        check(grasp.accept(m, 1000000, error), "Axis diagnostic blocked valid grasp input");
+        near(grasp.target().angle, -.082321);
+        near(grasp.target().displacement, -.087622);
+        m.header.sequence = 2;
+        m.header.sample_mono_us = 1010000;
+        m.body["steering_wheel"]["valid"] = false;
+        check(!grasp.accept(m, 1010000, error), "Invalid camera observation accepted");
+        check(!grasp.fresh(1010000), "Invalid observation left grasp target active");
+    }
     std::cout << "Camera mapping, clamping, wire decoding, validity, freshness and replay tests passed\n";
     return 0;
 } catch (const std::exception& e) {

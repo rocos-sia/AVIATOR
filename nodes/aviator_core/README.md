@@ -545,7 +545,25 @@ wheel_initial:
 
 该值表示启动时轮盘实际所在位形。Manipulator 初始化软件参考并通过 `arm.state.wheel_reference` 传给 Core；Rokae 不会因为这项配置自动移动轮盘。MuJoCo 同时设置实体轮盘关节初值。省略整个配置块时保持旧版 `(0, 0)` 初值；给出配置块时必须包含两个有限数值。
 
-使能保持、回 home 和连续抓取接近沿用这一参考。抓取完成后 Servo 从该位形衔接；松开/重新抓取使用运行中的最新参考，不在每次使能时重置初值。`grasp.json` 的几何零位及抓取点不变，位移沿轮盘自身推拉轴定义。
+默认情况下，使能保持、回 home 和连续抓取接近沿用这一参考。抓取完成后 Servo 从该位形衔接；松开/重新抓取使用运行中的最新参考，不在每次使能时重置初值。`grasp.json` 的几何零位及抓取点不变，位移沿轮盘自身推拉轴定义。
+
+可在同一个 `robot.yaml` 中选择相机作为每次抓握的位形来源，适用于 Direct 和 Managed 入口：
+
+```yaml
+grasp_wheel:
+  source: camera        # wheel_initial（默认）或 camera
+  camera_id: cockpit
+  max_age_ms: 200        # 帧采集时间距读取时间的最大值，20..1000 ms
+  wait_timeout_ms: 2000  # 等待有效新帧上限，max_age_ms..10000 ms
+```
+
+`wheel_initial` 模式保持上述行为；省略 `grasp_wheel` 也使用该模式。`camera` 模式只在抓取指令执行后、回 home 完成且开始规划接近前订阅 `camera.detection`，要求 `publisher_id=camera`、指定的 `camera_id`、本机时钟，以及采集时间不早于本次读取请求。初始化、使能和 Managed 的进入 STANDBY 不采集相机位形；每次重抓都重新等待新帧。
+
+使用 `steering_wheel` 派生字段换算：`angle=-theta_rad`（rad），`displacement=-translation_along_axis_m-0.085`（m），不叠加 `wheel_initial`。该约定要求相机标定零位对应控制模型的零转角、行程中位，标定轴方向与控制端正方向相反。无需转换原始标签 `pose` 或 `translation_vector_m`。两层 `valid` 均须为 true；`axis_match` 仅保留为相机诊断，不作为抓握门槛，false、null 或缺失均不阻止读取。过期、乱序、非有限值、越界或缺失必需字段不能用于抓握；等待超时则终止抓握并报告原因，不回退、不限幅。
+
+读取成功后固定本次位形，用于双臂 IK、接近碰撞检查和闭手距离。每个接近轨迹帧携带同一位形，设备执行时同步 `arm.state.wheel_reference`；Core 同步后续 MoveWheel/Servo 的起点。同步不驱动轮盘归位，不覆盖关节保持目标，也不修改标定文件。接近过程中不继续追踪相机；后续操纵目标仍遵循各入口的原有规则。`wheel_initial` 继续用于设备启动软件参考和仿真实体初始位形，相机模式不会改变仿真实体初值。
+
+切换来源或调整采集参数后重启 Core。相机模式的成功日志为 `Grasp camera=... angle=... rad displacement=... m`；相机无有效反馈时允许等待上述时限，期间继续检查停止请求、授权和设备状态。
 
 `aviator_core_servo` 和 `aviator_core_managed` 的 pitch 均按 `0.085 * (pitch - 1)` 映射：-1 → -0.170 m，0 → -0.085 m，+1 → 0 m。该映射固定为绝对位移，不额外叠加 wheel_initial。配置其它初值时，摇杆中位仍对应 -0.085 m。原有 roll 方向各自保持不变。
 

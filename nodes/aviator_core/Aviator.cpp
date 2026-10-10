@@ -2,6 +2,7 @@
 #include "aviator/Aviator.hpp"
 #include "ServoPlanner.hpp"
 #include "ServoBufferConfig.hpp"
+#include "GraspWheelInput.hpp"
 #include "aviator/Kinematics.hpp"
 #include "aviator/CollisionChecker.hpp"
 #include "aviator/backend.hpp"
@@ -79,6 +80,7 @@ class Aviator::Impl {
         require(GetState() == "UNINITIALIZED", "Init may only be called once");
         // 加载配置
         YAML::Node config = YAML::LoadFile(config_file_);
+        grasp_wheel_ = GraspWheelConfig::load(config);
         collision_check_enabled_ = config["collision_check_enabled"].as<bool>(true);
         aviator::Logger::info("Planning collision checks: {}", (collision_check_enabled_ ? "enabled" : "disabled"));
 
@@ -321,17 +323,30 @@ class Aviator::Impl {
             if (!from_home) homeMotion(false); // Preserve the Direct demo home stage.
 
             // One synchronized joint trajectory from home to the final grasp pose.
+            auto wheel0 = grasp();
+            if (grasp_wheel_.camera) {
+                phase = "camera wheel acquisition";
+                const auto observed = datalink_->readCameraWheel(grasp_wheel_.camera_id,
+                    grasp_wheel_.freshness_us, grasp_wheel_.wait_us, [this] { checkMotionState(); });
+                wheel0.angle = observed[0];
+                wheel0.displacement = observed[1];
+                require(std::isfinite(wheel0.angle) && std::abs(wheel0.angle) <= .87266 &&
+                        std::isfinite(wheel0.displacement) && wheel0.displacement >= -.170 &&
+                        wheel0.displacement <= 0, "Invalid camera grasp wheel pose");
+                aviator::Logger::info("Grasp camera={} angle={} rad displacement={} m",
+                    grasp_wheel_.camera_id, wheel0.angle, wheel0.displacement);
+            }
             phase = "synchronized approach";
-            const auto wheel0 = grasp();
             const auto goal = solve({target(0, wheel0.angle, wheel0.displacement),
                                      target(1, wheel0.angle, wheel0.displacement)}, approach_seed_);
-            moveJoints(goal, approach_speed_, true);
+            // Freeze this pose for IK, collision checks, hand closure and every wire frame.
+            // Executing those frames also rebases the device's wheel reference.
+            moveJoints(goal, approach_speed_, true, &wheel0);
             phase = "approach complete";
 
             // 同步轮盘位形
-            auto w = grasp();
-            wheel_angle_ = w.angle;
-            wheel_displacement_ = w.displacement;
+            wheel_angle_ = wheel0.angle;
+            wheel_displacement_ = wheel0.displacement;
 
             setState("APPROACHED");
         } catch (const std::exception &e) {
@@ -895,7 +910,8 @@ class Aviator::Impl {
     }
 
     // 两臂共用一条 Ruckig 轨迹。先完整规划/检查，运行时只按 1 ms 取样。
-    void moveJoints(const Joints &goal, double speed, bool close_hands = false) {
+    void moveJoints(const Joints &goal, double speed, bool close_hands = false,
+                    const GraspState* wheel_reference = nullptr) {
         ruckig::Ruckig<14> planner{command_period};
         ruckig::InputParameter<14> input;
         input.current_position = planningStart();
@@ -917,7 +933,7 @@ class Aviator::Impl {
         require(result >= 0, "Ruckig joint planning failed: " + std::to_string(int(result)));
         const double duration = trajectory.get_duration();
         require(std::isfinite(duration) && duration >= 0, "Invalid Ruckig duration");
-        const auto w = grasp();
+        const auto w = wheel_reference ? *wheel_reference : grasp();
         // 沿实际曲线检查，包括原规划间隔的中点，不能用端点间直线替代。
         const size_t checks = std::max<size_t>(1, std::ceil(duration / (planning_period_ * 0.5)));
         Joints q{}, velocity{}, acceleration{};
@@ -1022,6 +1038,7 @@ class Aviator::Impl {
     Joints last_velocity_{};
     double last_angle_velocity_ = 0, last_displacement_velocity_ = 0;
 
+    GraspWheelConfig grasp_wheel_;
     std::atomic<double> wheel_angle_{0.0};
     std::atomic<double> wheel_displacement_{0.0};
 

@@ -15,6 +15,11 @@ MuJoCo TCP；无需连接真机。`control_nodes_grasp` 运行真实总线和 Mu
 `grasp_tools` 还注入释放阶段 FK 失败，刻意让执行器先进入 FAULT，再运行状态机监督，
 验证原始错误被保留并进入 ERROR，避免先进入 SAFE 后吞掉工作线程异常。
 
+`camera_grasp_input` 使用独立进程内 ZMQ 发布者，验证抓握来源配置、按需订阅、拒绝请求前旧帧和
+其他相机、重复读取、等待超时与取消；`camera_wheel_input` 验证已确认的坐标换算，并区分 Servo
+限幅与抓握越界拒绝，并确认轴匹配诊断不拦截抓握。`grasp_tools` 覆盖 Direct/Managed 初始化不采集、抓取后采集、
+重抓刷新、双臂 IK/碰撞/闭手共用相机位形、设备参考同步、后续 MoveWheel 起点以及失败不回退。
+
 `core_hand` 验证接近期间的双手目标插值、超过普通完成时限的持续运动、终点 ACK 与取消。
 `core_hand_process_test.py` 的 `synchronized` 场景使用真实 ZMQ 和模拟设备反馈，冻结机械臂
 游标 300 ms，确认手指目标不按墙钟时间继续闭合，并验证恢复执行与最终锁定。

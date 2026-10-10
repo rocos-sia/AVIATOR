@@ -107,6 +107,12 @@ class DataLink {
 
     // 抓取IO
     virtual GraspState graspState() const = 0;
+    // Acquire a new camera observation on demand, in control wheel coordinates (rad, m).
+    // check() keeps cancellation and backend supervision active while waiting.
+    virtual std::array<double, 2> readCameraWheel(const std::string&, uint64_t, uint64_t,
+                                                const std::function<void()>&) {
+        throw std::runtime_error("Camera grasp input requires the Core network adapter");
+    }
     // 仅在错误路径调用；不能在实时回调中进行格式化/打印。
     virtual std::string diagnostics() const { return {}; }
     virtual uint64_t sendGraspCommand(GraspCommand command) = 0; // 返回请求序号

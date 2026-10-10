@@ -12,6 +12,16 @@ wheel_initial:
   angle: 0.0              # rad
   displacement: -0.085    # m，允许 [-0.170, 0]
 
+# 抓握接近时的轮盘位形来源。缺省 wheel_initial：沿用设备当前参考（启动时由上方初值设置）。
+# camera：每次抓取指令后，回 home 完成、规划接近前等待新相机帧；初始化时不采集。
+# 换算 angle=-theta_rad，displacement=-translation_along_axis_m-0.085，不叠加 wheel_initial。
+# 本次抓握固定使用该位形，并随轨迹同步软件参考；不改变仿真启动时实体轮盘的初值。
+grasp_wheel:
+  source: camera   # wheel_initial | camera
+  camera_id: cockpit
+  max_age_ms: 200         # 相机采集时间距当前时间的上限，20..1000 ms
+  wait_timeout_ms: 2000   # 等待新有效帧的上限，max_age_ms..10000 ms；失败则终止本次抓握
+
 rokae:
   # 真机只有双臂反馈：轮盘位形使用指令参考，lock/unlock 仅切换软件控制阶段。
   grasp_mode: open_loop
@@ -82,15 +92,15 @@ stop_acceleration: 4.0
 settle_duration: 0.2
 
 # v=1 时的轮盘速度上限；MoveWheel 自动协调时间并受各关节速度进一步约束。
-wheel_angular_speed: 3.8   # rad/s
+wheel_angular_speed: 3.0   # rad/s
 wheel_linear_speed: 2.5   # m/s
 
 # Servo 在线规划的轮盘加速度、加加速度上限；换目标时继承当前速度/加速度。
 # 以下为保守起始值，不能仅增大轮盘约束而忽略关节限位和奇异位形。
 wheel_angular_acceleration: 6.0  # rad/s²
 wheel_linear_acceleration: 4.0 # m/s²
-wheel_angular_jerk: 20.0        # rad/s³
-wheel_linear_jerk: 12.0       # m/s³
+wheel_angular_jerk: 12.0        # rad/s³
+wheel_linear_jerk: 8.0       # m/s³
 
 # CONTROL 使用最新目标覆盖：Core 不预填充或发送未来 Servo 轨迹。
 # manipulator/simulation 每次双臂消费完成后，以 1 ms 步长执行一次 Ruckig + IK。

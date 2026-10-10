@@ -15,10 +15,11 @@ struct CameraWheelTarget {
 // Only decoded camera.detection messages enter this non-real-time adapter.
 class CameraWheelInput {
 public:
+    enum class Mode { Servo, Grasp };
     CameraWheelInput(std::string camera_id, std::string clock, uint64_t timeout_us,
-                     uint64_t start_us = 0)
+                     uint64_t start_us = 0, Mode mode = Mode::Servo)
         : camera_id_(std::move(camera_id)), guard_(policy(std::move(clock), timeout_us)),
-          start_us_(start_us) {}
+          start_us_(start_us), mode_(mode) {}
 
     bool accept(const Message& message, uint64_t now, std::string& error) {
         if (message.topic != Topic::camera_detection || message.header.publisher_id != "camera" ||
@@ -42,6 +43,7 @@ public:
             const auto& wheel = message.body.at("steering_wheel");
             if (!message.header.valid || wheel.at("valid") != true)
                 throw std::runtime_error("invalid camera/steering_wheel observation");
+            // Axis matching remains a camera diagnostic, not a grasp/Servo admission gate.
             const auto& theta = wheel.at("theta_rad");
             const auto& travel = wheel.at("translation_along_axis_m");
             if (!theta.is_number() || !travel.is_number())
@@ -53,6 +55,8 @@ public:
             target_.angle = std::clamp(angle, -.87266, .87266);
             target_.displacement = std::clamp(displacement, -.170, 0.0);
             target_.limited = target_.angle != angle || target_.displacement != displacement;
+            if (mode_ == Mode::Grasp && target_.limited)
+                throw std::runtime_error("camera grasp pose outside angle +/-0.87266 rad or displacement [-0.170,0] m");
             valid_ = true;
             error.clear();
             return true;
@@ -76,6 +80,7 @@ private:
     std::string camera_id_;
     InputGuard guard_;
     uint64_t start_us_, last_sample_ = 0;
+    Mode mode_;
     bool valid_ = false;
     CameraWheelTarget target_;
 };

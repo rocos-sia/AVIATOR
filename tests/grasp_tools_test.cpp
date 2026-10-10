@@ -61,10 +61,108 @@ struct Device : DataLink {
         q = v.back().q; now += v.size() * .001;
     }
 };
+struct CameraDevice : Device {
+    int reads = 0;
+    bool fail_camera = false;
+    double angle = 0;
+    std::array<double, 2> observation{{.15, -.125}};
+    std::function<void()> on_read;
+    std::array<double, 2> readCameraWheel(const std::string& id, uint64_t age, uint64_t wait,
+                                         const std::function<void()>& supervise) override {
+        ++reads;
+        check(id == "cockpit" && age == 200000 && wait == 2000000, "Lost camera request settings");
+        supervise();
+        if (on_read) on_read();
+        if (fail_camera) throw std::runtime_error("Injected camera timeout");
+        return observation;
+    }
+    GraspState graspState() const override {
+        auto state = Device::graspState(); state.angle = angle; return state;
+    }
+    void runTrajectory(const std::vector<JointFrame>& frames, const std::atomic<bool>& cancel) override {
+        Device::runTrajectory(frames, cancel);
+        angle = frames.back().angle;
+        displacement = frames.back().displacement;
+    }
+};
+struct RecordingCollision : CollisionChecker {
+    std::vector<std::array<double, 2>> poses;
+    void check(const std::array<double, 14>&, double angle, double displacement) override {
+        poses.push_back({angle, displacement});
+    }
+};
+void cameraGrasp(const fs::path& dir, const YAML::Node& original, const YAML::Node& geometry) {
+    for (const std::string mode : {"omitted", "wheel_initial", "camera", "failure"}) {
+        auto config = YAML::Clone(original);
+        config.remove("grasp_wheel");
+        if (mode != "omitted") config["grasp_wheel"]["source"] = mode == "failure" ? "camera" : mode;
+        config["collision_check_enabled"] = true;
+        std::ofstream(dir / "camera-robot.yaml") << config;
+        auto device = std::make_unique<CameraDevice>();
+        auto* observed = device.get();
+        observed->q[1] = observed->q[8] = M_PI / 2;
+        observed->displacement = -.085;
+        observed->fail_camera = mode == "failure";
+        auto ik = std::make_unique<RecordingIk>();
+        auto* solver = ik.get();
+        auto collision = std::make_unique<RecordingCollision>();
+        auto* checked = collision.get();
+        size_t camera_checks_begin = 0;
+        observed->on_read = [&] { camera_checks_begin = checked->poses.size(); };
+        Aviator core(std::move(device), std::move(ik), std::move(collision), (dir / "camera-robot.yaml").string());
+        core.init(); core.enable();
+        check(observed->reads == 0, "Camera sampled at initialization/enable");
+        if (mode == "failure") {
+            bool failed = false;
+            try { core.approachHandles(); }
+            catch (const std::exception& e) {
+                failed = std::string(e.what()).find("Injected camera timeout") != std::string::npos;
+            }
+            check(failed && core.GetState() == "FAULT", "Camera failure silently fell back to wheel_initial");
+            check(observed->trajectories.size() == 1 && solver->targets[0].empty(),
+                  "Camera failure executed a grasp approach");
+            continue;
+        }
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            const auto expected = mode == "camera" ? observed->observation :
+                std::array<double, 2>{{observed->angle, observed->displacement}};
+            core.approachHandles();
+            check(observed->reads == (mode == "camera" ? attempt + 1 : 0), "Grasp source or re-acquisition incorrect");
+            const auto wheel = frame(geometry["wheel_origin"]) * pinocchio::SE3(
+                Eigen::AngleAxisd(expected[0], Eigen::Vector3d::UnitZ()).toRotationMatrix(),
+                Eigen::Vector3d(0, 0, expected[1]));
+            for (int side = 0; side < 2; ++side)
+                samePose(solver->targets[side].back(), wheel * frame(geometry[side ? "right" : "left"]) *
+                         frame(toolFrameConfig(geometry, side)).inverse());
+            for (const auto& f : observed->trajectories.back())
+                check(f.angle == expected[0] && f.displacement == expected[1], "Approach frame kept old wheel reference");
+            if (mode == "camera") {
+                check(checked->poses.size() > camera_checks_begin, "Missing approach collision checks");
+                for (size_t i = camera_checks_begin; i < checked->poses.size(); ++i)
+                    check(checked->poses[i] == expected, "Collision check used old wheel pose");
+            }
+            // A command to stay at the grasp pose must start at that same pose.
+            // This catches updating the device reference but leaving Core's starting reference stale.
+            core.lockHandles();
+            core.moveWheel(expected[0], expected[1]);
+            for (const auto& f : observed->trajectories.back())
+                check(std::abs(f.angle - expected[0]) < 1e-12 && std::abs(f.displacement - expected[1]) < 1e-12,
+                      "Post-grasp motion started at old wheel reference");
+            check(core.GetStatus().angle == expected[0] && core.GetStatus().displacement == expected[1],
+                  "Published grasp reference not synchronized");
+            core.unlockHandles();
+            observed->observation = {-.2, -.065};
+            if (mode != "camera") { observed->angle = -.1; observed->displacement = -.1; }
+        }
+    }
+}
 // Let the executor enter FAULT before the owner consumes the failed future. This
 // reproduces the release exception being masked by SafetyLost and a new generation.
-void managedReleaseFailure(const fs::path& config) {
-    auto device = std::make_unique<Device>();
+void managedReleaseFailure(const fs::path& config, bool camera = false) {
+    std::unique_ptr<Device> device;
+    if (camera) device = std::make_unique<CameraDevice>();
+    else device = std::make_unique<Device>();
+    auto* observed = camera ? static_cast<CameraDevice*>(device.get()) : nullptr;
     device->q[1] = device->q[8] = M_PI / 2;
     auto ik = std::make_unique<RecordingIk>();
     auto* solver = ik.get();
@@ -89,10 +187,13 @@ void managedReleaseFailure(const fs::path& config) {
         check(core.GetSystemState() == state, "Managed release setup failed");
     };
     core.Init(); wait("READY");
+    if (observed) check(observed->reads == 0, "Managed Init sampled camera");
     check(core.EnterStandby() == fsm::Reply::accepted, "Home was not accepted");
     wait("STANDBY");
+    if (observed) check(observed->reads == 0, "Managed standby sampled camera before grasp request");
     check(core.GraspWheel() == fsm::Reply::accepted, "Grasp was not accepted");
     wait("FOLLOWING");
+    if (observed) check(observed->reads == 1, "Managed grasp did not acquire camera pose");
     solver->fail_fk = true;
     check(core.LeaveWheel() == fsm::Reply::accepted, "Release was not accepted");
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
@@ -324,7 +425,12 @@ int main(int argc, char **argv) try {
         check(rejected, "Invalid closing distance accepted");
     }
     runCore(split); runCore(legacy);
+    cameraGrasp(dir, config, legacy);
     managedReleaseFailure(dir / "robot.yaml");
+    auto camera_config = YAML::Clone(config);
+    camera_config["grasp_wheel"]["source"] = "camera";
+    std::ofstream(dir / "camera-managed.yaml") << camera_config;
+    managedReleaseFailure(dir / "camera-managed.yaml", true);
     for (const auto* outcome : {"success", "failure", "emergency", "input_lost", "exit"})
         managedControlEntry(dir / "robot.yaml", outcome);
     // Real deployment geometry + Pinocchio FK/IK, without connecting any device.

@@ -9,7 +9,7 @@ camera:
   depth:                 # recording.yaml 对应源 record_depth=true 时才启用 Z16；fps 沿用彩色流
     width: 1280
     height: 720
-  warmup_s: 5.0          # 启动后跳过发布的热身秒数（0 禁用）
+  warmup_s: 0          # 启动后跳过发布的热身秒数（0 禁用）
 
 detector:
   type: "apriltag"      # apriltag | charuco；切换此项即可选择识别哪一种码
