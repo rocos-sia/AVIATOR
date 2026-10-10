@@ -64,12 +64,10 @@ AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
 双臂共用 `robot.yaml` 中 `rokae.joint_stiffness` 的七轴刚度（Nm/rad），
 使用动力学偏置补偿加 `K(q_target-q)` 力矩，允许接触外力造成关节偏移。
 MuJoCo 隐式积分的附加阻尼为 `80*sqrt(K/1000)` Nm·s/rad，并保留 MJCF 原有被动阻尼。
-默认前四轴为 500、末三轴为 50。Managed FOLLOWING 使用 `rokae.following_joint_stiffness`，进入 CONTROL 或释放前恢复默认刚度；切换同时更新附加阻尼，保持目标不变。配置修改后重启仿真生效。
+默认前四轴为 500、末三轴为 50。Managed FOLLOWING 使用 `rokae.following_joint_stiffness`，进入 CONTROL 或释放前恢复默认刚度；切换同时更新附加阻尼，以实测关节位置作为保持目标。已锁定驾驶盘时，同时同步实测轮盘角度与位移，避免后续 Servo 叠加柔顺阶段的偏移。配置修改后重启仿真生效。
 该控制律用于近似关节阻抗，不是 Rokae 内部控制器的精确复现。
-手柄已有局部软接触参数；`lock` 的 weld 行为仍按原流程执行。
-`tests/mjcf_grasp_contact_test.py --grip-inset 0.0025` 可在不修改标定目标的情况下，
-验证实际手柄间距缩小 5 mm 时的无 weld 接触抓握。
-此测试不代表任意间距误差均可适应；缩小 10 mm 的额外检查仍出现右手中指过深穿入。
+灵巧手保留可视模型、惯量、关节和 mimic 约束，移除碰撞体；抓握通过 TCP 与手柄 site 的 weld 传力，避免手指接触与焊接约束相互干扰。
+`tests/mjcf_grasp_contact_test.py` 验证双手闭合、无手部接触及 site 焊接误差。
 
 ## 相机
 

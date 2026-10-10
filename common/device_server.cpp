@@ -312,7 +312,17 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                     }
                     state.impedance_profile = profile;
                     state.target = device.jointTargets(); // The lifecycle may rebase the hold to measured joints.
-                    result = {{"profile", profile}, {"stiffness", stiffness}, {"target", state.target}};
+                    // A compliant, locked wheel can move with the arms. Rebase its
+                    // reference too, or Servo adds that displacement to every goal.
+                    if (options.wheel_measurement && state.locked) {
+                        const auto wheel = device.graspState();
+                        require(std::isfinite(wheel.angle) && std::isfinite(wheel.displacement),
+                                "Invalid wheel measurement during impedance update");
+                        state.angle = wheel.angle;
+                        state.displacement = wheel.displacement;
+                    }
+                    result = {{"profile", profile}, {"stiffness", stiffness}, {"target", state.target},
+                              {"angle", state.angle}, {"displacement", state.displacement}};
                     Logger::info("Joint stiffness update profile={} values={}", profile, Json(stiffness).dump());
                 } else if (op == "disable") {
                     stop();

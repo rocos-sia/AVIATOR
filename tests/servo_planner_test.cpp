@@ -48,6 +48,10 @@ int main(int argc, char** argv) {
         }
         double peak_v = 0, peak_a = 0, peak_j = 0;
         auto check = [&](const JointFrame& f) {
+            for (int j = 0; j < 14; ++j)
+                if (!std::isfinite(f.q[j]) || f.q[j] < kin->jointLower(Side(j / 7), j % 7) ||
+                    f.q[j] > kin->jointUpper(Side(j / 7), j % 7))
+                    throw std::runtime_error("Physical joint limit at axis " + std::to_string(j));
             if (f.q[1] < lo || f.q[1] > hi || f.q[8] < lo || f.q[8] > hi)
                 throw std::runtime_error("J2 limit: " + std::to_string(f.q[1] * 180 / M_PI) + ", " +
                                          std::to_string(f.q[8] * 180 / M_PI) +
@@ -196,6 +200,50 @@ int main(int argc, char** argv) {
         if (!latest->stopped()) throw std::runtime_error("Latest Servo did not stop");
         std::cout << "Latest 1 ms Servo passed: steps=" << count << " mean_us=" << total_us/count
                   << " max_us=" << max_us << " (wall time includes scheduler jitter)\n";
+        // Captured after compliant grasp: using the old wheel reference (0, -.085)
+        // adds its drift to every goal; an unweighted wrist also hits +/-60 degrees.
+        JointFrame compliant;
+        compliant.angle = .15734908702110342;
+        compliant.displacement = -.08848852357910701;
+        compliant.q = {-.2441592211, 1.5483223663, -1.4718264843, 1.5707879272,
+                       -.1045421521, .1352043964, .1238566744,
+                       .2951912808, 1.5256245130, 1.2800535572, 1.7130233472,
+                       -.0972914518, -.0946703438, -.4992555569};
+        // Verify acceleration against a central difference of the weighted
+        // velocity field, independently of Ruckig's within-tick jerk switches.
+        std::array<double, 7> q{}, dq{}, ddq{}, plus{}, minus{}, unused{};
+        std::copy_n(compliant.q.begin(), 7, q.begin());
+        Eigen::Matrix<double, 6, 1> twist, acceleration;
+        twist << .1, .2, .3, .4, .5, .6;
+        acceleration << -.1, .2, -.3, .4, -.5, .6;
+        if (!kin->jointDerivatives(Side::Left, q, twist, acceleration, dq, ddq))
+            throw std::runtime_error("Weighted derivatives failed");
+        auto forward = q, backward = q;
+        constexpr double epsilon = 1e-5;
+        for (int j = 0; j < 7; ++j) {
+            forward[j] += epsilon * dq[j]; backward[j] -= epsilon * dq[j];
+        }
+        if (!kin->jointDerivatives(Side::Left, forward, twist + epsilon * acceleration, acceleration, plus, unused) ||
+            !kin->jointDerivatives(Side::Left, backward, twist - epsilon * acceleration, acceleration, minus, unused))
+            throw std::runtime_error("Weighted derivative difference failed");
+        for (int j = 0; j < 7; ++j)
+            if (std::abs(ddq[j] - (plus[j] - minus[j]) / (2 * epsilon)) > 1e-6)
+                throw std::runtime_error("Weighted acceleration disagrees with velocity derivative");
+        auto sweep = options.servo(compliant);
+        previous = compliant;
+        for (double displacement : {-.09949, -.085, -.17, 0.}) {
+            for (double angle : {-.87266, .87266}) {
+                for (int tick = 0; tick < 2000; ++tick) {
+                    const auto current = sweep->step({angle, displacement, 1., 1, false});
+                    check(current);
+                    previous = current;
+                }
+                if (std::abs(previous.angle - angle) > 1e-8 ||
+                    std::abs(previous.displacement - displacement) > 1e-8)
+                    throw std::runtime_error("Compliant Servo did not reach full-range goal");
+            }
+        }
+        std::cout << "Compliant grasp +/-50 degree and full pitch sweep passed\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

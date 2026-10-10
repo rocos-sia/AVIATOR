@@ -1,9 +1,9 @@
-"""Headless physical grasp regression; requires mujoco, numpy and PyYAML.
+"""Headless site-weld grasp regression; requires mujoco, numpy and PyYAML.
 
 Uses the configured flange/tool/grasp transforms and hand targets, a six-second
 quintic joint approach, and the simulation node's torque gains. This isolates
 contact geometry: it is not a replay of Core's Ruckig trajectory or bus timing.
-The wheel stays free and grasp welds stay inactive throughout.
+The wheel is passive; TCP/handle welds lock after approach, without hand contacts.
 """
 import argparse
 import json
@@ -53,7 +53,7 @@ def solve_pose(model, data, joints, body, position, orientation, seed):
     raise AssertionError(f"Grasp IK did not converge: {error}")
 
 
-def run(path, report_only=False, grip_inset=0.0):
+def run(path):
     print(f"MuJoCo {mj.__version__}: {path}")
     grasp = json.loads((ROOT / "config/grasp.json").read_text())
     posture = json.loads((ROOT / "config/posture.json").read_text())
@@ -62,13 +62,13 @@ def run(path, report_only=False, grip_inset=0.0):
     initial = robot["wheel_initial"]
     stiffness = np.tile(robot["rokae"]["joint_stiffness"], 2)
     model = mj.MjModel.from_xml_path(str(path.resolve()))
-    # Move only physical grip proxies inward; IK/calibrated grasp targets stay fixed.
-    assert np.isfinite(grip_inset) and 0 <= grip_inset < .02
-    for side in SIDES:
-        grip = model.geom(f"steering_wheel_{side}_grip").id
-        model.geom_pos[grip, 0] += grip_inset if side == "left" else -grip_inset
-    if grip_inset:
-        print(f"Grip spacing reduced by {2 * grip_inset * 1000:.1f} mm")
+    # No hand collision geometry may compete with the six-DOF grasp welds.
+    hand_geoms = [g for g in range(model.ngeom)
+                  if model.body(model.geom_bodyid[g]).name.startswith(
+                      ("left_", "right_", "l_base_link", "r_base_link"))]
+    assert hand_geoms
+    assert not model.geom_contype[hand_geoms].any()
+    assert not model.geom_conaffinity[hand_geoms].any()
     data = mj.MjData(model)
     mj.mj_resetDataKeyframe(model, data, model.key("aviator_home").id)
     data.qpos[model.joint("roll_input_joint").qposadr] = initial["angle"]
@@ -89,6 +89,15 @@ def run(path, report_only=False, grip_inset=0.0):
         target = solve_pose(model, data, joints, flange,
                             goal - orient @ np.array(tool["position"]), orient,
                             np.deg2rad(posture[side + "_approach_seed_deg"]))
+        # Match DataLink_direct's configured flange->TCP pose.
+        gripper = model.body(side + "_gripper").id
+        parent = model.body_parentid[gripper]
+        parent_r = data.xmat[parent].reshape(3, 3)
+        flange_r = data.xmat[flange].reshape(3, 3)
+        model.body_pos[gripper] = parent_r.T @ (
+            data.xpos[flange] + flange_r @ np.array(tool["position"]) - data.xpos[parent])
+        tcp_r = parent_r.T @ flange_r @ rotation(tool["quaternion"])
+        mj.mju_mat2Quat(model.body_quat[gripper], tcp_r.ravel())
         arms.extend(joints)
         hands.extend(model.joint(f"{side}_{drive}_joint").id for drive in DRIVES)
         targets.extend(target)
@@ -109,6 +118,7 @@ def run(path, report_only=False, grip_inset=0.0):
             if triggers[s] is None and np.linalg.norm(tcp - goals[s]) <= grasp["hand_closing_distance"]:
                 triggers[s] = t
     assert all(t is not None and t < 1 for t in triggers)
+    mj.mj_setConst(model, data)
     data.qpos[:] = start_qpos
     mj.mj_forward(model, data)
     model.dof_damping[av] += 80 * np.sqrt(stiffness / 1000)
@@ -117,7 +127,9 @@ def run(path, report_only=False, grip_inset=0.0):
     span = np.diff(model.jnt_range[hands], axis=1).ravel()
     opened = np.array([hand["open"][s] for s in SIDES])
     closed = np.array([hand["close"][s] for s in SIDES])
-    # One second to open, six seconds to approach, then 2.5 seconds to settle.
+    welds = [model.equality(side + "_grasp").id for side in SIDES]
+    assert not data.eq_active[welds].any()
+    # One second to open, six seconds to approach, then 2.5 seconds welded.
     for step in range(round(9.5 / model.opt.timestep)):
         t = np.clip((step * model.opt.timestep - 1) / 6, 0, 1)
         arm_target = home + smooth(t) * (targets - home)
@@ -126,59 +138,32 @@ def run(path, report_only=False, grip_inset=0.0):
         hand_target = low + (1 - normalized.ravel()) * span
         data.qfrc_applied[av] = data.qfrc_bias[av] + stiffness * (arm_target - data.qpos[aq])
         data.qfrc_applied[hv] = np.clip(data.qfrc_bias[hv] + 3 * (hand_target - data.qpos[hq]), -1, 1)
+        if step * model.opt.timestep >= 7:
+            data.eq_active[welds] = 1
         mj.mj_step(model, data)
+        assert not any(c.geom[0] in hand_geoms or c.geom[1] in hand_geoms
+                       for c in data.contact), "Unexpected hand contact"
     mj.mj_forward(model, data)
     assert np.isfinite(data.qpos).all() and np.isfinite(data.qvel).all()
     assert not data.warning.number.any(), data.warning.number
-    assert not data.eq_active[model.eq_type == mj.mjtEq.mjEQ_WELD].any()
+    assert data.eq_active[welds].all()
     closure = ((data.qpos[hq] - low) / span).reshape(2, 6)
-    failures = []
     for s, side in enumerate(SIDES):
-        thumbs, fingers, depths = [], [], []
-        for contact_id, contact in enumerate(data.contact):
-            a, b = contact.geom
-            if model.geom_bodyid[a] == wheel:
-                other, normal = b, contact.frame[:3]
-            elif model.geom_bodyid[b] == wheel:
-                other, normal = a, -contact.frame[:3]
-            else:
-                continue
-            name = model.geom(other).name
-            if not name.startswith(side + "_"):
-                continue
-            force = np.zeros(6)
-            mj.mj_contactForce(model, data, contact_id, force)
-            if force[0] <= .01:
-                continue
-            depth_mm = max(0, -contact.dist) * 1000
-            depths.append(depth_mm)
-            if depth_mm > 8:
-                print(f"Deep contact: {model.geom(a).name} / {model.geom(b).name}, "
-                      f"depth={depth_mm:.2f} mm, normal_force={force[0]:.2f} N")
-            if "thumb" in name:
-                thumbs.append(normal.copy())
-            elif any(f"_{finger}_" in name for finger in ("index", "middle", "ring", "little")):
-                fingers.append(normal.copy())
-        opposition = min((a @ b for a in thumbs for b in fingers), default=1.)
-        depth = max(depths, default=0.)
+        tcp, handle = model.site(side + "_tcp").id, model.site(side + "_handle").id
+        error = np.linalg.norm(data.site_xpos[tcp] - data.site_xpos[handle])
+        rotation_error = np.linalg.norm(data.site_xmat[tcp] - data.site_xmat[handle])
         print(f"{side}: flexion={closure[s, 1:].round(3).tolist()}, "
-              f"opposition={opposition:.3f}, max_penetration={depth:.2f} mm")
-        if closure[s, 1] < .3 or np.min(closure[s, 2:]) < .7:
-            failures.append(f"{side}: fingers blocked before wrapping")
-        if opposition >= -.2:
-            failures.append(f"{side}: missing opposing thumb/finger force contacts")
-        if depth > 8:
-            failures.append(f"{side}: excessive contact penetration")
-    if failures and not report_only:
-        raise AssertionError("; ".join(failures))
-    print("FAIL " + "; ".join(failures) if failures else "PASS bilateral contact grasp without welds")
+              f"weld_position_error={error * 1000:.3f} mm")
+        assert closure[s, 1] >= .3 and np.min(closure[s, 2:]) >= .7
+        assert error < .001 and rotation_error < .05, (side, error, rotation_error)
+    data.eq_active[welds] = 0
+    mj.mj_forward(model, data)
+    assert not data.eq_active[welds].any()
+    print("PASS bilateral site-weld grasp without hand contacts")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, default=ROOT / "models/mjcf/aviator.xml")
-    parser.add_argument("--report-only", action="store_true", help="Report an old model without failing closure checks")
-    parser.add_argument("--grip-inset", type=float, default=0.0,
-                        help="Move each physical handle inward by this many metres; keep calibration unchanged")
     args = parser.parse_args()
-    run(args.model, args.report_only, args.grip_inset)
+    run(args.model)

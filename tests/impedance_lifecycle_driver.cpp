@@ -53,7 +53,9 @@ public:
     }
     void disable(Side s) override { feedback_.enabled[int(s)] = feedback_.valid[int(s)] = false; }
     GraspState graspState() const override {
-        GraspState s; s.heartbeat = time(); s.locked = locked_ ? 3 : 0; return s;
+        GraspState s; s.heartbeat = time(); s.locked = locked_ ? 3 : 0;
+        s.angle = .15; s.displacement = -.09;
+        return s;
     }
     uint64_t sendGraspCommand(GraspCommand c) override { locked_ = c == GraspCommand::Lock; return 0; }
     void waitTick() override {
@@ -90,6 +92,7 @@ int main(int argc, char** argv) try {
         DeviceSettings settings(config);
         PausingDevice device(settings, mode);
         DeviceServerOptions options;
+        options.wheel_measurement = mode == "wheel_rebase";
         if (mode == "latest" || after_servo) options.servo = [](const JointFrame& f) { return std::make_unique<LatestProbe>(f); };
         return runDeviceServer(device, config, settings, options, interrupted);
     }
@@ -164,6 +167,8 @@ int main(int argc, char** argv) try {
         while (finish.wait_for(std::chrono::milliseconds(2)) != std::future_status::ready) link.heartbeat();
         finish.get();
     }
+    if (mode == "wheel_rebase") link.sendGraspCommand(GraspCommand::Lock);
+    const auto initial_wheel = link.graspState();
     const auto target = link.jointTargets();
     auto task = std::async(std::launch::async, [&] { link.setImpedanceProfile(true); });
     bool observed_pause = false, cancelled = false;
@@ -185,7 +190,8 @@ int main(int argc, char** argv) try {
     try { task.get(); } catch (const std::exception& e) { failed = true; std::cout << e.what() << '\n'; }
     const bool unchanged = mode == "unchanged" || mode == "fallback";
     check(observed_pause, "Following must execute the lifecycle even with unchanged stiffness");
-    const bool successful = mode == "success" || mode == "latest_impedance" || mode == "rebase" || unchanged;
+    const bool successful = mode == "success" || mode == "latest_impedance" || mode == "rebase" ||
+                            mode == "wheel_rebase" || unchanged;
     check(failed != successful, "wrong profile result");
     if (successful) {
         bool fresh, status;
@@ -201,6 +207,10 @@ int main(int argc, char** argv) try {
         check(state.impedance_profile == "default", "default profile not restored");
         if (mode == "rebase") expected[10] -= .2;
         check(state.target == expected && link.jointTargets() == expected, "default restoration replayed old target");
+        const auto wheel = link.graspState();
+        check(wheel.angle == (mode == "wheel_rebase" ? .15 : initial_wheel.angle) &&
+              wheel.displacement == (mode == "wheel_rebase" ? -.09 : initial_wheel.displacement),
+              "Impedance hold lost measured wheel rebase or used unavailable measurement");
     } else {
         for (int i = 0; i < 200; ++i) {
             link.heartbeat();
