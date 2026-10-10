@@ -86,6 +86,8 @@ HTTP 地址、端口、Bus 订阅地址及模型目录仍由启动参数指定�
 - 飞控指令显示百分比、物理等价值与二维指令/视觉实测对照。指令刻度 ±100%，对照图 ±110%，roll 反馈允许 ±52°，相机派生 pitch 行程为 0～170 mm（旧几何标定路径允许 −5～175 mm），映射仍为 ±50°/0～170 mm 对应 ±100%。
 - 指令 pitch 显示与实际控制位移方向对齐：原始 `control.pitch` 的 −1、0、+1 分别显示 +100% / 170 mm、0% / 85 mm、−100% / 0 mm，百分比、进度条和二维标记使用同一显示方向。概览 `pitch_normalized` 保留原始指令，`pitch_percent` 与 `pitch_mm` 为显示换算值；不改变总线消息或控制逻辑。
 - 过期部件保留灰色旧姿态，当前数值及图形标记取消；HTTP 断连时保留内容明确属于旧快照。每部分的时效在浏览器本地继续推进。
+- 概览与消息列表独立刷新；消息列表请求变慢或失败不会阻塞概览，也不会将概览标为离线。概览的新鲜度只计入自身请求耗时和本地经过时间，旧快照在浏览器内过期时提示“页面更新滞后”，设备侧超时仍按配置阈值判定。
+- 主机资源在后台定期采集，`/api/system` 只读取最近完成的快照；GPU/进程扫描不会阻塞概览等 HTTP 请求。
 
 模型默认显示不透明的驾驶舱和机器人、网格，不显示坐标轴和关节轴。模型允许旋转、平移、缩放和复位；左下角 gizmo 与视角同步并支持点击切换视向。“坐标轴”显示所有 link 的局部坐标系（红 X、绿 Y、蓝 Z），“关节轴”显示所有非 fixed joint 的正轴箭头与转动正方向（右手定则）。驾驶舱和机器人透明度可分别调整，不能拖动机器人产生指令。源会话变化会重置相应显示插值，存在多个近期候选来源时停止该部件更新。
 
@@ -211,13 +213,15 @@ Monitor 校验身份、序号、JPEG 头部尺寸、编码和载荷限制；最�
 ## 验证
 
 ```bash
-cmake --build build/communication --target aviator_monitor_system_test aviator_monitor_test aviator_monitor_overview_test aviator_monitor_config_test aviator_monitor_preview_receiver_test --parallel
+cmake --build build/communication --target aviator_monitor aviator_monitor_slow_nvml aviator_monitor_system_test aviator_monitor_test aviator_monitor_overview_test aviator_monitor_config_test aviator_monitor_preview_receiver_test --parallel
 ctest --test-dir build/communication -R '^monitor_' --output-on-failure
 python nodes/camera/test_preview.py
 python nodes/camera/test_camera.py
 ```
 
 使用相机 Python 环境执行后两项，均无需真实相机。概览测试覆盖相机方向盘直接映射及端点、无效观测拒绝、旧标定兼容、物理换算、标定缺失、范围、左右侧独立时效、跨时钟、多源、JPEG 缓存和路径白名单；配置与 HTTP/TCP 测试还覆盖 YAML 往返、来源热切换、预览参数切换、非法更新、保存失败、并发版本冲突和重启持久化。
+
+`monitor_resource_latency` 通过测试专用 NVML 库阻塞 GPU 采集，验证概览仍可响应、资源缓存保留原采样时间，以及解除阻塞后恢复更新；不调用真实 GPU 驱动。
 
 完整仿真构建的 `managed_gateway_process` 还会启动 Monitor，在进入 `CONTROL` 后持续轮询消息表和概览，检查臂、手反馈序号推进及新鲜度，覆盖轨迹窗口流量导致接收积压的回归场景。
 
@@ -229,7 +233,7 @@ AVIATOR_TEST_PYTHON=/absolute/path/to/camera/python \
 node tests/monitor_browser_test.cjs
 ```
 
-该测试使用独立临时端口和 TEST ONLY 标定，加载仓库真实 URDF，检查 RGB、消息详情、暂停、相机单独过期、恢复及 HTTP 卡顿，并把实际运行截图保存到临时目录。它不连接生产总线或真实设备，也不作为硬件标定证据。
+该测试使用独立临时端口和 TEST ONLY 标定，加载仓库真实 URDF，检查 RGB、消息详情、暂停、相机单独过期、恢复及 HTTP 卡顿；在双臂 100 ms 阈值下验证消息列表阻塞/失败不影响概览，以及双臂实际断流后的过期与恢复，并把实际运行截图保存到临时目录。它不连接生产总线或真实设备，也不作为硬件标定证据。
 
 配置页可单独验证，无需相机 Python 环境：
 

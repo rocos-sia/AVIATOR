@@ -21,6 +21,7 @@
 #include <fcntl.h>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <poll.h>
 #include <pthread.h>
 #include <signal.h>
@@ -51,6 +52,10 @@ struct Client {
     std::map<std::string, std::string> headers;
     std::string parse_error;
     std::size_t body_start = 0;
+};
+struct ResourceCache {
+    std::mutex mutex;
+    std::string body;
 };
 unsigned number(const std::string& text, unsigned maximum) {
     if (text.empty() || text.size() > 10 ||
@@ -105,7 +110,7 @@ bool request_ready(Client& client) {
     return client.request.size() >= client.body_start + size;
 }
 void response(Client& client, monitor::State& state, monitor::Preview& preview,
-              const monitor::Assets& assets, const monitor::Logs& logs, monitor::SystemStats& system,
+              const monitor::Assets& assets, const monitor::Logs& logs, ResourceCache& resources,
               const std::string& clock,
               const std::function<monitor::Json(const monitor::Json*)>& configuration) {
     std::istringstream line(client.request.substr(0, client.request.find("\r\n")));
@@ -174,7 +179,8 @@ void response(Client& client, monitor::State& state, monitor::Preview& preview,
             body = monitor::Json{{"error", "日志目录或文件不可读，请检查 --log-dir 和文件权限。"}}.dump();
         }
     } else if (path == "/api/system") {
-        body = system.snapshot(aviator::monotonic_us()).dump();
+        std::lock_guard<std::mutex> lock(resources.mutex);
+        body = resources.body;
     } else if (path == "/api/model-manifest") {
         body = assets.manifest.dump();
     } else if (path == "/api/overview") {
@@ -233,6 +239,7 @@ void response(Client& client, monitor::State& state, monitor::Preview& preview,
 int main(int argc, char** argv) {
     try {
         monitor::SystemStats system;
+        ResourceCache resources;
         unsigned port = 8081;
         std::string bind_address = "0.0.0.0";
         std::string endpoint = aviator::subscribe_endpoint, config_path, preview_endpoint, log_directory;
@@ -391,6 +398,28 @@ int main(int argc, char** argv) {
         } join{stop, receiver};
         std::thread images([&] { preview_receiver.run(stop); });
         Join image_join{stop, images};
+        // Prime once before serving HTTP. Resource collection (especially GPU
+        // process scanning) can exceed the arm's 100 ms freshness budget.
+        resources.body = system.snapshot(aviator::monotonic_us()).dump();
+        std::thread resource_sampler([&] {
+            auto next = aviator::monotonic_us() + 1000000;
+            while (!stop.load()) {
+                const auto now = aviator::monotonic_us();
+                if (now < next) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    continue;
+                }
+                try {
+                    auto body = system.snapshot(now).dump();
+                    std::lock_guard<std::mutex> lock(resources.mutex);
+                    resources.body = std::move(body);
+                } catch (const std::exception& error) {
+                    aviator::Logger::error("monitor resource sampler: {}", error.what());
+                }
+                next = aviator::monotonic_us() + 1000000;
+            }
+        });
+        Join resource_join{stop, resource_sampler};
         std::array<Client, 8> clients;
         const auto listen_url = "http://" + bind_address + ":" + std::to_string(port) + "/";
         const auto local_url = "http://" +
@@ -460,7 +489,7 @@ int main(int argc, char** argv) {
                         complete = true;
                     }
                     if (complete)
-                        response(client, state, preview, assets, logs, system, clock, configuration);
+                        response(client, state, preview, assets, logs, resources, clock, configuration);
                 }
                 if (!client.response.empty()) {
                     const auto n =

@@ -7,7 +7,8 @@
 #include <map>
 
 namespace monitor {
-// Called only by the HTTP thread; all clients share a one-second sampling cache.
+// Single-owner collector; the monitor samples it in a worker and serves cached
+// results to HTTP clients. snapshot() itself is not thread-safe.
 class SystemStats {
   public:
     explicit SystemStats(std::filesystem::path proc = "/proc", std::filesystem::path sys = "/sys",

@@ -12,7 +12,7 @@ async function main() {
   const [http,bus,rgb]=await Promise.all([port(),port(),port()]);
   assert(new Set([http,bus,rgb]).size===3);
   const identity={position_m:[0,0,0],quaternion_xyzw:[0,0,0,1]};
-  const config={yoke_calibration:{id:'BROWSER-TEST-ONLY',aircraft_camera:identity,tag_yoke:identity,aircraft_yoke_zero:identity,
+  const config={timeouts_ms:{'arm.state':100},yoke_calibration:{id:'BROWSER-TEST-ONLY',aircraft_camera:identity,tag_yoke:identity,aircraft_yoke_zero:identity,
     roll_axis:[0,0,1],pitch_axis:[0,0,1],pitch_zero_mm:85,min_confidence:.5,max_rotation_residual_deg:2,max_translation_residual_mm:2,
     model:{roll_sign:1,roll_offset_rad:0,pitch_sign:-1,pitch_offset_m:0}}};
   const configPath=path.join(directory,'monitor.yaml'),controlPath=path.join(directory,'fixture.json');
@@ -211,12 +211,48 @@ async function main() {
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
     fs.writeFileSync(controlPath,'{}');
     await page.waitForFunction(()=>document.getElementById('actual-pitch').textContent==='73.1 mm');
+    // Hold the message-list response beyond the 100 ms arm budget. Overview
+    // samples must keep advancing; message-list failures must not mark it offline.
+    let releaseState, stateStarted;
+    const heldState=new Promise(resolve=>{releaseState=resolve;});
+    const requestedState=new Promise(resolve=>{stateStarted=resolve;});
+    await page.route('**/api/state',async route=>{
+      stateStarted(); await heldState;
+      await route.fulfill({status:503,contentType:'application/json',body:'{}'});
+    });
+    try {
+      await Promise.race([requestedState,new Promise((_,reject)=>setTimeout(()=>reject(new Error('No message-list request')),5000))]);
+      const sequence=await page.evaluate(()=>window.testViewer.data.arms.left.source.sequence);
+      await page.waitForTimeout(350);
+      await page.waitForFunction(sequence=>{
+        const v=window.testViewer,g=v.data.arms.left;
+        return g.source.sequence>sequence+5 && v.isLive(g) &&
+          document.getElementById('connection').textContent==='监控服务在线';
+      },sequence,{timeout:1500});
+      // A real publisher stop must still expire the arm while other data stays live.
+      fs.writeFileSync(controlPath,JSON.stringify({arm_stale:true}));
+      await page.waitForFunction(()=>{
+        const v=window.testViewer,g=v.data.arms.left;
+        return g.measurement_state==='STALE' && !v.isLive(g) &&
+          document.querySelector('#devices .device-title span').textContent==='数据过期' &&
+          document.getElementById('command-roll').textContent==='+35.0%';
+      });
+      fs.writeFileSync(controlPath,'{}');
+      await page.waitForFunction(()=>window.testViewer.isLive(window.testViewer.data.arms.left));
+      releaseState();
+      await page.waitForFunction(()=>document.getElementById('diagnostics').textContent.includes('消息列表更新失败'));
+      await page.waitForFunction(()=>window.testViewer.isLive(window.testViewer.data.arms.left) &&
+        document.getElementById('connection').textContent==='监控服务在线');
+    } finally { releaseState(); await page.unroute('**/api/state'); fs.writeFileSync(controlPath,'{}'); }
+    await page.locator('#tab-messages').click();
+    await page.waitForFunction(()=>document.getElementById('diagnostics').textContent.includes('仅内存缓存'));
+    await page.locator('#tab-overview').click();
     // An HTTP stall must expire values locally before the next successful request.
     await page.route('**/api/overview',route=>new Promise(resolve=>setTimeout(()=>{route.abort();resolve();},700)));
     await page.waitForFunction(()=>document.getElementById('command-roll').textContent==='—');
     assert.deepStrictEqual(errors,[]);
     assert.strictEqual(serverErrors,'');
-    console.log('Browser checks passed: URDF, two tabs, RGB, camera-only timeout, recovery, HTTP stall, responsive layout.');
+    console.log('Browser checks passed: URDF, two tabs, RGB, camera-only timeout, independent message polling, 100 ms arm timeout/recovery, message-list failure/recovery, HTTP stall, responsive layout.');
     console.log('Screenshots:',directory);
   } finally {
     if(browser) await browser.close();

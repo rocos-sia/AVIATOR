@@ -96,6 +96,15 @@ if(Python3_Interpreter_FOUND AND TARGET aviator_grasp_tool_state)
   endif()
 endif()
 if(Python3_Interpreter_FOUND)
+  add_library(aviator_monitor_slow_nvml SHARED monitor_slow_nvml.cpp)
+  set_target_properties(aviator_monitor_slow_nvml PROPERTIES
+    OUTPUT_NAME nvidia-ml SUFFIX .so.1
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/monitor_slow_nvml")
+  target_link_libraries(aviator_monitor_slow_nvml PRIVATE Threads::Threads)
+  add_test(NAME monitor_resource_latency COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/monitor_resource_latency_test.py
+    $<TARGET_FILE:aviator_monitor> $<TARGET_FILE:aviator_monitor_slow_nvml>)
+  set_tests_properties(monitor_resource_latency PROPERTIES TIMEOUT 15)
   add_test(NAME monitor_http COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/monitor_http_test.py
     $<TARGET_FILE:aviator_monitor> $<TARGET_FILE:aviator_monitor_test>)

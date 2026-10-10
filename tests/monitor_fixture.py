@@ -64,7 +64,8 @@ try:
                     joint_position=[0,.2,-.4,0,.2,0,0])
         right = dict(side, joint_position=[-.5,-.8,.6,1,-.3,-.4,-.2])
         side['joint_position'] = [.5,.8,-.6,1,.3,.4,.2]
-        send('arm.state','ArmState','manipulator',dict(arms=dict(left=side,right=right)),sample)
+        if not control.get('arm_stale'):
+            send('arm.state','ArmState','manipulator',dict(arms=dict(left=side,right=right)),sample)
         positions = control.get('hand_positions', [.1,.2,.3,.4,.5,.6])
         hand = dict(valid=True,status='READY',feedback_available=True,enabled=False,error_code=0,
                     sample_mono_us=sample,feedback_age_ms=0,drive_position_raw=[round(p*1000) for p in positions],

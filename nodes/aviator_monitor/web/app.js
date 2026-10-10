@@ -7,11 +7,12 @@ const fmt = (value, digits = 1) => Number.isFinite(value) ? value.toFixed(digits
 const signed = value => Number.isFinite(value) ? `${value > 0 ? '+' : ''}${value.toFixed(1)}` : '—';
 const labels = {VALID:'反馈有效',FRESH:'发布新鲜',STALE:'数据过期',INVALID:'反馈无效',UNCALIBRATED:'未标定',UNAVAILABLE:'等待反馈',UNOBSERVED:'未观测',UNCONFIGURED:'预览未配置',WAITING:'等待首帧',CLOCK_UNKNOWN:'时钟域未知',FUTURE:'采样时间异常',SOURCE_CONFLICT:'来源冲突',ESTIMATED:'驱动反馈估算姿态'};
 const reasons = {camera_identity_mismatch:'相机身份与观测配置不匹配',no_sample:'尚无样本',multiple_recent_sources:'近期存在多个来源',clock_domain_mismatch:'采样时钟不可比较',future_sample:'采样时间异常',sample_or_receive_timeout:'采样或接收已超时',producer_invalid:'源端标记反馈无效',side_sample_time_missing:'缺少侧级采样时间',future_side_sample:'侧级采样时间异常',negative_feedback_age:'反馈年龄异常',side_feedback_timeout:'设备反馈超时',side_feedback_invalid:'设备反馈无效',invalid_drive_feedback:'驱动反馈格式异常',invalid_joint_positions:'关节反馈格式异常',yoke_calibration_missing:'请配置驾驶盘几何标定',invalid_steering_wheel:'相机方向盘观测无效',steering_wheel_axis_mismatch:'方向盘转轴与标定不匹配',target_not_tracking:'未检测到目标',detection_confidence_low:'检测置信指标不足',invalid_target_pose:'目标位姿无效',ambiguous_rotation:'无法确定滚转角',kinematic_residual_exceeded:'观测偏离机构运动约束',physical_feedback_out_of_range:'观测超出允许反馈范围',command_out_of_range:'指令量超出范围',system_fields_missing:'整机状态字段缺失'};
-const reasonText = g => reasons[g?.reason] ?? '反馈不可用，请查看系统消息';
+const reasonText = g => g?.measurement_state === 'VALID' && !live(g) ?
+  '页面更新滞后，当前快照已过期' : reasons[g?.reason] ?? '反馈不可用，请查看系统消息';
 let overview = null, overviewAt = 0, overviewCost = 0, online = false;
 let tab = 'overview', latestState = null, displayedState = null, pausedAt = 0;
 let selected = null, selectedKind = '', detailBusy = false, detailGeneration = 0, detailKey = '';
-let busy = false, lastStateFetch = 0, viewer = null, preview = null, previewAt = 0, previewCost = 0;
+let busy = false, stateBusy = false, lastStateFetch = -Infinity, viewer = null, preview = null, previewAt = 0, previewCost = 0;
 let imageBusy = false, imageToken = '', imageURL = '', displayedImage = null, imageGeneration = 0, imageError = '';
 let previewReceived = [], filterTopic = '';
 async function get(path, binary = false) {
@@ -122,7 +123,7 @@ function renderDevices() {
     status.className = state; status.textContent = labels[state] ?? state;
     note.textContent = current ? (kind === 'hands' ?
       `${labels[current.pose_state]} · 握持${current.grasp_verified ? '已验证' : '未验证'}` :
-      `采样 ${fmt(g.sample_age_ms + performance.now() - overviewAt)} ms · ${current.status ?? '—'}`) :
+      `采样 ${fmt(g.sample_age_ms + performance.now() - overviewAt + overviewCost)} ms · ${current.status ?? '—'}`) :
       `${reasonText(g)}${g?.source ? ' · 旧姿态仅供参考' : ''}`;
     if (Number.isFinite(current?.error_code) && current.error_code !== 0) { note.textContent += ` · 错误 ${current.error_code}`; status.className='INVALID'; status.textContent='设备故障'; }
     if (kind === 'hands' && current?.hold_control_error) {
@@ -294,17 +295,31 @@ async function cameraRefresh() {
 }
 $('camera-expand').onclick = () => $('camera-dialog').showModal();
 $('camera-close').onclick = () => $('camera-dialog').close();
+async function refreshMessages() {
+  if (stateBusy || !overview || performance.now()-lastStateFetch < 100) return;
+  stateBusy=true; lastStateFetch=performance.now();
+  const session=overview.monitor_session_id;
+  try {
+    const state=await get('/api/state');
+    // A delayed response from the previous monitor must not restore its rows.
+    if (session !== overview?.monitor_session_id) return;
+    latestState=state;
+    if (tab === 'messages' && !pausedAt) renderMessages(state);
+  } catch(error) {
+    if (session !== overview?.monitor_session_id) return;
+    text('diagnostics',`消息列表更新失败，保留旧快照：${error.message}`);
+  } finally { stateBusy=false; }
+}
 async function refresh() {
   if (busy) return;
   busy=true; const started=performance.now();
   try {
-    const stateDue = !latestState || performance.now()-lastStateFetch >= 100;
-    if (stateDue) lastStateFetch=performance.now();
-    const [ov,state]=await Promise.all([get('/api/overview'),stateDue ? get('/api/state') : Promise.resolve(latestState)]);
+    // Overview freshness depends only on this request, never on the message list.
+    const ov=await get('/api/overview'), received=performance.now();
     if (overview && overview.monitor_session_id !== ov.monitor_session_id) {
       selected=null; ++detailGeneration; detailKey=''; ++imageGeneration; imageToken=''; preview=null; previewReceived=[];
       if (imageURL) URL.revokeObjectURL(imageURL); imageURL=''; displayedImage=null; $('camera-image').hidden=true; $('camera-large').removeAttribute('src');
-      viewer?.clearSamples(); displayedState=null; pausedAt=0;
+      viewer?.clearSamples(); latestState=null; displayedState=null; pausedAt=0;
       text('detail','监控服务会话已变化，请重新选择记录。'); text('pause-display','暂停显示'); $('pause-display').setAttribute('aria-pressed','false');
     }
     if (overview && (overview.config_revision !== ov.config_revision || overview.monitor_session_id !== ov.monitor_session_id)) {
@@ -313,9 +328,9 @@ async function refresh() {
       if (imageURL) URL.revokeObjectURL(imageURL);
       imageURL=''; $('camera-image').hidden=true; $('camera-large').removeAttribute('src');
     }
-    overview=ov; overviewAt=performance.now(); overviewCost=overviewAt-started; latestState=state; online=true;
+    overview=ov; overviewAt=received; overviewCost=received-started; online=true;
     viewer?.setData(overview,live);
-    if (tab === 'messages' && !pausedAt && displayedState !== state) renderMessages(state);
+    if (!latestState) refreshMessages();
   } catch(error) {
     online=false; ++detailGeneration;
     text('detail-title','消息详情 · 旧快照'); text('notice',error.message);
@@ -328,9 +343,10 @@ import('./viewer.js').then(({Viewer}) => {
 }).catch(error => { text('model-loading',`三维显示不可用：${error.message}`); $('model-loading').classList.add('failed'); });
 document.addEventListener('visibilitychange',() => {
   viewer?.setVisible(tab === 'overview' && !document.hidden);
-  if (!document.hidden) { refresh(); cameraRefresh(); }
+  if (!document.hidden) { refresh(); refreshMessages(); cameraRefresh(); }
 });
 setInterval(() => { if (!document.hidden || performance.now()-overviewAt > 2000) refresh(); },20);
+setInterval(() => { if (!document.hidden) refreshMessages(); },100);
 setInterval(cameraRefresh,67);
 setInterval(() => {
   renderOverview(); renderCamera();
