@@ -17,7 +17,8 @@ for arg in "$@"; do
             echo '启动真实机械臂、相机、手节点、Monitor 和相机随动测试 Core；无需 Gateway。'
             echo 'Core 自动使能、接近并锁定把手，随后在关节阻抗模式下随动。'
             echo '--fake-hand 使用模拟双手；--logger 开启 MCAP 与相机图像记录。'
-            echo '默认二进制目录 build/release/bin；Ctrl+C 先停止 Core，再停止其他节点。'
+            echo '默认二进制目录：源码运行 build/release/bin，安装运行使用安装目录 bin。'
+            echo 'Ctrl+C 先停止 Core，再停止其他节点。'
             echo '环境变量: AVIATOR_BIN, CONDA_ROOT, HAND_PYTHON, CAMERA_PYTHON, MONITOR_BIN,'
             echo '          CAMERA_TIMEOUT_MS (默认200), START_DELAY (默认2秒)'
             exit 0 ;;
@@ -25,7 +26,11 @@ for arg in "$@"; do
     esac
 done
 
-AVIATOR_BIN=${AVIATOR_BIN:-$ROOT/build/release/bin}
+if [[ -f $ROOT/../../release-version.json ]]; then
+    AVIATOR_BIN=${AVIATOR_BIN:-$ROOT/../../bin}
+else
+    AVIATOR_BIN=${AVIATOR_BIN:-$ROOT/build/release/bin}
+fi
 CONDA_ROOT=${CONDA_ROOT:-$HOME/miniconda3}
 HAND_PYTHON=${HAND_PYTHON:-$CONDA_ROOT/envs/rh56-pendant/bin/python3}
 CAMERA_PYTHON=${CAMERA_PYTHON:-$CONDA_ROOT/envs/apriltag_realsense/bin/python}
@@ -41,6 +46,7 @@ CAMERA_TIMEOUT_MS=$((10#$CAMERA_TIMEOUT_MS))
 SYSTEM_CONFIG=config/system.yaml
 HAND_NODE=nodes/rh56ftp_hand/rh56ftp_node.py
 if $FAKE_HAND; then HAND_NODE=nodes/rh56ftp_hand/fake_rh56ftp_hand.py; fi
+[[ ! -d $ROOT/rh56ftp_hand ]] || HAND_NODE=${HAND_NODE#nodes/}
 recording_options=()
 if $LOGGER; then recording_options+=(--recording-config config/recording.yaml); fi
 

@@ -39,6 +39,8 @@ make
 
 应用程序输出到 `build/bin`，测试可执行文件（包括手动查看器测试）统一输出到 `build/tests`；通过 `ctest --test-dir build --output-on-failure` 运行自动测试。
 
+完整构建成功后自动安装到 `${CMAKE_BINARY_DIR}/dist`（例如 `build/release/dist/`），生成 `release-version.json`、`SHA256SUMS` 和 `release-checksum.json`（需要 Python 3.9+）。版本维护、校验命令及显式台架测试码见 [版本与校验码实现方案](docs/AVIATOR版本与校验码实现方案.md)。单独构建某个 target 后，可运行 `cmake --build build --target aviator_release` 更新完整安装包。
+
 默认使用 Release；首次构建会自动编译第三方库并安装到 `build/third_party/install`，无需预先安装 Pinocchio 或手动设置其头文件路径。系统开发包仍需按构建说明安装。第三方库默认使用 2 个编译任务，可通过 `-DAVIATOR_DEPENDENCY_JOBS=N` 调整。
 
 仅构建通信库：
@@ -49,7 +51,7 @@ cmake --build build/communication --parallel
 ctest --test-dir build/communication --output-on-failure
 ```
 
-提供 linux-debug、linux-release、simulation、replay 四组 configure/build/test presets。simulation 和 replay 当前只预留独立构建目录，尚未实现模式差异。通信测试已接入 CTest，接口和实现边界见 [common](common/README.md)。安装包含公共库、头文件、aviator_bus、flight_gateway、aviator_monitor 和文档，不安装占位配置。
+提供 linux-debug、linux-release、simulation、replay 四组 configure/build/test presets。simulation 和 replay 当前只预留独立构建目录，尚未实现模式差异。通信测试已接入 CTest，接口和实现边界见 [common](common/README.md)。安装包含已选择的程序、公共库、头文件、运行配置、Python 模块及文档。
 
 旧工程、模型和辅助工具保留原位置；默认完整构建包含已接入的 examples，通信独立构建跳过这些示例。目录归属与后续迁移见 [项目目录与迁移说明](docs/项目目录与迁移说明.md)。
 

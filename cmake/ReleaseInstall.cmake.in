@@ -1,0 +1,7 @@
+# Partial component installs cannot claim a complete system release.
+if(NOT CMAKE_INSTALL_COMPONENT)
+  execute_process(COMMAND "@Python3_EXECUTABLE@" "@_release_tool@" generate
+    "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}" --build-info "@_release_info@"
+    --source "@PROJECT_SOURCE_DIR@" --config "${CMAKE_INSTALL_CONFIG_NAME}"
+    COMMAND_ERROR_IS_FATAL ANY)
+endif()

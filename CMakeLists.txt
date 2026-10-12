@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(AVIATOR VERSION 0.1.0 LANGUAGES C CXX)
+project(AVIATOR VERSION 0.2.0 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
   message(FATAL_ERROR "Use an out-of-source build: cmake --preset debug")
@@ -85,3 +85,6 @@ if(NOT AVIATOR_COMMUNICATION_ONLY AND (AVIATOR_BUILD_ROBOTICS_LIBS OR AVIATOR_BU
     install(DIRECTORY "${AVIATOR_DEPS_DIR}/lib/" DESTINATION ${CMAKE_INSTALL_LIBDIR}
         FILES_MATCHING PATTERN "*.so*")
 endif()
+
+# Finalize only after every component has registered its installation rules.
+include(cmake/Release.cmake)

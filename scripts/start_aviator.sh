@@ -33,7 +33,11 @@ SYSTEM_CONFIG=config/system.yaml
 if $SIMULATION; then
     SYSTEM_CONFIG=config/system-simulation.yaml
 fi
-AVIATOR_BIN=${AVIATOR_BIN:-$ROOT/build/bin}
+if [[ -f $ROOT/../../release-version.json ]]; then
+    AVIATOR_BIN=${AVIATOR_BIN:-$ROOT/../../bin}
+else
+    AVIATOR_BIN=${AVIATOR_BIN:-$ROOT/build/bin}
+fi
 recording_options=()
 if $LOGGER; then
     recording_options+=(--recording-config config/recording.yaml)
@@ -45,6 +49,7 @@ HAND_NODE=nodes/rh56ftp_hand/rh56ftp_node.py
 if $FAKE_HAND; then
     HAND_NODE=nodes/rh56ftp_hand/fake_rh56ftp_hand.py
 fi
+[[ ! -d $ROOT/rh56ftp_hand ]] || HAND_NODE=${HAND_NODE#nodes/}
 CAMERA_PYTHON=${CAMERA_PYTHON:-$CONDA_ROOT/envs/apriltag_realsense/bin/python}
 MONITOR_BIN=${MONITOR_BIN:-$AVIATOR_BIN/aviator_monitor}
 START_DELAY=${START_DELAY:-2}
@@ -121,7 +126,7 @@ if ! $DRY_RUN; then
     else
         commands+=(sudo)
         executables+=("$AVIATOR_BIN/manipulator" "$HAND_PYTHON" "$CAMERA_PYTHON")
-        files+=(config/camera.yaml config/rh56ftp_hand.yaml "$HAND_NODE" nodes/rh56ftp_hand/rh56ftp_node.py nodes/camera/main.py)
+        files+=(config/camera.yaml config/rh56ftp_hand.yaml "$HAND_NODE" nodes/camera/main.py)
     fi
     for command in "${commands[@]}"; do
         command -v "$command" >/dev/null || { echo "缺少命令: $command" >&2; exit 1; }
