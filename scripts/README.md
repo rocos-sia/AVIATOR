@@ -23,13 +23,15 @@ RH56FTP、Core、Camera、Monitor，打开全屏 Chrome；指定 `--logger` 时�
 ./scripts/start_aviator.sh
 ./scripts/start_aviator.sh --logger  # 开启日志记录
 ./scripts/start_aviator.sh --fake-hand  # 真实机械臂和相机 + 模拟 RH56FTP 双手
+./scripts/start_aviator.sh --tts  # 已准备音频包时开启离线语音提醒
 ```
 
 脚本可从任意目录调用。启动前检查文件，通过标准输入自动提交脚本内配置的 sudo 密码；
 Manipulator 在独立会话内直接认证，停止时也直接认证，不依赖 sudo 缓存，
 各节点日志写入输出的
 `/tmp/aviator-start.*` 目录；保持终端打开，Ctrl+C 停止本次启动的所有节点。
-节点退出会触发其余节点停止，浏览器保留打开。锁阻止该脚本重复运行；使用前应先停止手动启动的节点。
+控制节点退出会触发其余节点停止，浏览器保留打开；可选 TTS 节点退出只报告日志，不停止控制节点。
+锁阻止该脚本重复运行；使用前应先停止手动启动的节点。
 启动顺序之间默认等待 2 秒（不代表设备已就绪），Monitor HTTP 就绪后打开浏览器。
 相机仍使用 `--show`，因此需要桌面显示环境。
 默认不开启 Logger，也不启用相机图像录制通道；各节点的运行诊断日志仍写入临时日志目录。
@@ -49,6 +51,35 @@ Manipulator 在独立会话内直接认证，停止时也直接认证，不依�
 其余启动流程照常执行。不能与 `--simulation` 同时使用，因为整机仿真已经提供手反馈。
 `/tmp/aviator_session.uuid` 不存在或为空时生成 UUID，否则沿用现有值。
 `--dry-run` 只打印启动命令，不启动节点、不请求 sudo、不写文件。
+
+`--tts` 在 Core 前启动 `aviator_tts`，真机、模拟手与整机仿真均支持，默认关闭。
+先按 [节点说明](../nodes/aviator_tts/README.md) 离线生成音频包，构建所选 `AVIATOR_BIN`
+中的 `aviator_tts`。脚本在启动设备前检查 `aplay`、配置和音频，日志写入 `tts.log`。
+`TTS_CONFIG` 默认指向运行目录的 `config/tts.yaml`；总线地址使用所选 `system.yaml`
+或 `system-simulation.yaml`。TTS 有独立的首次状态宽限时间，音频设备故障不阻塞控制。
+相机随动入口是 Direct Core，不能使用这一整机状态提醒，因此相机随动脚本不增加 `--tts`。
+
+## 预生成语音
+
+[generate_tts.sh](generate_tts.sh) 使用项目 `models/tts/` 内的 Matcha Baker 和 Vocos，
+按 `config/tts.yaml` 批量生成音频并自动检查文案、WAV 格式及 SHA256。
+默认输出到 `assets/tts/zh_CN/`，不启动机器人或播放声音。
+
+```bash
+# 首次准备 Python 环境；脚本自身不安装依赖或下载模型
+python3 -m venv .cache/tts-venv
+.cache/tts-venv/bin/pip install -r tools/tts/requirements.txt
+./scripts/generate_tts.sh --dry-run
+./scripts/generate_tts.sh
+./scripts/generate_tts.sh --check
+./scripts/generate_tts.sh --speed 0.9 --output /tmp/aviator-tts-preview
+```
+
+默认优先使用项目 `.cache/tts-venv/bin/python`，否则使用 `python3`；`TTS_PYTHON` 可指定
+其他解释器。支持 `--config`、`--output`、`--threads`、`--speed`，以及用于更换模型的
+`--model-dir`、`--vocoder`、`--model-source`。模型依赖准备好后可以完全离线生成。
+可从任意目录调用，默认路径定位到项目；显式相对路径以调用目录为准。
+全部配置与播放命令见 [aviator_tts README](../nodes/aviator_tts/README.md)。
 
 ## 相机随动测试
 
@@ -110,6 +141,8 @@ cmake --build build --target aviator_grasp_tool_session aviator_bus -j2
 默认包含 GCC/G++、CMake、Ninja、pkg-config、Python 3、clangd、clang-format、
 clang-tidy、GDB，以及 Eigen、Boost、NLopt C/C++、URDF、Assimp、OctoMap、YAML、
 XML、ZeroMQ、JSON、GLFW/OpenGL/EGL 和 MuJoCo 所需系统库。
+另外包含离线提醒播放所需 `alsa-utils` 和配置/音频生成工具所需 `python3-yaml`；
+sherpa-onnx、numpy 和模型在独立生成环境中准备，不自动安装到系统 Python。
 `libnlopt-cxx-dev` 提供 PIN-IK 必需的 `nlopt.hpp`，仅安装 `libnlopt-dev` 不够。
 
 脚本执行 `apt-get update` 和依赖安装，允许重复运行；不会卸载包、添加 PPA 或修改软件源。

@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "engine": "sherpa-onnx",
+    "engine_version": "1.13.8",
+    "model_source": "官方 Matcha Baker 模型，仅用于非商业开发测试",
+    "model_files": {
+      "README.md": "d47ef70781df15845b6f28c6c071dee9e51b52c36797a8130a620c5c8895929c",
+      "date.fst": "eb8aa079ae3cb81d8f4404992f39d61a0cb990947512b5b8d1e54d1f6980e718",
+      "dict/README.md": "8bcc7c2ed7dff082d9a99c09de0bfd72249bf3b5c4298a3af328da40cbd8cfd1",
+      "dict/generate_user_dict.py": "24541017b4b60d8e1ad94a5165f7097d2fd107d4ceecbf13583dd37682fdd2a7",
+      "dict/hmm_model.utf8": "f17790586ac86dd048c8adffed052c4bd2b28ed0682972c1275e59040c0589a7",
+      "dict/idf.utf8": "dbd1e03d72b2263cc8d84a4304ed77677eed9e7deaf43a1a5133bbba9733b535",
+      "dict/jieba.dict.utf8": "3043b77068e09c9904f27cad82f12b6ebe9dbdb5aeff3b25e45ab7f9c1122b55",
+      "dict/pos_dict/char_state_tab.utf8": "28b7be1dd7369766a51445af4d42e9a2ba4bf374c13be5bc1ca7721e27271dbb",
+      "dict/pos_dict/prob_emit.utf8": "c33c4cb7edf3b3a5947df7209b6e9f267eae1f21335d9e2bd2521ea07105457a",
+      "dict/pos_dict/prob_start.utf8": "13623ea0e9300bdb597cb2da28770b7b385d6c0098d66e516083fb01b6bd5d96",
+      "dict/pos_dict/prob_trans.utf8": "f22363e2307408293d180c6f9f6b5cb75879d52f722f7764fa2d3d0ae2400236",
+      "dict/stop_words.utf8": "b788b8a939d2e2fe079abd579ea98f12f9fb84370bfd0dddd81bb9381f7ab42c",
+      "dict/user.dict.utf8": "5faabcd0c52adf512de77fd7eee3d556da8c98b50f493b47c66a981b3a24959c",
+      "lexicon.txt": "38b886d46aefa50da6322a64d72fd595d5f4fae1051adb160d647541b1e0a4a2",
+      "model-steps-3.onnx": "ff1cc7f7abdedc4eeec668a4a0dc2e72a0c314c5637d5fce885345b490bd08de",
+      "number.fst": "743f402181fcfebf76cc2f0546b71fa26476e626fbe4e460fb7b4c3a7a8bd5bd",
+      "phone.fst": "1ac2b6fa56b1442320c4de7db08353bab8963a2b57f365eebcdd3a2d3562f8d7",
+      "tokens.txt": "56209b2bf609d5ac1d66ede6dae7bf5254bd3f8aa24c4a6823713d5b884d87ba"
+    },
+    "vocoder_sha256": "0574a135aa1db2de6e181050db2ec528496cacd4a4701fc5d7faf9f9804c0081",
+    "speed": 1.0,
+    "speaker": 0,
+    "threads": 2,
+    "format": "mono PCM16",
+    "generator_version": 1
+  },
+  "fingerprint": "e022dd392b271daa57310ffb92a8d6d62d6c22d74a85a9f380dcb50b0c5f2144",
+  "cues": {
+    "INIT": {
+      "text": "系统尚未初始化",
+      "file": "437a5f5f8a76aac1e199f4fdeb474e6874c5a48688ff6d1c9b8ba40fe415e858.wav",
+      "sha256": "4f4a87824f5fc940761f392c31c0fdc4a3b2a61f41d665be55fc3444c2c23fc7"
+    },
+    "INITIALIZING": {
+      "text": "系统正在初始化",
+      "file": "e9fc26b9f19d7788a1e161802b00222c904b63226203c8b2ae725402e2fbcb01.wav",
+      "sha256": "586a49a40ea616e8fbd55266ff946b57c37e0bec40cd7a124ebbdbcd582ad9d1"
+    },
+    "READY": {
+      "text": "初始化完成",
+      "file": "c69b40d21cfe94c4d6f7ea59135ed93bb989e584c1f1a7fb542c72e303e36f78.wav",
+      "sha256": "729c5ee7f645f746622970d5e79a143f2b42a137943c4c39f1991dceb2b50fd5"
+    },
+    "HOMING": {
+      "text": "正在返回待机位置",
+      "file": "ef79eb898e622c799833d39cafccee460061ddb3960ad5be0f138c4404de1a6d.wav",
+      "sha256": "f3a6d6ed5e7cd2e7bcd9a16c9829565d28a92b29f730d56564ee9999c08d6ed6"
+    },
+    "STANDBY": {
+      "text": "已进入待机状态",
+      "file": "62306410d6f8c50925efeb99ac8791e228f56be478231e16fc8d6c370fff6b78.wav",
+      "sha256": "d01f67f63b081baa538c472ead37e6c0eb4ca13a718148332e17e07454c7c1bb"
+    },
+    "GRASPING": {
+      "text": "正在抓握方向盘",
+      "file": "0fd5575d563b35a83fc52579a181cc706b4d7f02081226ae7e9897a85548cba6.wav",
+      "sha256": "e9ce4611955113c05a0eff240d99e591327796498e7d9353541c40e7b718edd4"
+    },
+    "FOLLOWING": {
+      "text": "进入跟随模式",
+      "file": "c4c71fa1ba9324b4ee430b615bb593de40515b372cd1784d9a89aa0e18eb3d1f.wav",
+      "sha256": "b2ea65ddf891b5c4c08a25b47f750b5b608973c127f3890b95739d490476fe14"
+    },
+    "FOLLOWING_FROM_CONTROL": {
+      "text": "退出操控，进入跟随模式",
+      "file": "a7ef53c1303c545645ddc770a4826481eb6a31c98bdd1944d3bbab3201694352.wav",
+      "sha256": "30463a93b8c44c8ab00948552c229bd3602612faab8f963311d6d19096c51312"
+    },
+    "CONTROL": {
+      "text": "进入操控模式",
+      "file": "ed87cc8a984ac8a4d9a9c9f917a12baedf2658ba48dab47538d5af5c9be63893.wav",
+      "sha256": "21e41f316ab97f9e88ddc9418a05fcea45b245da5ace1f832b2c2cefdc2ae69d"
+    },
+    "RELEASING": {
+      "text": "正在释放方向盘",
+      "file": "5588cc2c5ee69c5a157896527d36da797289de4aeb44c4cdcdd45a0e55c7d08c.wav",
+      "sha256": "f7cc30e4f26711c1b04b90cc77e1b89e08b132611774f59949837da426abbbb1"
+    },
+    "SAFE": {
+      "text": "进入保护状态",
+      "file": "bc4f8a1e59f44c814be233e8117ec29a7f4cdab82ffb7c94688f04336857dfb6.wav",
+      "sha256": "5113dbf60e02505c25c5d43b67ab36297a5461d8781fbf1a90936c83a2b4ed9a"
+    },
+    "ERROR": {
+      "text": "系统故障，请检查",
+      "file": "8c22dfd7a4c2500e5b65add89287ff6b1574be4177cf7d3b7e7e0095a140fd8f.wav",
+      "sha256": "085f9c1be5695c86119368569dae8684470e5ca135d728be97c29f12df42477d"
+    },
+    "EMERGENCY_STOP": {
+      "text": "软件急停已触发",
+      "file": "f019fcc2a217a5a0f7ae0a1505fe3158bd023aed905c652249e94af182052126.wav",
+      "sha256": "8624fb0577e3eb75a1a443bcf06a959925f762e3b8e1c951744b0f8c372a5e3e"
+    },
+    "COMM_LOST": {
+      "text": "控制状态通信中断",
+      "file": "11c67ed6452c747f3a9af7a3367ad3ae0021fa3b7984260358faedfe577f07dd.wav",
+      "sha256": "206ce602bf0cd7c11d24a4896d4b75a6e0984941fb5ecd8273a753f66eff15f1"
+    },
+    "COMM_RESTORED": {
+      "text": "控制状态通信恢复",
+      "file": "6f3c73951756cc97c22f5bce1707ac4924816b9a0cbd3ceb7ced8148473b02ff.wav",
+      "sha256": "cae2f13b988f629f740dd5ef4c90e68dcdba88f1b2aeadc0f5669c5f1f0c3de1"
+    },
+    "SOURCE_CONFLICT": {
+      "text": "检测到多个控制状态来源，请检查",
+      "file": "1b33aea93d56f9d2c710748c85978719541c3f66eca8e242417c1b7a7f5709a6.wav",
+      "sha256": "59658a708af585d1640635a3e519c23b7042dc5a97787ff03d5d0d2f71060a49"
+    }
+  }
+}

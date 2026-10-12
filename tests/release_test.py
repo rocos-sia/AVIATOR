@@ -219,6 +219,14 @@ class ReleaseTest(unittest.TestCase):
                     self.assertIn("rh56ftp_hand/fake_rh56ftp_hand.py", output)
                     self.assertNotIn("nodes/rh56ftp_hand/", output)
                     self.assertIn("nodes/camera/main.py", output)
+                    if name == "start_aviator.sh":
+                        tts_output = subprocess.check_output(
+                            ["bash", str(launcher), "--dry-run", "--simulation", "--tts"], env=env, text=True)
+                        line = next(line for line in tts_output.splitlines() if line.startswith("启动 tts:"))
+                        tts = shlex.split(line.split(":", 1)[1])
+                        self.assertEqual(Path(tts[0]).resolve(), Path(override or self.root / "bin") / "aviator_tts")
+                        self.assertIn("config/system-simulation.yaml", tts)
+                        self.assertLess(tts_output.index("启动 tts:"), tts_output.index("启动 core:"))
 
 
 if __name__ == "__main__":

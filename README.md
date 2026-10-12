@@ -19,6 +19,7 @@ AVIATOR/
 │   ├── camera/
 │   ├── aviator_logger/
 │   ├── aviator_monitor/
+│   ├── aviator_tts/
 │   ├── aviator_plotter/
 │   └── aviator_replay/
 ├── config/         # system、robot、camera、recording YAML 占位
@@ -64,6 +65,7 @@ ctest --test-dir build/communication --output-on-failure
 | 因时手 | [构建、双 CAN 配置、ZMQ 手动控制、实际位置反馈与只读检查](nodes/aviator_hand/README.md) |
 | RealSense 相机 | [ChArUco/AprilTag 选择、实时识别预览、位姿打印与订阅](nodes/camera/README.md) |
 | 联合录制 | [相机与 Logger 启动顺序、共用 session、业务/图像分文件保存](nodes/camera/README.md#检测与-mcap-录制) |
+| 离线语音提醒 | [aviator_tts 构建、音频生成和启动](nodes/aviator_tts/README.md)，[设计方案](docs/AVIATOR语音提醒设计.md)；准备音频后用 `start_aviator.sh --tts` 开启 |
 
 以上操作示例从仓库根目录运行。手和相机可复用同一个 `aviator_bus`：发布者连接 `5555`、
 订阅者连接 `5556`；图像单独发送至 Logger 的 `5557`。视频预览和位姿打印默认关闭，

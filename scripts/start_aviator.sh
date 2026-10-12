@@ -9,6 +9,7 @@ SIMULATION=false
 FAKE_HAND=false
 HEADLESS=false
 LOGGER=false
+TTS=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
@@ -16,13 +17,15 @@ for arg in "$@"; do
         --fake-hand) FAKE_HAND=true ;;
         --headless) HEADLESS=true ;;
         --logger) LOGGER=true ;;
+        --tts) TTS=true ;;
         -h|--help)
-            echo '用法: ./scripts/start_aviator.sh [--simulation | --fake-hand] [--headless] [--logger] [--dry-run]'
+            echo '用法: ./scripts/start_aviator.sh [--simulation | --fake-hand] [--headless] [--logger] [--tts] [--dry-run]'
             echo '默认启动 Rokae + RH56FTP，加载 config/system.yaml。'
             echo '--simulation 使用单个仿真进程替代设备节点，加载 config/system-simulation.yaml。'
             echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂和相机照常启动。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
-            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, HAND_PYTHON, CAMERA_PYTHON, MONITOR_BIN, START_DELAY'
+            echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
+            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, HAND_PYTHON, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, START_DELAY'
             exit 0 ;;
         *) echo "未知参数: $arg" >&2; exit 2 ;;
     esac
@@ -52,12 +55,14 @@ fi
 [[ ! -d $ROOT/rh56ftp_hand ]] || HAND_NODE=${HAND_NODE#nodes/}
 CAMERA_PYTHON=${CAMERA_PYTHON:-$CONDA_ROOT/envs/apriltag_realsense/bin/python}
 MONITOR_BIN=${MONITOR_BIN:-$AVIATOR_BIN/aviator_monitor}
+TTS_CONFIG=${TTS_CONFIG:-$ROOT/config/tts.yaml}
 START_DELAY=${START_DELAY:-2}
 [[ $START_DELAY =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo 'START_DELAY 必须为非负秒数' >&2; exit 2; }
 SESSION_FILE=/tmp/aviator_session.uuid
 PIDS=()
 NAMES=()
 ROOT_PIDS=()
+OPTIONAL_EXIT_REPORTED=()
 # 每次 sudo 调用直接认证，避免依赖跨 setsid 会话的认证缓存。
 SUDO_PASSWORD='a'
 
@@ -85,6 +90,13 @@ check_nodes() {
     local i
     for i in "${!PIDS[@]}"; do
         if ! kill -0 "${PIDS[i]}" 2>/dev/null; then
+            if [[ ${NAMES[i]} == tts ]]; then
+                if [[ ${OPTIONAL_EXIT_REPORTED[i]:-false} != true ]]; then
+                    echo "TTS 已退出，控制节点继续运行；请查看 $LOG_DIR/tts.log" >&2
+                    OPTIONAL_EXIT_REPORTED[i]=true
+                fi
+                continue
+            fi
             echo "${NAMES[i]} 已退出，请查看 $LOG_DIR/${NAMES[i]}.log" >&2
             exit 1
         fi
@@ -117,6 +129,11 @@ if ! $DRY_RUN; then
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
         "$AVIATOR_BIN/aviator_core_managed" "$MONITOR_BIN")
     files=("$SYSTEM_CONFIG" config/robot.yaml config/camera.yaml)
+    if $TTS; then
+        executables+=("$AVIATOR_BIN/aviator_tts")
+        files+=("$TTS_CONFIG")
+        commands+=(aplay)
+    fi
     if $LOGGER; then
         executables+=("$AVIATOR_BIN/aviator_logger")
         files+=(config/recording.yaml)
@@ -137,6 +154,8 @@ if ! $DRY_RUN; then
     for file in "${files[@]}"; do
         [[ -r $file ]] || { echo "文件不可读: $file" >&2; exit 1; }
     done
+    # Fail preparation before starting hardware; runtime audio failure is optional.
+    if $TTS; then "$AVIATOR_BIN/aviator_tts" --config "$TTS_CONFIG" --check; fi
     exec 9>"${XDG_RUNTIME_DIR:-/tmp}/aviator-start-${UID}.lock"
     flock -n 9 || { echo '一键启动脚本已在运行。' >&2; exit 1; }
     if ! $SIMULATION; then sudo -S -p '' -v <<< "$SUDO_PASSWORD"; fi
@@ -167,6 +186,9 @@ else
         "$HAND_NODE" --config config/rh56ftp_hand.yaml
 fi
 start gateway "$AVIATOR_BIN/flight_gateway"
+if $TTS; then
+    start tts "$AVIATOR_BIN/aviator_tts" --config "$TTS_CONFIG" --system-config "$SYSTEM_CONFIG"
+fi
 start core "$AVIATOR_BIN/aviator_core_managed" --config "$SYSTEM_CONFIG"
 if ! $SIMULATION; then
     start camera env PATH="$(dirname "$CAMERA_PYTHON"):$PATH" "$CAMERA_PYTHON" \

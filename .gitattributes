@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Preserve generated audio and model bytes across platforms.
+models/tts/**/*.onnx binary
+models/tts/**/*.fst binary
+assets/tts/**/*.wav binary

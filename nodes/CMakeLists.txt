@@ -1,4 +1,5 @@
 add_subdirectory(aviator_bus)
+add_subdirectory(aviator_tts)
 add_subdirectory(flight_gateway)
 add_subdirectory(aviator_core)
 add_subdirectory(manipulator)

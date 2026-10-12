@@ -1,5 +1,10 @@
 # 配置
 
+`tts.yaml` 配置同机 Managed Core 的语音提醒来源、时效、启动宽限、音频设备、音频目录、
+中文文案与优先级。路径相对于配置文件；修改文案后重新生成音频并重启节点，
+详见 [aviator_tts](../nodes/aviator_tts/README.md)。启动脚本 `--tts` 会将所选 system 配置的
+Bus 订阅地址传给节点；`TTS_CONFIG` 可指定自定义语音配置。
+
 `grasp.json` 的工具变换分别放在 `tool.left` 和 `tool.right` 下，各含 `position` 和
 `quaternion`。`position` 单位为米，表示在对应法兰坐标系中的工具中心位置；四元数顺序为
 `[w, x, y, z]`，表示工具坐标系相对法兰的朝向。修改 `tool.left.position[1]` 只调整左侧

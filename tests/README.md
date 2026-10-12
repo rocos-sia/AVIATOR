@@ -1,5 +1,11 @@
 # 通信测试
 
+`tts_rules` 验证 `aviator_tts` 的状态去重、实际状态码、时效、初始告警、错误变化、
+启动宽限、失联恢复、实例重启、来源冲突和队列过期。`tts_process` 用真实 loopback ZMQ、
+ALSA null 设备与可控播放器验证缓存原子更新、文案失配/损坏拒绝、抢占、单实例与信号回收；
+需要 Python/PyYAML 和 `aplay`，无需模型、pyzmq、机器人或扬声器。
+运行 `ctest --test-dir build/communication -R '^tts_' --output-on-failure`。
+
 `motion_protocol` 覆盖 81 点 Servo 双臂 q/dq/ddq 完整报文（超过旧 64 KiB 限制）、
 128 KiB 报文预算、超出窗口上限的拒绝，以及普通轨迹原有 32 点/63 样本限制。
 `control_nodes_servo_window` 使用独立端口和 MuJoCo，验证 42 ms 补窗间隔后的连续恢复、

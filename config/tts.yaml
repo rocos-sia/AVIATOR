@@ -1,0 +1,29 @@
+# Same-host Managed Core snapshots only. Paths are relative to this file.
+subscribe: tcp://127.0.0.1:5556
+publisher: aviator_core
+device: default
+audio_dir: ../assets/tts/zh_CN
+freshness_ms: 200
+# Delay after status becomes unavailable; this is not a control watchdog.
+lost_after_ms: 2000
+# Allow the launcher/Core to initialize before the first trustworthy snapshot.
+startup_grace_ms: 15000
+queue_ttl_ms: 5000
+announce_initial: false
+cues:
+  INIT: {text: "系统尚未初始化", priority: 0}
+  INITIALIZING: {text: "系统正在初始化", priority: 0}
+  READY: {text: "初始化完成", priority: 0}
+  HOMING: {text: "正在返回待机位置", priority: 0}
+  STANDBY: {text: "已进入待机状态", priority: 0}
+  GRASPING: {text: "正在抓握方向盘", priority: 0}
+  FOLLOWING: {text: "进入跟随模式", priority: 0}
+  FOLLOWING_FROM_CONTROL: {text: "退出操控，进入跟随模式", priority: 1}
+  CONTROL: {text: "进入操控模式", priority: 1}
+  RELEASING: {text: "正在释放方向盘", priority: 0}
+  SAFE: {text: "进入保护状态", priority: 2}
+  ERROR: {text: "系统故障，请检查", priority: 2}
+  EMERGENCY_STOP: {text: "软件急停已触发", priority: 3}
+  COMM_LOST: {text: "控制状态通信中断", priority: 2}
+  COMM_RESTORED: {text: "控制状态通信恢复", priority: 1}
+  SOURCE_CONFLICT: {text: "检测到多个控制状态来源，请检查", priority: 2}

@@ -13,6 +13,10 @@
 // 需要记录时加 --logger（真机/仿真均适用），例如：AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation --logger；同时接入 Logger 5557。
 // 单独运行需录图时添加 --recording-config config/recording.yaml；--no-camera-window 仅关浮动窗口。
 // 以下为真机启动流程：
+// 离线语音可选：按 nodes/aviator_tts/README.md 生成音频包后，在一键启动参数加 --tts。
+// 真机和仿真均支持；可先 --tts --dry-run 预览，TTS 运行失败不会停止控制节点。
+// 手动启动：./build/bin/aviator_tts --config config/tts.yaml --system-config config/system.yaml
+// 无音频包联调：同命令加 --dry-run，只记录应播报的文案。设计见 docs/AVIATOR语音提醒设计.md。
 
 //1、启动bus
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_bus --config config/system.yaml 
