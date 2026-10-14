@@ -38,7 +38,7 @@ public:
             log_("离线演示：未连接机器人");
             return;
         }
-        robot_ = std::make_unique<rokae::xMateErProRobot>();
+        robot_ = std::make_unique<rokae::ArRobot>();
         robot_->connectToRobot(robotIp, localIp);
         connected_ = true;
         std::error_code ec;
@@ -170,7 +170,7 @@ private:
     std::atomic<bool> &stop_;
     bool offline_;
     std::function<void(const std::string &)> log_;
-    std::unique_ptr<rokae::xMateErProRobot> robot_;
+    std::unique_ptr<rokae::ArRobot> robot_;
     std::shared_ptr<rokae::RtMotionControlCobot<7>> rt_;
     Joints target_{};
     std::atomic<long long> heartbeat_{0};

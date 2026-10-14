@@ -9,7 +9,7 @@ namespace aviator::calibration {
 
 class RokaeJointReader::Impl {
  public:
-    rokae::xMateErProRobot robot;
+    rokae::ArRobot robot;
     std::string endpoint;
     bool connected = false;
 

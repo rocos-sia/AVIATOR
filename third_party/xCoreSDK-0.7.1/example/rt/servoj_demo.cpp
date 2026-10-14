@@ -31,10 +31,10 @@ void busy_wait(int milliseconds) {
 
 int main() {
     using namespace std;
-    rokae::xMateRobot robot;
+    rokae::ArRobot robot;
     std::error_code ec;
     try {
-        robot.connectToRobot("192.168.2.160", "192.168.2.161");//机器人ip、上位机ip
+        robot.connectToRobot("192.168.2.160", "192.168.2.100");//机器人ip、上位机ip
     } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
         return 0;
@@ -50,9 +50,9 @@ int main() {
         // 设置要接收数据
         robot.startReceiveRobotState(std::chrono::milliseconds(1), {RtSupportedFields::jointPos_m});
 
-        std::array<double, 6> jntPos{};
-        std::array<double, 6> q_drag_xm3 = { M_PI/3, M_PI/6,  M_PI/6,  M_PI/6, M_PI/2,  M_PI/2};
-        std::array<double, 6> q2_drag_xm3 ={0, 0,  0, 0, 0, 0};
+        std::array<double, 7> jntPos{};
+        std::array<double, 7> q_drag_xm3 = { 0, M_PI/6,  0,  M_PI/6, 0,  0};
+        std::array<double, 7> q2_drag_xm3 ={0, 0,  0, 0, 0, 0};
 
         while(robot.updateRobotState(std::chrono::steady_clock::duration::zero()));
         
@@ -60,7 +60,8 @@ int main() {
         // 运行至拖拽位
         rtCon->MoveJ(0.3, robot.jointPos(ec), q_drag_xm3);
         // 必做：启用servoj功能
-        rtCon->setServoJoint(planPeriod,planPeriod*3,1,ec);
+        // 周期下发不稳定时，可使用前瞻时间和增益调节，默认前瞻时间为一个指令周期，增益为0
+        rtCon->setServoJoint(planPeriod, planPeriod, 0, ec);
         jntPos = robot.jointPos(ec);
         // 必做：设置运动模式，注意在启用servoj功能后
         rtCon->startMove(RtControllerMode::jointPosition);
@@ -82,9 +83,9 @@ int main() {
             rtCon->sendCommand(cmd);
             // 必做：间隔指令周期发送
             busy_wait((int)(planPeriod*1000));
-            
+
             // 检查是否结束
-            if ( elapsed_seconds > 30) {
+            if ( elapsed_seconds > 60) {
                 cmd.setFinished();
                 rtCon->sendCommand(cmd);
                 // 必做：关闭servoj功能

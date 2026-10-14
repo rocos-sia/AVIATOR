@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
     }
     std::signal(SIGINT, requestStop);
     std::signal(SIGTERM, requestStop);
-    xMateErProRobot robot;
+    ArRobot robot;
     std::shared_ptr<RtMotionControlCobot<7>> rtCon;
     std::array<double, 7> jntPos{};
     std::error_code ec;

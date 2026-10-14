@@ -45,7 +45,7 @@ struct Shared {
 class StiffnessWindow : public QWidget {
 public:
     explicit StiffnessWindow(bool offline = false) {
-        setWindowTitle("关节刚度调节 · xMateER7 Pro");
+        setWindowTitle("关节刚度调节 · AR5");
         resize(900, 740);
         setStyleSheet(
             "QWidget { font-size: 14px; }"

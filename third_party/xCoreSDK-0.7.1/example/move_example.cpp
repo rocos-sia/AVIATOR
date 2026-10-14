@@ -8,10 +8,8 @@
  */
 
 #include <iostream>
-#include <array>
 #include <thread>
 #include <cmath>
-#include <chrono>
 #include "rokae/robot.h"
 #include "rokae/utility.h"
 #include "print_helper.hpp"
@@ -44,12 +42,10 @@ void printInfo(const rokae::EventInfo &info) {
   }
 }
 
-/** 清除笛卡尔点 confData，避免 MoveJ 报 -50021 */
-static void clearCartConf(CartesianPosition &p) {
-  p.confData.clear();
-}
-
-void waitForFinish(BaseRobot &robot, const std::string &traj_id, int index) {
+/**
+ * @brief 等待运动结束 - 通过查询路径ID及路点序号是否已完成的方式
+ */
+void waitForFinish(BaseRobot &robot, const std::string &traj_id, int index){
   using namespace rokae::EventInfoKey::MoveExecution;
   error_code ec;
   while(true) {
@@ -543,236 +539,6 @@ void moveWithRail(Robot_T<wt, dof> *robot) {
   robot->moveAppend(c_command, id, ec);
   robot->moveStart(ec);
   waitForFinish(*robot, id, 0);
-}
-
-/**
- * @brief 查找第一个已启用的附加轴机械单元 (u1~u6)
- * @param[out] mech_unit 机械单元名，如 "u1"
- * @param[out] fixed_name 机械单元固定名称，用于 startJogWithExt
- * @return 是否找到已启用的机械单元
- */
-static bool findEnabledMechUnit(BaseRobot *robot, std::string &mech_unit, std::string &fixed_name, error_code &ec) {
-  print(os, "扫描机械单元 u1~u6 ...");
-  const char *units[] = {"u1", "u2", "u3", "u4", "u5", "u6"};
-  for (const char *u : units) {
-    bool enabled = false;
-    ec.clear();
-    robot->getMechUnit(u, "enable", enabled, ec);
-    if (ec) {
-      print(os, "[附加轴] ", u, " enable 查询失败", ec);
-      continue;
-    }
-    print(os, "[附加轴] ", u, " enable =", enabled);
-    if (!enabled) {
-      continue;
-    }
-    mech_unit = u;
-    fixed_name = u;
-    ec.clear();
-    std::string name_from_ctrl;
-    robot->getMechUnit(u, "fixed_name", name_from_ctrl, ec);
-    if (!ec && !name_from_ctrl.empty()) {
-      fixed_name = name_from_ctrl;
-    } else {
-      ec.clear();
-    }
-    print(os, "已找到启用的机械单元:", mech_unit, "Jog fixed_name:", fixed_name);
-    return true;
-  }
-  return false;
-}
-
-/**
- * @brief 获取机械单元下用于查询参数的第一根附加轴名
- * @param[in] mech_unit u1~u6
- * @return axis1~axis6，默认 "axis1"
- */
-static std::string firstExtAxisName(BaseRobot *robot, const std::string &mech_unit, error_code &ec) {
-  std::vector<std::string> axes_info;
-  robot->getMechUnit(mech_unit, "axes_info", axes_info, ec);
-  if (!ec && !axes_info.empty()) {
-    print(os, "机械单元", mech_unit, "附加轴列表:", axes_info);
-    return axes_info.front();
-  }
-  ec.clear();
-  return "axis1";
-}
-
-/**
- * @brief 示例 - 带附加轴运动（参照 moveWithRail）
- * @note 附加轴参数一般在示教器/控制器中配置，SDK 提供查询与 Jog、运动指令 external 字段。
- *       自动轨迹循环 3 轮：每轮 MoveAbsJ/MoveJ/MoveL/MoveC 后导轨回软限位原点，再进入下一轮。
- *       点位适配带附加轴的 xMateSR4 等机型；其它机型请修改点位。
- *       startJogWithExt 的 fixed_name 可传机械单元名 (如 "u1") 或 getMechUnit 读到的 fixed_name。
- */
-template <WorkType wt, unsigned short dof>
-void moveWithExtAxis(Robot_T<wt, dof> *robot) {
-  print(os, "======== 附加轴示例 moveWithExtAxis 开始 ========");
-  error_code ec;
-  std::string mech_unit;
-  std::string fixed_name;
-
-  if (!findEnabledMechUnit(robot, mech_unit, fixed_name, ec)) {
-    print(os, "未找到已启用的附加轴机械单元 (u1~u6)，请在控制器中启用附加轴后重试", ec);
-    return;
-  }
-
-  const std::string axis_name = firstExtAxisName(robot, mech_unit, ec);
-  if (ec) {
-    print(os, "读取附加轴信息失败", ec);
-    return;
-  }
-
-  double max_speed = 0;
-  double soft_lower = 0, soft_upper = 0;
-  robot->getExtAxisInfo(axis_name, "max_speed", max_speed, ec);
-  print(os, axis_name, "max_speed:", max_speed, ec);
-  robot->getExtAxisInfo(axis_name, "soft_limit_lower", soft_lower, ec);
-  robot->getExtAxisInfo(axis_name, "soft_limit_upper", soft_upper, ec);
-  print(os, axis_name, "软限位: [", soft_lower, ", ", soft_upper, "]", ec);
-
-  print(os, "当前轴角度", robot->BaseRobot::jointPos(ec));
-
-  // *** Jog 附加轴示例 ***
-  robot->setOperateMode(OperateMode::manual, ec);
-  robot->setPowerState(true, ec);
-
-  // fixed_name 传机械单元名 u1~u6，index=0 表示该单元第一根附加轴；is_ext=true 表示 Jog 外部轴
-  const double jog_rate = 0.1;
-  const double jog_step = 5.0; // 轴空间，单位: 度
-  const unsigned jog_index = 0;
-  print(os, "[Jog] fixed_name=", fixed_name, " index=", jog_index, " rate=", jog_rate, " step=", jog_step);
-  robot->startJogWithExt(JogOpt::jointSpace, jog_rate, jog_step, jog_index, true, fixed_name, ec, true);
-  if (ec) {
-    print(os, "startJogWithExt 失败", ec);
-    return;
-  }
-  while (true) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    if (robot->operationState(ec) != OperationState::jogging) {
-      break;
-    }
-  }
-  robot->stop(ec);
-
-  // *** 带附加轴的运动指令示例（循环 3 轮，每轮结束后导轨回原点） ***
-  robot->setOperateMode(OperateMode::automatic, ec);
-  robot->setPowerState(true, ec);
-  robot->setToolset(Predefines::defaultToolset, ec);
-  robot->setDefaultSpeed(200, ec);
-  robot->setDefaultZone(50, ec);
-  robot->setDefaultConfOpt(false, ec);
-
-  // external 单位为 m；软限位一般为 mm（如 0~1300）。勿用负值，否则前瞻报 50129。
-  const double ext_lo_m = soft_lower / 1000.0;
-  const double ext_hi_m = soft_upper / 1000.0;
-  const double ext_min_m = ext_lo_m + 0.01;
-  const double ext_max_m = ext_hi_m - 0.01;
-  const double ext_origin_m = ext_min_m;
-  auto clampExt = [&](double v) -> double {
-    if (v < ext_min_m) {
-      return ext_min_m;
-    }
-    if (v > ext_max_m) {
-      return ext_max_m;
-    }
-    return v;
-  };
-
-  constexpr double kExtStepM = 0.02;
-  constexpr double kStepZ = 0.010;
-  constexpr double kStepXy = 0.008;
-  constexpr int kCartSpeed = 200;
-  constexpr int kCartZone = 50;
-  constexpr int kCycleCount = 3;
-  const MoveWaitCommand wait_5s(std::chrono::seconds(5));
-
-  const std::vector<double> q_work = {0, M_PI / 6, -M_PI_2, 0, -M_PI / 3, 0};
-  std::array<double, 6> q6{};
-  for (unsigned i = 0; i < 6; ++i) {
-    q6[i] = q_work[i];
-  }
-  CartesianPosition p_ref = robot->model().calcFk(q6, ec);
-  if (ec) {
-    print(os, "calcFk 失败", ec);
-    return;
-  }
-  print(os, "运动基准位姿(FK)", p_ref);
-  print(os, "导轨原点 external(m):", ext_origin_m, "每轮步进", kExtStepM * 1000.0, "mm，共", kCycleCount, "轮");
-
-  for (int cycle = 1; cycle <= kCycleCount; ++cycle) {
-    const double ext1 = clampExt(ext_origin_m + kExtStepM);
-    const double ext2 = clampExt(ext_origin_m + 2.0 * kExtStepM);
-    const double ext3 = clampExt(ext_origin_m + 3.0 * kExtStepM);
-    print(os, "----- 第", cycle, "/", kCycleCount, "轮 -----");
-    print(os, "导轨 external(m):", ext_origin_m, "->", ext1, "->", ext2, "->", ext3, "->", ext_origin_m);
-
-    CartesianPosition p_j = p_ref;
-    p_j.external = {ext1};
-    clearCartConf(p_j);
-
-    CartesianPosition p_l = p_ref;
-    p_l.trans[2] -= kStepZ;
-    p_l.external = {ext2};
-    clearCartConf(p_l);
-
-    CartesianPosition p_c_tgt = p_ref;
-    p_c_tgt.trans[0] += kStepXy;
-    p_c_tgt.external = {ext3};
-    clearCartConf(p_c_tgt);
-    CartesianPosition p_c_aux = p_ref;
-    p_c_aux.trans[1] += kStepXy;
-    p_c_aux.external = {ext3};
-    clearCartConf(p_c_aux);
-
-    CartesianPosition p_home = p_ref;
-    p_home.external = {ext_origin_m};
-    clearCartConf(p_home);
-
-    MoveAbsJCommand abs_j_command(q_work);
-    abs_j_command.target.external = {ext1};
-    MoveJCommand j_command(p_j, kCartSpeed, kCartZone);
-    MoveLCommand l_command(p_l, kCartSpeed, kCartZone);
-    MoveCCommand c_command(p_c_tgt, p_c_aux);
-    MoveLCommand home_command(p_home, kCartSpeed, kCartZone);
-    l_command.customInfo = "ext_axis_demo";
-
-    std::string id;
-    print(os, "MoveAbsJ 关节", q_work, "external(m)", ext1);
-    robot->moveAppend(abs_j_command, id, ec);
-    if (ec) {
-      print(os, "moveAppend(MoveAbsJ) 失败", ec);
-      return;
-    }
-    robot->moveAppend(wait_5s, id, ec);
-
-    print(os, "MoveJ 目标", j_command.target, "external(m)", ext1);
-    robot->moveAppend(j_command, id, ec);
-    robot->moveAppend(wait_5s, id, ec);
-
-    print(os, "MoveL 目标", l_command.target, "external(m)", ext2);
-    robot->moveAppend(l_command, id, ec);
-    robot->moveAppend(wait_5s, id, ec);
-
-    print(os, "MoveC 目标", c_command.target, "辅助", c_command.aux, "external(m)", ext3);
-    robot->moveAppend(c_command, id, ec);
-    robot->moveAppend(wait_5s, id, ec);
-
-    print(os, "回原点 MoveL 目标", home_command.target, "external(m)", ext_origin_m);
-    robot->moveAppend(home_command, id, ec);
-
-    robot->moveStart(ec);
-    if (ec) {
-      print(os, "moveStart 失败 第", cycle, "轮", ec);
-      return;
-    }
-    bool running = true;
-    waitRobot(*robot, running);
-    print(os, "第", cycle, "轮完成 实际点位", robot->cartPosture(CoordinateType::endInRef, ec), ec);
-    print(os, "第", cycle, "轮完成 关节角", robot->jointPos(ec));
-  }
-
-  print(os, "======== 附加轴示例 moveWithExtAxis 结束 (共", kCycleCount, "轮) ========");
 }
 
 /**

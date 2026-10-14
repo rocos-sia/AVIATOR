@@ -1,6 +1,6 @@
 # change_stiffness
 
-基于 xCoreSDK 0.7.1 的 `joint_impedance_control.cpp`，用于单台 xMateER7 Pro 的关节刚度交互测试。启动时读取当前 7 个关节角作为固定目标，持续运行关节阻抗控制；不执行 MoveAbsJ 或正弦轨迹。外力使机械臂偏离后，目标仍是启动位置。
+基于 xCoreSDK 0.7.1 的 `joint_impedance_control.cpp`，使用 AR 专用 `rokae::ArRobot`，用于单台 AR5 的关节刚度交互测试。启动时读取当前 7 个关节角作为固定目标，持续运行关节阻抗控制；不执行 MoveAbsJ 或正弦轨迹。外力使机械臂偏离后，目标仍是启动位置。
 
 ## 独立编译
 

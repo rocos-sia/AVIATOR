@@ -1,5 +1,7 @@
 # manipulator
 
+真机后端使用 `third_party/xCoreSDK-0.7.1` 中 AR 专用的 `rokae::ArRobot`（七轴），头文件和静态库取自同一 SDK 目录。
+
 连续 CONTROL 已改为最新目标通道；阻抗切换仍按已验证流程停止和恢复状态接收，复用现有 RT 控制器。实际刚度以 `config/robot.yaml` 为准。
 
 Rokae 双臂硬件执行节点。仿真由独立 `simulation` 节点提供，二者共享设备服务与轨迹执行协议。后台执行线程管理设备生命周期；有限动作消费轨迹窗口，连续 Servo 只保留最新轮盘目标并执行 1 ms Ruckig + 双臂 IK；ZMQ 和 JSON 位于非实时域。Rokae SDK 自己的两条周期回调只读写数值状态与指令，保持 SCHED_FIFO 80 和关节阻抗模式，保留实际调度及回调耗时诊断。

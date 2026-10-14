@@ -124,6 +124,8 @@ namespace rokae {
   * @class xMateModel
   * @brief xMate模型库。支持的机型: xMateER系列, XMC7/12, XMS3/4/5。
   * 注意：对于XMS5机型，需要升级特殊版本的机型文件后方可使用模型库，否则计算结果是错误的，请联系珞石技术支持人员进行机型文件升级。
+  * @note 重力方向在模型构造时自动从控制器读取（ix.coord.base_in_world），无需手动设置。
+  *       如需更新重力方向（如修改了基坐标系并重启控制器后），重连控制器并重新获取 model() 实例即可。
   * @tparam DoF 轴数
   */
  template <unsigned short DoF>
@@ -185,17 +187,35 @@ namespace rokae {
                                     SegmentFrame nr = SegmentFrame::flange );
 
    /**
-    * @brief 逆解获得关节空间位置。一个位姿可能对应多个关节角度，jntPos的选取原则是选取一个与jntInit最近的解。
+    * @brief 逆解获得关节空间位置。一个位姿可能对应多个关节角度，jntPos的选取原则是选取一个到该点关节角度变化最小的解。
     * @param[in] cartPos 法兰笛卡尔空间位姿
     * @param[in] elbow 臂角
     * @param[in] jntInit 初始关节角度
     * @param[out] jntPos 关节空间位置
-    * @return 计算逆解结果 -
-    *    1) -1, -2, -3: 无解，原因是cartPos超出机器人工作空间;
-    *    2) -4, -5: jntPos与jntInit相差较大，一般认为jntInit代表机器人当前位置，jntPos与jntInit之差可以等效为电机转速。
-    *               若超过机器人轴额定转速，则返回-4或-5;
-    *    3) -6, -7: jntPos超过软限位;
-    *    4)	-8: 机器人奇异；
+    * @return 计算逆解结果 
+    *    1) 0：逆解成功
+    *    2) 1：逆解失败，奇异点
+    *    3) 2：逆解失败，超关节软限位
+    *    4) 3：逆解失败，目标点超运动范围
+    *    5) 4-12：逆解失败，其他原因
+    */
+    int getJointPosNearst(const std::array<double, 16> &cartPos,
+                    double elbow,
+                    const std::array<double, DoF> &jntInit,
+                    std::array<double, DoF> &jntPos);
+
+   /**
+    * @brief 逆解获得关节空间位置。只求得一个与jntInit相邻的解。
+    * @param[in] cartPos 法兰笛卡尔空间位姿
+    * @param[in] elbow 臂角
+    * @param[in] jntInit 初始关节角度
+    * @param[out] jntPos 关节空间位置
+    * @return 计算逆解结果 
+    *    1) 0：逆解成功
+    *    2) 1：逆解失败，奇异点
+    *    3) 2：逆解失败，超关节软限位
+    *    4) 3：逆解失败，目标点超运动范围
+    *    5) 4-12：逆解失败，其他原因
     */
     int getJointPos(const std::array<double, 16> &cartPos,
                     double elbow,
@@ -243,6 +263,33 @@ namespace rokae {
                                       SegmentFrame nr = SegmentFrame::flange);
 
    /**
+    * @brief 获取指定坐标系相对于基坐标系的雅克比矩阵时间导数, 行优先
+    * @param[in] jntPos 关节角度
+    * @param[in] jntVel 关节角速度
+    * @param[in] nr 指定坐标系
+    * @return 计算结果 \f$ \dot{J} \f$, 长度 \f$ \mathbb{R}^{6 \times DoF} \f$
+    * @note 雅克比导数描述了雅克比矩阵随时间的变化率，常用于加速度控制和动力学计算
+    */
+   std::array<double, DoF*6> jacobianDot(const std::array<double, DoF> &jntPos,
+                                         const std::array<double, DoF> &jntVel,
+                                         SegmentFrame nr = SegmentFrame::flange);
+
+   /**
+    * @brief 获取指定坐标系相对于基坐标系的雅克比矩阵时间导数, 行优先
+    * @param[in] jntPos 关节角度
+    * @param[in] jntVel 关节角速度
+    * @param[in] f_t_ee 末端执行器相对于法兰坐标系的位姿
+    * @param[in] ee_t_k 刚度坐标系相对于末端执行器的位姿
+    * @param[in] nr 指定坐标系
+    * @return 计算结果 \f$ \dot{J} \f$, 长度 \f$ \mathbb{R}^{6 \times DoF} \f$
+    */
+   std::array<double, DoF*6> jacobianDot(const std::array<double, DoF> &jntPos,
+                                         const std::array<double, DoF> &jntVel,
+                                         const std::array<double, 16> &f_t_ee,
+                                         const std::array<double, 16> &ee_t_k,
+                                         SegmentFrame nr = SegmentFrame::flange);
+
+   /**
     * @brief 由模型计算无摩擦力的关节力矩, 计算结果单位: Nm。如有负载，先通过setLoad()设置负载参数。
     * @note 原getTorque() 和 getTorqueWithFriction不再支持，计算关节力矩都用此接口
     * @param[in] jntPos 关节角度
@@ -260,6 +307,25 @@ namespace rokae {
                             std::array<double, DoF> &trq_inertia,
                             std::array<double, DoF> &trq_coriolis,
                             std::array<double, DoF> &trq_gravity);
+
+   /**
+    * @brief 获取关节空间质量矩阵(惯性矩阵)。如有负载，先通过setLoad()设置负载参数。
+    * @param[in] jntPos 关节角度
+    * @return 质量矩阵，行优先存储，长度为 \f$ \mathbb{R}^{DoF \times DoF} \f$
+    * @note 质量矩阵是对称正定矩阵，描述了关节空间的惯性特性。
+    *       矩阵元素 M(i,j) 在数组中的位置为 i*DoF + j
+    */
+   std::array<double, DoF*DoF> getMassMatrix(const std::array<double, DoF> &jntPos);
+
+   /**
+    * @brief 获取离心力和科里奥利力项。如有负载，先通过setLoad()设置负载参数。
+    * @param[in] jntPos 关节角度
+    * @param[in] jntVel 关节速度
+    * @return 离心力和科里奥利力向量，长度为 \f$ \mathbb{R}^{DoF} \f$
+    * @note 这是动力学方程 τ = M(q)q̈ + C(q,q̇) + G(q) 中的 C(q,q̇) 项，
+    *       包含了离心力和科里奥利力的影响。
+    */
+   std::array<double, DoF> getCoriolisVector(const std::array<double, DoF> &jntPos, const std::array<double, DoF> &jntVel);
 
   XCORESDK_DECLARE_IMPLD
  };

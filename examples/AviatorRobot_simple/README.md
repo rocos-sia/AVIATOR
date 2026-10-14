@@ -1,5 +1,7 @@
 # AviatorRobot_simple
 
+真机后端使用 `third_party/xCoreSDK-0.7.1` 中 AR 专用的 `rokae::ArRobot`（七轴），头文件和静态库取自同一 SDK 目录。
+
 参考 `AviatorRobot` 的单进程双臂操纵盘控制器。仿真和真机使用同一个 `aviator`
 可执行文件、`Aviator.cpp` 状态机、PIN-IK 逆解、Pinocchio 正运动学/碰撞检测、轨迹规划和命令处理，
 仅 `DataLink` 后端不同。无需启动 `rocos_mujoco`、共享内存或 ROS。

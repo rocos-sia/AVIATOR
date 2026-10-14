@@ -19,6 +19,7 @@
 #include "exception.h"
 #include "motion_control_rt.h"
 #include "planner.h"
+#include "servo.h"
 #include "force_control.h"
 
 namespace rokae {
@@ -367,8 +368,9 @@ namespace rokae {
     * @note 在调用各运动控制接口之前, 须设置对应的控制模式。
     * @param[in] mode 模式
     * @param[out] ec 错误码
+    * @param[in] autoPwrOffOnRtChange 是否切换实时模式时自动下电
     */
-   void setMotionControlMode(MotionControlMode mode, error_code &ec) noexcept;
+   void setMotionControlMode(MotionControlMode mode, error_code &ec, bool autoPwrOffOnRtChange = true) noexcept;
 
    //  --------------    MotionControlMode::NrtCommand   ------------------
    //  ----------------         非实时运动指令              ------------------
@@ -747,6 +749,16 @@ namespace rokae {
     * @param[out] ec 同理设置工具接口，全局工件一般不会设置失败。工程中工件可能会设置失败
     */
    void setWobjInfo(const WorkToolInfo &wobj_info, error_code &ec) noexcept;
+
+   // ********************************************************************************
+   // ********      Ethercat class for set slaves status/read or write SDO    ********
+   // ********         获取ethercat类, 用于切从站状态，读写SDO等             *********
+
+   /**
+    * @brief 获取Ethercat类
+    * @return Ethercat类
+    */
+   BaseEthercat ethercat() noexcept;
 
    // ---------------------------------------------------------------------
    // ---------------------           外部轴          ----------------------
@@ -1151,6 +1163,31 @@ namespace rokae {
    void setxPanelRS485(xPanelOpt::Vout opt, bool if_rs485, error_code& ec) noexcept;
 
    /**
+    * @brief 初始化xPanel RS485通信参数
+    * @param[in] baud 波特率
+    * @param[in] check_bit 校验位
+    * @param[in] stop_bit 停止位
+    * @param[out] ec 错误码
+    */
+   void xPanelRS485Init(xPanelCommOpt::Rs485Baud baud, xPanelCommOpt::CheckBit check_bit, xPanelCommOpt::StopBit stop_bit,
+                        error_code& ec) noexcept;
+
+   /**
+    * @brief 设置xPanel RS485通信超时时间
+    * @param[in] overtime_ms 通信超时时间(ms)，范围 50~10000
+    * @param[out] ec 错误码
+    */
+   void setxPanelRS485Overtime(int overtime_ms, error_code& ec) noexcept;
+
+   /**
+    * @brief 初始化xPanel CAN通信波特率参数
+    * @param[in] arbitration_baud 仲裁波特率
+    * @param[in] data_baud 数据波特率
+    * @param[out] ec 错误码
+    */
+   void xPanelCANInit(xPanelCommOpt::CanArbitrationBaud arbitration_baud, xPanelCommOpt::CanDataBaud data_baud, error_code& ec) noexcept;
+
+   /**
     * @brief 通过xPanel末端读写modbus寄存器
     * @param[in] slave_addr 设备地址 0-65535
     * @param[in] fun_cmd 功能码 0x03 0x04 0x06 0x10
@@ -1184,6 +1221,23 @@ namespace rokae {
     * @param[out] ec 错误码
     */
    void XPRS485SendData(int send_byte, int rev_byte, const std::vector<uint8_t>& send_data, std::vector<uint8_t>& rev_data, error_code& ec) noexcept;
+
+   /**
+    * @brief 接收CAN协议裸数据
+    * @param[in] timeout_ms 接收超时时间
+    * @param[in] data_type 支持的数据类型  int16、uint16、uint8
+    * @param[in] recv_frame 接收帧数据
+    * @param[out] ec 错误码
+    */
+   void CANReceiveData(int timeout_ms, std::string data_type, CANFrame& recv_frame, std::error_code& ec) noexcept;
+
+   /**
+    * @brief 接收CAN协议裸数据
+    * @param[in] data_type 支持的数据类型  int16、uint16、uint8
+    * @param[in] send_frame 发送帧数据
+    * @param[out] ec 错误码
+    */
+   void CANSendData(std::string data_type, const std::vector<CANFrame>& send_frame, error_code& ec) noexcept;
 
    /**
     * @brief 获取末端按键状态，不支持的机型会返回错误码
@@ -1417,6 +1471,27 @@ namespace rokae {
     * @throw ExecutionException 机器人实例与连接机型不符，或未授权SDK
     */
    explicit xMateErProRobot(const std::string &remoteIP, const std::string& localIP = "");
+ };
+
+ /**
+  * @class ArRobot
+  * @brief AR机型
+  */
+ class XCORE_API ArRobot : public Cobot<7> {
+  public:
+   /**
+    * @brief default constructor
+    */
+   ArRobot();
+
+   /**
+    * @brief 创建协作7轴机器人实例并连接
+    * @param remoteIP 机器人IP地址
+    * @param localIP 本机地址，实时收发数据时需要设置
+    * @throw NetworkException 网络连接错误
+    * @throw ExecutionException 机器人实例与连接机型不符，或未授权SDK
+    */
+   explicit ArRobot(const std::string &remoteIP, const std::string& localIP = "");
  };
 
  /**

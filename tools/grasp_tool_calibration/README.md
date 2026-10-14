@@ -1,5 +1,7 @@
 # 双手静态抓握工具校准
 
+真机后端使用 `third_party/xCoreSDK-0.7.1` 中 AR 专用的 `rokae::ArRobot`（七轴），头文件和静态库取自同一 SDK 目录。
+
 先手动示教，让双手握住轮盘把手并保持静止。工具读取双臂实测关节角，按 Core 使用的
 URDF 做正运动学，再结合轮盘的实际角度、推拉位移，反算 `grasp.json` 中
 `tool.left` 和 `tool.right` 的 `position`、`quaternion`。可使用下面的图形界面完成

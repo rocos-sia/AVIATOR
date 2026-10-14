@@ -42,7 +42,7 @@ std::string powerName(rokae::PowerState state) {
 
 class RokaeSessionArm::Impl {
  public:
-    rokae::xMateErProRobot robot;
+    rokae::ArRobot robot;
     std::string ip;
     bool connected = false;
     bool drag_owned = false;

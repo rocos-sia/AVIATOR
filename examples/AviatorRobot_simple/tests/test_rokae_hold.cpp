@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
     }
     std::signal(SIGINT, requestStop);
     std::signal(SIGTERM, requestStop);
-    rokae::xMateErProRobot robot;
+    rokae::ArRobot robot;
     std::shared_ptr<rokae::RtMotionControlCobot<7>> rt;
     bool connected = false, powered = false, receiving = false, moving = false, looping = false;
     const char *stage = "connectToRobot";

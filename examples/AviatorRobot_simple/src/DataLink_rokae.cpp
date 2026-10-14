@@ -81,7 +81,7 @@ pinocchio::SE3 fixedChainToRoot(const urdf::ModelInterfaceSharedPtr &model,
 
 } // namespace
 
-// 珞石 xMateErPro 真机后端（双臂）。
+// 珞石 AR 真机后端（双臂）。
 //
 // 与仿真后端的差异（同一条 DataLink 接口，语义对齐）：
 //  * 时间源：waitTick 按 1 ms 墙钟节拍，time() 返回墙钟 CLOCK_MONOTONIC。
@@ -114,7 +114,7 @@ class RokaeDataLink final : public DataLink {
         for (int i = 0; i < 7; ++i)
             require(std::isfinite(config.joint_stiffness[i]) && config.joint_stiffness[i] > 0 &&
                     config.joint_stiffness[i] <= (i < 4 ? 3000 : 300),
-                    "Invalid xMateErPro joint stiffness (Nm/rad)");
+                    "Invalid AR joint stiffness (Nm/rad)");
         const auto model = urdf::parseURDFFile(urdf_path);
         require(model != nullptr, "无法解析 URDF: " + urdf_path);
         loadVelocityLimits(model);

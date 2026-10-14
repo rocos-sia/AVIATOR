@@ -3,14 +3,15 @@
 
 # Here puts required example source files
 set(RT_EXAMPLES
-    joint_position_control
-    joint_impedance_control
     cartesian_impedance_control
-    move_commands
-    joint_s_line
     cartesian_s_line
+    joint_impedance_control
+    joint_position_control
+    joint_s_line
+    move_commands
     rt_industrial
     servoj_demo
+    servol_demo
     )
 
 foreach(example ${RT_EXAMPLES})
@@ -29,6 +30,7 @@ if(XCORE_USE_XMATE_MODEL)
         torque_control
         follow_joint_position
         follow_cart_position
+        mass_matrix_jacobian_dot_demo
         )
     foreach(example ${EXAMPLES_USE_XMATEMODEL})
         add_executable(${example} ${example}.cpp ${EXAMPLE_HEADERS})

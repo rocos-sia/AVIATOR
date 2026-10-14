@@ -1,24 +1,3 @@
-# Verify prebuilt libraries (distributed via GitHub Releases, not Git)
-set(_XCORE_LIB_RELEASES_URL "https://github.com/RokaeRobot/xCoreSDK-CPP/releases/tag/v${CMAKE_PROJECT_VERSION}")
-if(WIN32)
-    if(${CMAKE_SIZEOF_VOID_P} EQUAL 8)
-        set(_XCORE_LIB_CHECK "${CMAKE_CURRENT_SOURCE_DIR}/Windows/Release/64bit/${PROJECT_NAME}.lib")
-    else()
-        set(_XCORE_LIB_CHECK "${CMAKE_CURRENT_SOURCE_DIR}/Windows/Release/32bit/${PROJECT_NAME}.lib")
-    endif()
-elseif(UNIX)
-    set(_XCORE_LIB_CHECK "${CMAKE_CURRENT_SOURCE_DIR}/Linux/${CMAKE_SYSTEM_PROCESSOR}/lib${PROJECT_NAME}.a")
-endif()
-if(NOT EXISTS "${_XCORE_LIB_CHECK}")
-    message(WARNING
-        "Prebuilt xCore SDK libraries not found.\n"
-        "  Expected: ${_XCORE_LIB_CHECK}\n"
-        "  Download the matching package from: ${_XCORE_LIB_RELEASES_URL}\n"
-        "  See lib/README.md for extraction instructions.")
-endif()
-unset(_XCORE_LIB_CHECK)
-unset(_XCORE_LIB_RELEASES_URL)
-
 # Add shared/static libraries
 add_library(${PROJECT_NAME}_lib SHARED IMPORTED GLOBAL)
 add_library(${PROJECT_NAME}_static STATIC IMPORTED GLOBAL)
@@ -35,9 +14,10 @@ if(WIN32)
         set(_ARCH_NAME "32bit")
     endif()
 
-    set_target_properties(xmatemodel_lib PROPERTIES
-        IMPORTED_LOCATION_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/Windows/Release/64bit/xMateModel.lib
-        IMPORTED_LOCATION_DEBUG ${CMAKE_CURRENT_SOURCE_DIR}/Windows/Debug/64bit/xMateModeld.lib)
+    # AR版本暂不支持Windows模型库
+#    set_target_properties(xmatemodel_lib PROPERTIES
+#        IMPORTED_LOCATION_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/Windows/Release/64bit/xMateModel.lib
+#        IMPORTED_LOCATION_DEBUG ${CMAKE_CURRENT_SOURCE_DIR}/Windows/Debug/64bit/xMateModeld.lib)
     set_target_properties(${PROJECT_NAME}_lib PROPERTIES
         IMPORTED_IMPLIB_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/Windows/Release/${_ARCH_NAME}/${PROJECT_NAME}.lib
         IMPORTED_LOCATION_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/Windows/Release/${_ARCH_NAME}/${PROJECT_NAME}.dll
@@ -47,7 +27,7 @@ if(WIN32)
     set_target_properties(${PROJECT_NAME}_static PROPERTIES
         IMPORTED_LOCATION_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/Windows/Release/${_ARCH_NAME}/${PROJECT_NAME}_static.lib
         IMPORTED_LOCATION_DEBUG ${CMAKE_CURRENT_SOURCE_DIR}/Windows/Debug/${_ARCH_NAME}/${PROJECT_NAME}_static.lib
-        INTERFACE_LINK_LIBRARIES xmatemodel_lib
+#        INTERFACE_LINK_LIBRARIES xmatemodel_lib
         )
     set_target_properties(${PROJECT_NAME}-Upgrade_lib PROPERTIES
         IMPORTED_IMPLIB_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/Windows/Release/${_ARCH_NAME}/${PROJECT_NAME}_Upgrade.lib

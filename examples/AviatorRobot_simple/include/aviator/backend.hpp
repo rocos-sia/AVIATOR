@@ -73,7 +73,7 @@ std::unique_ptr<DataLink> makeDataLink(const std::string &backend, const Backend
 std::unique_ptr<DataLink> makeMuJoCoDirectDataLink(mjModel *model, mjData *data,
                                                    const std::string &urdf_path);
 
-// 珞石 xMateErPro 真机后端。仅当编译期定义了 AVIATOR_HAVE_ROKAE 时可用。
+// 珞石 AR 真机后端。仅当编译期定义了 AVIATOR_HAVE_ROKAE 时可用。
 // 臂基座 → 轮盘的安装变换由 URDF 的固定关节推算，因此只需传入 grasp.json 的几何。
 #ifdef AVIATOR_HAVE_ROKAE
 std::unique_ptr<DataLink> makeRokaeDataLink(const std::string &urdf_path,

@@ -46,3 +46,6 @@ AviatorRobot_simple/build
 
 
 MUJOCO_LOG.TXT
+
+# Unused Windows SDK binaries must stay out of Git history.
+/third_party/xCoreSDK-0.7.1/lib/Windows/

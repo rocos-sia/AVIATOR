@@ -2,19 +2,13 @@
 
 xCore SDK编程接口库是珞石机器人提供给客户用于二次开发的软件产品，通过编程接口库，客户可以对机器人进行一系列控制和操作。
 
-## 在线文档
-
-可以通过访问珞石官网在线文档，学习和了解其他SDK内容与其相关API的说明和使用，同时也便于了解珞石的其他技术产品。
-
-https://docs.rokae.com/docs/SDK/cpp
-
 ## 控制模式
 
-xCore SDK提供对机器人的非实时控制和实时控制。 
+xCore SDK提供对机器人的非实时控制和实时控制。
 
 ### 非实时控制
 
-* 运动: 主要是通过发送目标点为关节点位或笛卡尔点位的运动指令，使用控制器内部的轨迹规划
+* 运动: 主要通过发送目标点为关节点位或笛卡尔点位的运动指令，使用控制器内部的轨迹规划
   * 轴空间运动(MoveAbsJ, MoveJ), 笛卡尔空间运动(MoveL, MoveC, MoveCF, MoveSP)，设置指令的运动速度和转弯区
   * 支持导轨联动, 以及设置导轨参数
   * 支持可达性校验，设置加速度等，开启奇异规避功能等
@@ -61,17 +55,6 @@ xCore控制器版本不低于 v3.2.1
 ## 编译
 
 C++版本xCore SDK使用CMake构建工程，CMake版本不低于3.12。
-
-### 获取预编译库
-
-本仓库仅包含头文件、示例与 CMake 工程，**不包含**预编译库（不占用 Git LFS 配额）。
-
-1. 克隆本仓库
-2. 打开与当前 SDK 版本对应的 [Release 页面](https://github.com/RokaeRobot/xCoreSDK-CPP/releases/tag/v0.7.1)（URL 格式：`…/releases/tag/v{VERSION}`，版本见 `CMakeLists.txt`；缺库时 `cmake` 也会打印直达链接）
-3. 下载匹配平台的库文件包
-4. 在仓库根目录解压，使文件落入 `lib/` 目录
-
-详细说明与包名对照见 [lib/README.md](lib/README.md)。
 
 ### 准备工作
 
@@ -141,7 +124,7 @@ xCore SDK通过以太网（TCP/IP）连接机器人。如果只使用非实时�
 
 ### 接口使用
 
-见 *example*。更完整的接口说明、错误码、常见问题与场景示例，请参阅[在线文档](https://docs.rokae.com/docs/SDK/cpp)。
+见 *example*
 
 # License
 

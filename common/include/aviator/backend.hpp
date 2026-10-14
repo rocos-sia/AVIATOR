@@ -33,7 +33,7 @@ struct RokaeConfig {
     // 关节跟踪容差等在真机上可另行收紧，这里只放连接与安全相关项。
 };
 
-// 珞石 xMateErPro 真机后端。由启用 AVIATOR_BUILD_XCORE_SDK 的构建提供。
+// 珞石 AR 真机后端。由启用 AVIATOR_BUILD_XCORE_SDK 的构建提供。
 // 臂基座 → 轮盘的安装变换由 URDF 的固定关节推算，因此只需传入 grasp.json 的几何。
 std::unique_ptr<DataLink> makeRokaeDataLink(const std::string &urdf_path,
                                             const RokaeConfig &config,

@@ -11,6 +11,7 @@ set(SHARED_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/rokae/motion_control_rt.h
     ${CMAKE_CURRENT_SOURCE_DIR}/rokae/planner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/rokae/robot.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/rokae/servo.h
     ${CMAKE_CURRENT_SOURCE_DIR}/rokae/utility.h
     )
 

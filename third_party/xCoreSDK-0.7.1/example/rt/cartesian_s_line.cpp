@@ -82,7 +82,6 @@ int main() {
     time += 0.001; // 按1ms为周期规划
     if(init) {
       // 读取当前位置
-      // 注意: 只有第一个周期可以发送读取到的位置，目的是让机器人从当前位置开始运动。后续周期不能发送读取到的位置作为指令。
       robot.getStateData(RtSupportedFields::tcpPose_m, init_pos);
       end_pos = init_pos;
       end_pos[11] -= 0.2; // 设置这一段运动的目标点是从起始位置，沿Z轴负方向移动0.2米

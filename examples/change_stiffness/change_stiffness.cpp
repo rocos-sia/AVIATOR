@@ -1,4 +1,4 @@
-// 单臂 xMateER7 Pro：锁定启动位置，运行中通过键盘修改关节刚度。
+// 单臂 AR5：锁定启动位置，运行中通过键盘修改关节刚度。
 #include <rokae/robot.h>
 
 #include <array>
@@ -164,7 +164,7 @@ void keyboardLoop(const std::function<void(const Joints &)> &apply) {
 }
 
 int runRobot(const char *robotIp, const char *localIp) {
-    rokae::xMateErProRobot robot;
+    rokae::ArRobot robot;
     std::shared_ptr<rokae::RtMotionControlCobot<7>> rt;
     bool connected = false, powered = false, receiving = false, moving = false, looping = false;
     Joints target{}; // 生命周期覆盖 SDK 回调及全部清理操作。
@@ -273,7 +273,7 @@ int main(int argc, char **argv) {
     if (help || (!dryRun && argc != 3)) {
         std::cout << "Usage: change_stiffness <robot_ip> <local_ip>\n"
                      "       change_stiffness --dry-run\n"
-                     "Powers on ONE xMateER7 Pro and holds its startup joint position.\n"
+                     "Powers on ONE AR5 and holds its startup joint position.\n"
                      "Initial K: [500, 500, 500, 500, 50, 50, 50] Nm/rad.\n"
                      "--dry-run checks keyboard controls without connecting to a robot.\n";
         printKeys();

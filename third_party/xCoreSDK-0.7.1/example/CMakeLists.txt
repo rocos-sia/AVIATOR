@@ -20,6 +20,8 @@ set(EXAMPLES
     communication_example
     modbusRTU_endtool_control
     controller_upgrade
+    ar_example
+    can_linkerbot_control
     )
 
 set(EXAMPLE_HEADERS

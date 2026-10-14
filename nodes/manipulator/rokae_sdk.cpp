@@ -27,7 +27,7 @@ void check(const std::error_code &ec, const char *action) {
 }
 class RokaeArm::Impl {
 public:
-    rokae::xMateErProRobot robot;
+    rokae::ArRobot robot;
     std::shared_ptr<rokae::RtMotionControlCobot<7>> rt;
     std::array<double, 7> stiffness{};
     std::string endpoint;
