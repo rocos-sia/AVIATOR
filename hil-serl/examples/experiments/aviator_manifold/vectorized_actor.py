@@ -283,6 +283,11 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
             deadline = time.monotonic() + 120
             while True:
                 progress = client.request("learner-progress", {})
+                if progress is not None and progress.get("learner_abort", False):
+                    raise RuntimeError(
+                        "learner aborted before actor completion: "
+                        f"updates={progress.get('updates')}"
+                    )
                 if progress is not None and progress.get("updates", -1) >= target_updates:
                     break
                 if time.monotonic() >= deadline:
@@ -360,7 +365,11 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
         response = client.request("actor-done", {"episodes": vec_env._next_trajectory,
                                                 "online_transitions": online_steps})
         if response != {"received": True}:
-            raise RuntimeError(f"learner did not acknowledge actor completion: {response}")
+            progress = client.request("learner-progress", {})
+            raise RuntimeError(
+                "learner did not acknowledge actor completion: "
+                f"response={response}, progress={progress}"
+            )
     client.stop()
     pbar.close()
     if publisher is not None:

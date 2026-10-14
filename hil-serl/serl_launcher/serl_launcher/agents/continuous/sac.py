@@ -200,7 +200,16 @@ class SACAgent(flax.struct.PyTreeNode):
         info = {
             "critic_loss": critic_loss,
             "predicted_qs": jnp.mean(predicted_qs),
+            # Keep distribution diagnostics local to the update.  These are
+            # scalar summaries, so they are cheap to log and do not change the
+            # SAC objective or the sampled actions.
+            "predicted_qs_std": jnp.std(predicted_qs),
+            "predicted_qs_min": jnp.min(predicted_qs),
+            "predicted_qs_max": jnp.max(predicted_qs),
             "target_qs": jnp.mean(target_qs),
+            "target_qs_std": jnp.std(target_qs),
+            "target_qs_min": jnp.min(target_qs),
+            "target_qs_max": jnp.max(target_qs),
             "rewards": batch["rewards"].mean(),
         }
 
@@ -228,10 +237,41 @@ class SACAgent(flax.struct.PyTreeNode):
         actor_objective = predicted_q - temperature * log_probs
         actor_loss = -jnp.mean(actor_objective)
 
+        # Optional GFR-1 execution-feedback supervision.  The GFR
+        # observation stores the action accepted by the nonlinear checker in
+        # ``next_observations.state[..., 33:35]`` and an intervention flag in
+        # ``[..., 36]``.  Keeping this term disabled by default preserves all
+        # historical SAC experiments.  It is intentionally only applied to
+        # transitions with a valid accepted/intervened action.
+        correction_weight = float(self.config.get("correction_weight", 0.0))
+        if correction_weight > 0.0 and "state" in batch["next_observations"]:
+            next_state = batch["next_observations"]["state"]
+            if next_state.ndim == 3 and next_state.shape[1] == 1:
+                next_state = next_state[:, 0, :]
+            correction_target = next_state[:, 33:35] / float(
+                self.config.get("correction_action_scale", 1.0)
+            )
+            # An intervention flag alone is insufficient: governor
+            # exhaustion also sets it while no action was accepted.  Only
+            # accepted steps with positive executed beta and no recovery may
+            # provide a correction target.
+            correction_valid = jax.lax.stop_gradient(
+                jnp.clip(next_state[:, 36], 0.0, 1.0)
+                * (next_state[:, 35] > 0.0)
+                * (next_state[:, 38] < 0.5)
+            )
+            correction_loss = jnp.sum(
+                correction_valid[:, None] * (actions - correction_target) ** 2
+            ) / jnp.maximum(jnp.sum(correction_valid), 1.0)
+            actor_loss = actor_loss + correction_weight * correction_loss
+        else:
+            correction_loss = jnp.asarray(0.0)
+
         info = {
             "actor_loss": actor_loss,
             "temperature": temperature,
             "entropy": -log_probs.mean(),
+            "correction_loss": correction_loss,
         }
 
         return actor_loss, info

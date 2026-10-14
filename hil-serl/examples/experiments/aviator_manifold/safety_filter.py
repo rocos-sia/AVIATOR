@@ -1,4 +1,4 @@
-"""2-D polygon-clipping safety filter over the redundancy phase (Task 1.3, BLOCKER #4/#5).
+"""Safety filters for the LUT baseline and the reduced differential lift.
 
 Doc: docs/superpowers/plans/2026-09-22-aviator-v01-rl-training.md (Task 1.3)
 
@@ -24,8 +24,9 @@ formal CBF.
 from __future__ import annotations
 
 import numpy as np
+from scipy.optimize import LinearConstraint, minimize
 
-__all__ = ["project_phi_dot"]
+__all__ = ["project_phi_dot", "project_reduced_action"]
 
 # frozen v0.1 constants
 _DSafe = 0.005          # m -- hard clearance threshold (5 mm)
@@ -40,6 +41,85 @@ _QDOT_TOL = 1e-4        # hard-shield tolerance (rad/s): float32 q (~1e-7 abs er
                         # amplified by 1/dt=100 -> ~1e-5 rad/s; genuine trilinear
                         # curvature violations are ~1e-2..1e-1, so this does not mask.
 _D_TOL = 1e-9           # hard-shield clearance tolerance (m): float32 d error scale.
+
+
+def project_reduced_action(
+    y_nom: np.ndarray,
+    A: np.ndarray,
+    b: np.ndarray,
+    *,
+    r_max: float = 3.0,
+    beta_lower: float = 0.0,
+    beta_upper: float = 1.0,
+    beta_weight: float = 10.0,
+    r_weight: float = 1.0,
+    metric: np.ndarray | None = None,
+) -> tuple[np.ndarray, dict]:
+    """Project ``y=[r_L,r_R,beta]`` onto a linear safe action set.
+
+    The objective prefers the nominal phase rates and full task speed.  All
+    safety rows are supplied as ``A @ y <= b``; beta bounds are handled as
+    solver bounds.  This is the common reduced-action primitive used by the
+    online differential-lift connector.  The older polygon filter remains
+    available through :func:`project_phi_dot` for the LUT baseline.
+    """
+    y_nom = np.asarray(y_nom, dtype=np.float64).reshape(3)
+    A = np.asarray(A, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64).reshape(-1)
+    if A.ndim != 2 or A.shape[1] != 3 or A.shape[0] != b.size:
+        raise ValueError("A must have shape (m,3) and b shape (m,)")
+    if metric is None:
+        metric = np.diag([r_weight, r_weight, beta_weight]).astype(np.float64)
+    else:
+        metric = np.asarray(metric, dtype=np.float64)
+        if metric.shape != (3, 3):
+            raise ValueError("metric must have shape (3,3)")
+    bounds = [(-float(r_max), float(r_max)),
+              (-float(r_max), float(r_max)),
+              (float(beta_lower), float(beta_upper))]
+
+    def objective(y):
+        d = y - y_nom
+        return 0.5 * float(d @ metric @ d)
+
+    def gradient(y):
+        return metric @ (y - y_nom)
+
+    # SLSQP is used only for the three-variable reduced QP.  The linear
+    # constraint object keeps the model explicit and gives a clean infeasible
+    # status for the governor and Node-0 diagnostics.
+    result = minimize(
+        objective,
+        np.clip(y_nom, [lo for lo, _ in bounds], [hi for _, hi in bounds]),
+        jac=gradient,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=[LinearConstraint(A, -np.inf, b)],
+        options={"ftol": 1e-10, "maxiter": 100},
+    )
+    if not result.success or result.x.shape != (3,):
+        return np.zeros(3), {
+            "feasible": False,
+            "intervened": True,
+            "solver_status": int(getattr(result, "status", -1)),
+            "solver_message": str(getattr(result, "message", "")),
+        }
+    y = np.asarray(result.x, dtype=np.float64)
+    feasible = bool(np.all(A @ y <= b + 5e-8))
+    if not feasible:
+        return np.zeros(3), {
+            "feasible": False,
+            "intervened": True,
+            "solver_status": int(getattr(result, "status", -1)),
+            "solver_message": "post-solve half-space check failed",
+        }
+    return y, {
+        "feasible": True,
+        "intervened": bool(np.linalg.norm(y - y_nom) > 1e-10),
+        "solver_status": int(result.status),
+        "solver_message": str(result.message),
+        "objective": float(result.fun),
+    }
 
 
 # ---------------------------------------------------------------------------

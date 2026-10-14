@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import glob
+import json
 import time
 import jax
 import jax.numpy as jnp
@@ -263,9 +264,33 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
               if FLAGS.checkpoint_path else None)
     start_step = int(os.path.basename(latest)[11:]) + 1 if latest else 0
     step = start_step
-    aviator_online = FLAGS.exp_name == "aviator_manifold"
+    aviator_online = FLAGS.exp_name in {"aviator_manifold", "aviator_gfr"}
     actor_done = threading.Event()
+    learner_cap_reached = threading.Event()
+    learner_abort = threading.Event()
     updates_completed = 0
+
+    diagnostic_path = os.getenv("AVIATOR_DIAGNOSTIC_LOG")
+    diagnostic_period = int(os.getenv("AVIATOR_DIAGNOSTIC_PERIOD", "100"))
+    diagnostic_stream = open(diagnostic_path, "w", buffering=1) if diagnostic_path else None
+
+    def _jsonable(value):
+        """Convert a scalar JAX metric (or a small array) to JSON safely."""
+        if isinstance(value, dict):
+            return {str(k): _jsonable(v) for k, v in value.items()}
+        value = jax.device_get(value)
+        arr = np.asarray(value)
+        if arr.ndim == 0:
+            return float(arr)
+        # Do not accidentally dump a parameter/activation tensor into the
+        # local diagnostic log.  Preserve enough distribution information for
+        # scalar metrics while keeping the file bounded.
+        return {
+            "mean": float(np.mean(arr)),
+            "std": float(np.std(arr)),
+            "min": float(np.min(arr)),
+            "max": float(np.max(arr)),
+        }
 
     def stats_callback(type: str, payload: dict) -> dict:
         """Callback for when server receives stats request."""
@@ -273,7 +298,11 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
             actor_done.set()
             return {"received": True}
         if type == "learner-progress" and aviator_online:
-            return {"updates": updates_completed}
+            return {
+                "updates": updates_completed,
+                "learner_cap_reached": learner_cap_reached.is_set(),
+                "learner_abort": learner_abort.is_set(),
+            }
         assert type == "send-stats", f"Invalid request type: {type}"
         if wandb_logger is not None:
             wandb_logger.log(payload, step=step)
@@ -309,7 +338,17 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
     # Keep the total batch shape fixed while reducing the demo share as actual
     # online experience accumulates. The prior supplies feasibility examples;
     # it is never an action-distance penalty or a behavior-cloning target here.
-    ratios = ((0, 0.5), (500, 0.25), (1_500, 0.1))
+    fixed_demo_fraction = os.getenv("AVIATOR_FIXED_DEMO_FRACTION")
+    if fixed_demo_fraction is not None:
+        fixed_demo_fraction = float(fixed_demo_fraction)
+        if not 0.0 < fixed_demo_fraction < 1.0:
+            raise ValueError("AVIATOR_FIXED_DEMO_FRACTION must lie strictly between 0 and 1")
+        ratios = ((0, fixed_demo_fraction),)
+    else:
+        # Historical schedule, retained when the new diagnostic control is
+        # absent so prior experiments are not silently reinterpreted.
+        ratios = ((0, 0.5), (500, 0.25), (1_500, 0.1))
+    last_batch_stats = {}
     batch_iterators = {}
     extra_iterator = None
     if extra_demo_buffer is not None:
@@ -335,12 +374,27 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
         )
 
     def next_batch():
+        nonlocal last_batch_stats
         prior_fraction = next(frac for threshold, frac in reversed(ratios)
                               if len(replay_buffer) >= threshold)
         online_iterator, prior_iterator = batch_iterators[prior_fraction]
         batch = concat_batches(next(online_iterator), next(prior_iterator), axis=0)
+        online_count = config.batch_size - round(config.batch_size * prior_fraction)
+        demo_count = round(config.batch_size * prior_fraction)
+        extra_count = 0
         if extra_iterator is not None:
             batch = concat_batches(batch, next(extra_iterator), axis=0)
+            extra_count = round(config.batch_size * 0.25)
+        total_count = online_count + demo_count + extra_count
+        last_batch_stats = {
+            "online_batch_size": int(online_count),
+            "demo_batch_size": int(demo_count),
+            "extra_demo_batch_size": int(extra_count),
+            "batch_size_total": int(total_count),
+            "demo_fraction_of_batch": float(demo_count / total_count),
+            "extra_demo_fraction_of_batch": float(extra_count / total_count),
+            "prior_fraction_configured": float(prior_fraction),
+        }
         return batch
 
     # wait till the replay buffer is filled with enough data
@@ -383,6 +437,19 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
                 networks_to_update=train_networks_to_update,
             )
         updates_completed = step - start_step + 1
+        if (diagnostic_stream is not None and diagnostic_period > 0
+                and updates_completed % diagnostic_period == 0):
+            record = {
+                "step": int(step),
+                "updates_completed": int(updates_completed),
+                "online_buffer_size": int(len(replay_buffer)),
+                "demo_buffer_size": int(len(demo_buffer)),
+                "extra_demo_buffer_size": int(len(extra_demo_buffer)) if extra_demo_buffer is not None else 0,
+                "target_entropy": float(agent.config.get("target_entropy", np.nan)),
+                "sampling": dict(last_batch_stats),
+                "update_info": _jsonable(update_info),
+            }
+            diagnostic_stream.write(json.dumps(record, sort_keys=True) + "\n")
         # publish the updated network
         if step > 0 and step % (config.steps_per_update) == 0:
             agent = jax.block_until_ready(agent)
@@ -401,16 +468,33 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
                 os.path.abspath(FLAGS.checkpoint_path), agent.state, step=step, keep=100
             )
 
+    if aviator_online:
+        # The learner can reach its nominal update cap one scheduling tick
+        # before the actor sends its final batch.  Keep the server alive long
+        # enough to receive the explicit actor-done message instead of
+        # tearing down the request socket and racing the actor at shutdown.
+        if not actor_done.is_set():
+            learner_cap_reached.set()
+            actor_done.wait(timeout=120.0)
+        if not actor_done.is_set():
+            learner_abort.set()
+
     if aviator_online and FLAGS.checkpoint_path:
         # Keep the final actor/critic/temperature state even when completion
         # falls between the periodic checkpoint steps.
-        final_step = step if actor_done.is_set() else config.max_steps
+        final_step = config.max_steps if actor_done.is_set() else config.max_steps
         checkpoints.save_checkpoint(
             os.path.abspath(FLAGS.checkpoint_path), agent.state,
             step=final_step, keep=100, overwrite=True,
         )
+    if diagnostic_stream is not None:
+        diagnostic_stream.close()
+    if aviator_online:
+        # Explicitly close the request/reply server after the actor has been
+        # acknowledged and the final checkpoint is durable.
+        server.stop()
     if aviator_online and not actor_done.is_set():
-        raise RuntimeError("learner reached its update cap before the actor completed")
+        raise RuntimeError("learner timed out waiting for actor completion")
 
 
 ##############################################################################

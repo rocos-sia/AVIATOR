@@ -1,7 +1,9 @@
 from experiments.aviator_manifold.config import TrainConfig as AviatorTrainConfig
+from experiments.aviator_gfr.config import TrainConfig as AviatorGFRTrainConfig
 
 CONFIG_MAPPING = {
                 "aviator_manifold": AviatorTrainConfig,
+                "aviator_gfr": AviatorGFRTrainConfig,
                }
 
 # Real-robot experiments depend on franka_env (serl_robot_infra), which is not

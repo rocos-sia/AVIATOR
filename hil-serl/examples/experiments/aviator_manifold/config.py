@@ -120,6 +120,9 @@ class TrainConfig(DefaultTrainingConfig):
         self.max_traj_length = int(os.getenv("AVIATOR_MAX_TRAJ_LENGTH", self.max_traj_length))
         qddot_max = os.getenv("AVIATOR_QDDOT_MAX")
         self.qddot_max = float(qddot_max) if qddot_max is not None else None
+        self.margin_weight = float(os.getenv("AVIATOR_MARGIN_WEIGHT", "0.1"))
+        if self.margin_weight < 0:
+            raise ValueError("AVIATOR_MARGIN_WEIGHT must be nonnegative")
         self.num_actor_envs = int(os.getenv("AVIATOR_NUM_ENVS", self.num_actor_envs))
         self.max_online_episodes = int(os.getenv("AVIATOR_MAX_ONLINE_EPISODES", self.max_online_episodes))
         self.max_online_transitions = int(os.getenv("AVIATOR_MAX_ONLINE_TRANSITIONS", "0"))
@@ -148,6 +151,7 @@ class TrainConfig(DefaultTrainingConfig):
             split=self.trajectory_split,
             phi_dot_scale=self.phi_dot_scale,
             qddot_max=self.qddot_max,
+            margin_weight=self.margin_weight,
             initial_phi_fraction_range=self.initial_phi_fraction_range,
         )
         env = ChunkingWrapper(env, obs_horizon=1, act_exec_horizon=None)
@@ -212,9 +216,21 @@ class TrainConfig(DefaultTrainingConfig):
             init_value=1e-2, constraint_shape=(), constraint_type="geq",
             name="temperature",
         )
+        # Optional diagnostics/robustness controls are scoped to the repaired
+        # RL runs through environment variables.  The default path is exactly
+        # the historical optimizer configuration, so old experiments remain
+        # reproducible and their artifacts remain immutable.
+        critic_optimizer_kwargs = {"learning_rate": 3e-4}
+        clip_norm = os.getenv("AVIATOR_CRITIC_CLIP_NORM")
+        weight_decay = os.getenv("AVIATOR_CRITIC_WEIGHT_DECAY")
+        if clip_norm is not None:
+            critic_optimizer_kwargs["clip_grad_norm"] = float(clip_norm)
+        if weight_decay is not None:
+            critic_optimizer_kwargs["weight_decay"] = float(weight_decay)
         return SACAgent.create(
             rng, sample_obs, sample_action,
             actor_def=actor_def, critic_def=critic_def, temperature_def=temperature_def,
+            critic_optimizer_kwargs=critic_optimizer_kwargs,
             critic_ensemble_size=_CRITIC_ENSEMBLE_SIZE,
             critic_subsample_size=None,
             discount=self.discount,

@@ -60,6 +60,7 @@ class AviatorManifoldEnv(gym.Env):
         qdot_max: float = _QDOT_MAX,
         qddot_max: float | None = None,
         d_safe: float = _D_SAFE,
+        margin_weight: float = 0.1,
         trajectories: list = None,
         initial_phi_fraction_range: tuple[float, float] | None = None,
     ):
@@ -74,6 +75,9 @@ class AviatorManifoldEnv(gym.Env):
             raise ValueError("qddot_max must be positive")
         self.qddot_max = qddot_max
         self.d_safe = d_safe
+        if not np.isfinite(margin_weight) or margin_weight < 0:
+            raise ValueError("margin_weight must be finite and nonnegative")
+        self.margin_weight = float(margin_weight)
         if initial_phi_fraction_range is not None:
             low, high = initial_phi_fraction_range
             if not (np.isfinite(low) and np.isfinite(high) and 0 <= low <= high <= 1):
@@ -255,6 +259,7 @@ class AviatorManifoldEnv(gym.Env):
             self.lookup,
             a_prev=prev_phi_dot,
             a_prev2=None, dt=self.dt, d_safe=self.d_safe,
+            w_m=self.margin_weight,
         )
         info.update(rinfo)
         info.update({"d_min": d_min, "max_qdot": max_qdot, "m_q": m_q,
