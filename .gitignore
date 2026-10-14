@@ -12,3 +12,12 @@ _deps
 CMakeUserPresets.json
 reference/rocos-mujoco/build
 logs/
+/build
+/build
+/outputs
+/outputs/differential_lift_feasibility_20261002
+/outputs
+/outputs
+/outputs/differential_lift_feasibility_20261002
+/outputs
+outputs/differential_lift_feasibility_20261011/n16_installation_error_pilot_v2/paired_fixture_translation_0_nominal.json
