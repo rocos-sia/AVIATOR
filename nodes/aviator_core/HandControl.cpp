@@ -30,6 +30,9 @@ void HandControl::configure(const std::filesystem::path& path) {
         }
     };
     if (node["open"]) pose(node["open"], open_);
+    closing_start_ = open_; // Older configurations keep their original interpolation.
+    if (node["closing_start"] && !node["closing_start"].IsNull())
+        pose(node["closing_start"], closing_start_);
     if (node["close"] && !node["close"].IsNull()) { pose(node["close"], close_); has_close_ = true; }
 }
 void HandControl::request(bool close, uint64_t now) {
@@ -62,7 +65,10 @@ void HandControl::approachProgress(const std::array<double, 2>& progress, uint64
             throw std::runtime_error("Invalid hand trajectory progress");
     for (int side = 0; side < 2; ++side)
         for (int j = 0; j < 6; ++j)
-            target_[side][j] = open_[side][j] + progress[side] * (close_[side][j] - open_[side][j]);
+            // Zero progress also denotes the approach segment outside the closing range.
+            // Only enter the configured starting pose once this hand begins closing.
+            target_[side][j] = progress[side] == 0 ? open_[side][j] :
+                closing_start_[side][j] + progress[side] * (close_[side][j] - closing_start_[side][j]);
     if (!endpoint_ && progress[0] == 1 && progress[1] == 1) {
         endpoint_ = true;
         requested_ = now;

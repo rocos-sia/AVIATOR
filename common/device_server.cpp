@@ -642,7 +642,9 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                 require(req.at("parameters").is_object(), "Service parameters must be an object");
                 const auto now = monotonic_us(), issued = req.at("issued_mono_us").get<uint64_t>(),
                            deadline = req.at("deadline_ms").get<uint64_t>();
-                require(deadline > 0 && deadline <= 10000 && issued <= now &&
+                const auto max_deadline = req.at("operation") == "set_impedance_profile"
+                    ? kImpedanceServiceDeadlineMs : uint64_t{10000};
+                require(deadline > 0 && deadline <= max_deadline && issued <= now &&
                             now - issued < deadline * 1000,
                         "Expired service request");
                 const std::string op = req.at("operation"), client = req.at("client_session_id"),

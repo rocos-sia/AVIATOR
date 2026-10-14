@@ -170,7 +170,7 @@ cmake --build build --target aviator_core_managed -j2
 
 FOLLOWING 保持抓握结束时的关节指令目标与 wheel 参考；从 CONTROL 返回时，先按既有 Servo 流程减速，保持停止后的最后指令，不回到抓握位置。Managed Core 不订阅相机目标，仅 CONTROL 使用手柄调用 `ServoWheel`（rad/m）。进入 FOLLOWING 后异步切换到 `rokae.following_joint_stiffness`（缺省沿用 `rokae.joint_stiffness`）；进入 CONTROL 或释放前恢复 `rokae.joint_stiffness`。切换期间 `task_phase=STIFFNESS`、`settled=false`，停止轨迹执行，保留最后关节指令和 wheel 参考。真机依次 stopLoop、stopMove、停止独立反馈线程并 stopReceiveRobotState、设置刚度，再 startReceiveRobotState、startMove、恢复最新状态接收线程及 startLoop。重新注册的回调使用 `useStateDataInLoop=false`，SDK 控制器、连接和保持目标不重新初始化；FOLLOWING 即使数值相同也执行完整切换，default 数值相同则不暂停。恢复后的首个回调检查实时线程优先级。独立 `change_stiffness` 和 `aviator_core_camera_servo` 示例不受影响。
 
-`start_control` 恢复返回 COMPLETED 并直接进入 CONTROL；COMPLETED 表示状态转换完成。默认刚度在已有执行器线程槽异步恢复，期间 `settled=false`、控制接纳关闭，主线程继续处理输入、服务和保护。默认刚度恢复且新反馈到达后放行原有 Servo 流程，只接受恢复后的新鲜输入；后续手柄输入不再触发阻抗切换。恢复期间 EXIT_CONTROL 立即进入 FOLLOWING，取消恢复并等待执行器退出后应用 Following 刚度；急停、输入失效或恢复失败不会被迟到结果解除。阻抗服务期限为 5 秒，期间状态心跳仍有效，旧 RT 样本保留原时间戳，不作为新反馈。任一臂切换失败会停止双臂并进入 ERROR。SAFE 会撤销运动授权，因此此时保持停止，默认刚度在后续获准恢复、回零或释放前设置；ERROR／急停不为改刚度重启运动，重新使能时使用默认刚度。
+`start_control` 恢复返回 COMPLETED 并直接进入 CONTROL；COMPLETED 表示状态转换完成。默认刚度在已有执行器线程槽异步恢复，期间 `settled=false`、控制接纳关闭，主线程继续处理输入、服务和保护。默认刚度恢复且新反馈到达后放行原有 Servo 流程，只接受恢复后的新鲜输入；后续手柄输入不再触发阻抗切换。恢复期间 EXIT_CONTROL 立即进入 FOLLOWING，取消恢复并等待执行器退出后应用 Following 刚度；急停、输入失效或恢复失败不会被迟到结果解除。阻抗服务期限为 20 秒，覆盖最多 5 秒停稳等待及 SDK 暂停、恢复过程；反馈切换宽限为 20.5 秒，期间状态心跳仍有效，旧 RT 样本保留原时间戳，不作为新反馈。任一臂切换失败会停止双臂并进入 ERROR。SAFE 会撤销运动授权，因此此时保持停止，默认刚度在后续获准恢复、回零或释放前设置；ERROR／急停不为改刚度重启运动，重新使能时使用默认刚度。
 
 保持流程回归测试：`ctest --test-dir build -R '^following_hold_process$' --output-on-failure`，使用独立端口和 MuJoCo。
 
@@ -461,7 +461,7 @@ status
 ```
 
 - `enable`：先尝试发送张开目标并等待双手实际位置到位；手部失败/超时仅警告，继续使能机械臂。
-- `approach`：从 home 连续到达最终抓握位姿；各侧 tool 到目标进入 `grasp.json.hand_closing_distance`（默认 0.07 m）后，手指从 `core_hand.open` 平滑闭合到 `core_hand.close`，跟随机械臂执行游标，与臂轨迹共用终点。没有预接近停靠。
+- `approach`：从 home 连续到达最终抓握位姿；各侧 tool 到目标进入 `grasp.json.hand_closing_distance`（默认 0.07 m）后，每侧闭合进度开始增加时，手指从 `core_hand.closing_start` 平滑闭合到 `core_hand.close`，跟随机械臂执行游标，与臂轨迹共用终点。`closing_start` 是左右各六个 `[0,1]` 位置值，缺省使用 `open`；当前配置为 `[0.5,1,0.6,0.6,0.6,0.6]`，拇指侧摆和弯曲沿用原起点，只有其余四指从 0.6 开始。进入闭合范围前仍保持 `open`，进入后目标直接跳至接近 `closing_start` 的位置，实际运动仍受手节点配置的速度和力阈值约束。它只改变闭合位置起点，不改变距离触发条件、平滑时间进度或松手姿态。没有预接近停靠。
 - `lock`：同步接近已提交闭合终点并收到本 Core 发布者、当前目标对应的 `accepted_command` 且实际反馈有效后，执行机械臂软件 lock，不再启动一段闭合动作。不会等待闭合位置全为 0，也不宣称已接触或抓稳方向盘。
 - `unlock`：持续发送张开目标，等待两手各六路实际位置距目标不超过 `open_tolerance`，再执行软件 unlock；手部失败/超时警告后仍执行软件 unlock。
 - `stop`：只停止机械臂运动，保持当前手目标；等运动停止后可输入 `unlock`、`disable`、`quit`。普通 `unlock` 不带机械臂撤离。

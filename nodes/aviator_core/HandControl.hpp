@@ -34,7 +34,7 @@ private:
     bool feedback_timely_ = false;
     bool endpoint_acknowledged_ = false;
     // Normalized targets: thumb rotation 0.5 (register 500), five bends fully open.
-    Pose open_{{{.5,1,1,1,1,1}, {.5,1,1,1,1,1}}}, close_{}, target_{};
+    Pose open_{{{.5,1,1,1,1,1}, {.5,1,1,1,1,1}}}, closing_start_{}, close_{}, target_{};
     std::string publisher_ = "inspire_hand", node_session_, epoch_ = new_session_id(), error_;
     uint64_t timeout_ = 5000000, feedback_timeout_ = 500000;
     uint64_t requested_ = 0, first_sequence_ = 0, command_sequence_ = 0, next_ = 0;

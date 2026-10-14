@@ -4,6 +4,7 @@
 #include "rokae_sdk.hpp"
 #include "OpenLoopGrasp.hpp"
 #include "CommandContinuity.hpp"
+#include "ImpedanceSettling.hpp"
 #include <atomic>
 #include <cmath>
 #include <limits>
@@ -352,6 +353,7 @@ class RokaeDataLink final : public DataLink {
         }
         require(powered_[0] && powered_[1], "Enable both arms before changing stiffness");
         try {
+            waitForImpedanceSettling(check);
             const auto stage = [&](const char* name, auto operation) {
                 for (int side = 0; side < 2; ++side) {
                     const auto began = monotonic();
@@ -498,6 +500,57 @@ class RokaeDataLink final : public DataLink {
         double feedback_time[2], max_gap[2];
         uint64_t callbacks[2];
     };
+    void waitForImpedanceSettling(const std::function<void()>& check) {
+        const double began = monotonic();
+        const auto initial = captureState();
+        ImpedanceSettling settling[2];
+        Logger::info("Impedance settle begin speed_limit_rad_s={} stable_ms={} timeout_ms={}",
+                     ImpedanceSettling::speed_limit, ImpedanceSettling::stable_seconds * 1000,
+                     ImpedanceSettling::timeout_seconds * 1000);
+        for (;;) {
+            check(); // Keep cancellation, origin heartbeat and service deadline checks active.
+            require(!callback_fault_, "RT callback failed while waiting for impedance settling");
+            for (int side = 0; side < 2; ++side)
+                require(!arms_[side]->motionFailed(),
+                        "SDK failure while waiting for impedance settling: " + endpoints_[side]);
+            const auto snapshot = captureState();
+            const double now = monotonic();
+            bool ready[2];
+            for (int side = 0; side < 2; ++side)
+                ready[side] = settling[side].observe(now, snapshot.feedback_time[side],
+                    snapshot.powered[side] && snapshot.velocity_valid[side] && snapshot.tcp_valid[side],
+                    snapshot.velocity[side]);
+            const bool settled = ready[0] && ready[1];
+            if (settled || now - began >= ImpedanceSettling::timeout_seconds) {
+                std::ostringstream detail;
+                detail << "Impedance settle " << (settled ? "complete" : "timeout")
+                       << " elapsed_ms=" << (now - began) * 1000;
+                for (int side = 0; side < 2; ++side) {
+                    double drift = 0;
+                    int joint = 0;
+                    for (int j = 0; j < 7; ++j) {
+                        if (std::abs(snapshot.velocity[side][j]) > std::abs(snapshot.velocity[side][joint]))
+                            joint = j;
+                        drift = std::max(drift, std::abs(snapshot.position[side][j] - initial.position[side][j]));
+                    }
+                    detail << " [" << endpoints_[side] << " settled=" << ready[side]
+                           << " stable_ms=" << settling[side].duration() * 1000
+                           << " feedback_age_ms=" << (now - snapshot.feedback_time[side]) * 1000
+                           << " velocity_valid=" << snapshot.velocity_valid[side]
+                           << " max_speed_joint=J" << joint + 1
+                           << " max_speed_rad_s=" << std::abs(snapshot.velocity[side][joint])
+                           << " max_position_drift_rad=" << drift << " velocity_rad_s=[";
+                    for (int j = 0; j < 7; ++j) detail << (j ? "," : "") << snapshot.velocity[side][j];
+                    detail << "]]";
+                }
+                if (!settled) fail(detail.str());
+                Logger::info("{}", detail.str());
+                return;
+            }
+            // The RT loops keep holding the unchanged target at the original stiffness.
+            std::this_thread::sleep_for(kTick);
+        }
+    }
     void reportTiming() {
         const double now = monotonic();
         if (timing_at_ && now - timing_at_ < 1) return;

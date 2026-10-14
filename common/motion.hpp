@@ -8,6 +8,8 @@
 namespace aviator {
 using Json = nlohmann::json;
 using Joints = std::array<double, 14>;
+// Shared client/server budget: settling, SDK pause/restart and result delivery.
+inline constexpr uint64_t kImpedanceServiceDeadlineMs = 20000;
 struct MotionConfig {
     std::filesystem::path system, robot;
     std::string publish, subscribe, service, config_id;

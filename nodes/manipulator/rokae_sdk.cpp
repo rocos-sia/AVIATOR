@@ -496,10 +496,17 @@ void RokaeArm::pauseImpedance() {
     auto& s = *impl_;
     if (!s.prepared || !s.powered || !s.receiving || !s.looping || !s.moving)
         throw std::runtime_error("Impedance update requires active realtime hold: " + s.endpoint);
-    s.rt->stopLoop(); s.looping = false;
-    s.rt->stopMove(); s.moving = false;
-    s.stopReceiver();
-    s.robot.stopReceiveRobotState(); s.receiving = false;
+    const auto step = [&](const char* name, auto operation) {
+        const auto began = std::chrono::steady_clock::now();
+        aviator::Logger::info("[Rokae {}] impedance pause step={} begin", s.endpoint, name);
+        operation();
+        aviator::Logger::info("[Rokae {}] impedance pause step={} complete elapsed_ms={}", s.endpoint, name,
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
+    };
+    step("stopLoop", [&] { s.rt->stopLoop(); s.looping = false; });
+    step("stopMove", [&] { s.rt->stopMove(); s.moving = false; });
+    step("joinStateReceiver", [&] { s.stopReceiver(); });
+    step("stopReceiveRobotState", [&] { s.robot.stopReceiveRobotState(); s.receiving = false; });
 }
 void RokaeArm::setPausedStiffness(const std::array<double, 7>& stiffness) {
     std::lock_guard<std::recursive_mutex> rpc(impl_->lifecycle_mutex);

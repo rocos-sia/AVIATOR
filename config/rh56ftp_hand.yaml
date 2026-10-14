@@ -5,7 +5,7 @@ left_host: 192.168.11.210
 
 # 各通道运动时使用 grasp，停止保持时使用 hold；模式固定为 0（按角度运动，带设备力阈值保护）。
 speed:
-  grasp: 500
+  grasp: 800
   hold: 100
 force:
   grasp: 1000

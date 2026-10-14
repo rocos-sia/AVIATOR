@@ -407,6 +407,62 @@ int main(int argc, char** argv) {
             check(link.request(false) == 0, "stopped hand worker accepted target");
         }
         auto sim = HandControl(); sim.configure(path); check(sim.enabled(), "hand control must not depend on device implementation");
+        {
+            std::ofstream(path) << R"(core_hand:
+  enabled: true
+  closing_start:
+    left: [0.5, 1, 0.6, 0.6, 0.6, 0.6]
+    right: [0.5, 1, 0.7, 0.7, 0.7, 0.7]
+  close:
+    left: [0.5, 0, 0, 0, 0, 0]
+    right: [0.5, 0.2, 0.2, 0.2, 0.2, 0.2]
+)";
+            auto moving = create();
+            moving.beginApproach(now);
+            const auto poseAt = [&](double left, double right, uint64_t t) {
+                moving.approachProgress({left, right}, t);
+                return moving.command(t, t, session).value();
+            };
+            const auto position = [](const Message& m, const char* side, int joint) {
+                return m.body["hands"][side]["drive_position_normalized"][joint].get<double>();
+            };
+            auto cmd = poseAt(0, 0, now);
+            check(position(cmd, "left", 2) == 1 && position(cmd, "right", 2) == 1,
+                  "closing start moved hands before entering closing range");
+            cmd = poseAt(.0001, 0, now + 20000);
+            check(std::abs(position(cmd, "left", 2) - .59994) < 1e-12 && position(cmd, "right", 2) == 1,
+                  "independent hand did not begin at configured closing start");
+            check(std::abs(position(cmd, "left", 1) - .9999) < 1e-12,
+                  "thumb flexion did not retain original open starting position");
+            cmd = poseAt(.5, .25, now + 40000);
+            for (int j = 2; j < 6; ++j)
+                check(std::abs(position(cmd, "left", j) - .3) < 1e-12 &&
+                      std::abs(position(cmd, "right", j) - .575) < 1e-12,
+                      "closing start interpolation incorrect");
+            check(position(cmd, "left", 0) == .5 && position(cmd, "right", 0) == .5,
+                  "closing start changed thumb rotation");
+            check(std::abs(position(cmd, "left", 1) - .5) < 1e-12 &&
+                  std::abs(position(cmd, "right", 1) - .8) < 1e-12,
+                  "closing start changed thumb flexion interpolation");
+            cmd = poseAt(1, 1, now + 60000);
+            check(position(cmd, "left", 1) == 0 && std::abs(position(cmd, "right", 1) - .2) < 1e-12,
+                  "closing start changed endpoint");
+            moving.request(false, now + 80000);
+            cmd = moving.command(now + 80000, now + 80000, session).value();
+            check(position(cmd, "left", 1) == 1 && position(cmd, "right", 1) == 1,
+                  "closing start changed release pose");
+            moving.request(true, now + 100000);
+            cmd = moving.command(now + 100000, now + 100000, session).value();
+            check(position(cmd, "left", 1) == 0, "direct close used approach starting pose");
+        }
+        for (const char* invalid : {"[0.5, 0.6]", "[0.5, 1.1, 0.6, 0.6, 0.6, 0.6]",
+                                    "[0.5, .nan, 0.6, 0.6, 0.6, 0.6]"}) {
+            std::ofstream(path) << "core_hand:\n  enabled: true\n  closing_start:\n    left: " << invalid
+                                << "\n    right: [0.5, 0.6, 0.6, 0.6, 0.6, 0.6]\n";
+            bool invalid_rejected = false;
+            try { create(); } catch (...) { invalid_rejected = true; }
+            check(invalid_rejected, "invalid closing start accepted");
+        }
         std::ofstream(path) << "core_hand: {enabled: true, close: null}\n";
         auto missing = create(); bool rejected = false;
         try { missing.request(true, now); } catch (...) { rejected = true; }

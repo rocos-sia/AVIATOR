@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <cmath>
 namespace aviator {
+namespace {
+constexpr uint64_t kImpedanceFeedbackGraceUs = 500000;
+}
 RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), session_(new_instance_id()) {
     const auto info = callService(context_, c, serviceRequest(session_, "describe", Json::object()));
     if (info.at("config_id") != c.config_id)
@@ -96,7 +99,7 @@ Json RemoteLink::operation(const std::string &op, Json parameters) {
     std::lock_guard<std::mutex> lock(service_mutex_);
     parameters["config_id"] = config_.config_id;
     auto request = serviceRequest(session_, op, parameters);
-    if (op == "set_impedance_profile") request["deadline_ms"] = 5000;
+    if (op == "set_impedance_profile") request["deadline_ms"] = kImpedanceServiceDeadlineMs;
     return callService(context_, config_, request);
 }
 double RemoteLink::getJointPosition(Side s, int j) const {
@@ -152,7 +155,7 @@ void RemoteLink::setImpedanceProfile(bool following) {
             throw std::runtime_error("Impedance update requires healthy enabled arms");
         if (!state_.impedance_switching && state_.impedance_profile == (following ? "following" : "default")) return;
         began = monotonic_us();
-        impedance_deadline_ = began + 5500000;
+        impedance_deadline_ = began + kImpedanceServiceDeadlineMs * 1000 + kImpedanceFeedbackGraceUs;
     }
     try {
         const auto result = operation("set_impedance_profile", {{"profile", following ? "following" : "default"}});

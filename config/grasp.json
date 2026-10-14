@@ -91,5 +91,5 @@
     "mount_radius": 0.008
   },
   "approach_distance": 0.18,
-  "hand_closing_distance": 0.10
+  "hand_closing_distance": 0.12
 }

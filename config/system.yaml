@@ -22,6 +22,11 @@ core_hand:
   open:
     left: [0.5, 1, 1, 1, 1, 1]
     right: [0.5, 1, 1, 1, 1, 1]
+  # 进入 hand_closing_distance 后的闭合起始位置；缺省沿用 open。
+  # 拇指沿用 open 起点，其余四指从 0.6 向 close 插值；进入前及松手仍使用 open。
+  closing_start:
+    left: [0.5, 1, 0.6, 0.6, 0.6, 0.6]
+    right: [0.5, 1, 0.6, 0.6, 0.6, 0.6]
   # User-selected close targets; keep thumb rotation first.
   close:
     left: [0.5, 0, 0, 0, 0, 0]

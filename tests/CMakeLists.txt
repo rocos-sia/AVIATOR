@@ -334,6 +334,11 @@ if(TARGET aviator_core_control AND Python3_Interpreter_FOUND AND FSM_PYTHON_DEPS
   set_tests_properties(impedance_lifecycle PROPERTIES TIMEOUT 70)
 endif()
 
+aviator_add_test_executable(aviator_impedance_settling_test impedance_settling_test.cpp)
+target_include_directories(aviator_impedance_settling_test PRIVATE ../nodes/manipulator)
+add_test(NAME impedance_settling COMMAND aviator_impedance_settling_test)
+set_tests_properties(impedance_settling PROPERTIES TIMEOUT 5)
+
 aviator_add_test_executable(aviator_command_pacer_test command_pacer_test.cpp)
 target_include_directories(aviator_command_pacer_test PRIVATE ../nodes/manipulator)
 target_link_libraries(aviator_command_pacer_test PRIVATE Threads::Threads)

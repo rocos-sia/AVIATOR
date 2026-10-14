@@ -34,6 +34,7 @@ class PausingDevice final : public DataLink {
     std::array<double, 7> stiffness_;
     std::string mode_;
     bool locked_ = false;
+    bool slow_pause_injected_ = false;
 public:
     PausingDevice(const DeviceSettings& settings, const std::string& mode)
         : stiffness_(settings.default_stiffness), mode_(mode) {
@@ -66,9 +67,14 @@ public:
     void setJointStiffness(const std::array<double, 7>& stiffness, const std::function<void()>& guard,
                            bool force_reapply = false) override {
         if (!force_reapply && stiffness == stiffness_) return;
-        for (int i = 0; i < (mode_ == "timeout" ? 1200 : 60); ++i) {
+        for (int i = 0; i < (mode_ == "timeout" ? 5000 : 60); ++i) {
             guard();
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        if (mode_ == "slow_pause" && !slow_pause_injected_) {
+            // Field regression: settling took 300 ms, then one SDK pause blocked for 10 s.
+            slow_pause_injected_ = true;
+            std::this_thread::sleep_for(std::chrono::seconds(10));
         }
         if (mode_ == "failure") throw std::runtime_error("injected right arm restart failure");
         guard();
@@ -172,7 +178,7 @@ int main(int argc, char** argv) try {
     const auto target = link.jointTargets();
     auto task = std::async(std::launch::async, [&] { link.setImpedanceProfile(true); });
     bool observed_pause = false, cancelled = false;
-    auto until = monotonic_us() + 7000000;
+    auto until = monotonic_us() + 25000000;
     while (task.wait_for(std::chrono::milliseconds(5)) != std::future_status::ready) {
         if (!lose_heartbeat) link.heartbeat();
         bool fresh = false, status = false;
@@ -190,7 +196,7 @@ int main(int argc, char** argv) try {
     try { task.get(); } catch (const std::exception& e) { failed = true; std::cout << e.what() << '\n'; }
     const bool unchanged = mode == "unchanged" || mode == "fallback";
     check(observed_pause, "Following must execute the lifecycle even with unchanged stiffness");
-    const bool successful = mode == "success" || mode == "latest_impedance" || mode == "rebase" ||
+    const bool successful = mode == "success" || mode == "slow_pause" || mode == "latest_impedance" || mode == "rebase" ||
                             mode == "wheel_rebase" || unchanged;
     check(failed != successful, "wrong profile result");
     if (successful) {
