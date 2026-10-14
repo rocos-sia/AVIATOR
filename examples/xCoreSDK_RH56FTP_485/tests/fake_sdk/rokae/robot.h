@@ -10,12 +10,15 @@
 namespace fake_sdk {
 struct Arm {
     std::atomic<bool> failRead{false}, stall{false}, enteredStall{false}, failCleanup{false};
-    std::atomic<int> reads{0}, writes{0}, powerOff{0}, disconnects{0};
+    std::atomic<bool> failPowerOn{false}, loseWriteAck{false}, badChecksum{false};
+    std::atomic<int> errorCode{0}, attempts{0}, reads{0}, writes{0}, powerOff{0}, disconnects{0};
 };
 inline Arm arms[2];
 inline void reset() {
     for (auto& a : arms) {
         a.failRead = false; a.stall = false; a.enteredStall = false; a.failCleanup = false;
+        a.failPowerOn = false; a.loseWriteAck = false; a.badChecksum = false;
+        a.errorCode = 0; a.attempts = 0;
         a.reads = 0; a.writes = 0; a.powerOff = 0; a.disconnects = 0;
     }
 }
@@ -49,6 +52,7 @@ public:
     void setxPanelRS485Overtime(int, std::error_code& ec) { ec.clear(); }
     void setPowerState(bool on, std::error_code& ec) {
         ec.clear();
+        if (on && fake_sdk::arms[side_].failPowerOn) ec = std::make_error_code(std::errc::io_error);
         if (!on) {
             ++fake_sdk::arms[side_].powerOff;
             if (fake_sdk::arms[side_].failCleanup) ec = std::make_error_code(std::errc::io_error);
@@ -62,12 +66,13 @@ public:
         if (send != int(tx.size()) || receive != int(rx.size()) || tx.size() < 9)
             throw std::runtime_error("Wrong SDK buffer lengths");
         auto& a = fake_sdk::arms[side_];
+        ++a.attempts;
         ec.clear();
         if (a.stall) {
             a.enteredStall = true;
             while (a.stall) std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
-        if (a.failRead) {
+        if (a.failRead && tx[4] == 0x11) {
             rx.clear(); ec = std::make_error_code(std::errc::timed_out); return;
         }
         const int address = tx[5] | (int(tx[6]) << 8);
@@ -79,10 +84,13 @@ public:
             if (!values) throw std::runtime_error("Unexpected write address");
             for (int i = 0; i < 6; ++i) (*values)[i] = tx[7 + 2*i] | (int(tx[8 + 2*i]) << 8);
             ++a.writes;
+            if (a.loseWriteAck.exchange(false)) {
+                rx.clear(); ec = std::make_error_code(std::errc::timed_out); return;
+            }
             data = {1};
         } else {
             ++a.reads;
-            if (address == rh56::errorAct) data.assign(6, 0);
+            if (address == rh56::errorAct) data.assign(6, uint8_t(a.errorCode.load()));
             else {
                 const rh56::Values values = address == rh56::angleAct ? angles_ :
                     address == rh56::speedSet ? speeds_ : address == rh56::forceSet ? limits_ : rh56::Values{};
@@ -92,6 +100,7 @@ public:
         rx = {0x90, 0xEB, tx[2], uint8_t(data.size() + 3), tx[4], tx[5], tx[6]};
         rx.insert(rx.end(), data.begin(), data.end());
         rx.push_back(rh56::checksum(rx));
+        if (a.badChecksum) rx.back() ^= 1;
         if (int(rx.size()) != receive) throw std::runtime_error("Wrong test reply length");
     }
 };

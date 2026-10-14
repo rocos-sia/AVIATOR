@@ -30,15 +30,13 @@ localhost，打开页面不会立即连接硬件。`--no-browser` 可关闭自�
 本地端口；完整选项使用 `./scripts/start_grasp_calibration_ui.sh --help` 查看。
 
 启动脚本默认使用 `python3` 运行 UI；可通过 `UI_PYTHON` 指向安装了上述 Python 依赖
-的解释器。机械手和相机的默认解释器分别是
-`~/miniconda3/envs/rh56-pendant/bin/python3` 和
-`~/miniconda3/envs/apriltag_realsense/bin/python`，对应文件不存在时回退到 UI 解释器。
-可分别用 `--hand-python`、`--camera-python` 覆盖。示例：
+的解释器。手控制在 native session 内运行，无需机械手 Python 环境。相机默认使用
+`~/miniconda3/envs/apriltag_realsense/bin/python`，不存在时回退到 UI 解释器，可通过
+`--camera-python` 覆盖。例如：
 
 ```bash
 UI_PYTHON=~/miniconda3/envs/apriltag_realsense/bin/python \
   ./scripts/start_grasp_calibration_ui.sh \
-  --hand-python ~/miniconda3/envs/rh56-pendant/bin/python3 \
   --camera-python ~/miniconda3/envs/apriltag_realsense/bin/python
 ```
 
@@ -269,3 +267,13 @@ T_flange_tool     = inverse(T_aircraft_flange) × T_aircraft_grasp
 ```
 
 静态文件模式只能验证计算和文件格式，不能验证实机稳定性或轮盘测量误差。
+
+
+### 集成 RS485 手控制
+
+真实标定会话通过 native helper 的 `hand_start` 在已有的左右机器人连接上启动手模块，
+不再启动 Python Modbus 手进程，也不另外启动 manipulator。HandCommand/HandState 和 UI
+开合操作保持不变。`start_grasp_calibration_ui.sh --fake-hand` 仅模拟双手；`--dry-run` 仍为
+完整离线 UI。手参数来自 `--hand-config`，总线和发布者身份来自 `--system-config`。
+结束时 native session 先停止其拥有的拖动，再请求手部保护动作并停止线程，最后断开机器人。
+旧 `--hand-python` 参数为命令行兼容保留，已不参与真实启动链路。

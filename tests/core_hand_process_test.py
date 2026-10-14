@@ -79,7 +79,7 @@ core_hand:
         try:
             if fake_node:
                 hand_process = subprocess.Popen([
-                    sys.executable, str(fake_node), '--endpoint', endpoints[1],
+                    *([sys.executable, str(fake_node)] if str(fake_node).endswith(".py") else [str(fake_node), *(['--fake-hand'] if Path(fake_node).name == 'xCoreSDK_hand' else [])]), '--endpoint', endpoints[1],
                     '--state-endpoint', endpoints[0]], stdout=hand_log, stderr=subprocess.STDOUT)
             time.sleep(.2)
             child = subprocess.Popen([driver, str(config), mode], stdout=subprocess.PIPE,
@@ -255,7 +255,12 @@ core_hand:
                                 if invalid_state_times[0] < t < invalid_state_times[-1]]) >= 40
             elif mode in ('dropped', 'revoke', 'heartbeat', 'arm_failure'):
                 assert close_seen and not unlock_seen
-                assert time.monotonic() - command_times[-1] > .25, 'hand target kept alive after fault/revocation'
+                if mode == 'dropped':
+                    assert time.monotonic() - command_times[-1] < .15, 'missing hand feedback stopped target publication'
+                    assert max(b-a for a,b in zip(command_times,command_times[1:])) < .1
+                    assert 'continuing latest hand.command publication' in output, output
+                else:
+                    assert time.monotonic() - command_times[-1] > .25, 'hand target kept alive after fault/revocation'
                 if mode in ('dropped', 'heartbeat'):
                     assert time.monotonic() - last_arm < .15, 'hand warning stopped arm publication'
                     assert '[warning]' in output and 'Core hand warning:' in output, output
@@ -269,6 +274,14 @@ core_hand:
                 assert 'Core FSM fault' not in output, output
                 if mode in ('synchronized_drop', 'no_close'):
                     assert cursor == 1000, 'hand warning interrupted arm trajectory'
+                if mode == 'synchronized_drop':
+                    assert partial_seen and close_seen and unlock_seen, 'missing ACK froze synchronized target updates'
+                    assert max(b-a for a,b in zip(command_times,command_times[1:])) < .1
+                if mode in ('missing', 'stale', 'stuck_open'):
+                    assert first_open and close_seen and unlock_seen
+                    assert len(command_times) >= 40, 'timeout stopped latest target publication'
+                    assert max(b-a for a,b in zip(command_times,command_times[1:])) < .1
+                    assert 'continuing latest hand.command publication' in output, output
                 if mode == 'invalid':
                     assert first_open and close_seen and unlock_seen
                     assert len(command_times) >= 80, 'invalid feedback stopped command publication'

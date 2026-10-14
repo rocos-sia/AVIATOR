@@ -16,7 +16,7 @@ python scripts\split_stl.py models\meshes\Cessna\aircraft_visual.STL models\mesh
 ## 一键启动
 
 按 [启动流程](../docs/启动流程.txt) 启动 Bus、Manipulator（sudo）、Gateway、
-RH56FTP、Core、Camera、Monitor，打开全屏 Chrome；指定 `--logger` 时最后启动 Logger：
+Core、Camera、Monitor（RH56FTP 集成在 Manipulator 内），打开全屏 Chrome；指定 `--logger` 时最后启动 Logger：
 
 ```bash
 ./scripts/start_aviator.sh --dry-run
@@ -32,6 +32,8 @@ Manipulator 在独立会话内直接认证，停止时也直接认证，不依�
 `/tmp/aviator-start.*` 目录；保持终端打开，Ctrl+C 停止本次启动的所有节点。
 控制节点退出会触发其余节点停止，浏览器保留打开；可选 TTS 节点退出只报告日志，不停止控制节点。
 锁阻止该脚本重复运行；使用前应先停止手动启动的节点。
+关闭终端（SIGHUP）也会触发节点清理。如果提示启动锁被占用，可能是启动脚本或上次异常退出后
+残留的节点仍在运行；先停止这些进程，不要删除锁文件绕过检查。进程退出后锁自动释放。
 启动顺序之间默认等待 2 秒（不代表设备已就绪），Monitor HTTP 就绪后打开浏览器。
 相机仍使用 `--show`，因此需要桌面显示环境。
 默认不开启 Logger，也不启用相机图像录制通道；各节点的运行诊断日志仍写入临时日志目录。
@@ -40,15 +42,12 @@ Manipulator 在独立会话内直接认证，停止时也直接认证，不依�
 `recording_年月日_时分秒_纳秒.mcap`（北京时间，按 Logger 启动时间命名）；
 其运行日志保存在上述日志目录的 `logger.log`。
 
-默认 Python 环境为 `~/miniconda3/envs/rh56-pendant/bin/python3` 和
-`~/miniconda3/envs/apriltag_realsense/bin/python`，Monitor 使用
-`build/bin/aviator_monitor`。可通过 `CONDA_ROOT`、`HAND_PYTHON`、
-`CAMERA_PYTHON`、`MONITOR_BIN`、`START_DELAY` 环境变量覆盖。
-脚本直接使用环境 Python 并设置 PATH，不执行自定义 Conda 激活钩子。
-`--fake-hand` 使用同一个 `HAND_PYTHON`，仅需 `pyzmq` 和 `PyYAML`，不需要
-`pymodbus` 或手设备连接。它保留 `config/system.yaml` 的 Core 配置，
-手节点替换为 [fake_rh56ftp_hand.py](../nodes/rh56ftp_hand/fake_rh56ftp_hand.py)，
-其余启动流程照常执行。不能与 `--simulation` 同时使用，因为整机仿真已经提供手反馈。
+相机默认 Python 环境为 `~/miniconda3/envs/apriltag_realsense/bin/python`，Monitor 使用
+`build/bin/aviator_monitor`。可通过 `CONDA_ROOT`、`CAMERA_PYTHON`、`MONITOR_BIN`、
+`START_DELAY` 环境变量覆盖。手控制由独立 xCoreSDK_hand 节点提供，单独写入 hand.log；使用构建时选择的 Python，需要 PyYAML、pyzmq，不需要 pymodbus。
+`--fake-hand` 传给 xCoreSDK_hand，在独立进程内模拟双手，其余机械臂和相机流程照常执行；
+也可在 system.yaml 的 `xcore_sdk_hand.fake_hand` 中设置。不能与 `--simulation` 同时使用，
+因为整机仿真已经提供手反馈。
 `/tmp/aviator_session.uuid` 不存在或为空时生成 UUID，否则沿用现有值。
 `--dry-run` 只打印启动命令，不启动节点、不请求 sudo、不写文件。
 
@@ -93,14 +92,14 @@ python3 -m venv .cache/tts-venv
 ```
 
 脚本从任意目录调用均可，使用 `config/system.yaml`，依次启动 Bus、Manipulator
-（sudo）、RH56FTP、相机、Monitor 和 Chrome，最后启动 `aviator_core_camera_servo`；
+（sudo，含 RH56FTP）、相机、Monitor 和 Chrome，最后启动 `aviator_core_camera_servo`；
 不需要 Gateway。Core 会自动使能、接近并锁定把手，再根据 `cockpit` 相机的
 `steering_wheel` 在关节阻抗模式下随动。角度取 `-theta_rad`，位移取
 `-translation_along_axis_m - 0.085` 并限幅到 `[-0.170, 0]` m。
 启动前先停止手动运行的节点；此脚本与 `start_aviator.sh` 使用同一互斥锁。
 
 默认二进制目录为 `build/release/bin`（可通过 `AVIATOR_BIN` 覆盖），Monitor 默认
-也使用此目录。Python 环境同上，可设置 `CONDA_ROOT`、`HAND_PYTHON`、
+也使用此目录。Python 环境同上，可设置 `CONDA_ROOT`、
 `CAMERA_PYTHON`、`MONITOR_BIN` 和 `START_DELAY`（默认 2 秒）。
 `CAMERA_TIMEOUT_MS` 控制相机观测有效期，默认 200 ms，范围为 20–1000 ms。
 相机带 `--show --print-pose`，需要桌面显示环境。sudo 认证沿用原脚本的标准输入方式。
@@ -188,3 +187,12 @@ sudo ./scripts/setup_joystick_udev.sh --device /dev/input/eventN --user YOUR_USE
 重复执行更新同一规则文件，不重复追加规则；不会覆盖不带脚本标记的管理员文件。配置失败可能已完成部分步骤，修正错误后可重新运行。`--dry-run` 不执行系统修改。依赖 Linux、udevadm 和标准账户管理工具，不自动安装软件包。
 
 撤销时删除对应规则文件并重新加载规则、拔插设备；若用户不再需要任何 AVIATOR 设备权限，再执行 `sudo gpasswd -d USER aviator` 并重新登录。删除规则不会自动移除用户组成员。
+
+## 脚本回归
+
+`python3 tests/scripts_test.py`（或 CTest 的 `scripts`）覆盖本目录全部入口：语法、帮助、
+非法参数、真实/fake/simulation 启动命令、任意工作目录、含空格路径、模拟包管理器安装流程、
+udev 只读预览、STL 临时文件处理、TTS 音频包校验、发布元数据及标定 UI HTTP 启停。
+替身进程还验证两个整机启动入口的 Core→Manipulator 清理顺序和子进程回收。
+`tests/release_test.py` 另验证发布包完整性与安装布局下的启动脚本。
+测试不会启动机器人、修改系统包或写入 udev 规则。

@@ -43,6 +43,7 @@ QString phase(Phase p) {
     case Phase::Idle: return "未运行";
     case Phase::Starting: return "连接 / 初始化";
     case Phase::Connected: return "485 已连接";
+    case Phase::Recovering: return "等待恢复（自动读取中）";
     case Phase::Stopping: return "正在停止";
     case Phase::Failed: return "故障";
     }

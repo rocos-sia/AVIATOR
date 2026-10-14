@@ -36,7 +36,7 @@ namespace DhGripParams {
 /**
  * @brief DH电爪初始化
  */
-void DHGripInit(xMateRobot &robot) {
+void DHGripInit(xMateErProRobot &robot) {
   error_code ec;
   // 裸传的初始化
   std::vector<int>  init_set = { 0xA5 };//初始化数据
@@ -47,7 +47,7 @@ void DHGripInit(xMateRobot &robot) {
 /**
  * @brief DH电爪运动至
  */
-void DHGripMove(xMateRobot &robot, int& trq_set, int& vel_set, int& pos_set) {
+void DHGripMove(xMateErProRobot &robot, int& trq_set, int& vel_set, int& pos_set) {
   error_code ec;
   //设置力
   std::vector<int>  trq_set_vec;//设置力 20-100，可以改
@@ -69,7 +69,7 @@ void DHGripMove(xMateRobot &robot, int& trq_set, int& vel_set, int& pos_set) {
 /**
  * @brief DH电爪获取初始化状态
  */
-void DHGripGetInitStatus(xMateRobot& robot,int& init_get) {
+void DHGripGetInitStatus(xMateErProRobot& robot,int& init_get) {
   error_code ec;
   std::vector<int>  init_get_vec = { -1 };//获取初始化状态  0-2
   robot.XPRWModbusRTUReg(0x01, 0x03, 0x0200, "int16", 0x01, init_get_vec, false, ec);
@@ -80,7 +80,7 @@ void DHGripGetInitStatus(xMateRobot& robot,int& init_get) {
 /**
  * @brief DH电爪获取夹爪夹持状态
  */
-void DHGripGetStatus(xMateRobot& robot, int& grip_status_get) {
+void DHGripGetStatus(xMateErProRobot& robot, int& grip_status_get) {
   error_code ec;
   std::vector<int>  grip_status_get_vec = { -1 };//获取夹持状态  0-3
   robot.XPRWModbusRTUReg(0x01, 0x03, 0x0201, "int16", 0x01, grip_status_get_vec, false, ec);
@@ -91,7 +91,7 @@ void DHGripGetStatus(xMateRobot& robot, int& grip_status_get) {
 /*
  * @brief DH电爪获取力矩、速度、位置信息
  */
-void DHGripGetInfo(xMateRobot& robot, int& trq_get, int& vel_get, int& pos_get) {
+void DHGripGetInfo(xMateErProRobot& robot, int& trq_get, int& vel_get, int& pos_get) {
   error_code ec;
   //获取力
   std::vector<int>  trq_get_vec = { 0 };//获取力的缓冲
@@ -113,7 +113,7 @@ void DHGripGetInfo(xMateRobot& robot, int& trq_get, int& vel_get, int& pos_get) 
 /**
  * @brief DH电爪获取实时位置
  */
-void DHGripGetNewPos(xMateRobot& robot, int& pos_now_get) {
+void DHGripGetNewPos(xMateErProRobot& robot, int& pos_now_get) {
   error_code ec;
   std::vector<int> pos_now_get_vec = { 0 };
   robot.XPRWModbusRTUReg(1, 0x03, 0x0202, "int16", 1, pos_now_get_vec, false, ec);
@@ -124,7 +124,7 @@ void DHGripGetNewPos(xMateRobot& robot, int& pos_now_get) {
 /**
  * @brief 线圈测试接口，针对吸盘
  */
-void CoilTest(xMateRobot& robot) {
+void CoilTest(xMateErProRobot& robot) {
   error_code ec;
   std::vector<bool> bool_data_len1 = { 0 };
   std::vector<bool> bool_data_len4 = { 0,0,0,1 };
@@ -152,7 +152,7 @@ void CoilTest(xMateRobot& robot) {
 /**
  * @brief func_code寄存器测试接口
  */
-void RegFuncCodeTest(xMateRobot& robot) {
+void RegFuncCodeTest(xMateErProRobot& robot) {
   error_code ec;
   std::vector<int> int_data_len1 = { 0 };
   std::vector<int> int_data_len3 = { 0,0,1 };
@@ -183,7 +183,7 @@ void RegFuncCodeTest(xMateRobot& robot) {
 /**
  * @brief data_type寄存器测试接口,针对rm电爪
  */
-void RegDataTypeTest(xMateRobot& robot) {
+void RegDataTypeTest(xMateErProRobot& robot) {
   error_code ec;
   std::vector<int> int16_data_len1 = { 0 };
   std::vector<int> int16_data_len2 = { 0 };
@@ -218,7 +218,7 @@ void RegDataTypeTest(xMateRobot& robot) {
 /**
  * @brief 裸传数据接口
  */
-void RWData_Test(xMateRobot& robot) {
+void RWData_Test(xMateErProRobot& robot) {
   error_code ec;
   //裸传的初始化,用裸传数据直接进行大寰电爪的初始化，
   std::vector<uint8_t> send_data = { 0x01,0x06,0x01,0x00,0x00,0xA5,0x48,0x4D };//初始化的裸传数据
@@ -235,9 +235,9 @@ void RWData_Test(xMateRobot& robot) {
 int main() {
 
   try {
-    std::string ip = "192.168.0.160";
+    std::string ip = "192.168.1.160";
     std::error_code ec;
-    rokae::xMateRobot robot(ip);
+    rokae::xMateErProRobot robot(ip);
 
     std::cout << "建立与Robot的连接" << std::endl;
 

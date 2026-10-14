@@ -7,6 +7,7 @@
 #include <string>
 
 namespace aviator {
+class RokaeArm;
 
 // 抓取几何，全部来自 config/grasp.json，由算法层解析后传给后端，
 // 避免后端各自重复读取配置导致漂移。
@@ -37,7 +38,8 @@ struct RokaeConfig {
 // 臂基座 → 轮盘的安装变换由 URDF 的固定关节推算，因此只需传入 grasp.json 的几何。
 std::unique_ptr<DataLink> makeRokaeDataLink(const std::string &urdf_path,
                                             const RokaeConfig &config,
-                                            const GraspGeometry &geometry);
+                                            const GraspGeometry &geometry,
+                                            std::array<std::shared_ptr<RokaeArm>,2>* connections = nullptr);
 
 // PIN-IK / Pinocchio 运动学后端。joint2_min/max 为 J2 规划限位，弧度。
 std::unique_ptr<Kinematics> makePinIkKinematics(const std::string &urdf_path, double joint2_min,

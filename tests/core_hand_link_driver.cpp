@@ -30,7 +30,11 @@ int main(int argc, char** argv) {
                 }
                 std::atomic<bool> cancel{false};
                 link.runTrajectory(frames, cancel);
+                const auto lock_began = std::chrono::steady_clock::now();
                 link.sendGraspCommand(GraspCommand::Lock);
+                if (mode == "synchronized_drop" &&
+                    std::chrono::steady_clock::now() - lock_began > std::chrono::milliseconds(300))
+                    throw std::runtime_error("Lock repeated the failed synchronized hand completion wait");
                 link.sendGraspCommand(GraspCommand::Unlock);
                 link.disable(Side::Left);
                 cleanup();

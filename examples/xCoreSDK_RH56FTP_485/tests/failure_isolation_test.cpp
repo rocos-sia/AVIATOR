@@ -50,7 +50,7 @@ void checkHealthy(demo::Backend& backend, int healthy, int target) {
     require(backend.submit(1 << healthy, read), "Healthy arm rejected Read");
 }
 void startupFault(int failed) {
-    fake_sdk::reset(); fake_sdk::arms[failed].failRead = true;
+    fake_sdk::reset(); fake_sdk::arms[failed].failPowerOn = true;
     demo::Backend backend;
     fake_sdk::ReleaseStalls release;
     backend.start(config());
@@ -65,28 +65,83 @@ void startupFault(int failed) {
     until([&] { return backend.snapshot().ready; });
     stop(backend);
 }
-void runtimeFault(bool stalled) {
+void recovery(bool startup, bool actuator) {
+    fake_sdk::reset();
+    auto& arm = fake_sdk::arms[1];
+    auto fault = [&](bool enabled) {
+        if (actuator) arm.errorCode = enabled ? 1 : 0;
+        else arm.failRead = enabled;
+    };
+    if (startup) fault(true);
+    demo::Backend backend;
+    backend.start(config());
+    if (!startup) {
+        until([&] { return backend.snapshot().ready; });
+        fault(true);
+    }
+    until([&] { const auto s = backend.snapshot(); return s.arms[0].handReady &&
+        s.arms[1].phase == demo::Phase::Recovering; });
+    checkHealthy(backend, 0, 456);
+    const int attempts = arm.attempts;
+    until([&] { return arm.attempts > attempts + 5; });
+    if (actuator) require(backend.snapshot().arms[1].errors[0] == 1, "Missing actuator fault feedback");
+    if (!startup && !actuator) {
+        // Repeated failures must survive the old 3-second stale-feedback cutoff.
+        const auto began = demo::nowMs();
+        until([&] { return demo::nowMs() - began > 3200; });
+        require(backend.snapshot().arms[1].phase == demo::Phase::Recovering, "Persistent fault ended session");
+    }
+    require(arm.powerOff == 0 && arm.disconnects == 0, "Recoverable fault powered off or disconnected");
+    fault(false);
+    until([&] { return backend.snapshot().ready; });
+    require(backend.snapshot().arms[1].error.empty(), "Recovered arm retained error");
+    require(arm.writes == 0, "Recovery replayed a rejected command");
+    demo::Command command; command.angles.fill(321);
+    require(backend.submit(2, command), "Recovered arm rejected new command");
+    until([&] { return backend.snapshot().arms[1].angles == command.angles; });
+    stop(backend);
+    require(arm.powerOff == 1 && arm.disconnects == 1, "Stop did not clean recovered arm");
+}
+void stalledRecovery() {
     fake_sdk::reset();
     demo::Backend backend;
     fake_sdk::ReleaseStalls release;
     backend.start(config());
     until([&] { return backend.snapshot().ready; });
-    if (stalled) {
-        fake_sdk::arms[1].stall = true;
-        until([] { return fake_sdk::arms[1].enteredStall.load(); });
-        // Already queued commands must be discarded when the watchdog fires.
-        require(backend.submit(2, {}), "Cannot queue command before timeout");
-    } else {
-        fake_sdk::arms[1].failCleanup = true;
-        fake_sdk::arms[1].failRead = true;
-    }
-    until([&] { return backend.snapshot().arms[1].phase == demo::Phase::Failed; });
+    fake_sdk::arms[1].stall = true;
+    until([] { return fake_sdk::arms[1].enteredStall.load(); });
+    require(backend.submit(2, {}), "Cannot queue command before timeout");
+    until([&] { return backend.snapshot().arms[1].phase == demo::Phase::Recovering; });
     checkHealthy(backend, 0, 456);
     fake_sdk::arms[1].stall = false;
-    until([] { return fake_sdk::arms[1].disconnects == 1; });
-    require(!backend.snapshot().arms[1].handReady, "Late response restored failed arm readiness");
+    until([&] { return backend.snapshot().ready; });
+    require(fake_sdk::arms[1].powerOff == 0 && fake_sdk::arms[1].disconnects == 0, "Watchdog ended recoverable session");
     require(fake_sdk::arms[1].writes == 0, "Queued command executed after fault");
     stop(backend);
+}
+void writeAndProtocolRecovery() {
+    fake_sdk::reset();
+    demo::Backend backend;
+    backend.start(config());
+    until([&] { return backend.snapshot().ready; });
+    fake_sdk::arms[1].loseWriteAck = true;
+    demo::Command command; command.speeds.fill(123); command.angles.fill(456);
+    require(backend.submit(2, command), "Cannot submit write with lost ACK");
+    until([&] { return backend.snapshot().arms[1].phase == demo::Phase::Recovering; });
+    until([&] { return backend.snapshot().ready; });
+    require(fake_sdk::arms[1].writes == 1, "Uncertain write retried or continued remaining parameters");
+    require(backend.snapshot().arms[1].speeds == command.speeds, "Recovery did not read back partial write");
+    require(backend.snapshot().arms[1].angles[0] == 1000, "Failed command resumed angle write");
+    fake_sdk::arms[1].badChecksum = true;
+    until([&] { return backend.snapshot().arms[1].phase == demo::Phase::Recovering; });
+    fake_sdk::arms[1].badChecksum = false;
+    until([&] { return backend.snapshot().ready; });
+    fake_sdk::arms[1].failRead = true;
+    until([&] { return backend.snapshot().arms[1].phase == demo::Phase::Recovering; });
+    fake_sdk::arms[1].failCleanup = true;
+    stop(backend);
+    require(backend.snapshot().arms[1].phase == demo::Phase::Failed, "Cleanup failure not reported");
+    require(fake_sdk::arms[1].disconnects == 1, "Cleanup failure skipped disconnect");
 }
 void uiFault() {
     fake_sdk::reset(); fake_sdk::arms[1].failRead = true;
@@ -96,7 +151,7 @@ void uiFault() {
     auto* start = widget<QPushButton>(window, "start");
     start->click();
     auto* left = widget<QPushButton>(window, "send0");
-    until([&] { return left->isEnabled() && fake_sdk::arms[1].disconnects == 1; });
+    until([&] { return left->isEnabled() && fake_sdk::arms[1].attempts > 1; });
     require(widget<QPushButton>(window, "read0")->isEnabled(), "Left Read disabled after right fault");
     require(!widget<QPushButton>(window, "send1")->isEnabled(), "Failed right Apply enabled");
     require(!widget<QPushButton>(window, "read1")->isEnabled(), "Failed right Read enabled");
@@ -105,6 +160,11 @@ void uiFault() {
     widget<QSpinBox>(window, "angle_0_0")->setValue(123);
     left->click();
     until([&] { return widget<QLabel>(window, "actual_0_0")->text() == "123"; });
+    fake_sdk::arms[1].failRead = false;
+    until([&] { return widget<QPushButton>(window, "sendBoth")->isEnabled(); });
+    require(widget<QPushButton>(window, "send1")->isEnabled(), "Recovered right Apply disabled");
+    require(widget<QPushButton>(window, "read1")->isEnabled(), "Recovered right Read disabled");
+    require(fake_sdk::arms[1].disconnects == 0, "UI recovery reconnected arm");
     widget<QPushButton>(window, "stop")->click();
     until([&] { return start->isEnabled(); });
     require(!left->isEnabled(), "Left Apply enabled after global stop");
@@ -118,10 +178,12 @@ int main(int argc, char** argv) {
     try {
         require(logs.isValid() && QDir::setCurrent(logs.path()), "Cannot create test logs");
         startupFault(1); startupFault(0);
-        runtimeFault(false); runtimeFault(true);
+        recovery(true, false); recovery(false, false);
+        recovery(true, true); recovery(false, true);
+        stalledRecovery(); writeAndProtocolRecovery();
         uiFault();
         QDir::setCurrent(cwd);
-        std::cout << "Startup/runtime/watchdog/cleanup faults isolated; surviving arm controls, queue rejection, stop and reconnect passed\n";
+        std::cout << "Startup/runtime/actuator/protocol/watchdog recovery, no write replay, UI recovery and cleanup isolation passed\n";
         return 0;
     } catch (const std::exception& e) {
         QDir::setCurrent(cwd);

@@ -3,11 +3,14 @@
 
 namespace aviator {
 HandLink::~HandLink() { stop(); }
-void HandLink::warnLocked(const std::string& reason) {
+void HandLink::warnLocked(const std::string& reason, bool continuing) {
     if (reason.empty()) return;
     const auto now = monotonic_us();
     if (reason != last_warning_ || now - warning_at_ >= 10000000) {
-        Logger::warn("Core hand warning: {}; hand action unavailable, Core continues without hand confirmation", reason);
+        if (continuing)
+            Logger::warn("Core hand warning: {}; hand completion unconfirmed; continuing latest hand.command publication", reason);
+        else
+            Logger::warn("Core hand warning: {}; hand action unavailable, Core continues without hand confirmation", reason);
         last_warning_ = reason;
         warning_at_ = now;
     }
@@ -66,7 +69,7 @@ uint64_t HandLink::beginApproach() {
     if (!allowed_) throw MotionCancelled();
     if (stopping_ || failed_) { warnLocked("Hand IO worker unavailable"); return 0; }
     const auto now = monotonic_us();
-    if (const auto reason = control_.fault(now); !reason.empty()) { warnLocked(reason); return 0; }
+    // A new authorized grasp resets the previous target and its diagnostics.
     try { control_.beginApproach(now); }
     catch (const std::exception& e) { control_.fail(e.what()); warnLocked(e.what()); return 0; }
     changed_.notify_all();
@@ -79,7 +82,7 @@ void HandLink::approachProgress(uint64_t version, const std::array<double, 2>& p
     if (stopping_ || failed_) { warnLocked("Hand IO worker unavailable"); return; }
     if (version != version_) { warnLocked("Hand target superseded"); return; }
     const auto now = monotonic_us();
-    if (const auto reason = control_.fault(now); !reason.empty()) { warnLocked(reason); return; }
+    if (control_.failed()) { warnLocked(control_.fault(now)); return; }
     try { control_.approachProgress(progress, now); }
     catch (const std::exception& e) { control_.fail(e.what()); warnLocked(e.what()); return; }
     changed_.notify_all();
@@ -93,10 +96,10 @@ bool HandLink::wait(uint64_t version, const std::atomic<bool>* cancel) {
         if (version != version_) { warnLocked("Hand target superseded"); return false; }
         const auto now = monotonic_us(); // Sample only AFTER acquiring the target/feedback lock.
         const auto reason = control_.fault(now);
-        if (!reason.empty()) { control_.fail(reason); warnLocked(reason); return false; }
+        if (!reason.empty()) { warnLocked(reason, !control_.failed()); return false; }
         if (control_.complete(now)) return true;
         if (control_.waitExpired(now)) {
-            warnLocked("hand.state invalid; target completion unconfirmed; continuing hand.command publication");
+            warnLocked("hand.state invalid; target completion unconfirmed", true);
             return false;
         }
         changed_.wait_for(lock, std::chrono::milliseconds(5));
@@ -156,7 +159,7 @@ void HandLink::io(zmq::context_t& context, const MotionConfig& config, const std
             if (allowed_ && !failed_) {
                 if (auto command = control_.command(now, origin, session))
                     publishMessage(pub, *command);
-                warnLocked(control_.fault(now));
+                warnLocked(control_.fault(now), !control_.failed());
             }
             // Publication is serialized with target replacement/revocation. On return
             // from allow(false), no old snapshot can be published by this worker.

@@ -139,7 +139,7 @@ class RokaeDataLink final : public DataLink {
             endpoints_[side] = std::string(side == 0 ? "left" : "right") +
                 " robot=" + ip[side] + " local=" + local_ip[side];
             try {
-                arms_[side] = std::make_unique<RokaeArm>(ip[side], local_ip[side],
+                arms_[side] = std::make_shared<RokaeArm>(ip[side], local_ip[side],
                                                          poseToRowMajor(geometry.tools[side]), config.joint_stiffness);
             } catch (const std::exception &e) {
                 throw std::runtime_error("Rokae connect/configure " + endpoints_[side] + ": " + e.what());
@@ -158,6 +158,8 @@ class RokaeDataLink final : public DataLink {
             if (arms_[i]) { try { arms_[i]->stop(); } catch (...) {} }
         for (auto &arm : arms_) arm.reset();
     }
+
+    std::array<std::shared_ptr<RokaeArm>,2> connections() const { return {arms_[0], arms_[1]}; }
 
     ArmFeedback armFeedback() const override {
         const auto s = captureState();
@@ -352,8 +354,16 @@ class RokaeDataLink final : public DataLink {
         try {
             const auto stage = [&](const char* name, auto operation) {
                 for (int side = 0; side < 2; ++side) {
-                    try { check(); operation(*arms_[side]); }
+                    const auto began = monotonic();
+                    try {
+                        check();
+                        operation(*arms_[side]);
+                        Logger::info("Impedance stage={} endpoint={} elapsed_ms={}",
+                                     name, endpoints_[side], (monotonic() - began) * 1000);
+                    }
                     catch (const std::exception& e) {
+                        Logger::error("Impedance stage={} endpoint={} elapsed_ms={} error={}",
+                                      name, endpoints_[side], (monotonic() - began) * 1000, e.what());
                         throw std::runtime_error("Joint stiffness " + std::string(name) + " " +
                                                  endpoints_[side] + ": " + e.what());
                     }
@@ -623,7 +633,7 @@ class RokaeDataLink final : public DataLink {
             }
     }
 
-    std::unique_ptr<RokaeArm> arms_[2];
+    std::shared_ptr<RokaeArm> arms_[2];
 
     std::array<double, 7> vel_limit_[2]{};
     std::array<double, 7> joint_pos_[2]{};
@@ -659,8 +669,10 @@ class RokaeDataLink final : public DataLink {
 
 std::unique_ptr<DataLink> makeRokaeDataLink(const std::string &urdf_path,
                                             const RokaeConfig &config,
-                                            const GraspGeometry &geometry) {
-    return std::make_unique<RokaeDataLink>(urdf_path, config, geometry);
+                                            const GraspGeometry &geometry, std::array<std::shared_ptr<RokaeArm>,2>* connections) {
+    auto device = std::make_unique<RokaeDataLink>(urdf_path, config, geometry);
+    if(connections) *connections = device->connections();
+    return device;
 }
 
 } // namespace aviator

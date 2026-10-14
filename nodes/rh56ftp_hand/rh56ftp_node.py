@@ -724,40 +724,47 @@ class Rh56FtpNode:
         # Configure every connected hand before moving either hand. Cache
         # successful writes to avoid adding Modbus traffic at command rate.
         for side, link in self.links.items():
-            holding = tuple(value == -1 for value in raw_by_side[side])
-            if link is not None and self._settings_applied.get(side) != holding:
-                try:
-                    # Both bus modes produce angle targets. Manual §2.6.20:
-                    # mode 0 stops at the angle/force limit; mode 1 regulates
-                    # force instead. Restore mode 0 before changing force, even
-                    # when a previous node left the device in force control.
-                    if side not in self._settings_applied:
-                        self._write_call(side, "mode", lambda: link.write_mode_set([POSITION_FORCE_PROTECTION_MODE] * 6))
-                    speeds = canonical_to_rh([self.hold_speed if held else self.speed for held in holding])
-                    forces = canonical_to_rh([self.hold_force if held else self.force for held in holding])
-                    self._write_call(side, "speed", lambda: link.write_speed_set(speeds), rh_to_canonical(speeds))
-                    self._write_call(side, "force", lambda: link.write_force_set(forces), rh_to_canonical(forces))
-                except Exception as exc:
-                    self._settings_applied.pop(side, None)
-                    raise RuntimeError(f"{side} speed/force/mode setup failed: {exc}") from exc
-                self._settings_applied[side] = holding
+            self._write_settings(side, raw_by_side[side])
         for side, link in self.links.items():
-            if link is not None:
-                try:
-                    targets = raw_by_side[side]
-                    previous = self._angle_applied.get(side, [None] * 6)
-                    changed = [value if value != old else None for value, old in zip(targets, previous)]
-                    if any(value is not None for value in changed):
-                        self._write_call(side, "angle", lambda: link.write_angle_set(canonical_to_rh(changed)),
-                                         targets)
-                        self._angle_applied[side] = list(targets)
-                        self.last_ack_write_us = monotonic_us()
-                except Exception:
-                    # Reapply settings on the next attempt after a write error.
-                    self._settings_applied.pop(side, None)
-                    self._angle_applied.pop(side, None)
-                    raise
+            self._write_angles(side, raw_by_side[side])
         self.last_write_error = ""
+
+    def _write_settings(self, side: str, targets: list[int]) -> None:
+        link = self.links[side]
+        holding = tuple(value == -1 for value in targets)
+        if link is not None and self._settings_applied.get(side) != holding:
+            try:
+                # Both bus modes produce angle targets. Manual §2.6.20:
+                # mode 0 stops at the angle/force limit; mode 1 regulates
+                # force instead. Restore mode 0 before changing force, even
+                # when a previous node left the device in force control.
+                if side not in self._settings_applied:
+                    self._write_call(side, "mode", lambda: link.write_mode_set([POSITION_FORCE_PROTECTION_MODE] * 6))
+                speeds = canonical_to_rh([self.hold_speed if held else self.speed for held in holding])
+                forces = canonical_to_rh([self.hold_force if held else self.force for held in holding])
+                self._write_call(side, "speed", lambda: link.write_speed_set(speeds), rh_to_canonical(speeds))
+                self._write_call(side, "force", lambda: link.write_force_set(forces), rh_to_canonical(forces))
+            except Exception as exc:
+                self._settings_applied.pop(side, None)
+                raise RuntimeError(f"{side} speed/force/mode setup failed: {exc}") from exc
+            self._settings_applied[side] = holding
+
+    def _write_angles(self, side: str, targets: list[int]) -> None:
+        link = self.links[side]
+        if link is not None:
+            try:
+                previous = self._angle_applied.get(side, [None] * 6)
+                changed = [value if value != old else None for value, old in zip(targets, previous)]
+                if any(value is not None for value in changed):
+                    self._write_call(side, "angle", lambda: link.write_angle_set(canonical_to_rh(changed)),
+                                     targets)
+                    self._angle_applied[side] = list(targets)
+                    self.last_ack_write_us = monotonic_us()
+            except Exception:
+                # Reapply settings on the next attempt after a write error.
+                self._settings_applied.pop(side, None)
+                self._angle_applied.pop(side, None)
+                raise
 
     def _observe_faults(self, now: int, pending: dict[str, list[ClosingHold]] | None = None) -> bool:
         """Count independent channel faults from one fresh snapshot per hand, never failed phases."""
@@ -849,6 +856,9 @@ class Rh56FtpNode:
     def _reset_closing_holds(self) -> None:
         self.closing_holds = {side: [ClosingHold() for _ in range(6)] for side in SIDES}
 
+    def _command_gap_expired(self, now: int, previous: int) -> bool:
+        return now < previous or now - previous >= self.command_timeout_us
+
     def _closing_targets(self, requested: dict[str, list[int]], now: int
                          ) -> tuple[dict[str, list[int]], dict[str, list[ClosingHold]]]:
         effective = {side: list(values) for side, values in requested.items()}
@@ -865,8 +875,7 @@ class Rh56FtpNode:
                 target_changed = target != channel.requested_raw
                 # A reached/stable target accepts new motion in either direction.
                 # A blocked channel only accepts motion away from its stop position.
-                if (now < channel.last_command_us or
-                        now - channel.last_command_us >= self.command_timeout_us or
+                if (self._command_gap_expired(now, channel.last_command_us) or
                         (channel.held_raw is not None and
                          ((channel.held_at_target and target_changed) or
                           channel.residual_direction * (target - channel.held_raw) > 0))):
@@ -1431,11 +1440,12 @@ def run_node(node: Rh56FtpNode, endpoint: str, state_endpoint: str, state_hz: fl
     return 0
 
 
-def main(argv: list[str] | None = None, *, simulated: bool = False) -> int:
+def main(argv: list[str] | None = None, *, simulated: bool = False, transport_factory=None,
+         node_runner=None) -> int:
     parser = argparse.ArgumentParser(description=(
         "Fake RH56FTP 双手节点：复用真实协议，仅模拟设备，不连接 Modbus。" if simulated else __doc__))
     if simulated:
-        parser.add_argument("--motion-rate", type=float, default=2.0,
+        parser.add_argument("--motion-rate", type=float, default=None,
                             help="speed=500 时每秒归一化位移（默认 2，即全行程 0.5 秒）")
     parser.add_argument("--config", type=Path, help="YAML 配置文件（speed、force、threshold、right_host、left_host）；显式命令行参数优先")
     parser.add_argument("--endpoint", default="tcp://127.0.0.1:5556", help="hand.command SUB connects to bus egress")
@@ -1445,10 +1455,10 @@ def main(argv: list[str] | None = None, *, simulated: bool = False) -> int:
     parser.add_argument("--right-port", type=int, default=None)
     parser.add_argument("--left-port", type=int, default=None)
     parser.add_argument("--publisher-id", default="rh56ftp_hand")
-    parser.add_argument("--state-hz", type=float, default=DEFAULT_STATE_HZ,
+    parser.add_argument("--state-hz", type=float, default=None,
                         help="状态读取和发布频率（默认 1000/60 Hz，即 60 ms 周期）")
-    parser.add_argument("--command-timeout-ms", type=int, default=100)
-    parser.add_argument("--feedback-timeout-ms", type=int, default=500)
+    parser.add_argument("--command-timeout-ms", type=int, default=None)
+    parser.add_argument("--feedback-timeout-ms", type=int, default=None)
     parser.add_argument("--modbus-timeout", type=float, default=0.2,
                         help="每个 Modbus TCP 请求超时秒数（读写连接均使用）")
     parser.add_argument("--speed", type=int, default=None,
@@ -1459,7 +1469,7 @@ def main(argv: list[str] | None = None, *, simulated: bool = False) -> int:
                         help="保持速度设定，0..1000（默认 100）")
     parser.add_argument("--hold-force", type=int, default=None,
                         help="保持力阈值设定，0..3000（默认 100）")
-    parser.add_argument("--closing-hold-ms", type=int, default=10000,
+    parser.add_argument("--closing-hold-ms", type=int, default=None,
                         help="持续位置偏差及位置稳定的观察时间（默认 10000 ms）")
     parser.add_argument("--threshold", "--closing-motion-raw", dest="closing_motion_raw", type=int, default=None,
                         help="位置偏差及稳定变化范围阈值，寄存器刻度（默认 10，范围 0..999）")
@@ -1474,13 +1484,28 @@ def main(argv: list[str] | None = None, *, simulated: bool = False) -> int:
         try:
             import yaml
             settings = yaml.safe_load(args.config.read_text(encoding="utf-8"))
-            if not isinstance(settings, dict) or set(settings) - {"speed", "force", "threshold", "right_host", "left_host"}:
-                raise ValueError("配置必须为仅包含 speed、force、threshold、right_host、left_host 的映射")
+            if not isinstance(settings, dict) or set(settings) - {"speed", "force", "threshold", "right_host", "left_host",
+                    "left_enabled", "right_enabled", "left_id", "right_id", "rs485_timeout_ms",
+                    "state_period_ms", "command_timeout_ms", "feedback_timeout_ms", "closing_hold_ms", "motion_rate",
+                    "position_write_hz", "position_read_hz", "telemetry_read_hz"}:
+                raise ValueError("配置必须为手部参数映射（含共享 RS485 参数）")
         except ImportError:
             parser.error("读取 --config 需要 PyYAML")
         except (OSError, ValueError, yaml.YAMLError) as exc:
             parser.error(str(exc))
     try:
+        for name, default in (("command_timeout_ms", 100), ("feedback_timeout_ms", 500),
+                              ("closing_hold_ms", 10000)):
+            if getattr(args, name) is None:
+                setattr(args, name, _positive_int(settings.get(name, default), name))
+        if args.state_hz is None:
+            args.state_hz = 1000.0 / _positive_int(settings.get("state_period_ms", 60), "state_period_ms")
+        for side in SIDES:
+            enabled = settings.get(side + "_enabled", True)
+            if not isinstance(enabled, bool):
+                raise ValueError(side + "_enabled must be boolean")
+            if not enabled:
+                setattr(args, side + "_host", "")
         for name, maximum, grasp_default, hold_default in (
                 ("speed", 1000, DEFAULT_SPEED, DEFAULT_HOLD_SPEED),
                 ("force", 3000, DEFAULT_FORCE, DEFAULT_HOLD_FORCE)):
@@ -1519,34 +1544,43 @@ def main(argv: list[str] | None = None, *, simulated: bool = False) -> int:
         parser.error("--force 必须为 0..3000 的整数")
     if not math.isfinite(args.diagnostic_interval_s) or args.diagnostic_interval_s < 0:
         parser.error("--diagnostic-interval-s 必须为非负有限数")
-    if simulated:
-        from fake_rh56ftp_hand import FakeHandLink, FakeRh56FtpNode
-        if not math.isfinite(args.motion_rate) or args.motion_rate <= 0:
-            parser.error("--motion-rate 必须为正有限数")
-        hand_ip, hand_port = "simulated-right", 6000
-        if args.left_host is None:
-            args.left_host = "simulated-left"
-        def hand_link(host, port, timeout):
-            return FakeHandLink(host, port, timeout, motion_rate=args.motion_rate)
-        node_type = FakeRh56FtpNode
-    else:
-        hand_ip, hand_port, hand_link = load_handlink()
-        node_type = Rh56FtpNode
-    right_host = hand_ip if args.right_host is None else args.right_host
-    right_port = hand_port if args.right_port is None else args.right_port
-    if args.left_host and args.left_port is None:
-        args.left_port = right_port
-    if not args.left_host:
+    if transport_factory is not None:
+        command_links, read_links, node_type = transport_factory(args, settings)
+        right_host = getattr(command_links.get("right"), "host", "")
+        right_port = None
+        args.left_host = getattr(command_links.get("left"), "host", "")
         args.left_port = None
-    command_links = {
-        "right": hand_link(right_host, right_port, args.modbus_timeout) if right_host else None,
-        "left": hand_link(args.left_host, args.left_port, args.modbus_timeout) if args.left_host else None,
-    }
-    # Simulated reads and writes share the same in-memory device and its lock.
-    read_links = command_links if simulated else {
-        "right": hand_link(right_host, right_port, args.modbus_timeout) if right_host else None,
-        "left": hand_link(args.left_host, args.left_port, args.modbus_timeout) if args.left_host else None,
-    }
+    else:
+        if simulated:
+            from fake_rh56ftp_hand import FakeHandLink, FakeRh56FtpNode
+            if args.motion_rate is None:
+                args.motion_rate = settings.get("motion_rate", 2.0)
+            if not math.isfinite(args.motion_rate) or args.motion_rate <= 0:
+                parser.error("--motion-rate 必须为正有限数")
+            hand_ip, hand_port = "simulated-right", 6000
+            if args.left_host is None:
+                args.left_host = "simulated-left"
+            def hand_link(host, port, timeout):
+                return FakeHandLink(host, port, timeout, motion_rate=args.motion_rate)
+            node_type = FakeRh56FtpNode
+        else:
+            hand_ip, hand_port, hand_link = load_handlink()
+            node_type = Rh56FtpNode
+        right_host = hand_ip if args.right_host is None else args.right_host
+        right_port = hand_port if args.right_port is None else args.right_port
+        if args.left_host and args.left_port is None:
+            args.left_port = right_port
+        if not args.left_host:
+            args.left_port = None
+        command_links = {
+            "right": hand_link(right_host, right_port, args.modbus_timeout) if right_host else None,
+            "left": hand_link(args.left_host, args.left_port, args.modbus_timeout) if args.left_host else None,
+        }
+        # Simulated reads and writes share the same in-memory device and its lock.
+        read_links = command_links if simulated else {
+            "right": hand_link(right_host, right_port, args.modbus_timeout) if right_host else None,
+            "left": hand_link(args.left_host, args.left_port, args.modbus_timeout) if args.left_host else None,
+        }
     node = node_type(command_links, read_links=read_links, publisher_id=args.publisher_id,
                        command_timeout_ms=args.command_timeout_ms,
                        feedback_timeout_ms=args.feedback_timeout_ms,
@@ -1566,6 +1600,8 @@ def main(argv: list[str] | None = None, *, simulated: bool = False) -> int:
                          ("closing_motion_raw", "threshold")):
         parameters[name] = parameters.pop(option)
     node.diag.emit("configuration_loaded", throttle_us=0, parameters=parameters)
+    if node_runner is not None:
+        return node_runner(node, args.endpoint, args.state_endpoint, args.state_hz, settings)
     return run_node(node, args.endpoint, args.state_endpoint, args.state_hz)
 
 

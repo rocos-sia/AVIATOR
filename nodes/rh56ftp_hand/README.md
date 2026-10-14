@@ -1,4 +1,7 @@
-# rh56ftp_hand — RH56FTP Modbus TCP ZMQ 节点
+# rh56ftp_hand — RH56FTP Modbus TCP ZMQ 调试节点
+
+整机、相机随动和带宽脚本现由独立 [xCoreSDK_hand](../xCoreSDK_hand/README.md) 提供 SDK RS485 手控制。
+两个节点共用本目录的控制策略与 config/rh56ftp_hand.yaml，仅传输方式不同；不可同时运行。
 
 这个节点与 `aviator_hand` 并列运行，复用 `third_party/RH56FTP/python/pendant/handlink.py` 的
 Modbus 寄存器实现，将 RH56FTP 接入 AVIATOR 的两帧 ZMQ 总线：
@@ -71,7 +74,7 @@ python3 nodes/rh56ftp_hand/rh56ftp_node.py \
 模式 1 按目标力闭环运动，不适用于本节点的角度控制及全张开安全姿态。
 启动时显式写回模式 0，也会恢复旧版节点留下的力控模式。
 模式按两个字节一组打包为三个 Modbus 寄存器，从 1625 写入。
-一键启动加载 `config/rh56ftp_hand.yaml`，其中 `speed`、`force` 分别包含 `grasp` 和 `hold`：
+独立运行可加载 `config/rh56ftp_hand.yaml`，其中 `speed`、`force` 分别包含 `grasp` 和 `hold`：
 运动/抓取默认速度为 500、力阈值为 1000，停止保持默认速度和力阈值均为 100。
 速度为整数 `0..1000`，力阈值为整数 `0..3000`；左右手各通道按自身运动/保持状态选择参数。
 配置还包含 `right_host`、`left_host` 和握紧位置误差阈值 `threshold`。修改后重启生效；
@@ -263,7 +266,7 @@ python3 nodes/rh56ftp_hand/fake_rh56ftp_hand.py --config config/rh56ftp_hand.yam
 ./scripts/start_aviator.sh --fake-hand
 ```
 
-一键启动沿用 `HAND_PYTHON`；可将它设为装有上述依赖的 Python 完整路径。
+一键启动使用 xCoreSDK_hand 的构建时 Python；--fake-hand 不加载 SDK。
 不要同时运行真实手节点或提供手反馈的 `simulation`；`--fake-hand` 与
 `--simulation` 互斥，避免同一发布者产生两份反馈。
 
@@ -285,3 +288,5 @@ Core 重启更换 control_epoch 后，也应重启 fake 节点重新绑定。
 ### 整机仿真
 
 `simulation --config config/system.yaml` 在一个进程中提供臂服务与兼容的手部消息/ACK；仿真时不启动本节点或 manipulator。Core 手部控制使用相同的 `core_hand` 配置，不再按 backend 跳过。详见 [simulation](../simulation/README.md)。
+
+共享配置中的 RS485 专用字段由本调试节点忽略，不改变 Modbus 命令行参数的含义。

@@ -28,6 +28,7 @@ void check(const std::error_code &ec, const char *action) {
 class RokaeArm::Impl {
 public:
     rokae::ArRobot robot;
+    mutable std::recursive_mutex lifecycle_mutex; // Arm lifecycle only; hand I/O never takes this lock.
     std::shared_ptr<rokae::RtMotionControlCobot<7>> rt;
     std::array<double, 7> stiffness{};
     std::string endpoint;
@@ -208,6 +209,7 @@ public:
         }
     }
     void stop() {
+        std::lock_guard<std::recursive_mutex> rpc(lifecycle_mutex);
         std::exception_ptr error;
         auto attempt = [&](const char *action, auto fn) {
             try { fn(); }
@@ -266,18 +268,35 @@ RokaeArm::RokaeArm(const std::string &ip, const std::string &local_ip,
     rokae::Utils::transArrayToPosture(tool, tool_pose);
     toolset.end = rokae::Frame(tool_pose);
     toolset.ref = rokae::Frame();
-    // Retain the controller's calibrated load; grasp.json has no load calibration.
+    // Update the tool frames first; the explicit RT payload is applied below.
     s.robot.setToolset(toolset, ec);
     check(ec, "setToolset");
     s.rt = s.robot.getRtMotionController().lock();
     if (!s.rt) throw std::runtime_error("getRtMotionController returned null");
     s.rt->setEndEffectorFrame(tool, ec);
     check(ec, "setEndEffectorFrame");
+    // Payload from the tool settings: kg, CoG converted from mm to m, kg*m^2.
+    // Inertia is unavailable and explicitly configured as zero.
+    const rokae::Load load(0.71, {0.02134, -0.02368, 0.11188}, {0.0, 0.0, 0.0});
+    s.rt->setLoad(load, ec);
+    check(ec, "setLoad");
+    Logger::info("[Rokae {}] RT load mass_kg={} cog_m=[{}, {}, {}] inertia_kg_m2=[{}, {}, {}]",
+                 s.endpoint, load.mass, load.cog[0], load.cog[1], load.cog[2],
+                 load.inertia[0], load.inertia[1], load.inertia[2]);
 }
 RokaeArm::~RokaeArm() = default;
 std::array<double, 7> RokaeArm::position() const {
+    const auto began = std::chrono::steady_clock::now();
+    std::lock_guard<std::recursive_mutex> rpc(impl_->lifecycle_mutex);
+    const auto acquired = std::chrono::steady_clock::now();
     std::error_code ec;
     auto q = impl_->robot.jointPos(ec);
+    const auto done = std::chrono::steady_clock::now();
+    if (done - began > std::chrono::milliseconds(100))
+        Logger::warn("[Rokae {}] Slow jointPos lock_wait_ms={} sdk_ms={} error={}",
+                     impl_->endpoint,
+                     std::chrono::duration<double, std::milli>(acquired - began).count(),
+                     std::chrono::duration<double, std::milli>(done - acquired).count(), ec.value());
     check(ec, "jointPos");
     return q;
 }
@@ -314,6 +333,7 @@ bool RokaeArm::motionFailed() const {
     return bool(impl_->callback_error) || (impl_->rt && impl_->rt->hasMotionError());
 }
 void RokaeArm::prepare() {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->lifecycle_mutex);
     auto &s = *impl_;
     if (s.prepared) return;
     { std::lock_guard<std::mutex> lock(s.error_mutex); s.callback_error = nullptr; }
@@ -365,6 +385,7 @@ void RokaeArm::prepare() {
 
 void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> callback,
                      std::function<void(const std::array<double, 7> &)> initialize_target) {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->lifecycle_mutex);
     auto &s = *impl_;
     const char *stage = "prepare";
     try {
@@ -471,6 +492,7 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
     }
 }
 void RokaeArm::pauseImpedance() {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->lifecycle_mutex);
     auto& s = *impl_;
     if (!s.prepared || !s.powered || !s.receiving || !s.looping || !s.moving)
         throw std::runtime_error("Impedance update requires active realtime hold: " + s.endpoint);
@@ -480,6 +502,7 @@ void RokaeArm::pauseImpedance() {
     s.robot.stopReceiveRobotState(); s.receiving = false;
 }
 void RokaeArm::setPausedStiffness(const std::array<double, 7>& stiffness) {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->lifecycle_mutex);
     auto& s = *impl_;
     if (!s.prepared || !s.powered || s.receiving || s.looping || s.moving)
         throw std::runtime_error("Impedance update requires paused motion and stopped state reception");
@@ -489,6 +512,7 @@ void RokaeArm::setPausedStiffness(const std::array<double, 7>& stiffness) {
     // s.stiffness remains the startup/default profile for the next enable().
 }
 void RokaeArm::resumeImpedance(const std::function<void()>& check) {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->lifecycle_mutex);
     auto& s = *impl_;
     check();
     if (!s.prepared || !s.powered || s.receiving || s.looping || s.moving)
@@ -509,7 +533,19 @@ void RokaeArm::resumeImpedance(const std::function<void()>& check) {
     check();
     s.rt->setControlLoop(s.control_loop, Impl::rt_priority, false);
     s.moving = true;
-    s.rt->startMove(rokae::RtControllerMode::jointImpedance);
+    try {
+        s.rt->startMove(rokae::RtControllerMode::jointImpedance);
+    } catch (...) {
+        const auto error = std::current_exception();
+        try { std::rethrow_exception(error); }
+        catch (const std::exception &e) { aviator::Logger::error("[Rokae {}] impedance resume startMove failed: {}",
+            s.endpoint, e.what()); }
+        catch (...) { aviator::Logger::error("[Rokae {}] impedance resume startMove failed: unknown exception", s.endpoint); }
+        // Query before the caller stops and powers off the robot, preserving the original failure.
+        try { s.printStartFailure(); }
+        catch (...) { aviator::Logger::error("[Rokae {}] Controller diagnostics unavailable", s.endpoint); }
+        std::rethrow_exception(error);
+    }
     check();
     s.startReceiver();
     check();

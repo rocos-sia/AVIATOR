@@ -44,6 +44,7 @@ void HandControl::request(bool close, uint64_t now) {
     first_sequence_ = command_sequence_ + 1;
     next_ = 0;
     accepted_at_ = 0;
+    progress_at_ = progress_sequence_ = 0;
     acknowledged_ = false;
     error_.clear();
 }
@@ -140,6 +141,17 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
         if (accepted && publisher != "aviator_core") {
             fail("aviator_hand bound to another publisher; restart aviator_hand and Core"); return;
         }
+        // Serial writes can complete near the 100 ms command deadline, before
+        // the next 60 ms state publication. A newer completed ACK still proves
+        // execution progress, even if command_valid has expired by publication.
+        // Repeated ACKs never renew this timer. Completion below still requires
+        // a live command ACK and the exact endpoint/position checks.
+        if (publisher == "aviator_core" && seq >= first_sequence_ &&
+            seq <= command_sequence_ && seq > progress_sequence_ &&
+            stamp >= requested_ && stamp <= now && now - stamp < feedback_timeout_) {
+            progress_sequence_ = seq;
+            progress_at_ = now;
+        }
         if (accepted && publisher == "aviator_core" &&
             seq >= first_sequence_ && seq <= command_sequence_ && stamp >= requested_ &&
             stamp <= now && now - stamp < 100000) {
@@ -165,7 +177,7 @@ bool HandControl::complete(uint64_t now) const {
 std::string HandControl::fault(uint64_t now) const {
     if (!error_.empty()) return error_;
     if (!active_) return {};
-    if (acknowledged_ && (!feedbackFresh(now) || now - accepted_at_ >= feedback_timeout_))
+    if (progress_at_ && (!feedbackFresh(now) || now - progress_at_ >= feedback_timeout_))
         return "hand.state feedback/command acknowledgement expired";
     // Missing ACKs and a valid-but-unreached target remain failures. Invalid
     // measurements only prevent completion; they must not revoke publication.
@@ -174,13 +186,14 @@ std::string HandControl::fault(uint64_t now) const {
     return {};
 }
 bool HandControl::waitExpired(uint64_t now) const {
-    return active_ && (!synchronized_ || endpoint_ || !acknowledged_) && !complete(now) &&
+    return active_ && (!synchronized_ || endpoint_ || !progress_at_) && !complete(now) &&
            now >= completion_started_ && now - completion_started_ >= timeout_;
 }
 std::optional<Message> HandControl::command(uint64_t now, uint64_t heartbeat, const std::string& session) {
     if (!enabled_ || !active_) return {};
-    const auto reason = fault(now);
-    if (!reason.empty()) { fail(reason); return {}; }
+    // Stream the latest authorized target independently of device ACK latency
+    // and completion. A slow/missing ACK must not cut off the command source
+    // and consequently trigger the hand node's own source watchdog.
     if (!heartbeat) { fail("Core heartbeat missing"); return {}; }
     if (now < heartbeat) {
         fail("Core heartbeat clock order invalid: ahead_us=" + std::to_string(heartbeat - now)); return {};

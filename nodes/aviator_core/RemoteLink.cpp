@@ -444,10 +444,12 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
     }
     if (hand_version) {
         lock.unlock();
-        const bool hand_complete = hand_.wait(hand_version, &cancel); // ACK only, not physical grasp evidence.
+        hand_.wait(hand_version, &cancel); // ACK only, not physical grasp evidence.
         lock.lock();
         if (!motion_allowed_ || cancel) throw std::runtime_error("Motion stopped during hand completion");
-        synchronized_hand_version_ = hand_complete ? hand_version : 0;
+        // Lock reuses this endpoint request even if its bounded wait failed.
+        // Starting a second close request here would add another full timeout.
+        synchronized_hand_version_ = hand_version;
     }
 }
 void RemoteLink::stopTrajectory() {

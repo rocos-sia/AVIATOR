@@ -1,4 +1,5 @@
 #include "aviator/backend.hpp"
+#include "HandRuntime.hpp"
 #ifdef AVIATOR_GRASP_HAVE_ROKAE
 #include "rokae_session.hpp"
 #endif
@@ -40,7 +41,7 @@ struct Options {
 void usage() {
     std::cerr << "Usage: aviator_grasp_tool_session [--robot-config PATH] [--dry-run]\n"
                  "Persistent SDK/FK service. JSONL stdin/stdout: {id: integer, op: string, side?: left/right/both}.\n"
-                 "Operations: connect, status, drag_start, drag_stop, sample, disconnect.\n"
+                 "Operations: connect, status, hand_start, drag_start, drag_stop, sample, disconnect.\n"
                  "Drag uses joint space, free type, with the physical drag button required.\n"
                  "The SDK disconnect operation stops motion. Exit other robot controllers first.\n";
 }
@@ -174,6 +175,31 @@ class Session {
             disconnect();
             return status();
         }
+        if (op == "hand_start") {
+            require(!hands_, "Hand runtime already started");
+            for(int s=0;s<2;++s) require(armStatus(s)["connected"].get<bool>(), "Connect arms before hands");
+            auto system=fs::path(request.at("system_config").get<std::string>());
+            auto cfg=aviator::hand::loadConfig(system, request.value("fake_hand",false)||dry_,
+                fs::path(request.at("hand_config").get<std::string>()));
+            require(cfg.enabled && cfg.sides[0] && cfg.sides[1], "Calibration requires both hands enabled");
+            std::array<std::unique_ptr<aviator::hand::Device>,2> devices;
+            for(int s=0;s<2;++s) {
+                if(cfg.fake) devices[s]=aviator::hand::fakeDevice(cfg.motion_rate);
+#ifdef AVIATOR_GRASP_HAVE_ROKAE
+                else {
+                    arms_[s]->handTimeout(cfg.rs485_timeout_ms);
+                    devices[s]=aviator::hand::rs485Device(cfg.ids[s],[this,s](const auto& tx,size_t count) {
+                        return arms_[s]->handTransfer(tx,count);
+                    });
+                }
+#endif
+            }
+            auto config=YAML::LoadFile(system.string());
+            hands_=std::make_unique<aviator::hand::Runtime>(cfg,std::move(devices));
+            hand_bus_=std::make_unique<aviator::hand::Bus>(*hands_,config["bus"]["publish"].as<std::string>(),
+                config["bus"]["subscribe"].as<std::string>());
+            return {{"started",true},{"fake_hand",cfg.fake}};
+        }
         if (op == "sample") return sample();
         require(op == "drag_start" || op == "drag_stop", "Unknown operation " + op);
         require(request.contains("side") && request["side"].is_string(), "side must be left, right or both");
@@ -219,6 +245,18 @@ class Session {
 
     void disconnect() {
         std::string errors;
+        // Finish owned dragging before releasing the hands, including signal cleanup.
+        for(int i=0;i<2;++i) {
+            if(dry_) dragging_[i]=false;
+#ifdef AVIATOR_GRASP_HAVE_ROKAE
+            else if(arms_[i]) {
+                try { if(arms_[i]->status().drag_owned) arms_[i]->stopDrag(); }
+                catch(const std::exception& error) { addError(errors,error.what()); }
+            }
+#endif
+        }
+        hand_bus_.reset();
+        hands_.reset(); // Final hand protection before disconnecting either arm.
         for (int i = 0; i < 2; ++i) {
             if (dry_) { dragging_[i] = false; connected_[i] = false; }
 #ifdef AVIATOR_GRASP_HAVE_ROKAE
@@ -296,6 +334,8 @@ class Session {
 #ifdef AVIATOR_GRASP_HAVE_ROKAE
     std::array<std::unique_ptr<aviator::calibration::RokaeSessionArm>, 2> arms_;
 #endif
+    std::unique_ptr<aviator::hand::Runtime> hands_;
+    std::unique_ptr<aviator::hand::Bus> hand_bus_;
 };
 
 // poll/read instead of blocking getline lets SIGINT/SIGTERM trigger cleanup

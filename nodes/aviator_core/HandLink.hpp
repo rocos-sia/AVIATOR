@@ -33,7 +33,7 @@ public:
     std::string messageFault() const;
     Status status() const;
 private:
-    void warnLocked(const std::string& reason); // Hand failures are advisory to Core; mutex_ held.
+    void warnLocked(const std::string& reason, bool continuing = false); // mutex_ held.
     void io(zmq::context_t&, const MotionConfig&, const std::string& session,
             const std::atomic<uint64_t>& heartbeat);
     HandControl control_;

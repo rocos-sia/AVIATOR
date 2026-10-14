@@ -10,7 +10,7 @@ Rokae 双臂硬件执行节点。仿真由独立 `simulation` 节点提供，二
 ./build/bin/manipulator --config config/system.yaml
 ```
 
-`config/robot.yaml` 的 `rokae` 段配置 left_ip、right_ip、left_local_ip、right_local_ip、joint_stiffness、following_joint_stiffness；没有 backend 选择，也没有窗口或 --headless 参数。本节点只连接真实设备，需要设备和实时调度权限。
+`config/robot.yaml` 的 `rokae` 段配置 left_ip、right_ip、left_local_ip、right_local_ip、joint_stiffness、following_joint_stiffness；没有 backend 选择，也没有窗口或 --headless 参数。机械臂连接真实设备，需要设备和实时调度权限；手由独立 xCoreSDK_hand 进程提供。
 
 启动保持未使能。Core 先通过可靠服务读取本次 server_session 和关节保持目标，再显式授权/使能。启动标记使用普通文本，不校验会话匹配；重启后仍需重新 authorize，重连不自动使能。初次使能后的当前位置保持允许最多 1 s 的命令接入窗口，进入目标流后使用配置的 50 ms watchdog。没有指令时不会自动向 Home 运动。
 
@@ -20,13 +20,13 @@ Rokae 双臂硬件执行节点。仿真由独立 `simulation` 节点提供，二
 
 SDK 回调有独立命令截止时间，通信或执行线程停顿不能无限维持授权。执行线程在正常取消时从最后下发指令减速；命令失效、反馈失效或执行异常锁存错误并停止双臂。停止路径检查关节限位；设备故障不能完成减速时转为停止 SDK 控制。现场仍需验证实际时序和物理停止效果。
 
-订阅 `arm.command`，发布 `arm.state`（100 Hz）；不订阅 `hand.command`，不发布 `hand.state`，手部命令与反馈由独立手节点负责。ArmState 包含每侧原始采样时间、实际关节角/速度、TCP、已接纳命令和执行游标。TCP 使用各自 left_base/right_base；四元数均为 qx/qy/qz/qw。SDK 适配分别设置工具的 trans/rpy 与实时齐次矩阵，保留控制器原有标定负载。真机 TCP/安装标定一致性需要现场验证。
+订阅 `arm.command`，发布 `arm.state`（100 Hz）。RH56FTP 手控制由独立 xCoreSDK_hand 进程提供。ArmState 包含每侧原始采样时间、实际关节角/速度、TCP、已接纳命令和执行游标。TCP 使用各自 left_base/right_base；四元数均为 qx/qy/qz/qw。SDK 适配分别设置工具的 trans/rpy 与实时齐次矩阵。双臂在 RT 初始化时、上电与启动运动前调用 `setLoad`，统一设置质量 `0.71 kg`、质心 `(0.02134, -0.02368, 0.11188) m`（工具设置截图中的 `(21.34, -23.68, 111.88) mm`），转动惯量按确认值设为 `(0, 0, 0) kg·m²`。参数定义在 `rokae_sdk.cpp` 的 `RokaeArm` 构造函数中；设置失败中止初始化，成功后输出每臂 `RT load` 日志。一键启动的 `--fake-hand` 仍使用真实双臂，因此同样设置负载。SDK 头文件未明确质心坐标系，本次仅换算单位；真机质心坐标系、TCP/安装标定一致性需要现场验证。
 
 lock/unlock 是软件阶段，不做 TCP 对齐判断。wheel_reference 为指令参考，不能冒充真机传感器。
 
 可靠服务包括 describe、authorize、enable、disable、stop、lock、unlock、reset_fault、set_impedance_profile、get_result。单帧 REQ/REP，长操作先返回 ACCEPTED，客户端使用同一请求身份查询已有状态。服务缓存有界，不重复执行同 ID 请求；同 ID 改内容被拒绝。server_session 仅兼容旧请求，不再用于匹配。请求 UUID 去重、config_id、时钟、期限和显式控制授权仍检查。接口约束见 [协议文档](../../docs/AVIATOR_ZMQ协议格式说明.md)。
 
-`nodes/simulation` 实现同一臂服务以及 RH56FTP 手部消息，启动它即可替代本节点与真实手节点。同一控制总线只能启动一组设备生产者。Core 算法与手部控制不区分真机、仿真。
+`nodes/simulation` 实现同一臂服务以及 RH56FTP 手部消息，启动它即可替代本节点的双臂和双手。同一控制总线只能启动一组设备生产者。Core 算法与手部控制不区分真机、仿真。
 
 ## 轮盘初始参考
 
@@ -61,3 +61,9 @@ CSV 的 `mono_us` 是回调开始的主机单调时钟，`loop_epoch` 区分循�
 完整构建通过；针对本次通道的 9 项回归通过：control_nodes_flight、control_nodes_watchdog、robot_state_machine_process、following_hold_process、servo_planner、servo_buffer、motion_protocol、arm_target_recorder、impedance_lifecycle。覆盖目标覆盖、输入超时、旧 ID 不重启、重入、规划失败直接停止双臂及阻抗生命周期。当前配置的离线双臂 1 ms 规划测试为 2128 步，平均约 16 μs；此测量不包含 SDK/硬件执行，不能作为真机时延保证。
 
 全量 83 项初次运行有 11 项失败：6 项旧 AviatorRobot_simple 示例、gateway_sdl（现场接入实际手柄，测试假设键盘）、2 项 Monitor 资源断言、control_nodes_flight_hold 的物理到位断言，以及并行负载下的一项状态机通信超时。后者单独复测通过。flight_hold 新通道指令参考已到 -0.174532 rad，仿真实际约 -0.121511 rad；用旧配置、旧缓冲通道对照得到 -0.121518 rad，同样失败，故未改动刚度/物理模型或放宽断言。其余失败位于此次未修改的模块，未为本任务扩展修复范围。未执行真机运动验证。
+
+## 独立手节点
+
+手控制已迁至 [xCoreSDK_hand](../xCoreSDK_hand/README.md)，本进程只订阅 arm.command、发布 arm.state。
+手节点使用独立 SDK 连接及进程，不与本进程共享 SDK 对象或锁。
+`--fake-hand` 由一键启动脚本传给手节点，不是 manipulator 参数。

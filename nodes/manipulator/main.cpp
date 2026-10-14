@@ -1,8 +1,9 @@
+#include "DeviceServo.hpp"
 #include "Logger.hpp"
 #include "aviator/GraspTools.hpp"
 #include "aviator/backend.hpp"
 #include "device_server.hpp"
-#include "DeviceServo.hpp"
+#include "rokae_sdk.hpp"
 #include <cmath>
 using namespace aviator;
 namespace {
@@ -28,7 +29,7 @@ int main(int argc, char** argv) try {
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--help") {
-            aviator::Logger::info("manipulator [--config system.yaml]\nRokae hardware only; starts disabled.");
+            aviator::Logger::info("manipulator [--config system.yaml]\nRokae arms start disabled; hands run in xCoreSDK_hand.");
             return 0;
         }
         if (arg == "--config" && i + 1 < argc)
@@ -58,7 +59,7 @@ int main(int argc, char** argv) try {
     std::copy(stiffness.begin(), stiffness.end(), rk.joint_stiffness.begin());
 
     Logger::info("Manipulator starting config={} left_ip={} right_ip={} grasp_mode={} (disabled)",
-        file.string(), rk.left_ip, rk.right_ip, rk.grasp_mode);
+                 file.string(), rk.left_ip, rk.right_ip, rk.grasp_mode);
     auto device = makeRokaeDataLink(path("urdf").string(), rk, geometry);
     device->setWheelReference(settings.initial_wheel.angle, settings.initial_wheel.displacement);
     std::signal(SIGINT, signalHandler);

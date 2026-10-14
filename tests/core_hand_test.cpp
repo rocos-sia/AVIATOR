@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <cmath>
+#include <vector>
 using namespace aviator;
 void check(bool v, const char* reason) { if (!v) throw std::runtime_error(reason); }
 int main(int argc, char** argv) {
@@ -42,6 +43,39 @@ int main(int argc, char** argv) {
             return m;
         };
         auto state = feedback(command, now + 1, 1);
+        {
+            auto stream = create();
+            stream.beginApproach(now);
+            auto cmd = *stream.command(now, now, session);
+            uint64_t state_seq = 0;
+            // Every ACK arrives after its 100 ms validity window, but applied
+            // command sequences keep advancing during the synchronized path.
+            for (uint64_t elapsed = 120000; elapsed <= 1200000; elapsed += 120000) {
+                const auto t = now + elapsed;
+                auto m = feedback(cmd, t, ++state_seq);
+                m.body["command_valid"] = false;
+                stream.receive(m, t, session);
+                check(stream.fault(t).empty() && !stream.complete(t),
+                      "delayed advancing ACK stopped publication or completed grasp");
+                stream.approachProgress({.5, .5}, t);
+                auto next = stream.command(t, t, session);
+                check(next.has_value(), "advancing delayed ACK stream was revoked");
+                cmd = *next;
+            }
+            // Feedback continues but the device repeats its last applied ACK.
+            const auto last_progress = now + 1200000;
+            auto repeated = feedback(cmd, last_progress + 1000, ++state_seq);
+            repeated.body["command_valid"] = false;
+            stream.receive(repeated, last_progress + 1000, session);
+            for (uint64_t elapsed = 100000; elapsed <= 600000; elapsed += 100000) {
+                auto m = feedback(cmd, last_progress + elapsed, ++state_seq);
+                m.body["command_valid"] = false;
+                stream.receive(m, last_progress + elapsed, session);
+            }
+            check(!stream.fault(last_progress + 600000).empty() &&
+                  stream.command(last_progress + 600000, last_progress + 600000, session).has_value(),
+                  "stalled ACK must remain visible without stopping latest targets");
+        }
         // Invalid device measurements must not terminate an otherwise live
         // command/ACK stream, including after the normal completion deadline.
         for (int invalid_field = 0; invalid_field < 3; ++invalid_field) {
@@ -107,8 +141,9 @@ int main(int argc, char** argv) {
             m.header.valid = false;
             m.body["hands"]["left"]["sample_mono_us"] = now - 500000;
             stale_side.receive(m, now + 20000, session);
-            check(!stale_side.command(now + 20000, now + 20000, session),
-                  "genuinely stale side feedback kept publication alive");
+            check(!stale_side.fault(now + 20000).empty() &&
+                  stale_side.command(now + 20000, now + 20000, session).has_value(),
+                  "stale feedback must remain visible without stopping publication");
         }
         {
             auto startup = create();
@@ -203,7 +238,8 @@ int main(int argc, char** argv) {
         h.receive(opened, now + 40000, session); check(h.complete(now + 40000), "open did not complete");
         // Continuous command/ACK traffic does not imply physical opening completed.
         // Reproduce a release with one finger stuck: publish until the completion
-        // deadline, then stop despite fresh heartbeat, feedback and CAN-write ACKs.
+        // deadline, report it, and keep sending the latest target without
+        // claiming that the physical opening completed.
         for (bool stuck : {false, true}) {
             auto release = create();
             release.request(true, now);
@@ -230,8 +266,8 @@ int main(int argc, char** argv) {
             if (stuck) {
                 check(release.fault(deadline).find("Hand target timeout") != std::string::npos,
                       "fresh transport with a stuck finger did not hit target timeout");
-                check(!release.command(deadline, deadline, session),
-                      "target failure did not revoke ongoing publication");
+                check(release.command(deadline, deadline, session).has_value() && !release.complete(deadline),
+                      "unreached target stopped publication or claimed completion");
             } else {
                 check(release.fault(deadline).empty() && release.command(deadline, deadline, session).has_value(),
                       "completed open target should continue publishing after deadline");
@@ -288,7 +324,56 @@ int main(int argc, char** argv) {
             if (failure == 3) { m.header.sequence = 2; m.header.clock_id = "other-clock"; test.receive(m, now + 2, session); }
             const auto t = failure >= 2 ? now + 600000 : now + 2;
             check(!test.fault(t).empty(), "missing failure detection");
-            check(!test.command(t, t, session), "faulted command published");
+            check(test.command(t, t, session).has_value() == (failure >= 2),
+                  "timeouts must stream; readonly/foreign ownership must still block");
+        }
+        // Reproduce the field failure: a completed synchronized grasp keeps
+        // receiving fresh measurements and advancing ACKs, but hold-setting
+        // writes make those ACKs older than 100 ms. Completion can become
+        // unconfirmed again; this must never revoke the target stream.
+        {
+            auto holding = create();
+            holding.beginApproach(now);
+            holding.approachProgress({1,1}, now);
+            std::vector<Message> commands;
+            for (unsigned i = 0; i < 150; ++i) {
+                const auto t = now + uint64_t(i) * 20000;
+                auto cmd = holding.command(t, t, session);
+                check(cmd.has_value(), "delayed hold ACK stopped a completed grasp's stream");
+                commands.push_back(*cmd);
+                const auto& ack = commands[i >= 100 ? i - 10 : i];
+                holding.receive(feedback(ack, t + 1, i + 1), t + 1, session);
+                if (i == 90) check(holding.complete(t + 1), "initial grasp did not complete");
+                if (i >= 125) {
+                    check(!holding.complete(t + 1) && !holding.failed(),
+                          "delayed ACK was falsely completed or latched as failure");
+                    check(holding.fault(t + 1).find("Hand target timeout") != std::string::npos,
+                          "completion timeout diagnostic missing");
+                }
+            }
+            const auto recovered_at = now + 3000000;
+            auto cmd = *holding.command(recovered_at, recovered_at, session);
+            holding.receive(feedback(cmd, recovered_at + 1, 151), recovered_at + 1, session);
+            check(holding.complete(recovered_at + 1) && holding.fault(recovered_at + 1).empty(),
+                  "fresh ACK did not recover without a new request");
+        }
+        // Missing feedback/ACKs cannot freeze ongoing synchronized interpolation.
+        {
+            auto silent = create();
+            silent.beginApproach(now);
+            for (unsigned i = 0; i <= 100; ++i) {
+                const auto t = now + uint64_t(i) * 20000;
+                const double u = i / 100.;
+                silent.approachProgress({u,u}, t);
+                auto cmd = silent.command(t,t,session);
+                check(cmd.has_value(), "missing feedback stopped synchronized targets");
+                const double left = cmd->body["hands"]["left"]["drive_position_normalized"][0];
+                check(std::abs(left-(.5+.4*u)) < 1e-12, "missing ACK froze latest target");
+                check(!silent.complete(t), "missing ACK claimed completion");
+            }
+            silent.revoke();
+            check(!silent.command(now + 2020000, now + 2020000, session),
+                  "revocation must still stop unconfirmed targets");
         }
         // Whole-target versions must cancel obsolete waits, including revoke/shutdown.
         {
@@ -312,6 +397,10 @@ int main(int argc, char** argv) {
             link.allow(false);
             expect(second, "revoked");
             link.allow(true);
+            link.fail("Hand target timeout from previous request");
+            auto recovered = link.beginApproach();
+            check(recovered != 0 && link.fault().empty(), "old hand timeout skipped a new synchronized grasp");
+            link.approachProgress(recovered, {.3, .6});
             auto third = link.request(false);
             link.stop();
             check(!link.wait(third), "stopped hand worker claimed completion");

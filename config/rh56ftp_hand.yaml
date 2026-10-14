@@ -1,4 +1,5 @@
-# RH56FTP 启动时加载；修改后重启节点生效。命令行参数优先。
+# RH56FTP 参数；xCoreSDK_hand 与 Modbus rh56ftp_hand 共用控制参数。
+# 以下 host 用于 Modbus；xCoreSDK_hand 从 robot.yaml 读取机器人地址并独立连接。
 right_host: 192.168.21.210
 left_host: 192.168.11.210
 
@@ -8,9 +9,26 @@ speed:
   hold: 100
 force:
   grasp: 1000
-  hold: 100
+  hold: 1000
 
 # 六个通道独立判定：位置偏差绝对值连续 10 秒大于 threshold，
 # 或完整 10 秒窗口内位置最大值 - 最小值小于 threshold，发送 -1 停止。
 # 寄存器整数刻度，范围 0..999；默认 10。
 threshold: 10
+
+# SDK RS485 backend (no xPanelRS485Init on normal startup).
+left_enabled: true
+right_enabled: true
+left_id: 1
+right_id: 1
+rs485_timeout_ms: 50
+state_period_ms: 60
+# xCoreSDK_hand 与标定工具的 native 手模块使用以下读写频率上限。
+# state_period_ms 控制独立 SDK 节点的状态发布；Modbus 节点仍按它轮询。
+position_write_hz: 20
+position_read_hz: 10
+telemetry_read_hz: 5
+command_timeout_ms: 100
+feedback_timeout_ms: 500
+closing_hold_ms: 10000
+motion_rate: 2.0  # fake_hand normalized units/s at speed=500

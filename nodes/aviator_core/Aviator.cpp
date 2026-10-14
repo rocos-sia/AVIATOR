@@ -369,7 +369,8 @@ class Aviator::Impl {
             std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
             require(lock.owns_lock() && !servo_active_ && GetState() == "ENABLED",
                     "Grasp preparation requires a stable enabled executor");
-            command(GraspCommand::Unlock); // Re-grasp after release: confirm actual hands open too.
+            // approachHandles opens/confirms once before moving. Repeating it
+            // here adds a second full hand timeout when feedback is unavailable.
         }
     }
 

@@ -3,6 +3,8 @@
 // The SDK and its Eigen/KDL symbols remain inside the existing shared-library
 // isolation boundary. Only standard-library values cross this interface.
 #include <array>
+#include <cstdint>
+#include <vector>
 #include <csignal>
 #include <memory>
 #include <string>
@@ -33,6 +35,8 @@ class RokaeSessionArm {
     // Attempts both drag cleanup and disconnection and reports every failure.
     // The SDK documents that disconnect itself stops robot motion.
     void disconnect();
+    void handTimeout(int milliseconds);
+    std::vector<uint8_t> handTransfer(const std::vector<uint8_t>&, size_t);
 
  private:
     class Impl;

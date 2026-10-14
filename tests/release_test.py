@@ -216,7 +216,8 @@ class ReleaseTest(unittest.TestCase):
                     bus = next(line for line in output.splitlines() if line.startswith("启动 bus:"))
                     command = shlex.split(bus.split(":", 1)[1])
                     self.assertEqual(Path(command[0]).resolve(), Path(override or self.root / "bin") / "aviator_bus")
-                    self.assertIn("rh56ftp_hand/fake_rh56ftp_hand.py", output)
+                    self.assertIn("--fake-hand", output)
+                    self.assertNotIn("fake_rh56ftp_hand.py", output)
                     self.assertNotIn("nodes/rh56ftp_hand/", output)
                     self.assertIn("nodes/camera/main.py", output)
                     if name == "start_aviator.sh":

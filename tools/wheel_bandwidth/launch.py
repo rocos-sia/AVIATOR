@@ -69,6 +69,8 @@ def prepare_config(source, destination):
             math.isfinite(displacement) and -.170 <= displacement <= 0):
         raise ValueError("wheel_initial 超出轮盘范围")
     robot.setdefault("grasp_wheel", {})["source"] = "wheel_initial"
+    hand = system.setdefault("xcore_sdk_hand", {})
+    hand["config"] = str((source.parent / hand.get("config", "rh56ftp_hand.yaml")).resolve())
     system["robot"] = str(Path(destination).resolve() / "robot.yaml")
     return system, robot, robot_path
 
@@ -94,6 +96,8 @@ def parser():
 def main():
     args = parser().parse_args()
     require_regular_user()
+    if args.fake_hand and args.simulation:
+        raise ValueError("--fake-hand 与 --simulation 不能同时使用")
     if args.headless and not args.simulation:
         raise ValueError("--headless 仅用于 --simulation")
     frequencies = [float(f) for f in args.frequencies.split(",")]
@@ -119,12 +123,13 @@ def main():
             command += ["--headless"]
         plan.append(("simulation", command, False))
     else:
-        plan.append(("manipulator", ["sudo", "-n", str(bin_dir / "manipulator"), "--config", config], True))
-        conda = Path(os.environ.get("CONDA_ROOT", Path.home() / "miniconda3"))
-        python = os.environ.get("HAND_PYTHON", str(conda / "envs/rh56-pendant/bin/python3"))
-        hand = "fake_rh56ftp_hand.py" if args.fake_hand else "rh56ftp_node.py"
-        plan.append(("hand", [python, str(ROOT / "nodes/rh56ftp_hand" / hand),
-                              "--config", str(ROOT / "config/rh56ftp_hand.yaml")], False))
+        command = ["sudo", "-n", str(bin_dir / "manipulator"), "--config", config]
+        plan.append(("manipulator", command, True))
+        hand = [str(bin_dir / "xCoreSDK_hand"), "--system-config", config,
+                "--sdk-work-dir", str(output / "hand-sdk")]
+        if args.fake_hand:
+            hand.append("--fake-hand")
+        plan.append(("hand", hand, False))
     if args.logger:
         plan.append(("logger", [str(bin_dir / "aviator_logger"), "--config", str(ROOT / "config/recording.yaml"),
                                 "--output", str(output / "recording.mcap")], False))

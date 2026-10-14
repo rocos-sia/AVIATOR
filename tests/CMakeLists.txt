@@ -345,3 +345,37 @@ target_include_directories(aviator_target_trace_test PRIVATE ../nodes/manipulato
 target_link_libraries(aviator_target_trace_test PRIVATE Threads::Threads)
 add_test(NAME target_trace COMMAND aviator_target_trace_test)
 set_tests_properties(target_trace PROPERTIES TIMEOUT 15)
+
+if(TARGET aviator_hand_runtime)
+  aviator_add_test_executable(aviator_manipulator_hand_test manipulator_hand_test.cpp)
+  target_link_libraries(aviator_manipulator_hand_test PRIVATE aviator_hand_runtime)
+  add_test(NAME manipulator_hand COMMAND aviator_manipulator_hand_test)
+  set_tests_properties(manipulator_hand PROPERTIES TIMEOUT 20)
+  if(TARGET aviator_core_control)
+    aviator_add_test_executable(aviator_hand_stream_test hand_stream_test.cpp)
+    target_link_libraries(aviator_hand_stream_test PRIVATE aviator_hand_runtime aviator_core_control)
+    add_test(NAME hand_stream COMMAND aviator_hand_stream_test)
+    set_tests_properties(hand_stream PROPERTIES TIMEOUT 15)
+  endif()
+  aviator_add_test_executable(aviator_manipulator_hand_driver manipulator_hand_driver.cpp)
+  target_link_libraries(aviator_manipulator_hand_driver PRIVATE aviator_hand_runtime)
+  if(Python3_Interpreter_FOUND AND TARGET aviator_core_hand_link_driver)
+    add_test(NAME manipulator_hand_process COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/core_hand_process_test.py
+      $<TARGET_FILE:aviator_core_hand_link_driver> $<TARGET_FILE:aviator_bus>
+      $<TARGET_FILE:aviator_manipulator_hand_driver>)
+    set_tests_properties(manipulator_hand_process PROPERTIES TIMEOUT 90)
+  endif()
+endif()
+if(Python3_Interpreter_FOUND)
+  add_test(NAME scripts COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts_test.py)
+  set_tests_properties(scripts PROPERTIES TIMEOUT 90)
+endif()
+
+if(TARGET xCoreSDK_hand AND TARGET aviator_core_hand_link_driver AND Python3_Interpreter_FOUND)
+  add_test(NAME xcore_hand_process COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/core_hand_process_test.py
+    $<TARGET_FILE:aviator_core_hand_link_driver> $<TARGET_FILE:aviator_bus>
+    $<TARGET_FILE:xCoreSDK_hand>)
+  set_tests_properties(xcore_hand_process PROPERTIES TIMEOUT 90)
+endif()

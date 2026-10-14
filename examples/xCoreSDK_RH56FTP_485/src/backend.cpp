@@ -67,6 +67,20 @@ struct Backend::Impl {
         }
         log(i, message);
     }
+    void recover(int i, const std::string& message) {
+        bool changed = false;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            auto& a = arms[i];
+            if (stopping || a.stopping || a.done) return;
+            changed = a.state.phase != Phase::Recovering || a.state.error != message;
+            a.state.phase = Phase::Recovering;
+            a.state.handReady = false;
+            a.state.error = message;
+            a.queue.clear();
+        }
+        if (changed) log(i, message + "；暂停本侧下发，保留连接和上电，等待自动读取恢复");
+    }
     void cancelled(int i) const {
         if (stopping || arms[i].stopping) throw SessionStopped();
     }
@@ -124,12 +138,17 @@ struct Backend::Impl {
             log(i, "开始读取手部状态");
             rh56::Hand hand(cfg.handId, [&](const rh56::Bytes& tx, size_t receive) {
                 cancelled(i);
+                if (tx[4] == 0x12) {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    if (!readyLocked(1 << i)) throw std::runtime_error("恢复期间已取消参数下发");
+                }
                 if (tx.size() > 64 || receive > 64) throw std::runtime_error("AR xPanel frame exceeds 64 bytes");
                 rh56::Bytes rx(receive);
                 std::error_code ec;
                 const auto began = std::chrono::steady_clock::now();
                 a.transaction = nowMs();
-                robot->XPRS485SendData(int(tx.size()), int(rx.size()), tx, rx, ec);
+                try { robot->XPRS485SendData(int(tx.size()), int(rx.size()), tx, rx, ec); }
+                catch (...) { a.transaction = 0; throw; }
                 a.transaction = 0;
                 const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
                 {
@@ -161,19 +180,28 @@ struct Backend::Impl {
                 rh56::validate(rh56::speedSet, handState.speeds);
                 rh56::validate(rh56::forceSet, handState.limits);
                 const bool fault = std::any_of(handState.errors.begin(), handState.errors.end(), [](int v) { return v != 0; });
+                bool recovered = false;
                 {
                     std::lock_guard<std::mutex> lock(mutex);
-                    cancelled(i); // Do not restore readiness after a watchdog fault.
+                    cancelled(i); // Do not restore readiness after an explicit stop.
                     a.state.angles = handState.angles; a.state.forces = handState.forces;
                     a.state.errors = handState.errors; a.state.speeds = handState.speeds; a.state.limits = handState.limits;
                     a.state.feedbackMs = nowMs();
                     a.state.handReady = !fault;
+                    if (!fault) {
+                        recovered = a.state.phase == Phase::Recovering;
+                        a.state.phase = Phase::Connected;
+                        a.state.error.clear();
+                    }
                 }
                 if (fault)
-                    throw std::runtime_error("机械手报告执行器故障，详见六通道错误码");
+                    recover(i, "机械手报告执行器故障，详见六通道错误码");
+                else if (recovered)
+                    log(i, "手部通信恢复且六通道错误码为零，可重新下发；未重放旧命令");
+                return !fault;
             };
-            read(true);
-            auto nextRead = nowMs() + config.pollMs;
+            bool settingsNeeded = true;
+            auto nextRead = nowMs();
             while (!stopping && !a.stopping) {
                 Command cmd; bool pending = false;
                 {
@@ -183,17 +211,32 @@ struct Backend::Impl {
                     }
                 }
                 cancelled(i);
-                if (pending && cmd.action == Action::Apply) {
-                    if (!config.offline) {
-                        hand.write(rh56::speedSet, cmd.speeds);
-                        hand.write(rh56::forceSet, cmd.limits);
-                        hand.write(rh56::angleSet, cmd.angles);
-                    } else {
-                        handState.angles = cmd.angles; handState.speeds = cmd.speeds; handState.limits = cmd.limits;
+                if (pending || nowMs() >= nextRead) {
+                    try {
+                        {
+                            std::lock_guard<std::mutex> lock(mutex);
+                            settingsNeeded = settingsNeeded || a.state.phase == Phase::Recovering;
+                        }
+                        if (pending && cmd.action == Action::Apply) {
+                            settingsNeeded = true;
+                            if (!config.offline) {
+                                hand.write(rh56::speedSet, cmd.speeds);
+                                hand.write(rh56::forceSet, cmd.limits);
+                                hand.write(rh56::angleSet, cmd.angles);
+                            } else {
+                                handState.angles = cmd.angles; handState.speeds = cmd.speeds; handState.limits = cmd.limits;
+                            }
+                            log(i, "速度、力阈值、角度已下发（每类参数各一帧六通道）");
+                        }
+                        settingsNeeded = !read(settingsNeeded);
+                    } catch (const SessionStopped&) {
+                        throw;
+                    } catch (const std::exception& e) {
+                        settingsNeeded = true;
+                        recover(i, e.what());
                     }
-                    log(i, "速度、力阈值、角度已下发（每类参数各一帧六通道）");
+                    nextRead = nowMs() + config.pollMs;
                 }
-                if (pending || nowMs() >= nextRead) { read(pending && cmd.action == Action::Apply); nextRead = nowMs() + config.pollMs; }
                 std::this_thread::sleep_for(5ms);
             }
         } catch (const SessionStopped& e) {
@@ -229,14 +272,16 @@ struct Backend::Impl {
                 auto& a = arms[i];
                 const auto began = a.transaction.load();
                 if (!stopping && !a.stopping && !a.done && began && nowMs() - began > 3000)
-                    fail(i, "485 SDK 调用超过 3 s；仅停止本侧命令，等待 SDK 返回后断开");
+                    recover(i, "485 SDK 调用超过 3 s，等待当前调用返回");
                 long long handFeedback = 0;
+                bool handReady = false;
                 {
                     std::lock_guard<std::mutex> lock(mutex);
                     handFeedback = a.state.feedbackMs;
+                    handReady = a.state.handReady;
                 }
-                if (!stopping && !a.stopping && !a.done && handFeedback && nowMs() - handFeedback > std::max(3000, 2 * config.pollMs))
-                    fail(i, "机械手反馈过期；仅停止本侧通信会话");
+                if (!stopping && !a.stopping && !a.done && handReady && handFeedback && nowMs() - handFeedback > std::max(3000, 2 * config.pollMs))
+                    recover(i, "机械手反馈过期");
             }
             std::this_thread::sleep_for(10ms);
         }

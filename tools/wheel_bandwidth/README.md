@@ -32,7 +32,7 @@ cmake --build build/release --target simulation -j2
 默认二进制目录 `build/release/bin`，可用 `AVIATOR_BIN` 覆盖。脚本默认用
 `/usr/bin/python3 -s`，依赖 PyYAML、NumPy、Matplotlib；`-s` 避免用户 site-packages
 影响系统科学计算库。其他 Python 环境可通过 `BANDWIDTH_PYTHON` 指定。
-真实手沿用 `CONDA_ROOT`、`HAND_PYTHON`，Monitor 可用 `MONITOR_BIN` 指定。
+真实手由独立 xCoreSDK_hand 的 SDK RS485 连接提供，Monitor 可用 `MONITOR_BIN` 指定。
 脚本在启动设备前检查分析依赖。`--no-monitor` 关闭 Monitor 和浏览器。
 
 先退出其他控制节点。脚本与现有一键启动共用互斥锁，并检查控制端口占用。
@@ -125,3 +125,5 @@ ctest --test-dir build/release -R 'wheel_bandwidth_(estimate|help)' --output-on-
 
 覆盖真实 URDF 的 IK→FK 角度反算、工具变换与推拉位移、圆周角融合、正弦幅值与过渡、
 不规则采样下的已知增益/相位、无效数据处理、-3 dB 区间插值及原配置不变。
+
+手控制由独立 xCoreSDK_hand 提供；`--fake-hand` 传给该节点。生成运行配置时会将手配置路径一并转为绝对路径。

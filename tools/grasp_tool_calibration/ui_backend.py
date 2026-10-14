@@ -388,10 +388,9 @@ class CalibrationController:
             conflicts = self.conflict_check()
             if conflicts:
                 raise CalibrationError("请先退出现有控制节点：" + "；".join(conflicts))
-            if not hand_config.get("left_host") or not hand_config.get("right_host"):
-                raise CalibrationError("rh56ftp_hand.yaml 必须配置左右两只手")
+            if not all(hand_config.get(side + "_enabled", True) for side in ("left", "right")):
+                raise CalibrationError("rh56ftp_hand.yaml 必须启用左右两只手")
             bus = executable(self.options.bus_helper, "aviator_bus")
-            hand_python = executable(self.options.hand_python, "机械手 Python")
             if source == "camera":
                 camera_python = executable(self.options.camera_python, "相机 Python")
             publish, subscribe = system["bus"]["publish"], system["bus"]["subscribe"]
@@ -401,11 +400,6 @@ class CalibrationController:
                                           camera_id=self.options.camera_id,
                                           hand_publisher=presets.get("publisher_id", "rh56ftp_hand"))
             self.link.start()
-            self.nodes.start("hand", [str(hand_python), "-u", str(ROOT / "nodes/rh56ftp_hand/rh56ftp_node.py"),
-                                      "--config", str(self.options.hand_config), "--endpoint", subscribe,
-                                      "--state-endpoint", publish, "--publisher-id",
-                                      presets.get("publisher_id", "rh56ftp_hand")])
-            self.link.wait_ready(timeout=15)
             self._check_cancel()
             if source == "camera":
                 self.nodes.start("camera", [str(camera_python), "-u", str(ROOT / "nodes/camera/main.py"),
@@ -420,6 +414,11 @@ class CalibrationController:
         self.native = self.native_factory(helper, self.options.robot_config, self.options.dry_run,
                                           self.options.log_dir, self.log)
         self.native.request("connect")
+        if not self.options.dry_run:
+            self.native.request("hand_start", system_config=str(self.options.system_config),
+                                hand_config=str(self.options.hand_config),
+                                fake_hand=getattr(self.options, "fake_hand", False))
+            self.link.wait_ready(timeout=15)
         self._check_cancel()
         self._refresh_arms()
         self._set(prepared=True, phase="ready", message="校准环境已就绪；可拖动、握紧，停稳后采样")

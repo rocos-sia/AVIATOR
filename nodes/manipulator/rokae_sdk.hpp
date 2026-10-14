@@ -1,6 +1,8 @@
 #pragma once
 // SDK isolation boundary: no KDL/Eigen/SDK types cross this interface.
 #include <array>
+#include <cstdint>
+#include <vector>
 #include <functional>
 #include <memory>
 #include <string>

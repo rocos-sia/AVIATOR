@@ -31,7 +31,7 @@
 以架构第 15 章的最终目录与进程划分为准：
 
 - `flight_gateway` 根据配置接入 RS422 或 USB 摇杆；`source` 区分输入来源，不另设 `joystick_gateway` 进程。
-- `manipulator` 发布 `arm.state` 并消费 `arm.command`，负责双臂设备接入与本地执行；不发布 `hand.state`，也不订阅 `hand.command`。
+- `manipulator` 消费 `arm.command`、发布 `arm.state`，只负责双臂；独立 `xCoreSDK_hand` 消费 `hand.command`、发布 `hand.state`，复用 rh56ftp_hand 控制策略，使用独立 SDK RS485 连接。手部保留 `publisher_id=rh56ftp_hand`，--fake-hand 在独立手进程中运行。消息类型与字段保持不变。
 - `aviator_hand` 消费 `hand.command`、发布 `hand.state`，通过 SocketCAN 独立接入双手；默认 `publisher_id=inspire_hand`。
 - `camera` 负责图像采集与检测。
 - `aviator_core` 是连续设备目标的唯一业务生产者和控制源仲裁者。
@@ -451,7 +451,7 @@ Core 单独检查该字段，非空时禁止以该反馈确认动作完成。锁
 以及重复顶层 `command_valid` 的 `enabled` 和始终为 null 的 `joint_position/joint_velocity`。
 外部消费者应迁移到保留字段；`simulation` 的手状态同步删除上述别名及 `enabled`，
 仍保留其能够计算的仿真关节量。CAN 后端 `aviator_hand` 的字段不变。
-握持、故障保护与反馈计数等诊断字段见 [RH56FTP 节点说明](../nodes/rh56ftp_hand/README.md)。
+握持、故障保护与反馈计数等诊断字段见 [RH56FTP 节点说明](../nodes/rh56ftp_hand/README.md)。manipulator 的 RS485 后端沿用这些字段，采样来源为 `host_rs485_read`；fake 后端为 `host_simulation`，并带 `simulated=true`。运行配置见 [manipulator](../nodes/manipulator/README.md)。
 
 ### 9.4 完整 Frame1 示例（CAN 后端）
 

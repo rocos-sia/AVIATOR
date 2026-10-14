@@ -25,7 +25,7 @@ for arg in "$@"; do
             echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂和相机照常启动。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
-            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, HAND_PYTHON, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, START_DELAY'
+            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, START_DELAY'
             exit 0 ;;
         *) echo "未知参数: $arg" >&2; exit 2 ;;
     esac
@@ -46,13 +46,9 @@ if $LOGGER; then
     recording_options+=(--recording-config config/recording.yaml)
 fi
 
+hand_options=()
+$FAKE_HAND && hand_options+=(--fake-hand)
 CONDA_ROOT=${CONDA_ROOT:-$HOME/miniconda3}
-HAND_PYTHON=${HAND_PYTHON:-$CONDA_ROOT/envs/rh56-pendant/bin/python3}
-HAND_NODE=nodes/rh56ftp_hand/rh56ftp_node.py
-if $FAKE_HAND; then
-    HAND_NODE=nodes/rh56ftp_hand/fake_rh56ftp_hand.py
-fi
-[[ ! -d $ROOT/rh56ftp_hand ]] || HAND_NODE=${HAND_NODE#nodes/}
 CAMERA_PYTHON=${CAMERA_PYTHON:-$CONDA_ROOT/envs/apriltag_realsense/bin/python}
 MONITOR_BIN=${MONITOR_BIN:-$AVIATOR_BIN/aviator_monitor}
 TTS_CONFIG=${TTS_CONFIG:-$ROOT/config/tts.yaml}
@@ -62,14 +58,42 @@ SESSION_FILE=/tmp/aviator_session.uuid
 PIDS=()
 NAMES=()
 ROOT_PIDS=()
+CORE_PID=
+HAND_PID=
 OPTIONAL_EXIT_REPORTED=()
 # 每次 sudo 调用直接认证，避免依赖跨 setsid 会话的认证缓存。
 SUDO_PASSWORD='a'
 
 cleanup() {
+    trap '' HUP
     trap - EXIT INT TERM
     echo '正在停止本次启动的节点…'
+    # Keep arm/hand processes alive while Core releases and disables.
+    if [[ -n $CORE_PID ]] && kill -0 "$CORE_PID" 2>/dev/null; then
+        kill -TERM -- "-$CORE_PID" 2>/dev/null || true
+        for ((attempt=0; attempt<150; attempt++)); do
+            kill -0 "$CORE_PID" 2>/dev/null || break
+            sleep .1
+        done
+        if kill -0 "$CORE_PID" 2>/dev/null; then
+            echo 'Core 15秒内未退出，强制停止；请查看 core.log' >&2
+            kill -KILL -- "-$CORE_PID" 2>/dev/null || true
+        fi
+    fi
+    # Finish hand shutdown writes before releasing the arm controller connection.
+    if [[ -n $HAND_PID ]] && kill -0 "$HAND_PID" 2>/dev/null; then
+        kill -TERM -- "-$HAND_PID" 2>/dev/null || true
+        for ((attempt=0; attempt<80; attempt++)); do
+            kill -0 "$HAND_PID" 2>/dev/null || break
+            sleep .1
+        done
+        if kill -0 "$HAND_PID" 2>/dev/null; then
+            echo "手节点8秒内未退出，强制停止；请查看 $LOG_DIR/hand.log" >&2
+            kill -KILL -- "-$HAND_PID" 2>/dev/null || true
+        fi
+    fi
     for ((i=${#PIDS[@]}-1; i>=0; i--)); do
+        [[ ${PIDS[i]} == "$CORE_PID" ]] && continue
         if [[ ${ROOT_PIDS[i]} == true ]]; then
             sudo -S -p '' kill -TERM -- "-${PIDS[i]}" <<< "$SUDO_PASSWORD" 2>/dev/null || true
         else
@@ -119,6 +143,8 @@ start() {
     PIDS+=("$!")
     NAMES+=("$name")
     ROOT_PIDS+=("$elevated")
+    if [[ $name == core ]]; then CORE_PID=${PIDS[-1]}; fi
+    if [[ $name == hand ]]; then HAND_PID=${PIDS[-1]}; fi
     sleep "$START_DELAY"
     check_nodes
 }
@@ -142,8 +168,8 @@ if ! $DRY_RUN; then
         executables+=("$AVIATOR_BIN/simulation")
     else
         commands+=(sudo)
-        executables+=("$AVIATOR_BIN/manipulator" "$HAND_PYTHON" "$CAMERA_PYTHON")
-        files+=(config/camera.yaml config/rh56ftp_hand.yaml "$HAND_NODE" nodes/camera/main.py)
+        executables+=("$AVIATOR_BIN/manipulator" "$AVIATOR_BIN/xCoreSDK_hand" "$CAMERA_PYTHON")
+        files+=(config/camera.yaml config/rh56ftp_hand.yaml nodes/camera/main.py)
     fi
     for command in "${commands[@]}"; do
         command -v "$command" >/dev/null || { echo "缺少命令: $command" >&2; exit 1; }
@@ -157,13 +183,14 @@ if ! $DRY_RUN; then
     # Fail preparation before starting hardware; runtime audio failure is optional.
     if $TTS; then "$AVIATOR_BIN/aviator_tts" --config "$TTS_CONFIG" --check; fi
     exec 9>"${XDG_RUNTIME_DIR:-/tmp}/aviator-start-${UID}.lock"
-    flock -n 9 || { echo '一键启动脚本已在运行。' >&2; exit 1; }
+    flock -n 9 || { echo "启动脚本或上次残留节点仍持有启动锁，请先停止。锁文件: ${XDG_RUNTIME_DIR:-/tmp}/aviator-start-${UID}.lock（不要删除锁文件绕过检查）" >&2; exit 1; }
     if ! $SIMULATION; then sudo -S -p '' -v <<< "$SUDO_PASSWORD"; fi
     LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/aviator-start.XXXXXXXX")
     echo "日志目录: $LOG_DIR"
     trap cleanup EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
+    trap 'exit 129' HUP
     if [[ ! -s $SESSION_FILE ]]; then
         cat /proc/sys/kernel/random/uuid > "$SESSION_FILE"
     fi
@@ -182,8 +209,8 @@ if $SIMULATION; then
         --camera-id cockpit "${simulation_options[@]}"
 else
     start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config "$SYSTEM_CONFIG"
-    start rh56ftp env PATH="$(dirname "$HAND_PYTHON"):$PATH" "$HAND_PYTHON" \
-        "$HAND_NODE" --config config/rh56ftp_hand.yaml
+    start hand "$AVIATOR_BIN/xCoreSDK_hand" --system-config "$SYSTEM_CONFIG" \
+        --sdk-work-dir "$LOG_DIR/hand-sdk" "${hand_options[@]}"
 fi
 start gateway "$AVIATOR_BIN/flight_gateway"
 if $TTS; then

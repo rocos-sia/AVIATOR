@@ -14,6 +14,11 @@ import selectors
 import signal
 import subprocess
 import unittest
+import tempfile
+import time
+import socket
+import uuid
+import zmq
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -58,6 +63,60 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(response["id"], self.next_id)
         self.assertEqual(response["ok"], ok, response)
         return response.get("result") if ok else response["error"]
+
+    def test_integrated_fake_hands_share_native_session_and_cleanup(self):
+        context = zmq.Context()
+        commands = context.socket(zmq.PUB)
+        states = context.socket(zmq.SUB)
+        commands.bind("tcp://127.0.0.1:*")
+        states.bind("tcp://127.0.0.1:*")
+        states.subscribe(b"hand.state")
+        clock = socket.gethostname() + "-" + Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        epoch = str(uuid.uuid4())
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                system = Path(directory) / "system.yaml"
+                system.write_text(json.dumps(dict(bus=dict(
+                    publish=states.getsockopt_string(zmq.LAST_ENDPOINT),
+                    subscribe=commands.getsockopt_string(zmq.LAST_ENDPOINT)))))
+                self.request("hand_start", ok=False, system_config=str(system),
+                             hand_config=str(ROOT / "config/rh56ftp_hand.yaml"))
+                self.request("connect")
+                started = self.request("hand_start", system_config=str(system),
+                                       hand_config=str(ROOT / "config/rh56ftp_hand.yaml"))
+                self.assertTrue(started["fake_hand"])
+                self.request("hand_start", ok=False, system_config=str(system),
+                             hand_config=str(ROOT / "config/rh56ftp_hand.yaml"))
+                sequence = 0
+                until = time.monotonic() + 3
+                accepted = None
+                while time.monotonic() < until:
+                    sequence += 1
+                    stamp = time.monotonic_ns() // 1000
+                    command = dict(msg_type="HandCommand", version="1.0", sequence=sequence,
+                        timestamp=time.time_ns()//1000, sample_mono_us=stamp, clock_id=clock,
+                        publisher_id="calibration", session_id="test", valid=True, control_epoch=epoch,
+                        mode="NORMALIZED_POSITION", origin=dict(publisher_id="calibration", session_id="test",
+                            sequence=sequence, sample_mono_us=stamp, clock_id=clock),
+                        hands={side:dict(drive_position_normalized=[.5,.2,.2,.2,.2,.2]) for side in ("left","right")})
+                    commands.send_multipart([b"hand.command",json.dumps(command).encode()])
+                    if states.poll(20):
+                        _, payload = states.recv_multipart()
+                        accepted = json.loads(payload)
+                        if accepted.get("accepted_command") and accepted["valid"]:
+                            break
+                self.assertIsNotNone(accepted)
+                self.assertTrue(accepted["simulated"])
+                self.assertEqual(accepted["accepted_command"]["publisher_id"], "calibration")
+                self.assertEqual(accepted["hands"]["left"]["sample_time_basis"], "host_simulation")
+                # Arm JSON RPCs stay available while the hand bus runs.
+                self.request("sample")
+                self.request("disconnect")
+                self.assertFalse(self.request("status")["left"]["connected"])
+        finally:
+            commands.close(0)
+            states.close(0)
+            context.term()
 
     def test_sample_uses_real_fk_and_monotonic_acquisition_times(self):
         before = self.request("status")

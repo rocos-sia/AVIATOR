@@ -15,7 +15,7 @@ core_hand:
   enabled: true
   # publisher_id: inspire_hand
   publisher_id: rh56ftp_hand
-  completion_timeout_ms: 5000
+  completion_timeout_ms: 1000
   feedback_timeout_ms: 500
   open_tolerance: 1.0
   # Order: thumb rotation, thumb flexion, index, middle, ring, pinky. Range [0,1].
@@ -26,3 +26,9 @@ core_hand:
   close:
     left: [0.5, 0, 0, 0, 0, 0]
     right: [0.5, 0, 0, 0, 0, 0]
+
+# Independent SDK hand process; paths are relative to this file.
+xcore_sdk_hand:
+  enabled: true
+  fake_hand: false
+  config: rh56ftp_hand.yaml

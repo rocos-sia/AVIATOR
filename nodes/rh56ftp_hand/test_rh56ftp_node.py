@@ -696,7 +696,7 @@ class NodeTests(unittest.TestCase):
                              [settings["right_host"], settings["left_host"]] * 2)
             node = run.call_args.args[0]
             self.assertEqual((node.speed, node.force, node.hold_speed, node.hold_force),
-                             (500, 1000, 100, 100))
+                             (500, 1000, 100, 1000))
             self.assertEqual(node.closing_motion_raw, settings["threshold"])
             self.assertEqual(node.closing_hold_us, 10000000)
             factory.reset_mock()

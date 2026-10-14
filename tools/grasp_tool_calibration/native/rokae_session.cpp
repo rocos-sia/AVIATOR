@@ -2,6 +2,7 @@
 
 #include <rokae/robot.h>
 #include <chrono>
+#include <mutex>
 #include <iostream>
 #include <stdexcept>
 #include <system_error>
@@ -43,6 +44,7 @@ std::string powerName(rokae::PowerState state) {
 class RokaeSessionArm::Impl {
  public:
     rokae::ArRobot robot;
+    std::recursive_mutex rpc_mutex;
     std::string ip;
     bool connected = false;
     bool drag_owned = false;
@@ -99,6 +101,7 @@ RokaeSessionArm::~RokaeSessionArm() {
 }
 
 void RokaeSessionArm::connect() {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->rpc_mutex);
     impl_->checkCancellation();
     if (!impl_->connected) {
         impl_->robot.connectToRobot(impl_->ip);
@@ -112,6 +115,7 @@ void RokaeSessionArm::connect() {
 }
 
 SessionArmStatus RokaeSessionArm::status() {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->rpc_mutex);
     SessionArmStatus value;
     value.connected = impl_->connected;
     value.drag_owned = impl_->drag_owned;
@@ -129,6 +133,7 @@ SessionArmStatus RokaeSessionArm::status() {
 }
 
 void RokaeSessionArm::startDrag() {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->rpc_mutex);
     impl_->checkCancellation();
     if (impl_->drag_owned && impl_->operation() == rokae::OperationState::drag) return;
     impl_->requireIdle();
@@ -163,6 +168,7 @@ void RokaeSessionArm::startDrag() {
 }
 
 void RokaeSessionArm::stopDrag() {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->rpc_mutex);
     impl_->requireConnected();
     if (!impl_->drag_owned) {
         if (impl_->operation() == rokae::OperationState::drag)
@@ -180,6 +186,7 @@ void RokaeSessionArm::stopDrag() {
 }
 
 std::array<double, 7> RokaeSessionArm::position() {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->rpc_mutex);
     impl_->requireIdle();
     std::error_code ec;
     const auto joints = impl_->robot.jointPos(ec);
@@ -189,6 +196,7 @@ std::array<double, 7> RokaeSessionArm::position() {
 }
 
 void RokaeSessionArm::disconnect() {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->rpc_mutex);
     if (!impl_->connected) return;
     std::string errors;
     if (impl_->drag_owned) {
@@ -207,4 +215,29 @@ void RokaeSessionArm::disconnect() {
     if (!errors.empty()) throw std::runtime_error(errors);
 }
 
+} // namespace aviator::calibration
+
+namespace aviator::calibration {
+void RokaeSessionArm::handTimeout(int milliseconds) {
+    std::lock_guard<std::recursive_mutex> rpc(impl_->rpc_mutex);
+    impl_->requireConnected();
+    if (milliseconds < 50 || milliseconds > 10000)
+        throw std::runtime_error("Invalid RS485 timeout");
+    std::error_code ec;
+    impl_->robot.setxPanelRS485Overtime(milliseconds, ec);
+    impl_->check(ec, "setxPanelRS485Overtime");
+}
+std::vector<uint8_t> RokaeSessionArm::handTransfer(const std::vector<uint8_t>& tx, size_t count) {
+    if (tx.empty() || tx.size() > 64 || count == 0 || count > 64)
+        throw std::runtime_error("RS485 requires 1..64 bytes");
+    std::unique_lock<std::recursive_mutex> rpc(impl_->rpc_mutex, std::try_to_lock);
+    if (!rpc.owns_lock())
+        throw std::runtime_error("Calibration lifecycle RPC busy");
+    impl_->requireConnected();
+    std::vector<uint8_t> rx(count);
+    std::error_code ec;
+    impl_->robot.XPRS485SendData(int(tx.size()), int(count), tx, rx, ec);
+    impl_->check(ec, "XPRS485SendData");
+    return rx;
+}
 } // namespace aviator::calibration

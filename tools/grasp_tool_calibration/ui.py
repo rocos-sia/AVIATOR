@@ -57,6 +57,7 @@ def parse_args(argv=None):
     parser.add_argument("--robot-config", type=Path, default=ROOT / "config/robot.yaml")
     parser.add_argument("--system-config", type=Path, default=ROOT / "config/system.yaml")
     parser.add_argument("--camera-config", type=Path, default=ROOT / "config/camera.yaml")
+    parser.add_argument("--fake-hand", action="store_true", help="真实机械臂 SDK 会话内模拟双手")
     parser.add_argument("--hand-config", type=Path, default=ROOT / "config/rh56ftp_hand.yaml")
     binary_dir = Path(os.environ.get("AVIATOR_BIN", ROOT / "build/bin"))
     parser.add_argument("--session-helper", type=Path, default=binary_dir / "aviator_grasp_tool_session")

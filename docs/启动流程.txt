@@ -1,4 +1,4 @@
-// 真机：manipulator（Rokae）+ rh56ftp_hand；仿真：只启动 simulation 替代这两个节点。
+// 真机：manipulator（Rokae 双臂）+ xCoreSDK_hand（RS485 双手）；仿真：只启动 simulation 替代整个设备节点。
 // robot.yaml 不再配置 backend，真机使用 system.yaml，仿真使用 system-simulation.yaml；设备协议相同。
 // 一键脚本按 --simulation 自动选择配置；仿真 command/origin 超时为 100/200 ms，真机为 50/100 ms。
 // 仿真各终端启动（不要同时启动真机设备节点）：
@@ -29,15 +29,16 @@ rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ sudo ./build/bin/manipulator 
 // source: rs422 禁用摇杆和键盘；串口协议尚未实现，会明确报错退出。
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/flight_gateway 
 
-//4、启动rh56ftp
-conda activate rh56-pendant
-(rh56-pendant) rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ python3 nodes/rh56ftp_hand/rh56ftp_node.py   --right-host 192.168.21.210   --left-host 192.168.11.210   --speed 500 --force 500
+//4、启动独立手进程（与 rh56ftp_hand 共用配置和控制策略）
+./build/bin/xCoreSDK_hand --system-config config/system.yaml
+// 无真实手：本步骤加 --fake-hand；或设置 system.yaml 的 xcore_sdk_hand.fake_hand: true。
+// 不要同时启动独立 Modbus/fake 手节点，避免重复发布 hand.state。
 
 //5、启动core
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_core_managed --config config/system.yaml 
 // 相机随动测试：用下列独立 Core 替换第5步，不要同时运行其他 Core；无需 flight_gateway。
-// 先启动 bus、manipulator、手节点及第6步相机，再运行此入口；启动后自动使能、接近把手并锁定。
-// 无真实手时，第4步可替换为 python3 nodes/rh56ftp_hand/fake_rh56ftp_hand.py --config config/rh56ftp_hand.yaml。
+// 先启动 bus、manipulator、xCoreSDK_hand及第6步相机，再运行此入口；启动后自动使能、接近把手并锁定。
+// 无真实手时，在第4步 xCoreSDK_hand 加 --fake-hand。
 // 构建：cmake --build build/release --target aviator_core_camera_servo -j2
 // 启动：./build/release/bin/aviator_core_camera_servo --config config/system.yaml --camera-id cockpit
 // 关节阻抗刚度沿用 robot.yaml；servoWheel(angle=-theta_rad, displacement=-translation_along_axis_m-0.085, v=1)。
@@ -50,7 +51,7 @@ rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_core_mana
 // ./scripts/start_camera_servo.sh                 # 真实机械臂、相机和手
 // ./scripts/start_camera_servo.sh --fake-hand --logger  # 加录制，输出 logs/camera_servo_时间.mcap
 // 默认 build/release/bin，可用 AVIATOR_BIN 覆盖；使用 config/system.yaml、camera-id=cockpit。
-// 自动启动 Bus、Manipulator（sudo）、手、Camera（--show --print-pose）、Monitor 和 Chrome，最后启动测试 Core。
+// 自动启动 Bus、Manipulator（sudo，含双手）、Camera（--show --print-pose）、Monitor 和 Chrome，最后启动测试 Core。
 // --logger 时 Logger 先于 Camera 启动；无需 Gateway。CAMERA_TIMEOUT_MS 默认200，允许20..1000。
 // 日志及本次独立 session 位于 /tmp/aviator-camera-servo.*，不改写 /tmp/aviator_session.uuid。
 // Ctrl+C 先停止 Core，最多等15秒完成减速/解锁/下使能，再停止其他节点；保持终端打开。

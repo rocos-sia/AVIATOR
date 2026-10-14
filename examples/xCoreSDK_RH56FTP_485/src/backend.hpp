@@ -16,7 +16,7 @@ struct Config {
     bool offline = false;
     bool init485 = false; // Configuration-only session; AR requires a subsequent controller restart.
 };
-enum class Phase { Idle, Starting, Connected, Stopping, Failed };
+enum class Phase { Idle, Starting, Connected, Recovering, Stopping, Failed };
 struct ArmState {
     Phase phase = Phase::Idle;
     bool handReady = false;
