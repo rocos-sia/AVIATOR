@@ -64,50 +64,89 @@ OPTIONAL_EXIT_REPORTED=()
 # 每次 sudo 调用直接认证，避免依赖跨 setsid 会话的认证缓存。
 SUDO_PASSWORD='a'
 
+# sudo may put the command in a separate session (for example with use_pty).
+# Signal both the actual node group and the launcher group, even if their leaders exited.
+signal_node() {
+    local index=$1 signal=$2 node_group=
+    local groups=("-${PIDS[index]}")
+    if [[ ${ROOT_PIDS[index]} == true ]]; then
+        if [[ -r $LOG_DIR/${NAMES[index]}.pid ]]; then
+            read -r node_group < "$LOG_DIR/${NAMES[index]}.pid" || true
+            if [[ $node_group =~ ^[0-9]+$ ]] && ((node_group > 1)); then
+                groups=("-$node_group" "${groups[@]}")
+            fi
+        fi
+        sudo -S -p '' kill "-$signal" -- "${groups[@]}" <<< "$SUDO_PASSWORD" 2>/dev/null || true
+    else
+        kill "-$signal" -- "${groups[@]}" 2>/dev/null || true
+    fi
+}
+
+# Verify bounded cleanup without waiting forever on an uninterruptible SDK process.
+reap_nodes() {
+    local index node_group groups="${PIDS[*]}" remaining= pid state attempt
+    for index in "${!PIDS[@]}"; do
+        if [[ ${ROOT_PIDS[index]} == true && -r $LOG_DIR/${NAMES[index]}.pid ]]; then
+            read -r node_group < "$LOG_DIR/${NAMES[index]}.pid" || true
+            if [[ $node_group =~ ^[0-9]+$ ]] && ((node_group > 1)); then groups+=" $node_group"; fi
+        fi
+    done
+    for ((attempt=0; attempt<20; attempt++)); do
+        remaining=$(ps -eo pid=,pgid=,stat=,comm= | awk -v groups="$groups" '
+            BEGIN { n=split(groups,a," "); for(i=1;i<=n;i++) owned[a[i]]=1 }
+            ($2 in owned) && $3 !~ /^Z/ { print }
+        ')
+        [[ -n $remaining ]] || break
+        sleep .1
+    done
+    if [[ -n $remaining ]]; then
+        printf '以下本次启动的进程在 SIGKILL 后仍未退出（PID/PGID/状态/名称）：\n%s\n' "$remaining" >&2
+    fi
+    for pid in "${PIDS[@]}"; do
+        state=$(ps -o stat= -p "$pid")
+        case "$state" in ''|Z*) wait "$pid" 2>/dev/null || true ;; esac
+    done
+}
+
 cleanup() {
-    trap '' HUP
-    trap - EXIT INT TERM
+    # Repeated Ctrl+C must not interrupt the ordered shutdown or its KILL fallback.
+    trap '' INT TERM HUP
+    trap - EXIT
+    set +e
     echo '正在停止本次启动的节点…'
     # Keep arm/hand processes alive while Core releases and disables.
-    if [[ -n $CORE_PID ]] && kill -0 "$CORE_PID" 2>/dev/null; then
+    if [[ -n $CORE_PID ]] && kill -0 -- "-$CORE_PID" 2>/dev/null; then
         kill -TERM -- "-$CORE_PID" 2>/dev/null || true
         for ((attempt=0; attempt<150; attempt++)); do
-            kill -0 "$CORE_PID" 2>/dev/null || break
+            kill -0 -- "-$CORE_PID" 2>/dev/null || break
             sleep .1
         done
-        if kill -0 "$CORE_PID" 2>/dev/null; then
+        if kill -0 -- "-$CORE_PID" 2>/dev/null; then
             echo 'Core 15秒内未退出，强制停止；请查看 core.log' >&2
             kill -KILL -- "-$CORE_PID" 2>/dev/null || true
         fi
     fi
     # Finish hand shutdown writes before releasing the arm controller connection.
-    if [[ -n $HAND_PID ]] && kill -0 "$HAND_PID" 2>/dev/null; then
+    if [[ -n $HAND_PID ]] && kill -0 -- "-$HAND_PID" 2>/dev/null; then
         kill -TERM -- "-$HAND_PID" 2>/dev/null || true
         for ((attempt=0; attempt<80; attempt++)); do
-            kill -0 "$HAND_PID" 2>/dev/null || break
+            kill -0 -- "-$HAND_PID" 2>/dev/null || break
             sleep .1
         done
-        if kill -0 "$HAND_PID" 2>/dev/null; then
+        if kill -0 -- "-$HAND_PID" 2>/dev/null; then
             echo "手节点8秒内未退出，强制停止；请查看 $LOG_DIR/hand.log" >&2
             kill -KILL -- "-$HAND_PID" 2>/dev/null || true
         fi
     fi
     for ((i=${#PIDS[@]}-1; i>=0; i--)); do
         [[ ${PIDS[i]} == "$CORE_PID" ]] && continue
-        if [[ ${ROOT_PIDS[i]} == true ]]; then
-            sudo -S -p '' kill -TERM -- "-${PIDS[i]}" <<< "$SUDO_PASSWORD" 2>/dev/null || true
-        else
-            kill -TERM -- "-${PIDS[i]}" 2>/dev/null || true
-        fi
+        signal_node "$i" TERM
     done
     sleep 2
     for ((i=${#PIDS[@]}-1; i>=0; i--)); do
-        if [[ ${ROOT_PIDS[i]} == true ]]; then
-            sudo -S -p '' kill -KILL -- "-${PIDS[i]}" <<< "$SUDO_PASSWORD" 2>/dev/null || true
-        else
-            kill -KILL -- "-${PIDS[i]}" 2>/dev/null || true
-        fi
+        signal_node "$i" KILL
     done
+    reap_nodes
 }
 
 check_nodes() {
@@ -136,7 +175,14 @@ start() {
     $DRY_RUN && return 0
     [[ $1 == sudo ]] && elevated=true
     if $elevated; then
-        setsid "$@" >"$LOG_DIR/$name.log" 2>&1 <<< "$SUDO_PASSWORD" &
+        # The only elevated launch uses: sudo -S -p '' executable [arguments].
+        # Create the node session *inside* sudo, record its leader, and keep sudo
+        # waiting even when setsid must fork. Positional arguments preserve quoting.
+        setsid "${@:1:4}" setsid --wait bash -c '
+            printf "%s\n" "$$" > "$1"
+            shift
+            exec "$@"
+        ' bash "$LOG_DIR/$name.pid" "${@:5}" >"$LOG_DIR/$name.log" 2>&1 <<< "$SUDO_PASSWORD" &
     else
         setsid "$@" >"$LOG_DIR/$name.log" 2>&1 < /dev/null &
     fi
@@ -151,7 +197,7 @@ start() {
 
 if ! $DRY_RUN; then
     [[ $EUID != 0 ]] || { echo '请以普通用户执行，脚本仅对 manipulator 使用 sudo。' >&2; exit 1; }
-    commands=(setsid flock google-chrome-stable curl)
+    commands=(setsid flock ps awk google-chrome-stable curl)
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
         "$AVIATOR_BIN/aviator_core_managed" "$MONITOR_BIN")
     files=("$SYSTEM_CONFIG" config/robot.yaml config/camera.yaml)

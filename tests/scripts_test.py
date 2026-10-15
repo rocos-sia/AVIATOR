@@ -59,13 +59,22 @@ class ScriptsTests(unittest.TestCase):
         mock = self.directory / "fake bin"
         mock.mkdir()
         events = self.directory / "events"
+        def cleanup_mock_nodes():
+            if events.exists():
+                for row in events.read_text().splitlines():
+                    if row.startswith('start '):
+                        try: os.kill(int(row.split()[2]), signal.SIGKILL)
+                        except ProcessLookupError: pass
+        self.addCleanup(cleanup_mock_nodes)
         node = mock / "node"
         node.write_text("#!/usr/bin/python3\n" +
             "import os,signal,sys,time\n" +
             "name=os.path.basename(sys.argv[0])\n" +
             "def event(kind):\n    with open(os.environ['TEST_EVENTS'],'a') as f: f.write(kind+' '+name+' '+str(os.getpid())+'\\n')\n" +
-            "def stop(*args):\n    event('stop');sys.exit(0)\n" +
+            "def stop(*args):\n    signal.signal(signal.SIGTERM,signal.SIG_IGN)\n    event('stop')\n    if name.startswith('aviator_core'): time.sleep(.4)\n    sys.exit(0)\n" +
             "signal.signal(signal.SIGTERM,stop)\nevent('start')\n" +
+            "if name in ('manipulator','camera-python') and os.fork()==0:\n" +
+            "    name+='-worker'\n    signal.signal(signal.SIGTERM,signal.SIG_IGN)\n    event('start')\n" +
             "while True: time.sleep(.02)\n")
         node.chmod(0o755)
         for name in ('aviator_bus','manipulator','xCoreSDK_hand','flight_gateway','aviator_core_managed',
@@ -75,7 +84,18 @@ class ScriptsTests(unittest.TestCase):
             (mock/name).write_text('#!/bin/bash\nexit 0\n')
             (mock/name).chmod(0o755)
         # Never invoke real sudo. Consume only the launcher's own stdin password.
-        (mock/'sudo').write_text('#!/bin/bash\nwhile (($#)); do case "$1" in -S) read -r ignored; shift;; -p) shift 2;; -v) exit 0;; *) break;; esac; done\nexec "$@"\n')
+        (mock/'sudo').write_text('#!/usr/bin/python3\n' +
+            'import os,subprocess,sys\n' +
+            'args=sys.argv[1:]\n' +
+            'while args:\n' +
+            '    if args[0]=="-S": sys.stdin.readline();args=args[1:]\n' +
+            '    elif args[0]=="-p": args=args[2:]\n' +
+            '    elif args[0]=="-v": sys.exit(0)\n' +
+            '    else: break\n' +
+            'if args[0]=="kill": os.execvp(args[0],args)\n' +
+            '# Model sudo use_pty: the actual command runs in a different session.\n' +
+            'child=subprocess.Popen(args,start_new_session=True)\n' +
+            'sys.exit(child.wait())\n')
         (mock/'sudo').chmod(0o755)
         env = {**os.environ, 'PATH':str(mock)+':'+os.environ['PATH'], 'AVIATOR_BIN':str(mock),
                'CAMERA_PYTHON':str(mock/'camera-python'), 'START_DELAY':'.1',
@@ -85,7 +105,7 @@ class ScriptsTests(unittest.TestCase):
         cases = [(script, core, stop_signal)
                  for script, core in (('start_aviator.sh','aviator_core_managed'),
                                       ('start_camera_servo.sh','aviator_core_camera_servo'))
-                 for stop_signal in (signal.SIGTERM, signal.SIGHUP)]
+                 for stop_signal in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)]
         for script, core, stop_signal in cases:
             events.write_text('')
             log=self.directory/(script+'.log')
@@ -104,6 +124,13 @@ class ScriptsTests(unittest.TestCase):
                     self.assertIn('仍持有启动锁',blocked)
                 finally:
                     child.send_signal(stop_signal)
+                    if stop_signal == signal.SIGINT:
+                        until=time.monotonic()+3
+                        while time.monotonic()<until and 'stop '+core+' ' not in events.read_text():
+                            time.sleep(.01)
+                        # A second Ctrl+C/TERM/HUP during Core shutdown must not abandon other nodes.
+                        for repeated in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                            if child.poll() is None: child.send_signal(repeated)
                     try:child.wait(timeout=20)
                     except subprocess.TimeoutExpired:child.kill();child.wait();raise
             self.assertEqual(child.returncode,128+stop_signal,log.read_text())
@@ -118,9 +145,13 @@ class ScriptsTests(unittest.TestCase):
             for row in rows:
                 if row.startswith('start '):
                     pid=int(row.split()[2])
-                    try: os.kill(pid,0)
-                    except ProcessLookupError: continue
+                    try:
+                        # Orphaned workers may briefly remain zombies until the system reaps them.
+                        stat=Path(f'/proc/{pid}/stat').read_text().rsplit(')',1)[1].split()
+                    except FileNotFoundError: continue
+                    if stat[0]=='Z': continue
                     self.fail(f'launcher left child {pid} running: {rows}')
+            self.assertNotIn('SIGKILL 后仍未退出', log.read_text())
 
     def test_bandwidth_launch_matrix(self):
         for options in ([],['--fake-hand'],['--simulation','--headless']):

@@ -6,10 +6,10 @@ left_host: 192.168.11.210
 # 各通道运动时使用 grasp，停止保持时使用 hold；模式固定为 0（按角度运动，带设备力阈值保护）。
 speed:
   grasp: 800
-  hold: 100
+  hold: 0
 force:
-  grasp: 1000
-  hold: 1000
+  grasp: 2000
+  hold: 0
 
 # 六个通道独立判定：位置偏差绝对值连续 10 秒大于 threshold，
 # 或完整 10 秒窗口内位置最大值 - 最小值小于 threshold，发送 -1 停止。
