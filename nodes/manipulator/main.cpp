@@ -48,6 +48,10 @@ int main(int argc, char** argv) try {
     geometry.handles[0] = frame(g["left"]);
     geometry.handles[1] = frame(g["right"]);
     RokaeConfig rk;
+    rk.hold_speed = settings.robot["joint_speed"].as<double>(1.9);
+    rk.hold_acceleration = settings.robot["joint_acceleration"].as<double>(.2);
+    rk.hold_jerk = settings.robot["joint_jerk"].as<double>(1.0);
+    rk.impedance_hold_duration = settings.robot["impedance_hold_duration"].as<double>(.5);
     auto r = settings.robot["rokae"];
     rk.grasp_mode = r["grasp_mode"].as<std::string>();
     rk.left_ip = r["left_ip"].as<std::string>();

@@ -16,6 +16,8 @@ struct SimulationTool {
     std::array<double, 4> quaternion{{1, 0, 0, 0}};
 };
 using SimulationTools = std::array<SimulationTool, 2>;
+// Before starting physics: use the same wheel-relative handle calibration as IK.
+void configureSimulationHandles(mjModel*, const SimulationTools&);
 
 // MuJoCo 直接访问的 DataLink 实现（单进程，无 IPC）。
 //

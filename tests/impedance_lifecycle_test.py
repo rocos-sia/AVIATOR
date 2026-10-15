@@ -10,7 +10,7 @@ from robot_state_machine_process_test import port
 bus, driver, root = sys.argv[1:]
 root = Path(root)
 for mode in ("success", "slow_pause", "failure", "cancel", "heartbeat", "timeout", "unchanged", "fallback", "latest",
-             "latest_impedance", "latest_heartbeat", "latest_cancel", "rebase", "wheel_rebase"):
+             "latest_impedance", "latest_heartbeat", "latest_cancel", "rebase", "wheel_rebase", "joint_takeover", "unchanged_locked"):
     folder = Path(tempfile.mkdtemp(prefix=f"aviator-impedance-{mode}-"))
     print(folder, flush=True)
     config = yaml.safe_load((root / "config/system.yaml").read_text())
@@ -19,7 +19,7 @@ for mode in ("success", "slow_pause", "failure", "cancel", "heartbeat", "timeout
         robot[key] = str((root / "config" / robot[key]).resolve())
     robot["rokae"]["joint_stiffness"] = [500, 500, 500, 500, 50, 50, 50]
     robot["rokae"]["following_joint_stiffness"] = [500, 500, 500, 500, 50, 50, .1]
-    if mode == "unchanged":
+    if mode in ("unchanged", "unchanged_locked"):
         robot["rokae"]["following_joint_stiffness"] = robot["rokae"]["joint_stiffness"]
     if mode == "fallback":
         del robot["rokae"]["following_joint_stiffness"]
@@ -42,7 +42,7 @@ for mode in ("success", "slow_pause", "failure", "cancel", "heartbeat", "timeout
         time.sleep(.3)
         subprocess.run([driver, "client", str(path), mode], check=True, timeout=30)
         server_log = (folder / "server.log").read_text()
-        expected_resumes = 2 if mode in ("success", "slow_pause", "latest_impedance", "rebase", "wheel_rebase") else (1 if mode in ("unchanged", "fallback") else 0)
+        expected_resumes = 2 if mode in ("success", "slow_pause", "latest_impedance", "rebase", "wheel_rebase", "joint_takeover", "unchanged_locked") else (1 if mode in ("unchanged", "fallback") else 0)
         assert server_log.count("RESUMED") == expected_resumes, server_log
         if mode == "latest":
             assert server_log.count("SERVO_STEP_FAILURE") == 1, server_log

@@ -282,7 +282,8 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                     Logger::info("Impedance request profile={} mono_us={} trajectory_id={} tick={} target_rad={} "
                         "wheel_angle_rad={} wheel_displacement_m={}", profile, monotonic_us(), state.id, state.cursor,
                         Json(state.target).dump(), state.angle, state.displacement);
-                    const bool force_reapply = profile == "following";
+                    const bool force_reapply = profile == "following" ||
+                        (state.locked && profile != state.impedance_profile);
                     if (force_reapply || stiffness != current_stiffness) {
                         const uint64_t deadline = request.at("issued_mono_us").get<uint64_t>() +
                             request.at("deadline_ms").get<uint64_t>() * 1000;
@@ -312,8 +313,9 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                     }
                     state.impedance_profile = profile;
                     state.target = device.jointTargets(); // The lifecycle may rebase the hold to measured joints.
-                    // A compliant, locked wheel can move with the arms. Rebase its
-                    // reference too, or Servo adds that displacement to every goal.
+                    // Only an independent wheel measurement updates the reference.
+                    // On hardware the joint hold is sufficient for Servo takeover;
+                    // compliant grasp geometry need not identify a rigid wheel pose.
                     if (options.wheel_measurement && state.locked) {
                         const auto wheel = device.graspState();
                         require(std::isfinite(wheel.angle) && std::isfinite(wheel.displacement),
@@ -321,6 +323,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                         state.angle = wheel.angle;
                         state.displacement = wheel.displacement;
                     }
+                    device.setWheelReference(state.angle, state.displacement);
                     result = {{"profile", profile}, {"stiffness", stiffness}, {"target", state.target},
                               {"angle", state.angle}, {"displacement", state.displacement}};
                     Logger::info("Joint stiffness update profile={} values={}", profile, Json(stiffness).dump());

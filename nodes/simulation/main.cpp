@@ -111,7 +111,7 @@ int main(int argc, char** argv) try {
     sim.setCameraId(camera_id);
     sim.setInitialWheel(settings.initial_wheel.angle, settings.initial_wheel.displacement);
     auto grasp = YAML::LoadFile(settings.path("grasp").string());
-    aviator::SimulationTools tools;
+    aviator::SimulationTools tools, handles;
     for (int side = 0; side < 2; ++side) {
         const auto frame = aviator::toolFrameConfig(grasp, side);
         tools[side].position = frame["position"].as<std::array<double, 3>>();
@@ -124,7 +124,12 @@ int main(int argc, char** argv) try {
             norm += v * v;
         if (!std::isfinite(norm) || std::abs(norm - 1) > 1e-6)
             throw std::runtime_error("Invalid tool quaternion");
+        const auto handle = grasp[side ? "right" : "left"];
+        handles[side].position = handle["position"].as<std::array<double, 3>>();
+        handles[side].quaternion = handle["quaternion"].as<std::array<double, 4>>();
     }
+    aviator::configureSimulationHandles(sim.model(), handles);
+    mj_forward(sim.model(), sim.data());
     const auto hand = YAML::LoadFile(config.system.string())["core_hand"];
     const auto hand_publisher =
         hand && hand["publisher_id"] ? hand["publisher_id"].as<std::string>() : "rh56ftp_hand";

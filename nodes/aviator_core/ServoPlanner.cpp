@@ -14,28 +14,48 @@ void require(bool ok, const std::string& message) {
 ServoPlanner::ServoPlanner(Kinematics& kinematics, Target target, Check check,
                            const pinocchio::SE3& wheel_origin, const JointFrame& start,
                            double period, std::array<double, 2> speed,
-                           std::array<double, 2> acceleration, std::array<double, 2> jerk)
+                           std::array<double, 2> acceleration, std::array<double, 2> jerk,
+                           double joint_speed_limit)
     : kinematics_(kinematics), target_(std::move(target)), check_(std::move(check)),
       axis_(wheel_origin.rotation() * Eigen::Vector3d::UnitZ()),
       center_(wheel_origin.translation()), last_(start), period_(period), speed_(speed),
-      planner_(period) {
-    // Anchor the wheel-relative motion to the accepted holding command, including
-    // a measured-position rebase during impedance switching. Correcting its offset
-    // to nominal handle geometry on the first step would create a command jump.
+      planner_(period), takeover_speed_(std::min(speed[0], joint_speed_limit)), alignment_planner_(period) {
+    require(std::isfinite(joint_speed_limit) && joint_speed_limit > 0,
+            "Invalid Servo joint speed limit");
+    for (const auto& limits : {speed, acceleration, jerk})
+        for (double value : limits)
+            require(std::isfinite(value) && value > 0, "Invalid Servo response limits");
     check_(start);
-    std::array<pinocchio::SE3, 2> offsets;
+    // Wheel metadata can be stale after compliant following. It is never an
+    // offset for the absolute destination, nor a reason to reject the hold.
     for (int side = 0; side < 2; ++side) {
         std::array<double, 7> q;
         std::copy_n(start.q.begin() + 7 * side, 7, q.begin());
         pinocchio::SE3 actual;
-        require(kinematics_.solveFk(static_cast<Side>(side), q, actual), "Servo initial FK failed");
+        require(kinematics_.solveFk(Side(side), q, actual), "Servo hold FK failed");
         const auto desired = target_(side, start.angle, start.displacement);
-        offsets[side] = desired.inverse() * actual;
+        aligning_ = aligning_ || (actual.translation() - desired.translation()).norm() > 1e-9 ||
+                    rotationError(actual, desired) > 1e-9;
     }
-    const auto original_target = target_;
-    target_ = [original_target, offsets](int side, double angle, double displacement) {
-        return original_target(side, angle, displacement) * offsets[side];
-    };
+    // Delay IK until the first valid goal: no intermediate move to the stale
+    // wheel reference. The accepted measured joint hold remains the first frame.
+    alignment_input_.current_position = start.q;
+    alignment_input_.current_velocity = start.dq;
+    alignment_input_.current_acceleration = start.ddq;
+    alignment_input_.target_position = start.q;
+    alignment_input_.synchronization = ruckig::Synchronization::Time;
+    alignment_input_.target_velocity.fill(0);
+    alignment_input_.target_acceleration.fill(0);
+    // Share CONTROL's angular response settings, expressed in joint radians
+    // during takeover. Linear wheel limits (metres) cannot be joint limits.
+    // Preserve the configured/URDF joint velocity cap without a slow-entry cap.
+    alignment_input_.max_velocity.fill(takeover_speed_);
+    alignment_input_.max_acceleration.fill(acceleration[0]);
+    alignment_input_.max_jerk.fill(jerk[0]);
+    for (int j = 0; j < 14; ++j) {
+        require(std::abs(start.dq[j]) < 1e-10 && std::abs(start.ddq[j]) < 1e-10,
+                "Servo takeover requires a stationary hold");
+    }
     input_.current_position = {start.angle, start.displacement};
     input_.current_velocity = {0, 0};
     input_.current_acceleration = {0, 0};
@@ -48,7 +68,7 @@ ServoPlanner::ServoPlanner(Kinematics& kinematics, Target target, Check check,
 }
 
 JointFrame ServoPlanner::endpoint(const std::array<double, 2>& p, const std::array<double, 2>& v,
-                                  const std::array<double, 2>& a) {
+                                  const std::array<double, 2>& a, bool takeover) {
     JointFrame frame;
     frame.angle = p[0];
     frame.displacement = p[1];
@@ -64,7 +84,7 @@ JointFrame ServoPlanner::endpoint(const std::array<double, 2>& p, const std::arr
         // restart can change the redundant posture and inject high-frequency joint motion.
         q = seed;
         bool solved = false;
-        for (int iteration = 0; iteration < 8; ++iteration) {
+        for (int iteration = 0; iteration < (takeover ? 120 : 8); ++iteration) {
             pinocchio::SE3 actual;
             require(kinematics_.solveFk(arm, q, actual), "Servo FK failed");
             Eigen::Matrix<double, 6, 1> error;
@@ -78,8 +98,14 @@ JointFrame ServoPlanner::endpoint(const std::array<double, 2>& p, const std::arr
             require(kinematics_.jointDerivatives(arm, q, error, Eigen::Matrix<double, 6, 1>::Zero(),
                                                  dq, ddq),
                     "Servo differential IK singular");
+            double scale = 1;
+            if (takeover) {
+                double largest = 0;
+                for (double value : dq) largest = std::max(largest, std::abs(value));
+                if (largest > .1) scale = .1 / largest;
+            }
             for (int j = 0; j < 7; ++j)
-                q[j] += dq[j];
+                q[j] += scale * dq[j];
         }
         require(solved, "Servo local IK failed to converge");
         // Flange velocity = angular velocity cross radius + axial translation.
@@ -104,6 +130,7 @@ JointFrame ServoPlanner::endpoint(const std::array<double, 2>& p, const std::arr
 
 std::vector<JointFrame> ServoPlanner::advance(double angle, double displacement, double ratio,
                                               bool stop) {
+    if (aligning_) return align(angle, displacement, ratio, stop);
     input_.control_interface =
         stop ? ruckig::ControlInterface::Velocity : ruckig::ControlInterface::Position;
     input_.target_position = {angle, displacement};
@@ -166,17 +193,7 @@ std::vector<JointFrame> ServoPlanner::advance(double angle, double displacement,
                     "Nonfinite Servo joint command");
         }
         check_(f);
-        // Planned geometry validation, not a measured grasp-error gate.
-        for (int side = 0; side < 2; ++side) {
-            std::array<double, 7> q;
-            std::copy_n(f.q.begin() + 7 * side, 7, q.begin());
-            pinocchio::SE3 actual;
-            require(kinematics_.solveFk(static_cast<Side>(side), q, actual), "Servo FK failed");
-            auto desired = target_(side, f.angle, f.displacement);
-            require((actual.translation() - desired.translation()).norm() <= 1e-5 &&
-                        rotationError(actual, desired) <= 1e-4,
-                    "Servo interpolated wheel geometry error");
-        }
+        checkGeometry(f, 1e-5, 1e-4);
         frames.push_back(f);
     }
     frames.front() = last_;
@@ -186,7 +203,92 @@ std::vector<JointFrame> ServoPlanner::advance(double angle, double displacement,
                        input_.current_acceleration);
     return frames;
 }
+void ServoPlanner::checkGeometry(const JointFrame& f, double position_tolerance,
+                                  double rotation_tolerance) {
+    for (int side = 0; side < 2; ++side) {
+        std::array<double, 7> q;
+        std::copy_n(f.q.begin() + 7 * side, 7, q.begin());
+        pinocchio::SE3 actual;
+        require(kinematics_.solveFk(static_cast<Side>(side), q, actual), "Servo FK failed");
+        const auto desired = target_(side, f.angle, f.displacement);
+        const double position_error = (actual.translation() - desired.translation()).norm();
+        const double rotation_error = rotationError(actual, desired);
+        if (!(position_error <= position_tolerance && rotation_error <= rotation_tolerance))
+            throw std::runtime_error("Servo wheel geometry residual side=" + std::to_string(side) +
+                " position_m=" + std::to_string(position_error) +
+                " rotation_rad=" + std::to_string(rotation_error) +
+                " limits=" + std::to_string(position_tolerance) + "," + std::to_string(rotation_tolerance));
+    }
+}
+
+std::vector<JointFrame> ServoPlanner::align(double angle, double displacement, double ratio, bool stop) {
+    const std::array<double, 2> goal{angle, displacement};
+    if (!stop && (!alignment_goal_valid_ || alignment_goal_ != goal)) {
+        const auto destination = endpoint(goal, {0, 0}, {0, 0}, true);
+        check_(destination);
+        alignment_input_.target_position = destination.q;
+        if (!alignment_goal_valid_)
+            Logger::info("Servo joint takeover from held joints to absolute angle_rad={} displacement_m={}",
+                         angle, displacement);
+        alignment_goal_ = goal;
+        alignment_goal_valid_ = true;
+    }
+    alignment_input_.control_interface = stop ? ruckig::ControlInterface::Velocity :
+                                               ruckig::ControlInterface::Position;
+    alignment_input_.max_velocity.fill(takeover_speed_ * ratio);
+    ruckig::Trajectory<14> trajectory;
+    auto result = alignment_planner_.calculate(alignment_input_, trajectory);
+    if (result == ruckig::Result::ErrorSynchronizationCalculation &&
+        std::isfinite(trajectory.get_duration()) && trajectory.get_duration() >= 0) {
+        // As in wheel planning, a near-rest axis can put synchronized duration
+        // on a numerical boundary. Add one block without resetting q/dq/ddq.
+        auto retry = alignment_input_;
+        retry.minimum_duration = trajectory.get_duration() + period_;
+        result = alignment_planner_.calculate(retry, trajectory);
+        if (result >= 0)
+            Logger::warn("Servo takeover synchronization recovered with minimum_duration={} s",
+                         *retry.minimum_duration);
+    }
+    if (result < 0)
+        throw std::runtime_error("Servo takeover Ruckig failed: " + std::to_string(int(result)) +
+                                 " input:" + alignment_input_.to_string());
+    const size_t ticks = std::llround(period_ / .001);
+    std::vector<JointFrame> frames;
+    frames.reserve(ticks + 1);
+    for (size_t k = 0; k <= ticks; ++k) {
+        JointFrame frame = last_;
+        trajectory.at_time(k * .001, frame.q, frame.dq, frame.ddq);
+        check_(frame);
+        // Intermediate joint poses need not fit a rigid wheel. The stored wheel
+        // reference is metadata, not a measurement during joint takeover.
+        frames.push_back(frame);
+    }
+    frames.front() = last_;
+    last_ = frames.back();
+    alignment_input_.current_position = last_.q;
+    alignment_input_.current_velocity = last_.dq;
+    alignment_input_.current_acceleration = last_.ddq;
+    if (!stop && trajectory.get_duration() <= period_) {
+        last_.angle = alignment_goal_[0];
+        last_.displacement = alignment_goal_[1];
+        checkGeometry(last_, 1e-5, 1e-4);
+        frames.back() = last_;
+        input_.current_position = alignment_goal_;
+        input_.current_velocity = {0, 0};
+        input_.current_acceleration = {0, 0};
+        aligning_ = false;
+        Logger::info("Servo joint takeover complete angle_rad={} displacement_m={}",
+                     last_.angle, last_.displacement);
+    }
+    return frames;
+}
+
 bool ServoPlanner::stopped() const {
+    if (aligning_) {
+        for (int j = 0; j < 14; ++j)
+            if (std::abs(last_.dq[j]) > 1e-10 || std::abs(last_.ddq[j]) > 1e-10) return false;
+        return true;
+    }
     for (int i = 0; i < 2; ++i)
         if (std::abs(input_.current_velocity[i]) > 1e-10 ||
             std::abs(input_.current_acceleration[i]) > 1e-10)

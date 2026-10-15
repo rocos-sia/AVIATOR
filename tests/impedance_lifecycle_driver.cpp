@@ -78,7 +78,7 @@ public:
         }
         if (mode_ == "failure") throw std::runtime_error("injected right arm restart failure");
         guard();
-        if (mode_ == "rebase") feedback_.q[10] -= .2; // Right J4 displaced during compliant hold.
+        if (mode_ == "rebase" || mode_ == "joint_takeover" || mode_ == "unchanged_locked") feedback_.q[10] -= .2; // Right J4 displaced during compliant hold.
         feedback_.target = feedback_.q;
         stiffness_ = stiffness;
         waitTick();
@@ -173,7 +173,7 @@ int main(int argc, char** argv) try {
         while (finish.wait_for(std::chrono::milliseconds(2)) != std::future_status::ready) link.heartbeat();
         finish.get();
     }
-    if (mode == "wheel_rebase") link.sendGraspCommand(GraspCommand::Lock);
+    if (mode == "wheel_rebase" || mode == "joint_takeover" || mode == "unchanged_locked") link.sendGraspCommand(GraspCommand::Lock);
     const auto initial_wheel = link.graspState();
     const auto target = link.jointTargets();
     auto task = std::async(std::launch::async, [&] { link.setImpedanceProfile(true); });
@@ -194,24 +194,27 @@ int main(int argc, char** argv) try {
     }
     bool failed = false;
     try { task.get(); } catch (const std::exception& e) { failed = true; std::cout << e.what() << '\n'; }
-    const bool unchanged = mode == "unchanged" || mode == "fallback";
+    const bool unchanged = mode == "unchanged" || mode == "fallback" || mode == "unchanged_locked";
     check(observed_pause, "Following must execute the lifecycle even with unchanged stiffness");
     const bool successful = mode == "success" || mode == "slow_pause" || mode == "latest_impedance" || mode == "rebase" ||
-                            mode == "wheel_rebase" || unchanged;
+                            mode == "wheel_rebase" || mode == "joint_takeover" || unchanged;
     check(failed != successful, "wrong profile result");
     if (successful) {
         bool fresh, status;
         auto state = link.snapshot(fresh, &status);
         check(fresh && !state.impedance_switching && state.impedance_profile == "following", "restart not confirmed");
         auto expected = target;
-        if (mode == "rebase") expected[10] -= .2;
+        if (mode == "rebase" || mode == "joint_takeover" || mode == "unchanged_locked") expected[10] -= .2;
         check(state.target == expected && link.jointTargets() == expected, "restart did not synchronize measured hold");
+        if (mode == "joint_takeover")
+            check(state.angle == initial_wheel.angle && state.displacement == initial_wheel.displacement,
+                  "Unmeasured wheel reference must remain metadata, not a fitted new zero");
         auto restore = std::async(std::launch::async, [&] { link.setImpedanceProfile(false); });
         while (restore.wait_for(std::chrono::milliseconds(5)) != std::future_status::ready) link.heartbeat();
         restore.get();
         state = link.snapshot(fresh);
         check(state.impedance_profile == "default", "default profile not restored");
-        if (mode == "rebase") expected[10] -= .2;
+        if (mode == "rebase" || mode == "joint_takeover" || mode == "unchanged_locked") expected[10] -= .2;
         check(state.target == expected && link.jointTargets() == expected, "default restoration replayed old target");
         const auto wheel = link.graspState();
         check(wheel.angle == (mode == "wheel_rebase" ? .15 : initial_wheel.angle) &&

@@ -490,13 +490,18 @@ int main(int argc, char **argv) try {
     const int wheel = mj_name2id(model.get(), mjOBJ_JOINT, "pitch_input_joint");
     data->qpos[model->jnt_qposadr[wheel]] = -.085;
     const std::vector<mjtNum> initial(data->qpos, data->qpos + model->nq);
-    SimulationTools sim_tools;
+    SimulationTools sim_tools, sim_handles;
     for (int side = 0; side < 2; ++side) {
         const auto& t = geometry.tools[side];
         const Eigen::Quaterniond q(t.rotation());
         sim_tools[side].position = {t.translation()[0], t.translation()[1], t.translation()[2]};
         sim_tools[side].quaternion = {q.w(), q.x(), q.y(), q.z()};
+        const auto& h = geometry.handles[side];
+        const Eigen::Quaterniond hq(h.rotation());
+        sim_handles[side].position = {h.translation()[0], h.translation()[1], h.translation()[2]};
+        sim_handles[side].quaternion = {hq.w(), hq.x(), hq.y(), hq.z()};
     }
+    configureSimulationHandles(model.get(), sim_handles);
     auto device = std::make_unique<MuJoCoDirectDataLink>(model.get(), data.get(),
                                (root / "models/urdf/aviator.urdf").string(), sim_tools,
                                config["rokae"]["joint_stiffness"].as<std::array<double, 7>>());
@@ -518,6 +523,15 @@ int main(int argc, char **argv) try {
         }
         samePose({rt, Eigen::Map<Eigen::Vector3d>(data->site_xpos+3*tcp)},
                  pinocchio::SE3(r, Eigen::Map<Eigen::Vector3d>(data->xpos+3*flange)) * geometry.tools[s]);
+        const int handle = mj_name2id(model.get(), mjOBJ_SITE, (name + "_handle").c_str());
+        const int wheel_body = mj_name2id(model.get(), mjOBJ_BODY, "steering_wheel");
+        Eigen::Matrix3d wheel_rotation, handle_rotation;
+        for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) {
+            wheel_rotation(i,j) = data->xmat[9*wheel_body+3*i+j];
+            handle_rotation(i,j) = data->site_xmat[9*handle+3*i+j];
+        }
+        samePose({handle_rotation, Eigen::Map<Eigen::Vector3d>(data->site_xpos+3*handle)},
+                 pinocchio::SE3(wheel_rotation, Eigen::Map<Eigen::Vector3d>(data->xpos+3*wheel_body)) * geometry.handles[s]);
     }
 #endif
     std::cout << "PASS independent tool positions/rotations, approach, legacy config, collision and simulation TCP\n";

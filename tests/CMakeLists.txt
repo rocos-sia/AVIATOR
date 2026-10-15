@@ -272,6 +272,13 @@ if(TARGET aviator_core_control)
   target_link_libraries(aviator_servo_planner_test PRIVATE aviator_core_control aviator_device_server ruckig::ruckig)
   add_test(NAME servo_planner COMMAND aviator_servo_planner_test ${PROJECT_SOURCE_DIR})
   set_tests_properties(servo_planner PROPERTIES TIMEOUT 60)
+  aviator_add_test_executable(aviator_rokae_impedance_hold_test rokae_impedance_hold_test.cpp
+    ../nodes/manipulator/DataLink_rokae.cpp)
+  target_include_directories(aviator_rokae_impedance_hold_test PRIVATE ../nodes/manipulator)
+  target_link_libraries(aviator_rokae_impedance_hold_test PRIVATE aviator_core_control ruckig::ruckig)
+  add_test(NAME rokae_impedance_hold COMMAND aviator_rokae_impedance_hold_test
+    ${PROJECT_SOURCE_DIR}/models/urdf/aviator.urdf)
+  set_tests_properties(rokae_impedance_hold PROPERTIES TIMEOUT 20)
   aviator_add_test_executable(aviator_servo_buffer_test servo_buffer_test.cpp)
   target_link_libraries(aviator_servo_buffer_test PRIVATE aviator_core_control)
   add_test(NAME servo_buffer COMMAND aviator_servo_buffer_test)

@@ -162,18 +162,24 @@ void RemoteLink::setImpedanceProfile(bool following) {
         std::unique_lock<std::mutex> lock(mutex_);
         if (!motion_allowed_) throw MotionCancelled();
         const auto target = result.at("target").get<Joints>();
+        const double angle = result.at("angle").get<double>();
+        const double displacement = result.at("displacement").get<double>();
+        if (!std::isfinite(angle) || std::abs(angle) > .87266 ||
+            !std::isfinite(displacement) || displacement < -.170 || displacement > 0)
+            throw std::runtime_error("Invalid impedance hold wheel reference");
         latest_mode_ = false;
         streaming_ = false;
         stream_.clear();
         trajectory_ = std::make_shared<const std::vector<JointFrame>>(
-            3, JointFrame{target, state_.angle, state_.displacement});
+            3, JointFrame{target, angle, displacement});
         ++trajectory_id_;
         start_ = monotonic_us();
         publishing_ = true;
         if (!changed_.wait_for(lock, std::chrono::milliseconds(500), [&] {
             return !motion_allowed_ || state_.fault || !error_.empty() ||
                 (feedback_valid_ && sample_ > began && state_.id == trajectory_id_ &&
-                 state_.cursor >= 2 && state_.target == target && !state_.impedance_switching &&
+                 state_.cursor >= 2 && state_.target == target && state_.angle == angle &&
+                 state_.displacement == displacement && !state_.impedance_switching &&
                  state_.impedance_profile == (following ? "following" : "default"));
         })) throw std::runtime_error("No fresh hold feedback after impedance update");
         if (!motion_allowed_) throw MotionCancelled();

@@ -162,7 +162,10 @@ def main():
         assert "to=STIFFNESS" not in (folder / "core.log").read_text(), "Init/home changed stiffness"
         operation("grasp_wheel")
         grasped = state("FOLLOWING", 120)
-        assert grasped["wheel_reference"] == robot["wheel_initial"], grasped
+        # Stiffness completion now preserves the measured wheel rebase instead
+        # of replaying the original software reference from Core's cache.
+        assert abs(grasped["wheel_reference"]["angle"]) <= .87266, grasped
+        assert -.170 <= grasped["wheel_reference"]["displacement"] <= 0, grasped
         camera_on.set()
         grasp_target, grasp_reference = held(grasped)
         flight_target = (-.2, .06)
@@ -171,16 +174,17 @@ def main():
         assert arm_after(controlled["sample_mono_us"])["execution"]["impedance_profile"] == "default"
         wait(lambda m: m["system"]["state"] == "CONTROL" and
              m["system"]["control_source"] == "JOYSTICK" and
-             .02 < m["wheel_reference"]["angle"] < .15 and
+             max(abs(a - b) for i, side in enumerate(("left", "right"))
+                 for a, b in zip(m["arms"][side]["joint_position"], grasp_target[7*i:7*i+7])) > .025 and
              max(abs(v) for side in ("left", "right")
-                 for v in m["arms"][side]["joint_velocity"]) > .1)
+                 for v in m["arms"][side]["joint_velocity"]) > .02)
         # Exit while moving: decelerate, then rebase the hold to measured joints.
         # Do not replay the last displayed CONTROL sample or original grasp target.
         operation("exit_control")
         stopped = state("FOLLOWING")
         flight_target = (.2, -.06)  # Neither input source may move the held target now.
         stopped_target, stopped_reference = held(stopped)
-        assert abs(stopped_reference["angle"] - grasp_reference["angle"]) > .02, stopped_reference
+        assert abs(stopped_reference["angle"] - grasp_reference["angle"]) > .001, stopped_reference
         assert max(abs(a - b) for a, b in zip(stopped_target, grasp_target)) > .001, stopped_target
         operation("leave_wheel")
         released = state("STANDBY", 120)

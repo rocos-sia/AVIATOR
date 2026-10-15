@@ -33,6 +33,7 @@ public:
     std::array<double, 7> stiffness{};
     std::string endpoint;
     std::function<rokae::JointPosition()> control_loop;
+    std::function<void(const std::array<double, 7>&)> initialize_target;
     TargetTrace target_trace;
     uint64_t loop_epoch = 0, trace_serial = 0;
     bool trace_written = false;
@@ -390,6 +391,7 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
     const char *stage = "prepare";
     try {
         prepare();
+        s.initialize_target = initialize_target;
         stage = "setControlLoop";
         s.control_loop = [&s, callback, command = rokae::JointPosition(7)]() mutable {
           const auto began = std::chrono::steady_clock::now();
@@ -537,6 +539,13 @@ void RokaeArm::resumeImpedance(const std::function<void()>& check) {
         if (std::chrono::steady_clock::now() >= deadline)
             throw std::runtime_error("Realtime state queue did not drain within 100 ms during impedance resume");
     }
+    check();
+    // Stiffness RPCs/state subscription may take time. Refresh again immediately
+    // before startMove; never restore the target sampled before those operations.
+    const auto held = position();
+    for (double q : held)
+        if (!std::isfinite(q)) throw std::runtime_error("Nonfinite impedance resume position");
+    s.initialize_target(held);
     check();
     s.rt->setControlLoop(s.control_loop, Impl::rt_priority, false);
     s.moving = true;

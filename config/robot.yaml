@@ -61,8 +61,12 @@ posture: posture.json
 home_position_tolerance: 0.15
 home_speed: 0.8          # 当前位置 → home，rad/s
 approach_speed: 0.8      # home → 最终抓握位置，rad/s
-joint_acceleration: 1.5  # Home、连续抓握接近关节加速度上限，rad/s²
-joint_jerk: 2.0          # Home、连续抓握接近关节加加速度上限，rad/s³
+joint_acceleration: 1.5  # Home、连续抓握接近及刚度切换前目标同步的关节加速度上限，rad/s²
+joint_jerk: 2.0          # Home、连续抓握接近及刚度切换前目标同步的关节加加速度上限，rad/s³
+
+# 真机刚度切换前，双臂回调采用实测保持目标后的驻留时间，单位 s，必须为有限正数。
+# 不包含旧目标平滑同步到实测角度的时间；驻留完成后才暂停实时控制并切换刚度。
+impedance_hold_duration: 0.5  # 500 ms
 
 # 松开后的笛卡尔撤离时长，单位 s，必须 >= 1。
 # 抓握接近使用 Ruckig 自动计算时长，不使用此参数。
@@ -75,7 +79,8 @@ planning_period: 0.05
 
 # 各机械臂关节的轨迹规划速度上限，单位 rad/s。
 # Home/Approach/MoveWheel 取本值与 URDF 限位中的较小值。
-# Servo 不按 joint_speed/joint_acceleration/joint_jerk 拦截，仍保留底层指令防跳变保护。
+# Servo 轮盘跟踪不按这些关节参数拦截；关节接管遵守 joint_speed 上限。
+# 两阶段均保留底层指令防跳变保护。
 joint_speed: 2.9
 
 # 后端故障/通信失效时的关节制动加速度上限，单位 rad/s²。
@@ -101,6 +106,11 @@ wheel_angular_acceleration: 6.0  # rad/s²
 wheel_linear_acceleration: 4.0 # m/s²
 wheel_angular_jerk: 12.0        # rad/s³
 wheel_linear_jerk: 8.0       # m/s³
+
+# 刚度恢复首帧保持新鲜实测关节角；随后从保持角度直接规划到当前绝对目标。
+# 接管共用 wheel_angular_speed/acceleration/jerk 作为关节空间响应参数，
+# 速度额外受 joint_speed 与 URDF 限制；不再单设 servo_takeover 低速阶段。
+# wheel_linear_* 仍用于正常轮盘位移跟踪，不能将 m/s 直接用作关节 rad/s。
 
 # CONTROL 使用最新目标覆盖：Core 不预填充或发送未来 Servo 轨迹。
 # manipulator/simulation 每次双臂消费完成后，以 1 ms 步长执行一次 Ruckig + IK。

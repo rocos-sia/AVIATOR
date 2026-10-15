@@ -57,28 +57,85 @@ int main(int argc, char** argv) {
                                          std::to_string(f.q[8] * 180 / M_PI) +
                                          " wheel=" + std::to_string(f.angle));
         };
-        // A stiffness switch accepts the displaced measured pose as the new hold.
-        // Holding the same wheel reference must not pull it back to nominal geometry.
-        auto rebased = start;
-        rebased.q[10] -= .2;
-        ServoPlanner rebased_planner(*kin, target, check, origin, rebased, .001,
-                                     {.4, .04}, {.05, .005}, {.05, .005});
-        const auto held = rebased_planner.advance(rebased.angle, rebased.displacement, 1, false);
-        for (const auto& f : held)
-            for (int j = 0; j < 14; ++j)
-                if (std::abs(f.q[j] - rebased.q[j]) > 1e-10 || std::abs(f.dq[j]) > 1e-10)
-                    throw std::runtime_error("Rebased Servo hold jumped to nominal geometry");
-        auto rebased_previous = held.back();
-        for (int k = 0; k < 100; ++k) {
-            const auto block = rebased_planner.advance(.01, 0, 1, false);
-            if (block.front().q != rebased_previous.q || block.front().dq != rebased_previous.dq ||
-                block.front().ddq != rebased_previous.ddq)
-                throw std::runtime_error("Rebased Servo boundary discontinuity");
-            for (int j = 0; j < 14; ++j)
-                if (std::abs(block.back().q[j] - block.front().q[j]) > .001)
-                    throw std::runtime_error("Rebased Servo command jumped more than 1 mrad in 1 ms");
-            rebased_previous = block.back();
+        DeviceSettings settings(loadMotionConfig(root / "config/system.yaml"));
+        DeviceServerOptions options;
+        configureDeviceServo(options, settings);
+        // solveIk fixtures have finite numerical residuals. Finish a stationary
+        // takeover first when a scenario specifically exercises wheel tracking.
+        const auto nominal = [&](JointFrame f) {
+            auto servo = options.servo(f);
+            for (int tick = 0; tick < 1000; ++tick)
+                f = servo->step({f.angle, f.displacement, 1., 1, false});
+            return f;
+        };
+        start = nominal(start);
+        const auto pose = [&](double angle, double displacement) {
+            JointFrame f = start;
+            f.angle = angle; f.displacement = displacement;
+            for (int side = 0; side < 2; ++side) {
+                std::array<double, 7> seed{}, q{};
+                std::copy_n(start.q.begin() + side * 7, 7, seed.begin());
+                if (!kin->solveIk(Side(side), seed, target(side, angle, displacement), q))
+                    throw std::runtime_error("Takeover fixture IK failed");
+                std::copy(q.begin(), q.end(), f.q.begin() + side * 7);
+            }
+            return f;
+        };
+        // Repeat entry from opposite sides with stale wheel metadata: the
+        // destination must remain absolute without accumulating pose offsets.
+        for (double angle : {.18, -.14}) {
+            auto held = pose(angle, -.11);
+            // A stale software reference and compliant asymmetric posture must
+            // not redefine the absolute target or reject joint-space takeover.
+            held.q[10] -= .02;
+            held.angle = 0; held.displacement = -.085;
+            const auto unchanged = held.q;
+            ServoPlanner takeover(*kin, target, check, origin, held, .02,
+                                  {.4, .04}, {.05, .005}, {.05, .005});
+            if (held.q != unchanged) throw std::runtime_error("Takeover replaced measured hold with IK");
+            JointFrame previous = held;
+            for (int k = 0; k < 600; ++k) {
+                const auto block = takeover.advance(0, -.085, 1, false);
+                if (block.front().q != previous.q || block.front().dq != previous.dq ||
+                    block.front().ddq != previous.ddq)
+                    throw std::runtime_error("Takeover C2 boundary discontinuity");
+                for (size_t i = 1; i < block.size(); ++i) {
+                    for (int j = 0; j < 14; ++j) {
+                        const auto& f = block[i]; const auto& p = block[i-1];
+                        if (std::abs(f.q[j] - p.q[j] - .0005 * (f.dq[j] + p.dq[j])) > 1e-7 ||
+                            std::abs(f.dq[j] - p.dq[j] - .0005 * (f.ddq[j] + p.ddq[j])) > 1.35e-7)
+                            throw std::runtime_error("Takeover per-tick derivative discontinuity");
+                        if (k == 0 && (std::abs(f.dq[j]) > .4 + 1e-8 ||
+                            std::abs(f.ddq[j]) > .05 + 1e-8 ||
+                            std::abs(f.ddq[j] - p.ddq[j]) / .001 > .05 + 1e-6))
+                            throw std::runtime_error("First takeover block exceeded alignment limits");
+                    }
+                }
+                previous = block.back();
+            }
+            if (std::abs(previous.angle) > 1e-9 || std::abs(previous.displacement + .085) > 1e-9)
+                throw std::runtime_error("Takeover did not reach absolute center");
+            for (int side = 0; side < 2; ++side) {
+                std::array<double, 7> q; pinocchio::SE3 actual;
+                std::copy_n(previous.q.begin() + side * 7, 7, q.begin());
+                if (!kin->solveFk(Side(side), q, actual) ||
+                    (actual.translation() - target(side, 0, -.085).translation()).norm() > 1e-7 ||
+                    rotationError(actual, target(side, 0, -.085)) > 1e-7)
+                    throw std::runtime_error("Takeover retained an offset at physical center");
+            }
         }
+        auto rebased = pose(.1, -.10);
+        rebased.q[10] -= .002;
+        ServoPlanner interrupted(*kin, target, check, origin, rebased, .001,
+                                {.4, .04}, {.05, .005}, {.05, .005});
+        for (int i = 0; i < 20; ++i) interrupted.advance(0, -.085, 1, false);
+        for (int i = 0; i < 1000 && !interrupted.stopped(); ++i) interrupted.advance(0, -.085, 1, true);
+        if (!interrupted.stopped()) throw std::runtime_error("Takeover did not stop on cancellation");
+        const auto stopped = interrupted.advance(0, -.085, 1, true).back();
+        const auto still = interrupted.advance(.5, 0, 1, true).back();
+        if (still.q != stopped.q || still.angle != rebased.angle || still.displacement != rebased.displacement)
+            throw std::runtime_error("Cancelled takeover consumed a new wheel target");
+        std::cout << "Absolute takeover / C2 alignment / cancellation passed\n";
         ServoPlanner planner(*kin, target, check, origin, start, .02, {.4, .04}, {.05, .005},
                              {.05, .005});
         JointFrame previous = start;
@@ -106,9 +163,10 @@ int main(int argc, char** argv) {
                     if (std::abs((block[i].q[j] - block[i - 1].q[j]) / .001 -
                                  .5 * (block[i].dq[j] + block[i - 1].dq[j])) > 1e-6 ||
                         std::abs((block[i].dq[j] - block[i - 1].dq[j]) / .001 -
-                                 .5 * (block[i].ddq[j] + block[i - 1].ddq[j])) > 1e-4)
+                                 .5 * (block[i].ddq[j] + block[i - 1].ddq[j])) > 1.35e-4)
                         throw std::runtime_error(
-                            "Sample derivatives disagree with joint positions");
+                            "Sample derivatives disagree with joint positions k=" + std::to_string(k) +
+                            " i=" + std::to_string(i) + " j=" + std::to_string(j));
                 }
             previous = block.back();
             if (stop && planner.stopped())
@@ -151,6 +209,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("Keyboard initial IK");
             std::copy(out.begin(), out.end(), start.q.begin() + side * 7);
         }
+        start = nominal(start);
         ServoPlanner keyboard(*kin, target, check, origin, start, .02,
                               {1.8, .5}, {2., 1.}, {4., 2.});
         std::mt19937 random(98);
@@ -174,9 +233,6 @@ int main(int argc, char** argv) {
         std::cout << "Keyboard held-target synchronization regression passed\n";
         // Production factory: 1 ms planning, current robot constraints, rapid target
         // replacement, continuous q/dq/ddq, input-speed changes and controlled stop.
-        DeviceSettings settings(loadMotionConfig(root / "config/system.yaml"));
-        DeviceServerOptions options;
-        configureDeviceServo(options, settings);
         auto latest = options.servo(start);
         previous = start;
         double total_us = 0, max_us = 0;
@@ -229,6 +285,60 @@ int main(int argc, char** argv) {
         for (int j = 0; j < 7; ++j)
             if (std::abs(ddq[j] - (plus[j] - minus[j]) / (2 * epsilon)) > 1e-6)
                 throw std::runtime_error("Weighted acceleration disagrees with velocity derivative");
+        // Real FOLLOWING -> CONTROL failure from 2026-10-15: approximately 4 cm
+        // rigid-geometry residual. Plan directly from the accepted measured hold.
+        compliant.angle = 0;
+        compliant.displacement = -.085;
+        compliant.q = {-.25096584822178886, 1.5382299945629172, -1.5837275451522743,
+                       1.6235650262136645, -.25219075584936534, -.082772644576316778, .019892375235903266,
+                       .40945282837933089, 1.5105374468628645, 1.2883907034296482,
+                       1.8268081329130856, -.3000940996410566, -.29067593697243499, -.18303722413999388};
+        auto captured = options.servo(compliant);
+        previous = compliant;
+        const double takeover_v = std::min(config["wheel_angular_speed"].as<double>(),
+            *std::min_element(settings.speed.begin(), settings.speed.end()));
+        const double takeover_a = config["wheel_angular_acceleration"].as<double>();
+        const double takeover_j = config["wheel_angular_jerk"].as<double>();
+        int arrived_tick = -1;
+        double takeover_peak_v = 0;
+        // Replace the gateway target during takeover; the final target is NOT
+        // center. Response must use current CONTROL settings, without .05 rad/s.
+        constexpr double final_angle = -.07, final_displacement = -.095;
+        for (int tick = 0; tick < 4000; ++tick) {
+            const auto current = captured->step({tick < 200 ? .1 : final_angle,
+                tick < 200 ? -.085 : final_displacement, 1., 1, false});
+            for (int j = 0; j < 14; ++j) {
+                takeover_peak_v = std::max(takeover_peak_v, std::abs(current.dq[j]));
+                // A jerk switch inside a sample bounds the trapezoid integration
+                // error by J*dt^2/4; retain the same physical continuity check.
+                if (std::abs(current.q[j] - previous.q[j] - .0005 * (current.dq[j] + previous.dq[j])) > 1e-7 ||
+                    std::abs(current.dq[j] - previous.dq[j] - .0005 * (current.ddq[j] + previous.ddq[j])) > takeover_j * .001 * .001 / 4 + 1e-9 ||
+                    std::abs(current.dq[j]) > takeover_v + 1e-8 || std::abs(current.ddq[j]) > takeover_a + 1e-8 ||
+                    std::abs(current.ddq[j] - previous.ddq[j]) / .001 > takeover_j + 1e-6)
+                    throw std::runtime_error("Captured hold takeover violated continuous joint limits");
+                if (tick == 0 && std::abs(current.q[j] - compliant.q[j]) > takeover_j * 1e-9 / 6 + 1e-12)
+                    throw std::runtime_error("Takeover first frame jumped away from measured hold");
+            }
+            check(current);
+            previous = current;
+            if (tick >= 200 && arrived_tick < 0 && captured->stopped() &&
+                std::abs(current.angle - final_angle) < 1e-9 &&
+                std::abs(current.displacement - final_displacement) < 1e-9) arrived_tick = tick;
+        }
+        if (arrived_tick < 0 || arrived_tick >= 2500 || takeover_peak_v <= .1)
+            throw std::runtime_error("Takeover retained slow response: arrival_ms=" +
+                std::to_string(arrived_tick + 1) + " peak_velocity=" + std::to_string(takeover_peak_v));
+        for (int side = 0; side < 2; ++side) {
+            pinocchio::SE3 actual;
+            std::copy_n(previous.q.begin() + side * 7, 7, q.begin());
+            if (!kin->solveFk(Side(side), q, actual) ||
+                (actual.translation() - target(side, final_angle, final_displacement).translation()).norm() > 1e-7 ||
+                rotationError(actual, target(side, final_angle, final_displacement)) > 1e-7)
+                throw std::runtime_error("Captured hold failed to reach latest nonzero gateway target");
+        }
+        std::cout << "Captured hold / CONTROL response / nonzero target passed: arrival_ms="
+                  << arrived_tick + 1 << " peak_velocity=" << takeover_peak_v << '\n';
+        compliant = nominal(pose(compliant.angle, compliant.displacement));
         auto sweep = options.servo(compliant);
         previous = compliant;
         for (double displacement : {-.09949, -.085, -.17, 0.}) {

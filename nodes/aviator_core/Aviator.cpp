@@ -553,6 +553,9 @@ class Aviator::Impl {
             datalink_->setImpedanceProfile(following);
             if (cancelled) throw MotionCancelled();
             last_target_ = datalink_->jointTargets();
+            const auto wheel = datalink_->graspState();
+            wheel_angle_ = wheel.angle;
+            wheel_displacement_ = wheel.displacement;
             last_velocity_ = {};
             default_impedance_confirmed_ = !following;
             setState(previous);
@@ -669,11 +672,15 @@ class Aviator::Impl {
             return;
         }
         JointFrame last{last_target_, wheel_angle_, wheel_displacement_};
+        double takeover_speed_limit = joint_speed_;
+        for (int i = 0; i < 14; ++i)
+            takeover_speed_limit = std::min(takeover_speed_limit,
+                datalink_->jointVelLimit(static_cast<Side>(i / 7), i % 7));
         ServoPlanner planner(*kinematics_,
             [this](int side, double a, double d) { return target(side, a, d); },
             [this](const JointFrame &f) { check(f.q, f.angle, f.displacement); },
             wheel_origin_, last, servo_period_,
-            {wheel_angular_speed_, wheel_linear_speed_}, wheel_acceleration_, wheel_jerk_);
+            {wheel_angular_speed_, wheel_linear_speed_}, wheel_acceleration_, wheel_jerk_, takeover_speed_limit);
         // Immutable future samples; the executor advances one shared dual-arm tick.
         // Refill below the configured lead; each append contributes one whole block.
         std::vector<JointFrame> prefill{last};

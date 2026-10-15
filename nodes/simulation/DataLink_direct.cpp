@@ -32,6 +32,22 @@ constexpr double kReferenceDamping = 80.0;
 constexpr uint64_t kLockstepLead = 0;
 } // namespace
 
+void configureSimulationHandles(mjModel* model, const SimulationTools& handles) {
+    require(model != nullptr, "Missing simulation model");
+    const int wheel = mj_name2id(model, mjOBJ_BODY, "steering_wheel");
+    for (int side = 0; side < 2; ++side) {
+        const int site = mj_name2id(model, mjOBJ_SITE, side ? "right_handle" : "left_handle");
+        require(wheel >= 0 && site >= 0 && model->site_bodyid[site] == wheel,
+                "Handle site must be expressed in steering_wheel frame");
+        for (double v : handles[side].position) require(std::isfinite(v), "Invalid handle position");
+        double norm = 0;
+        for (double v : handles[side].quaternion) norm += v * v;
+        require(std::isfinite(norm) && std::abs(norm - 1) < 1e-6, "Invalid handle quaternion");
+        std::copy(handles[side].position.begin(), handles[side].position.end(), model->site_pos + 3 * site);
+        std::copy(handles[side].quaternion.begin(), handles[side].quaternion.end(), model->site_quat + 4 * site);
+    }
+}
+
 MuJoCoDirectDataLink::MuJoCoDirectDataLink(mjModel *model, mjData *data,
                                            const std::string &urdf_path,
                                            const SimulationTools &tools, const std::array<double, 7> &joint_stiffness,

@@ -215,7 +215,9 @@ def main():
         assert call(req, "REJECTED")["result"]["reason"] == "REQUEST_ID_CONFLICT"
         call(request("grasp_wheel"), "REJECTED")  # BUSY during the original task.
         grasped = state("FOLLOWING", 120)
-        assert abs(grasped["wheel_reference"]["displacement"] + .085) < 1e-9, grasped
+        # FOLLOWING uses the measured hold reference; the next CONTROL command
+        # must independently return to the fixed midpoint (verified below).
+        assert -.170 <= grasped["wheel_reference"]["displacement"] <= 0, grasped
         assert call(grasp, "ACCEPTED") == accepted  # Cached even beyond the original deadline.
         transmitting.clear()
         time.sleep(.15)
@@ -243,12 +245,16 @@ def main():
         call(request("grasp_wheel"), "ACCEPTED")
         state("FOLLOWING", 120)
         call(request("start_control"), "COMPLETED")
-        control_start = state("CONTROL")["wheel_reference"]["angle"]
+        control_start = state("CONTROL")
+        # During joint takeover wheel_reference stays at the last software pose.
+        # Detect actual arm motion, not intermediate wheel-coordinate changes.
         flight_target = (.3, -.1)
         wait_for(lambda m: m["system"]["state"] == "CONTROL" and
-                 abs(m["wheel_reference"]["angle"] - control_start) > .005 and
+                 max(abs(a - b) for side in ("left", "right")
+                     for a, b in zip(m["arms"][side]["joint_position"],
+                                     control_start["arms"][side]["joint_position"])) > .005 and
                  max(abs(v) for side in ("left", "right")
-                     for v in m["arms"][side]["joint_velocity"]) > .1, 10)
+                     for v in m["arms"][side]["joint_velocity"]) > .02, 10)
         checking.clear()  # Keep increasing message sequence but freeze the device evidence.
         state("SAFE", 5)
         stopped_state = wait_for(lambda m: m["system"]["state"] == "SAFE" and

@@ -31,7 +31,9 @@ struct RokaeConfig {
     std::string right_local_ip;
     std::string grasp_mode = "open_loop";
     std::array<double, 7> joint_stiffness{{500, 500, 500, 500, 50, 50, 50}}; // Nm/rad
-    // 关节跟踪容差等在真机上可另行收紧，这里只放连接与安全相关项。
+    // Live target relaxation before pausing impedance; supplied from joint_*.
+    double hold_speed = 1.9, hold_acceleration = .2, hold_jerk = 1.0;
+    double impedance_hold_duration = .5; // Seconds after both callbacks adopt the hold target.
 };
 
 // 珞石 AR 真机后端。由启用 AVIATOR_BUILD_XCORE_SDK 的构建提供。

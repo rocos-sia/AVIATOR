@@ -5,6 +5,7 @@
 #include "OpenLoopGrasp.hpp"
 #include "CommandContinuity.hpp"
 #include "ImpedanceSettling.hpp"
+#include <ruckig/ruckig.hpp>
 #include <atomic>
 #include <cmath>
 #include <limits>
@@ -104,7 +105,10 @@ class RokaeDataLink final : public DataLink {
     std::array<double, 7> default_stiffness_{}, current_stiffness_{};
     RokaeDataLink(const std::string &urdf_path, const RokaeConfig &config,
                   const GraspGeometry &geometry)
-        : default_stiffness_(config.joint_stiffness), current_stiffness_(config.joint_stiffness), geometry_(geometry) {
+        : default_stiffness_(config.joint_stiffness), current_stiffness_(config.joint_stiffness),
+          hold_speed_(config.hold_speed), hold_acceleration_(config.hold_acceleration),
+          hold_jerk_(config.hold_jerk), impedance_hold_duration_(config.impedance_hold_duration),
+          geometry_(geometry) {
         require(!config.left_ip.empty() && !config.right_ip.empty(),
                 "rokae.left_ip / rokae.right_ip 未配置");
         require(config.grasp_mode == "open_loop", "当前真机仅支持 rokae.grasp_mode: open_loop");
@@ -119,6 +123,10 @@ class RokaeDataLink final : public DataLink {
             require(std::isfinite(config.joint_stiffness[i]) && config.joint_stiffness[i] > 0 &&
                     config.joint_stiffness[i] <= (i < 4 ? 3000 : 300),
                     "Invalid AR joint stiffness (Nm/rad)");
+        for (double value : {hold_speed_, hold_acceleration_, hold_jerk_})
+            require(std::isfinite(value) && value > 0, "Invalid impedance hold motion limit");
+        require(std::isfinite(impedance_hold_duration_) && impedance_hold_duration_ > 0,
+                "impedance_hold_duration must be finite and positive (seconds)");
         const auto model = urdf::parseURDFFile(urdf_path);
         require(model != nullptr, "无法解析 URDF: " + urdf_path);
         loadVelocityLimits(model);
@@ -259,11 +267,18 @@ class RokaeDataLink final : public DataLink {
             for (double value : sample.tcp) require(std::isfinite(value), "Invalid TCP feedback");
             // 周期线程不等待业务线程释放锁；竞争时重发上一条已发送目标。
             // 不确认新序号，轨迹线程会继续等待，不能因此覆盖/跳过目标。
+            const bool resuming = resume_hold_pending_[i];
+            // Settling is checked before changing stiffness. The new impedance
+            // can allow motion on restart; do not veto the measured hold here.
             std::unique_lock<std::mutex> lock(state_mutex_, std::try_to_lock);
-            if (!lock.owns_lock()) return sent_[i];
-            if (!tcp_pose_valid_[i]) {
+            // A contended first callback may hold its measured position directly,
+            // but must never fall back to the pre-pause sent_ value. Leave the
+            // handshake pending until target_ and the baseline are synchronized.
+            if (!lock.owns_lock()) return resuming ? sample.position : sent_[i];
+            if (!tcp_pose_valid_[i] || resuming) {
                 std::copy(sample.position.begin(), sample.position.end(), target_.begin() + 7 * i);
                 sent_[i] = sample.position;
+                resume_hold_pending_[i] = false;
             }
             joint_pos_[i] = sample.position;
             joint_vel_[i] = sample.velocity;
@@ -354,6 +369,7 @@ class RokaeDataLink final : public DataLink {
         require(powered_[0] && powered_[1], "Enable both arms before changing stiffness");
         try {
             waitForImpedanceSettling(check);
+            prepareImpedanceHold(check);
             const auto stage = [&](const char* name, auto operation) {
                 for (int side = 0; side < 2; ++side) {
                     const auto began = monotonic();
@@ -393,6 +409,9 @@ class RokaeDataLink final : public DataLink {
             for (size_t j = 0; j < held.size(); ++j) hold_log << (j ? "," : "") << held[j];
             Logger::info("{}]", hold_log.str());
             stage("set", [&](RokaeArm& arm) { arm.setPausedStiffness(stiffness); });
+            // Each first resumed callback accepts its fresh measured position.
+            // Until both callbacks have done so, no trajectory may be released.
+            for (auto& pending : resume_hold_pending_) pending = true;
             const double resumed_after = monotonic();
             stage("resume", [&](RokaeArm& arm) { arm.resumeImpedance(check); });
             const double until = monotonic() + 0.5;
@@ -402,11 +421,17 @@ class RokaeDataLink final : public DataLink {
                     require(!arm->motionFailed(), "SDK failure after impedance restart");
                 {
                     std::lock_guard<std::mutex> lock(state_mutex_);
-                    if (feedback_time_[0] > resumed_after && feedback_time_[1] > resumed_after) break;
+                    if (!resume_hold_pending_[0] && !resume_hold_pending_[1] &&
+                        feedback_time_[0] > resumed_after && feedback_time_[1] > resumed_after) break;
                 }
                 require(monotonic() < until, "Fresh dual-arm feedback timeout after impedance restart");
                 std::this_thread::sleep_for(kTick);
             }
+            std::ostringstream resumed_log;
+            resumed_log << std::setprecision(17) << "Impedance resumed hold confirmed target_rad=[";
+            const auto resumed_hold = jointTargets();
+            for (size_t j = 0; j < resumed_hold.size(); ++j) resumed_log << (j ? "," : "") << resumed_hold[j];
+            Logger::info("{}]", resumed_log.str());
             current_stiffness_ = stiffness;
             timing_at_ = 0; // Exclude the intentional pause from execution-rate samples.
         } catch (...) {
@@ -500,6 +525,82 @@ class RokaeDataLink final : public DataLink {
         double feedback_time[2], max_gap[2];
         uint64_t callbacks[2];
     };
+    // Keep RT active while removing the old target error. Never rebase sent_ to
+    // bypass the per-tick continuity check on a running controller.
+    void prepareImpedanceHold(const std::function<void()>& check) {
+        const auto healthy = [&] {
+            check();
+            require(!callback_fault_, "RT callback failed during impedance pre-pause hold");
+            const auto snapshot = captureState();
+            const double now = monotonic();
+            for (int side = 0; side < 2; ++side) {
+                require(!arms_[side]->motionFailed(), "SDK failure during impedance pre-pause hold: " + endpoints_[side]);
+                require(snapshot.powered[side] && snapshot.tcp_valid[side] && snapshot.velocity_valid[side] &&
+                            snapshot.feedback_time[side] > 0 && snapshot.feedback_time[side] <= now &&
+                            now - snapshot.feedback_time[side] < ImpedanceSettling::feedback_max_age,
+                        "Stale feedback during impedance pre-pause hold: " + endpoints_[side]);
+            }
+            return snapshot;
+        };
+        const auto initial = healthy();
+        ruckig::InputParameter<14> input;
+        input.current_position = initial.target;
+        input.current_velocity.fill(0);
+        input.current_acceleration.fill(0);
+        input.target_velocity.fill(0);
+        input.target_acceleration.fill(0);
+        input.max_acceleration.fill(hold_acceleration_);
+        input.max_jerk.fill(hold_jerk_);
+        input.synchronization = ruckig::Synchronization::Time;
+        for (int i = 0; i < 14; ++i) {
+            input.target_position[i] = initial.position[i / 7][i % 7];
+            require(std::isfinite(input.target_position[i]), "Invalid impedance pre-pause hold position");
+            input.max_velocity[i] = std::min(hold_speed_, vel_limit_[i / 7][i % 7]);
+        }
+        ruckig::Ruckig<14> planner(.001);
+        ruckig::Trajectory<14> trajectory;
+        auto result = planner.calculate(input, trajectory);
+        if (result == ruckig::Result::ErrorSynchronizationCalculation &&
+            std::isfinite(trajectory.get_duration()) && trajectory.get_duration() >= 0) {
+            input.minimum_duration = trajectory.get_duration() + .001;
+            result = planner.calculate(input, trajectory);
+        }
+        require(result >= 0 && std::isfinite(trajectory.get_duration()),
+                "Impedance pre-pause hold planning failed: " + std::to_string(int(result)));
+        std::ostringstream begin;
+        begin << std::setprecision(17) << "Impedance pre-pause hold begin transition_ms="
+              << trajectory.get_duration() * 1000 << " dwell_ms=" << impedance_hold_duration_ * 1000
+              << " measured_target_rad=[";
+        for (int i = 0; i < 14; ++i) begin << (i ? "," : "") << input.target_position[i];
+        Logger::info("{}]", begin.str());
+        const auto ticks = std::max<uint64_t>(1, std::ceil(trajectory.get_duration() / .001));
+        for (uint64_t tick = 1; tick <= ticks; ++tick) {
+            healthy();
+            std::array<double, 14> q, dq, ddq;
+            trajectory.at_time(std::min(tick * .001, trajectory.get_duration()), q, dq, ddq);
+            // Both callbacks must consume every sample before advancing; scheduler
+            // delays stretch execution rather than skipping intermediate commands.
+            setJointPositions(tick == ticks ? input.target_position : q);
+            waitTick();
+        }
+        // Count only after both callbacks adopted the final measured target.
+        // This is application callback acknowledgement, not controller torque feedback.
+        const double began = monotonic();
+        Logger::info("Impedance pre-pause hold accepted dwell_ms={}", impedance_hold_duration_ * 1000);
+        while (monotonic() - began < impedance_hold_duration_) {
+            healthy();
+            waitTick();
+        }
+        const auto last = healthy();
+        double max_error = 0, max_speed = 0;
+        for (int i = 0; i < 14; ++i) {
+            max_error = std::max(max_error, std::abs(last.position[i / 7][i % 7] - last.target[i]));
+            max_speed = std::max(max_speed, std::abs(last.velocity[i / 7][i % 7]));
+        }
+        Logger::info("Impedance pre-pause hold complete elapsed_ms={} max_target_error_rad={} max_speed_rad_s={}",
+                     (monotonic() - began) * 1000, max_error, max_speed);
+    }
+
     void waitForImpedanceSettling(const std::function<void()>& check) {
         const double began = monotonic();
         const auto initial = captureState();
@@ -698,7 +799,10 @@ class RokaeDataLink final : public DataLink {
     std::array<double, 7> sent_[2]{};
     uint64_t command_sequence_ = 0, consumed_sequence_[2]{};
     std::atomic<bool> callback_fault_{false};
+    std::array<std::atomic<bool>, 2> resume_hold_pending_{{false, false}};
 
+    double hold_speed_, hold_acceleration_, hold_jerk_;
+    double impedance_hold_duration_;
     GraspGeometry geometry_;
     pinocchio::SE3 mounting_[2]{pinocchio::SE3::Identity(), pinocchio::SE3::Identity()};
 

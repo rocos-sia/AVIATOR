@@ -32,7 +32,7 @@ lock/unlock 是软件阶段，不做 TCP 对齐判断。wheel_reference 为指�
 
 `robot.yaml` 的 `wheel_initial: {angle: 0.0, displacement: -0.085}` 指定启动参考（rad/m）。角度范围 ±0.87266 rad，位移范围 [-0.170, 0] m；缺省保持旧版 (0, 0)。Rokae 仅初始化软件参考，不驱动机械轮盘归位；simulation 在启动物理线程前设置 roll_input_joint / pitch_input_joint 实体初值。初始化后的 `arm.state.wheel_reference` 与该配置一致，后续由执行轨迹更新；使能、停止、重新授权不会重复重置初值。启动日志打印有效数值。修改后重启 Manipulator 及相连 Core。
 
-`set_impedance_profile` 参数为 `config_id` 和 `profile: default|following`。仅在双臂健康使能、轨迹结束且指令速度为零时执行。FOLLOWING 请求即使刚度相同也会强制执行全流程；default 请求在数值相同时跳过循环暂停与恢复。实际切换前保持原目标和原刚度，等待双臂全部关节实测速度连续 300 ms 小于 0.02 rad/s；反馈年龄必须小于 100 ms，时间戳停滞不累计停稳时间，反馈中断或速度超限重新计时。最长等待 5 s，期间继续检查取消、Core 心跳及服务期限。停稳后双臂按暂停、设置、恢复分阶段执行，等待新反馈后完成。切换依次 stopLoop、stopMove、停止并 join 独立反馈线程、stopReceiveRobotState、setJointImpedance，再 startReceiveRobotState、setControlLoop（useStateDataInLoop=false）、startMove、启动最新反馈线程、startLoop。复用连接和 RT 控制器，不重新上电或初始化 RT。暂停后通过 jointPos 重新读取实际角度作为恢复保持目标；等待期间不改变目标。任何阶段失败均停止双臂。状态新增 `execution.impedance_switching` 和 `execution.impedance_profile`；暂停时消息 valid=false，保留旧反馈时间戳，`status_mono_us` 继续更新。Core 的有效 origin 心跳和服务期限在切换中仍被检查。`Impedance settle begin/complete/timeout` 日志记录等待耗时、各臂连续停稳时长、反馈年龄、最大速度关节及全部关节速度、相对等待起点的最大位置漂移（漂移仅用于诊断，不作额外判据）。停稳判据不代表外力或模型力矩已满足控制器启动力控条件。Core 阻抗服务总期限为 20 s（涵盖停稳、SDK 暂停/恢复及结果返回），反馈切换宽限为 20.5 s；Core 任务总期限仍按原配置执行。暂停路径分别记录 stopLoop、stopMove、joinStateReceiver、stopReceiveRobotState 的开始与完成耗时，便于定位 SDK 阻塞。SDK 同步调用尚未返回时无法由业务检查即时取消；返回后仍检查撤销、心跳及期限，不自动重试启动。
+`set_impedance_profile` 参数为 `config_id` 和 `profile: default|following`。仅在双臂健康使能、轨迹结束且指令速度为零时执行。FOLLOWING 请求即使刚度相同也会强制执行全流程；default 请求仅在刚度数值相同且不属于握盘状态下的 profile 切换时跳过循环暂停与恢复。实际切换前保持原目标和原刚度，等待双臂全部关节实测速度连续 300 ms 小于 0.02 rad/s；反馈年龄必须小于 100 ms，时间戳停滞不累计停稳时间，反馈中断或速度超限重新计时。最长等待 5 s，期间继续检查取消、Core 心跳及服务期限。停稳后先采样双臂实测角度作为保持终点，在原刚度和实时循环下按 joint_speed（同时受 URDF 上限约束）、joint_acceleration、joint_jerk 平滑消除旧目标差值。双臂回调均采用该终点后，继续发送固定保持目标至少 `robot.yaml` 中 `impedance_hold_duration` 指定的时长（单位 s，默认 0.5，即 500 ms；必须为有限正数），再按暂停、设置、恢复分阶段执行，等待新反馈后完成。过渡和保持期间持续检查取消、Core 心跳、服务期限、反馈时效和 SDK 状态，不通过重置运行中的步长基准跳过连续性检查；该驻留时间从终点被双臂回调采用后开始计时，不包含过渡时间。该操作只减小位置误差力矩，不保证外部接触力或模型力矩偏差已消失。切换依次 stopLoop、stopMove、停止并 join 独立反馈线程、stopReceiveRobotState、setJointImpedance，再 startReceiveRobotState、setControlLoop（useStateDataInLoop=false）、startMove、启动最新反馈线程、startLoop。复用连接和 RT 控制器，不重新上电或初始化 RT。暂停后通过 jointPos 重新读取实际角度作为恢复保持目标；等待期间不改变目标。任何阶段失败均停止双臂。状态新增 `execution.impedance_switching` 和 `execution.impedance_profile`；暂停时消息 valid=false，保留旧反馈时间戳，`status_mono_us` 继续更新。Core 的有效 origin 心跳和服务期限在切换中仍被检查。`Impedance settle begin/complete/timeout` 日志记录等待耗时、各臂连续停稳时长、反馈年龄、最大速度关节及全部关节速度、相对等待起点的最大位置漂移（漂移仅用于诊断，不作额外判据）。停稳判据不代表外力或模型力矩已满足控制器启动力控条件。Core 阻抗服务总期限为 20 s（涵盖停稳、SDK 暂停/恢复及结果返回），反馈切换宽限为 20.5 s；Core 任务总期限仍按原配置执行。暂停路径分别记录 stopLoop、stopMove、joinStateReceiver、stopReceiveRobotState 的开始与完成耗时，便于定位 SDK 阻塞。SDK 同步调用尚未返回时无法由业务检查即时取消；返回后仍检查撤销、心跳及期限，不自动重试启动。
 
 ### 持续跟踪滞后诊断
 
@@ -49,6 +49,22 @@ SDK 状态接收与指令回调解耦：每臂只有一个线程调用 updateRob
 ### Following 目标位置留证
 
 每次阻抗服务申请都会在 `manipulator.log` 写入 `Impedance request`，包含 profile、轨迹编号、执行 tick、14 轴目标（左臂 J1–J7 后接右臂 J1–J7，单位 rad）及轮盘指令参考。Core 同时记录 `Core impedance target`。真机后端在执行切换前（包括 FOLLOWING 的相同参数申请），记录每臂 `Impedance target snapshot`：期望保持目标、上一帧交给 SDK 的目标、实测关节位置/速度、命令及消费序号、请求刚度。
+
+`Impedance pre-pause hold begin/accepted/complete` 分别记录保持终点及规划过渡时间、双臂
+回调采用终点、配置的驻留时间（默认 500 ms）保持完成；完成日志包含最大位置跟踪误差和实测速度，随后
+才应出现 `Impedance stage=pause`。回调采用不等于控制器内部滤波已完成或力矩归零。
+
+恢复阻抗时，SDK 在 `startMove` 前再次读取位置并更新保持目标；恢复首个回调再用新鲜实测
+位置同步目标及步长基准。首帧遇到反馈锁竞争时直接输出本帧实测位置，保持同步待确认状态，
+不能重发旧目标。恢复回调不再因关节速度达到 0.02 rad/s 而否决保持同步（FOLLOWING/default
+均适用）；切换前的连续停稳检查仍保留。恢复时仍检查反馈数值有效性、时效及指令连续性，
+同步超时或 SDK 故障仍停止双臂。
+两臂均确认同步后，设备才返回最终保持目标和轮盘软件参考，并记录
+`Impedance resumed hold confirmed target_rad`。
+处于握盘状态时，即使 FOLLOWING/default 刚度数值相同，profile 切换仍执行实测位置保持流程。
+真机不从柔性抓握姿态拟合轮盘参考。`Servo joint takeover from held joints` 和
+`Servo joint takeover complete` 分别记录从实测保持角度开始接管和到达绝对目标；
+接管完成前的 wheel_reference 不是实测轮盘位置。
 
 每次使能的首个后端切换申请触发逐帧采集（包括 FOLLOWING 的相同参数申请）：保存最近 256 帧和申请后最多 1 秒的数据（总量上限 4352 帧/臂）。实时回调只向预分配的单生产者/单消费者队列复制数值，不加锁、分配内存或写文件。执行器消费队列；完整停止时才导出 `/tmp/aviator-target-trace-<pid>-<arm-instance>-<serial>.csv`，`Target trace` 日志记录路径、端点、帧数、丢帧数和摘要。FOLLOWING 相同参数切换也触发后端逐帧采集；default 相同参数的无操作服务仅保留服务层目标快照。
 

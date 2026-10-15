@@ -2,6 +2,7 @@
 #include "ServoPlanner.hpp"
 #include "aviator/GraspTools.hpp"
 #include "aviator/backend.hpp"
+#include <algorithm>
 #include <cmath>
 
 namespace aviator {
@@ -25,7 +26,9 @@ struct Resources {
     std::unique_ptr<CollisionChecker> collision;
     pinocchio::SE3 origin, handles[2], tools[2];
     std::array<double, 2> speed, acceleration, jerk;
+    double joint_speed_limit;
     explicit Resources(const DeviceSettings& settings) {
+        joint_speed_limit = *std::min_element(settings.speed.begin(), settings.speed.end());
         const auto posture = YAML::LoadFile(settings.path("posture").string());
         const double margin = posture["joint2_planning_margin_deg"].as<double>(.5) * M_PI / 180;
         const double lo = posture["joint2_limits_deg"][0].as<double>() * M_PI / 180 + margin;
@@ -75,7 +78,7 @@ class OnlineServo final : public DeviceServo {
           planner_(
               *r->kinematics, [r](int side, double a, double d) { return r->target(side, a, d); },
               [r](const JointFrame& f) { r->check(f); }, r->origin, start, .001, r->speed,
-              r->acceleration, r->jerk) {}
+              r->acceleration, r->jerk, r->joint_speed_limit) {}
     JointFrame step(const ServoGoal& g) override {
         // Two samples: current and next. No future trajectory queue is retained.
         return planner_.advance(g.angle, g.displacement, g.speed_ratio, g.stop).back();
