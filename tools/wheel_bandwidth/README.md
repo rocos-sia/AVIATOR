@@ -119,6 +119,36 @@ W_est = inverse(O) · FK(q_measured) · T · inverse(H)
 /usr/bin/python3 -s tools/wheel_bandwidth/analyze.py logs/wheel_bandwidth_实际目录
 ```
 
+### 忽略几何超限继续估计
+
+如需在几何一致性未通过时观察关节反馈链路，可显式使用 `--ignore-geometry`。
+该选项只允许带 `inconsistent_grasp_geometry` 告警的频点参与带宽计算，覆盖上述
+左右角度差、横向残差和轴外旋转三项几何检查；不改变 Core、运动限制或设备保护。
+周期不足、采样中断、严重非正弦残差等其他问题仍会使结果无效。
+原有 `valid=false` 和告警保留，`usable_for_bandwidth` 表示当前分析策略是否接纳该频点。
+输出文件另加 `_geometry_ignored` 后缀，不覆盖已有严格分析结果；JSON 中记录
+`ignore_geometry=true`，频响图和终端也会标注。此结果只能表述为
+**忽略几何一致性检查的关节反馈链路带宽估计**，不能视为实体轮盘的实测带宽。
+
+```bash
+# 已有数据无需重新运动，即可按该策略分析
+/usr/bin/python3 -s tools/wheel_bandwidth/analyze.py \
+    ~/aviator_logs/wheel_bandwidth_实际目录 --ignore-geometry
+
+# 下一轮：保持 ±10° 幅值，扩展到 1 Hz；先用 --dry-run 预览
+./scripts/start_wheel_bandwidth.sh --ignore-geometry \
+    --amplitude-deg 10 --frequencies 0.1,0.2,0.3,0.5,0.7,1 \
+    --settle-cycles 3 --measure-cycles 6 --ramp-cycles 2
+```
+
+上述扫频本身约 296 秒，另加抓握和清理时间。以本轮首频点增益 `G0` 为基准，
+寻找 `G(f) <= G0 * 10^(-3/20)`（约 `0.708 * G0`）的首次交叉。
+若仍提示 `minus_3db_crossing_not_observed`，说明当前范围未覆盖交叉点，不能给出数值带宽。
+先检查运动、抓握及失真情况，再分轮向更高频率扩展，保留同幅值低频基准。
+找到交叉区间后，在区间内加密频点重测，脚本按对数频率插值。
+若降低幅值，应在新幅值下重新测低频基准与高频响应，不能将不同幅值的数据直接拼接；
+Servo/Ruckig 的限速、限加速度等可能使结果随幅值变化。
+
 ## 离线验证
 
 ```bash

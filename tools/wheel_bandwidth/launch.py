@@ -83,6 +83,8 @@ def parser():
     p.add_argument("--no-monitor", action="store_true")
     p.add_argument("--logger", action="store_true", help="额外记录 MCAP；CSV 默认记录")
     p.add_argument("--dry-run", action="store_true", help="只校验和打印，不写文件、不启动节点")
+    p.add_argument("--ignore-geometry", action="store_true",
+                   help="分析时允许几何超限频点参与带宽估计；保留告警，不改变设备保护")
     p.add_argument("--config", type=Path)
     p.add_argument("--output", type=Path)
     p.add_argument("--frequencies", default="0.1,0.2,0.3,0.5,0.7,1")
@@ -143,6 +145,8 @@ def main():
     plan.append(("core", core, False))
     print(f"抓取 wheel_initial={robot['wheel_initial']}；测试以角度 0° 为中心。", flush=True)
     print(f"输出目录：{output}", flush=True)
+    if args.ignore_geometry:
+        print("分析将忽略几何超限，结果带 _geometry_ignored 后缀；仅作关节反馈链路估计。", flush=True)
     for name, command, _ in plan:
         print(f"{name}: {shlex.join(command)}", flush=True)
     if args.dry_run:
@@ -269,7 +273,7 @@ def main():
                     child[3].close()
         if (output / "samples.csv").exists():
             from analyze import analyze
-            analyze(output)
+            analyze(output, ignore_geometry=args.ignore_geometry)
         print(f"测试结束，退出码 {result}；结果：{output}", flush=True)
         return result
 

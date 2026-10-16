@@ -1,3 +1,5 @@
+import csv
+import json
 import math
 import os
 from pathlib import Path
@@ -7,8 +9,8 @@ from unittest.mock import patch
 
 import numpy as np
 import yaml
-from analyze import bandwidth, frequency_result
-from launch import prepare_config, require_regular_user, select_output, ROOT
+from analyze import analyze, bandwidth, frequency_result
+from launch import parser, prepare_config, require_regular_user, select_output, ROOT
 
 
 class AnalysisTest(unittest.TestCase):
@@ -76,6 +78,49 @@ class AnalysisTest(unittest.TestCase):
         self.assertIsNone(bandwidth(results, False)[0])
         results[1]["valid"] = False
         self.assertIsNone(bandwidth(results, True)[0])
+
+    def test_ignore_geometry_preserves_other_rejections(self):
+        results = []
+        for f, gain in ((.5, 1), (1, .5)):
+            rows = self.rows(f, gain, .1)
+            rows[10]["left_transverse_m"] = ".04"
+            results.append(frequency_result(rows, f, 5))
+        self.assertEqual(bandwidth(results, True)[1], "invalid_frequency_measurements")
+        self.assertEqual(bandwidth(results, True, True)[1], "crossing_estimated")
+        self.assertFalse(results[0]["valid"])
+        self.assertEqual(bandwidth(results, False, True)[1], "run_incomplete")
+        for warning in ("incomplete_measurement_cycles", "measurement_gap",
+                        "large_non_sinusoidal_residual", "insufficient_or_invalid_samples"):
+            with self.subTest(warning=warning):
+                results[0]["warnings"].append(warning)
+                self.assertEqual(bandwidth(results, True, True)[1], "invalid_frequency_measurements")
+                results[0]["warnings"].pop()
+
+    def test_ignore_geometry_outputs_separate_results(self):
+        self.assertFalse(parser().parse_args([]).ignore_geometry)
+        self.assertTrue(parser().parse_args(["--ignore-geometry"]).ignore_geometry)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            rows = []
+            for f, gain in ((.5, 1), (1, .5)):
+                rows.extend(dict(r, frequency_hz=str(f), measure="1", left_transverse_m=".04")
+                            for r in self.rows(f, gain, .1))
+            with (path / "samples.csv").open("w") as file:
+                writer = csv.DictWriter(file, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+            (path / "run.json").write_text(json.dumps(dict(
+                completed=True, frequencies_hz=[.5, 1], measure_cycles=5)))
+            analyze(path, plots=False)
+            strict = (path / "summary.json").read_bytes()
+            summary = analyze(path, plots=False, ignore_geometry=True)
+            self.assertEqual(summary["bandwidth_status"], "crossing_estimated")
+            self.assertTrue(summary["ignore_geometry"])
+            self.assertTrue(summary["frequencies"][0]["usable_for_bandwidth"])
+            self.assertFalse(summary["frequencies"][0]["valid"])
+            self.assertEqual((path / "summary.json").read_bytes(), strict)
+            self.assertTrue((path / "summary_geometry_ignored.json").exists())
+            self.assertTrue((path / "frequency_response_geometry_ignored.csv").exists())
 
     def test_config_isolation_and_absolute_paths(self):
         source = ROOT / "config/system.yaml"

@@ -54,12 +54,17 @@ def frequency_result(rows, frequency, cycles):
                 max_arm_difference_deg=arm_difference, max_transverse_m=transverse, max_tilt_deg=tilt)
 
 
-def bandwidth(results, completed):
+def usable_for_bandwidth(result, ignore_geometry=False):
+    return result["valid"] or (ignore_geometry and
+                               result.get("warnings") == ["inconsistent_grasp_geometry"])
+
+
+def bandwidth(results, completed, ignore_geometry=False):
     if not completed:
         return None, "run_incomplete"
     if len(results) < 2:
         return None, "need_multiple_frequencies"
-    if not all(r["valid"] for r in results):
+    if not all(usable_for_bandwidth(r, ignore_geometry) for r in results):
         return None, "invalid_frequency_measurements"
     baseline = results[0]["gain_db"]
     for low, high in zip(results, results[1:]):
@@ -71,8 +76,9 @@ def bandwidth(results, completed):
     return None, "minus_3db_crossing_not_observed"
 
 
-def analyze(directory, plots=True):
+def analyze(directory, plots=True, ignore_geometry=False):
     directory = Path(directory)
+    suffix = "_geometry_ignored" if ignore_geometry else ""
     with (directory / "samples.csv").open() as file:
         rows = list(csv.DictReader(file))
     metadata = json.loads((directory / "run.json").read_text()) if (directory / "run.json").exists() else {}
@@ -89,17 +95,20 @@ def analyze(directory, plots=True):
     results = [frequency_result([r for r in rows if r["measure"] == "1" and
                                 abs(float(r["frequency_hz"])-f) < 1e-10], f,
                                metadata.get("measure_cycles", 5)) for f in frequencies]
-    value, status = bandwidth(results, metadata.get("completed", False))
+    for result in results:
+        result["usable_for_bandwidth"] = usable_for_bandwidth(result, ignore_geometry)
+    value, status = bandwidth(results, metadata.get("completed", False), ignore_geometry)
     summary = {"measurement": "joint_fk_estimate", "completed": metadata.get("completed", False),
                "bandwidth_hz": value, "bandwidth_status": status,
+               "ignore_geometry": ignore_geometry,
                "baseline": "first tested frequency; -3 dB relative to its gain, not independently verified DC gain",
                "phase_convention": "output minus input; negative means lag",
                "includes": "existing Servo/Ruckig/IK and mechanical arm tracking",
                "frequencies": results}
-    (directory / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False))
+    (directory / f"summary{suffix}.json").write_text(json.dumps(summary, indent=2, allow_nan=False))
     if results:
         keys = sorted(set().union(*(r.keys() for r in results)))
-        with (directory / "frequency_response.csv").open("w") as file:
+        with (directory / f"frequency_response{suffix}.csv").open("w") as file:
             writer = csv.DictWriter(file, fieldnames=keys)
             writer.writeheader()
             writer.writerows(results)
@@ -119,7 +128,7 @@ def analyze(directory, plots=True):
         axes[1].set(xlabel="Time (s)", ylabel="Left - right estimate (deg)")
         for ax in axes:
             ax.grid(True, alpha=.3)
-        fig.savefig(directory / "tracking.png", dpi=160)
+        fig.savefig(directory / f"tracking{suffix}.png", dpi=160)
         plt.close(fig)
         fig, axes = plt.subplots(2, 1, figsize=(9, 7), constrained_layout=True)
         fitted = [r for r in results if "gain_db" in r]
@@ -131,18 +140,24 @@ def analyze(directory, plots=True):
             axes[1].semilogx(f, np.unwrap([r["phase_deg"]*np.pi/180 for r in fitted])*180/np.pi, "o-")
             for r in fitted:
                 if not r["valid"]:
-                    axes[0].annotate("invalid", (r["frequency_hz"], r["gain_db"]), color="red")
-        axes[0].set(ylabel="Gain (dB)", title=f"Bandwidth: {value if value is not None else status}")
+                    label = "geometry ignored" if r["usable_for_bandwidth"] else "invalid"
+                    axes[0].annotate(label, (r["frequency_hz"], r["gain_db"]), color="red")
+        note = " (geometry checks ignored)" if ignore_geometry else ""
+        axes[0].set(ylabel="Gain (dB)", title=f"Bandwidth: {value if value is not None else status}{note}")
         axes[1].set(xlabel="Frequency (Hz)", ylabel="Phase (deg; negative = lag)")
         for ax in axes:
             ax.grid(True, which="both", alpha=.3)
-        fig.savefig(directory / "frequency_response.png", dpi=160)
+        fig.savefig(directory / f"frequency_response{suffix}.png", dpi=160)
         plt.close(fig)
-    print(f"带宽分析：{status}" + (f"，约 {value:.3f} Hz" if value is not None else ""), flush=True)
+    note = "（忽略几何超限，仅作关节反馈链路估计）" if ignore_geometry else ""
+    print(f"带宽分析{note}：{status}" + (f"，约 {value:.3f} Hz" if value is not None else ""), flush=True)
     return summary
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
-    analyze(parser.parse_args().directory)
+    parser.add_argument("--ignore-geometry", action="store_true",
+                        help="仅忽略几何超限对带宽计算的否决；保留告警，另存带 _geometry_ignored 后缀的结果")
+    args = parser.parse_args()
+    analyze(args.directory, ignore_geometry=args.ignore_geometry)
