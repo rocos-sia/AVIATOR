@@ -91,7 +91,7 @@ def main():
         children.append(child)
         return child
 
-    def wait_for(predicate, timeout=10):
+    def wait_for(predicate, timeout=10, allow_error=False):
         nonlocal core_session
         deadline = time.monotonic() + timeout
         last = None
@@ -99,15 +99,16 @@ def main():
             if sub.poll(50):
                 last = json.loads(sub.recv_multipart()[1])
                 core_session = last["session_id"]
-                assert last["system"]["state"] != "ERROR", last["system"]
+                assert allow_error or last["system"]["state"] != "ERROR", last["system"]
                 if predicate(last):
                     return last
             assert process.poll() is None, "Managed Core exited; inspect logs"
         raise AssertionError(f"Timed out; last state: {last}")
 
-    def state(name, timeout=10):
+    def state(name, timeout=10, allow_error=False):
         message = wait_for(lambda m: m["system"]["state"] == name and
-                           (name != "FOLLOWING" or m["system"].get("settled")), timeout)
+                           (name != "FOLLOWING" or m["system"].get("settled")), timeout,
+                           allow_error=allow_error or name == "ERROR")
         if name == "STANDBY":
             actual = message["arms"]["left"]["joint_position"] + message["arms"]["right"]["joint_position"]
             assert max(abs(a - b) for a, b in zip(actual, home)) <= robot.get("home_position_tolerance", .02), message
@@ -247,9 +248,7 @@ def main():
                  abs(m["wheel_reference"]["angle"] + .04 * .87266) < .002 and
                  abs(m["wheel_reference"]["displacement"] + .08585) < .0004, 20)
         check_monitor_control()
-        call(request("leave_wheel"), "REJECTED")
-        call(request("exit_control"), "ACCEPTED")
-        wait_for(lambda m: m["system"]["state"] == "FOLLOWING" and m["system"].get("settled"), 15)
+        # One request leaves CONTROL while Servo is active; no EXIT_CONTROL needed.
         call(request("leave_wheel"), "ACCEPTED")
         state("STANDBY", 120)
         print("PASS: six-operation service, validation/dedup, static input motion, normal release", flush=True)
@@ -267,16 +266,16 @@ def main():
                  max(abs(v) for side in ("left", "right")
                      for v in m["arms"][side]["joint_velocity"]) > .02, 10)
         checking.clear()  # Keep increasing message sequence but freeze the device evidence.
-        state("SAFE", 5)
-        stopped_state = wait_for(lambda m: m["system"]["state"] == "SAFE" and
-                                m["system"].get("settled"), 5)
+        state("ERROR", 5)
+        stopped_state = wait_for(lambda m: m["system"]["state"] == "ERROR" and
+                                m["system"].get("settled"), 5, allow_error=True)
         # Stay beyond the old one-second enable/stop deadline. Inspect every update,
-        # including after fresh input returns: SAFE must hold without auto-resume.
+        # including after fresh input returns: ERROR must hold without auto-resume.
         checking.set()
         deadline = time.monotonic() + 1.5
         while time.monotonic() < deadline:
-            message = wait_for(lambda m: True, 1)
-            assert message["system"]["state"] == "SAFE", message["system"]
+            message = wait_for(lambda m: True, 1, allow_error=True)
+            assert message["system"]["state"] == "ERROR", message["system"]
             assert message["system"]["settled"], message["system"]
             assert message["wheel_reference"] == stopped_state["wheel_reference"]
             assert all(message["arms"][side]["enabled"] for side in ("left", "right"))
@@ -287,10 +286,11 @@ def main():
         assert dealer.poll(2000)
         response = dealer.recv_json()
         assert response["request_id"] == req["request_id"]
-        assert response["status"] in ("COMPLETED", "REJECTED"), response
+        assert response["status"] == "COMPLETED", response
+        state("READY", 5, allow_error=True)
         call(request("leave_wheel"), "ACCEPTED")
         state("STANDBY", 120)
-        print("PASS: moving SAFE stop, stable enabled hold beyond 1 s, no auto-resume, explicit release", flush=True)
+        print("PASS: moving ERROR stop, stable enabled hold beyond 1 s, no auto-resume, explicit release", flush=True)
     finally:
         stopped.set()
         publisher.join()

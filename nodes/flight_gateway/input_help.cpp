@@ -17,7 +17,7 @@ const char* operationName(const std::string& op) {
     if (op == "start_control") return "开始控制";
     if (op == "exit_control") return "退出控制";
     if (op == "leave_wheel") return "松盘 / 撤离";
-    if (op == "reset_error") return "故障确认（ERROR → SAFE）";
+    if (op == "reset_error") return "故障确认（ERROR → READY）";
     return "未分配";
 }
 std::string keyFor(const Config& config, const std::string& operation) {
@@ -88,10 +88,10 @@ InputHelp::InputHelp(const Config& config) {
         font.text(surface, 475, 79, attached ? "摇杆：已连接，可后台使用" : "摇杆：未连接，仅使用键盘", attached ? green : muted);
         box({24, 99, 832, 82}, 65, 46, 26);
         font.text(surface, 40, 130, config.role == "flight_simulator" ?
-                  (config.simulator.require_joystick ? "飞控模拟：手柄断开即停止两路下行发送" : "飞控模拟：无手柄且窗口失焦即停止发送") : state == 4 ? "失焦已满 5 分钟：键盘输入失效，CONTROL 将进入 SAFE" :
-                  "仅用键盘时：失焦保持目标，满 5 分钟后进入 SAFE", amber, 22);
+                  (config.simulator.require_joystick ? "飞控模拟：手柄断开即停止两路下行发送" : "飞控模拟：无手柄且窗口失焦即停止发送") : state == 4 ? "失焦已满 5 分钟：键盘输入失效，CONTROL 将进入 ERROR" :
+                  "仅用键盘时：失焦保持目标，满 5 分钟后进入 ERROR", amber, 22);
         font.text(surface, 40, 161, config.role == "flight_simulator" ? "操作连续发送 10 拍；回绕不等于完成。反馈详情见终端。" :
-                  "失焦立即停止累加；超时进入 SAFE 后，聚焦不会自动恢复控制。", white);
+                  "失焦立即停止累加；超时进入 ERROR 后，聚焦不会自动恢复控制。", white);
         font.text(surface, 28, 215, "方向键操作", green, 21);
         font.text(surface, 28, 246, "左 / 右：roll − / +       上 / 下：pitch − / +");
         font.text(surface, 28, 274, "按住累加，松开或到限位后保持；[0] 回到初始原点。", muted);
@@ -104,13 +104,13 @@ InputHelp::InputHelp(const Config& config) {
                       i != 9 && config.buttons[i].empty() ? muted : white, 18);
         }
         box({24, 528, 832, 152}, 29, 45, 62);
-        font.text(surface, 40, 558, "SAFE 恢复：每一步都要等待状态完成", green, 21);
-        font.text(surface, 40, 588, "先聚焦本窗口，确认输入有效、设备就绪并已停止。", white, 18);
+        font.text(surface, 40, 558, "ERROR 恢复：每一步都要等待状态完成", green, 21);
+        font.text(surface, 40, 588, "故障排除、设备停稳后，按 " + keyFor(config, "reset_error") + " 复位 → READY。", white, 18);
         font.text(surface, 40, 615, "仍在握盘：" + keyFor(config, "leave_wheel") + " 松盘撤离 → STANDBY；已脱离可用 " +
                   keyFor(config, "enter_standby") + " 回 home。", white, 18);
         font.text(surface, 40, 642, "再按 " + keyFor(config, "grasp_wheel") + " 握盘 → FOLLOWING，再按 " +
                   keyFor(config, "start_control") + " 开始控制 → CONTROL。", white, 18);
-        font.text(surface, 40, 668, "SAFE 不能直接开始控制；故障确认键只用于 ERROR → SAFE。", muted, 17);
+        font.text(surface, 40, 668, "ERROR 不能直接开始控制；故障确认键只用于 ERROR → READY。", muted, 17);
         font.text(surface, 28, 718, "长按不会重复请求。关注 Core 状态 / 服务回复；关闭此窗口会退出网关。", muted, 18);
     }
 }

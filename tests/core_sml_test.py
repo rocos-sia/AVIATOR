@@ -16,17 +16,17 @@ def run(commands, *expected):
 run('done\nENTER_STANDBY\ndone\nSTART_CONTROL\nset following_authorized 0\nGRASP_WHEEL\n'
     'set following_authorized 1\nGRASP_WHEEL\nSTART_CONTROL\ndone\n'
     'done\nset source_authorized 0\nSTART_CONTROL\nset source_authorized 1\nSTART_CONTROL\n'
-    'LEAVE_WHEEL\nEXIT_CONTROL\ndone\nLEAVE_WHEEL\ndone\nquit\n',
+    'LEAVE_WHEEL\ndone\nquit\n',
     '[reply] START_CONTROL INVALID_STATE', '[reply] GRASP_WHEEL CAPABILITY_UNAVAILABLE',
     '[reply] START_CONTROL BUSY', '[reply] START_CONTROL CAPABILITY_UNAVAILABLE',
-    '[event] START_CONTROL: FOLLOWING -> CONTROL', '[reply] LEAVE_WHEEL INVALID_STATE',
+    '[event] START_CONTROL: FOLLOWING -> CONTROL', '[event] LEAVE_WHEEL: CONTROL -> RELEASING',
     '[event] done: RELEASING -> STANDBY')
 
 run('done\nENTER_STANDBY\ndone\nGRASP_WHEEL\nfail\nlate_done\nset fault_cleared 0\nRESET_ERROR\n'
     'set fault_cleared 1\nRESET_ERROR\nENTER_STANDBY\nLEAVE_WHEEL\ndone\n',
     '[event] fail: GRASPING -> ERROR', '[event] late_done: ERROR -> ERROR',
-    '[reply] RESET_ERROR INVALID_STATE', '[event] RESET_ERROR: ERROR -> SAFE',
-    '[reply] ENTER_STANDBY INVALID_STATE', '[event] LEAVE_WHEEL: SAFE -> RELEASING',
+    '[reply] RESET_ERROR INVALID_STATE', '[event] RESET_ERROR: ERROR -> READY',
+    '[reply] ENTER_STANDBY INVALID_STATE', '[event] LEAVE_WHEEL: READY -> RELEASING',
     '[event] done: RELEASING -> STANDBY')
 
 for commands, transition in [
@@ -38,15 +38,15 @@ for commands, transition in [
 
 run('done\nENTER_STANDBY\ndone\nGRASP_WHEEL\ndone\ndone\nSTART_CONTROL\nset input_ready 0\n'
     'set input_ready 1\nSTART_CONTROL\n',
-    '[event] set input_ready 0: CONTROL -> SAFE', '[event] set input_ready 1: SAFE -> SAFE',
-    '[reply] START_CONTROL INVALID_STATE', 'state=SAFE accepts_control=0')
+    '[event] set input_ready 0: CONTROL -> CONTROL', '[event] set input_ready 1: CONTROL -> CONTROL',
+    '[reply] START_CONTROL INVALID_STATE', 'state=CONTROL accepts_control=1')
 
 run('emergency\nlate_done\nRESET_ERROR\nENTER_STANDBY\nGRASP_WHEEL\n',
     '[event] emergency: INITIALIZING -> EMERGENCY_STOP', '[mock] brake requested',
     '[event] late_done: EMERGENCY_STOP -> EMERGENCY_STOP', '[reply] RESET_ERROR INVALID_STATE')
 run('set emergency_known 0\n', 'INITIALIZING -> EMERGENCY_STOP')
 run('fault\nRESET_ERROR\nENTER_STANDBY\ndone\n',
-    '[event] RESET_ERROR: ERROR -> SAFE', '[event] ENTER_STANDBY: SAFE -> HOMING',
+    '[event] RESET_ERROR: ERROR -> READY', '[event] ENTER_STANDBY: READY -> HOMING',
     '[event] done: HOMING -> STANDBY')
 for args in (['--config', 'config/system.yaml'], ['--safety-file', '/tmp/unused'], ['--fsm-simulation']):
     result = subprocess.run([exe, *args], capture_output=True, text=True, timeout=3)
@@ -60,3 +60,9 @@ run('done\nGRASP_WHEEL\nstatus\nENTER_STANDBY\nstatus\ndone\n',
     '[event] done: INITIALIZING -> READY', '[reply] GRASP_WHEEL INVALID_STATE',
     '[event] ENTER_STANDBY: READY -> HOMING', '[event] done: HOMING -> STANDBY')
 run('done\nENTER_STANDBY\nadvance 180000\n', 'HOMING -> ERROR', 'Task deadline exceeded')
+
+run('done\nENTER_STANDBY\ndone\nGRASP_WHEEL\ndone\ndone\nSTART_CONTROL\n'
+    'set input_ready 0\nadvance 100\nset input_ready 1\n',
+    '[event] advance 100: CONTROL -> ERROR', '[event] set input_ready 1: ERROR -> ERROR')
+run('set ready 0\ndone\nset ready 1\n',
+    '[event] done: INITIALIZING -> INITIALIZING', '[event] set ready 1: INITIALIZING -> READY')

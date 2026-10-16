@@ -9,7 +9,7 @@ namespace aviator::tts {
 namespace {
 const std::map<std::string, int> states{
     {"INIT", 0},      {"INITIALIZING", 10},  {"STANDBY", 1},   {"GRASPING", 2},
-    {"FOLLOWING", 3}, {"CONTROL", 4},        {"RELEASING", 8}, {"SAFE", 5},
+    {"FOLLOWING", 3}, {"CONTROL", 4},        {"RELEASING", 8},
     {"ERROR", 6},     {"EMERGENCY_STOP", 7}, {"READY", 11},    {"HOMING", 12}};
 void require(bool ok, const std::string& reason) {
     if (!ok)

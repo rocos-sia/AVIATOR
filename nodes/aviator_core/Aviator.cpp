@@ -221,6 +221,7 @@ class Aviator::Impl {
         last_velocity_ = {};
         last_angle_velocity_ = last_displacement_velocity_ = 0;
 
+        recovery_pose_known_ = true;
         setState(grasp().locked ? "LOCKED" : "ENABLED");
     }
 
@@ -341,6 +342,7 @@ class Aviator::Impl {
                                      target(1, wheel0.angle, wheel0.displacement)}, approach_seed_);
             // Freeze this pose for IK, collision checks, hand closure and every wire frame.
             // Executing those frames also rebases the device's wheel reference.
+            recovery_pose_known_ = false; // An interrupted approach has no confirmed retreat start.
             moveJoints(goal, approach_speed_, true, &wheel0);
             phase = "approach complete";
 
@@ -379,6 +381,7 @@ class Aviator::Impl {
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         require(GetState() == "APPROACHED" || GetState() == "LOCKED", "Approach before locking");
         command(GraspCommand::Lock); // RemoteLink also waits for physical hand command acceptance when configured.
+        recovery_pose_known_ = true;
         setState("LOCKED");
     }
 
@@ -484,14 +487,15 @@ class Aviator::Impl {
             validate(path, final_approach_duration_);
             require(!cancel_, "Release cancelled");
             phase = "open hands";
+            recovery_pose_known_ = false;
             command(GraspCommand::Unlock);
             phase = "retreat execution";
             execute(path, final_approach_duration_, false);
+            recovery_pose_known_ = true;
             setState("ENABLED");
         } catch (const std::exception& e) {
             const auto error = std::string("ReleaseHandles [") + phase + "]: " + e.what();
-            // Publish the cause before FAULT becomes observable. Otherwise the
-            // owner can enter SAFE and discard this worker's failed generation.
+            // Publish the original cause before the owner observes FAULT.
             setMotionError(error);
             stopSafely(); setState("FAULT");
             throw std::runtime_error(error);
@@ -512,6 +516,8 @@ class Aviator::Impl {
         setState(enabled ? (grasp().locked == 3 ? "LOCKED" : "ENABLED") : "DISABLED");
     }
 
+    bool recoveryPoseKnown() const { return recovery_pose_known_; }
+
     void acknowledgeFault() {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Executor has not stopped");
@@ -526,13 +532,13 @@ class Aviator::Impl {
     }
 
     void setImpedanceProfile(bool following, const std::atomic<bool>& cancelled) {
-        if (!following && default_impedance_confirmed_) return;
-        // EXIT_CONTROL already requested the normal Servo deceleration. Wait for it
+        // EXIT_CONTROL / direct release already requested the normal Servo deceleration. Wait for it
         // without blocking the Managed owner, which continues protection/heartbeats.
         while (GetState() == "SERVO") {
             require(!cancelled, "Impedance task cancelled while waiting for Servo stop");
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
+        if (!following && default_impedance_confirmed_) return;
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Executor busy during impedance update");
         require(!cancelled, "Impedance task cancelled");
@@ -1057,6 +1063,7 @@ class Aviator::Impl {
     std::thread servo_thread_;
     std::atomic<bool> servo_active_{false}, shutdown_{false};
     std::string motion_error_;
+    std::atomic<bool> recovery_pose_known_{false};
     std::atomic<bool> cancel_{false};
     std::atomic<bool> backend_stop_requested_{false};
     mutable std::mutex mutex_;
@@ -1096,10 +1103,12 @@ public:
         const auto phase = executor_.GetState();
         s.settled = s.settled && s.executor_idle && phase != "SERVO" && phase != "MOVING" &&
                     phase != "APPROACHING" && phase != "RELEASING" && phase != "HOMING";
+        s.fault_cleared = s.fault_cleared && executor_.recoveryPoseKnown();
         if (phase == "FAULT") {
-            s.ready = false;
-            // Maintenance may have removed the device fault; ResetError acknowledges the local fault.
-            if (std::string(machine_.state()) != "ERROR" && std::string(machine_.state()) != "SAFE") {
+            // ERROR may acknowledge a local fault only after device recovery and
+            // a known clear/fully grasped pose. Interrupted contact tasks stay ERROR.
+            if (std::string(machine_.state()) != "ERROR") {
+                s.ready = false;
                 s.fault = executor_.GetStatus().motion_error;
                 if (s.fault.empty()) s.fault = "Executor entered FAULT without a diagnostic";
             }
@@ -1107,7 +1116,8 @@ public:
         if (machine_.acceptsControl() && !restoring_default_) {
             const auto now = managedNow();
             const auto last = input_at_ ? input_at_ : std::max(machine_.controlSince(), control_ready_at_);
-            s.input_ready = s.input_ready && now >= last && now - last < 100000;
+            s.input_timed_out = now < last || now - last >= 100000;
+            s.input_ready = s.input_ready && !s.input_timed_out;
         }
         return s;
     }
@@ -1119,7 +1129,9 @@ public:
         conditions.executor_idle = conditions.executor_idle && machine_.job() == fsm::Job::none;
         conditions.settled = conditions.settled && conditions.executor_idle;
         return {machine_.state(), machine_.currentError(), machine_.lastError(), machine_.stateCode(),
-                machine_.generation(), machine_.acceptsControl() && !restoring_default_, brake_requested_, conditions};
+                machine_.generation(), machine_.acceptsControl() && !restoring_default_ && conditions.ready &&
+                conditions.following_authorized && conditions.source_authorized && conditions.input_ready,
+                brake_requested_, conditions};
     }
     void init() {
         owner();
@@ -1160,8 +1172,7 @@ public:
             else {
                 auto s = snapshot();
                 if (s.settled || completion_->job == fsm::Job::grasp) {
-                    machine_.done(completion_->generation, s, managedNow());
-                    completion_.reset();
+                    if (machine_.done(completion_->generation, s, managedNow())) completion_.reset();
                 }
             }
         }
@@ -1203,7 +1214,9 @@ public:
     bool servo(double angle, double displacement, double speed, uint64_t sample) {
         update();
         const auto now = managedNow();
-        if (!machine_.acceptsControl() || restoring_default_ ||
+        const auto conditions = snapshot();
+        if (!machine_.acceptsControl() || restoring_default_ || !conditions.ready ||
+            !conditions.following_authorized || !conditions.source_authorized || !conditions.input_ready ||
             sample < std::max(machine_.controlSince(), control_ready_at_) || sample > now ||
             now - sample >= 100000 || (input_at_ && sample <= input_at_)) return false;
         try {
@@ -1236,7 +1249,8 @@ private:
             cancelled_ = true;
             executor_.stop();
             input_at_ = 0;
-            if (std::string(machine_.state()) != "FOLLOWING") options_.allow_motion(false);
+            if (std::string(machine_.state()) != "FOLLOWING" &&
+                std::string(machine_.state()) != "RELEASING") options_.allow_motion(false);
         }
         if (machine_.takeBrake()) {
             brake_requested_ = true;
@@ -1248,7 +1262,7 @@ private:
         protection();
         report(); // Publish the transition before submitting a blocking executor task.
         // EXIT_CONTROL can cancel restoration and queue Following while it drains.
-        if (worker_.valid()) return;
+        if (worker_.valid() || !snapshot().ready) return;
         if (auto task = machine_.takeTask()) {
             machine_.supervise(snapshot(), managedNow());
             if (task->generation != machine_.generation()) { protection(); report(); return; }

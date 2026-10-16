@@ -19,7 +19,7 @@ Core 在 `RemoteLink.cpp` 中约每 20 ms 发布一次 `flight.state`。状态�
 
 语音节点只订阅 `flight.state`，按 `system.state`、`state_code`、`generation`、
 `current_error` 识别当前 Managed 状态。状态码遵循 `RobotStateMachine::stateCode()`：
-INIT=0、STANDBY=1、GRASPING=2、FOLLOWING=3、CONTROL=4、SAFE=5、ERROR=6、
+INIT=0、STANDBY=1、GRASPING=2、FOLLOWING=3、CONTROL=4、ERROR=6、
 EMERGENCY_STOP=7、RELEASING=8、INITIALIZING=10、READY=11、HOMING=12。
 Direct Core 没有这些完整字段，不能按整机状态播报。以后协议可增加显式状态模型标识。
 
@@ -73,15 +73,13 @@ WAV 结构和时长有效。运行节点不重复计算音频 SHA256。修改文
 | CONTROL 到 FOLLOWING | 退出操控，进入跟随模式 | 1 |
 | CONTROL | 进入操控模式 | 1 |
 | RELEASING | 正在释放方向盘 | 0 |
-| SAFE | 进入保护状态 | 2 |
 | ERROR | 系统故障，请检查 | 2 |
 | EMERGENCY_STOP | 软件急停已触发 | 3 |
 | 通信中断 | 控制状态通信中断 | 2 |
 | 通信恢复 | 控制状态通信恢复 | 1 |
 | 来源冲突 | 检测到多个控制状态来源，请检查 | 2 |
 
-CONTROL 可能先于默认刚度恢复和输入接纳，因此不播报“操控已就绪”。SAFE 不代表物理
-安全已经确认；软件急停不代表物理手刹已确认。FOLLOWING 也不被描述为已实现柔顺控制。
+CONTROL 可能先于默认刚度恢复和输入接纳，因此不播报“操控已就绪”。软件急停不代表物理手刹已确认。FOLLOWING 也不被描述为已实现柔顺控制。
 `current_error` 变化会触发当前状态的提醒；历史 `last_error` 不参与触发，不直接朗读原始
 英文异常、路径和堆栈。当前相同错误码可对应不同错误，不能仅以错误码去重。
 

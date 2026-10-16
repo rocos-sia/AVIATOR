@@ -16,13 +16,12 @@ void put(Bytes& b, size_t p, uint16_t v) {
 }
 const std::array<const char*, 7> operations{{"", "enter_standby", "grasp_wheel", "start_control",
                                              "exit_control", "leave_wheel", "reset_error"}};
-const std::array<std::pair<uint8_t, const char*>, 12> states{{{0, "EMERGENCY_STOP"},
+const std::array<std::pair<uint8_t, const char*>, 11> states{{{0, "EMERGENCY_STOP"},
                                                               {1, "INIT"},
                                                               {3, "READY"},
                                                               {5, "STANDBY"},
                                                               {7, "FOLLOWING"},
                                                               {8, "CONTROL"},
-                                                              {9, "SAFE"},
                                                               {0x10, "ERROR"},
                                                               {0x11, "INITIALIZING"},
                                                               {0x12, "HOMING"},

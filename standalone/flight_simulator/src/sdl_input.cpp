@@ -155,7 +155,7 @@ bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
                 if (!focused_) {
                     std::clog << "Keyboard focus lost; keyboard input disabled\n";
                 } else {
-                    std::clog << "Keyboard focus restored; SAFE requires explicit recovery\n";
+                    std::clog << "Keyboard focus restored; ERROR requires explicit recovery\n";
                 }
                 resetKeyboard(now);
             }

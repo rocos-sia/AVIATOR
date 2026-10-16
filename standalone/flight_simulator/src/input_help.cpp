@@ -24,7 +24,7 @@ const char* operationName(const std::string& op) {
     if (op == "leave_wheel")
         return "松盘 / 撤离";
     if (op == "reset_error")
-        return "故障确认（ERROR → SAFE）";
+        return "故障确认（ERROR → READY）";
     return "未分配";
 }
 std::string keyFor(const Config& config, const std::string& operation) {
@@ -144,8 +144,8 @@ InputHelp::InputHelp(const Config& config) {
                       i != 9 && config.buttons[i].empty() ? muted : white, 18);
         }
         box({24, 528, 832, 152}, 29, 45, 62);
-        font.text(surface, 40, 558, "SAFE 恢复：每一步都要等待状态完成", green, 21);
-        font.text(surface, 40, 588, "先聚焦本窗口，确认输入有效、设备就绪并已停止。", white, 18);
+        font.text(surface, 40, 558, "ERROR 恢复：每一步都要等待状态完成", green, 21);
+        font.text(surface, 40, 588, "故障排除、设备停稳后，按 " + keyFor(config, "reset_error") + " 复位 → READY。", white, 18);
         font.text(surface, 40, 615,
                   "仍在握盘：" + keyFor(config, "leave_wheel") +
                       " 松盘撤离 → STANDBY；已脱离可用 " + keyFor(config, "enter_standby") +
@@ -155,7 +155,7 @@ InputHelp::InputHelp(const Config& config) {
                   "再按 " + keyFor(config, "grasp_wheel") + " 握盘 → FOLLOWING，再按 " +
                       keyFor(config, "start_control") + " 开始控制 → CONTROL。",
                   white, 18);
-        font.text(surface, 40, 668, "SAFE 不能直接开始控制；故障确认键只用于 ERROR → SAFE。", muted,
+        font.text(surface, 40, 668, "ERROR 不能直接开始控制；故障确认键只用于 ERROR → READY。", muted,
                   17);
         font.text(surface, 28, 718, "长按不会重复请求。关注串口回传状态；关闭此窗口会退出模拟器。",
                   muted, 18);

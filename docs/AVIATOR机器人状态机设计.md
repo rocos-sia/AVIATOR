@@ -1,404 +1,143 @@
 # AVIATOR 机器人状态机设计
 
-版本：V1.0 设计稿。范围：aviator_core 整机业务状态机及其与 Gateway、Manipulator 的接口。本文件细化状态、事件、异步动作和最小 boost::sml 实现方式，不代表运行代码或手刹控制已经实现。
+本文描述 `aviator_core` Managed 模式的整机业务状态机。实现入口为
+`include/aviator/RobotStateMachine.hpp`、`RobotStateMachine.cpp` 和 `Aviator.cpp`。
+Direct 模式的小写动作接口不经过整机业务状态机；设备执行器阶段与整机状态分别报告。
 
-实施进度：`RobotStateMachine.hpp/.cpp` 已实现十二状态、六操作、守卫、任务编号/超时与保护转换。
-Aviator 已增加 Managed 模式，大写六操作经同一个状态机判定，唯一工作任务调用小写功能实现；
-`aviator_core_managed` 通过 StateMachineRuntime 适配真实反馈、本地测试策略、终端及 Gateway 六请求/连续目标，不再在入口拥有第二套状态机。
-`aviator_core` / `aviator_core_servo` 使用 Direct 模式和小写接口，原测试流程、真实手控制与执行层保护保留。
-`main_sml.cpp` / `aviator_core_sml` 继续仅测试纯状态机，不连接总线或设备。
-接入方法见 [Core 说明](../nodes/aviator_core/README.md#aviator-的最小状态机接入)。
-当前设备测试入口已移除外部安全证据文件：跟随/释放由本地策略授权，clear_of_wheel 按软件锁和执行器阶段判断；设备/输入/任务守卫保留。软件急停只在当前进程锁存，不跨重启保存，尚未独立检测硬件急停。
-代码接入不代表实机验收：独立安全监督器、物理手刹、RS422 接入及柔顺 FOLLOWING 尚未实现；摇杆六操作 ZMQ 服务已接入 Managed Core；
-手节点超时默认张开的策略也尚不满足保护时保持抓握的目标。本轮只做离线和隔离 MuJoCo 验证。
+状态机采用单个平面 boost::sml 转换表，由唯一拥有线程调用。网络和 SDK 回调不直接执行转换；
+耗时动作交给唯一工作任务，拥有线程持续处理反馈、请求、心跳、故障和急停。
 
-## 1. 依据与设计边界
+## 1. 状态与正常流程
 
-参考文件：
-
-- [软件架构设计](AVIATOR机器人驾驶飞机控制系统软件架构设计方案.md)：Core 唯一业务仲裁、设备本地保护、运动执行与通信隔离。
-- [内部 ZMQ 协议](AVIATOR_ZMQ协议格式说明.md)：强类型数据、可靠服务、控制来源、反馈有效性和错误域。
-- [RS422 通信协议](AVIATOR_RS422通信协议规范.md)：六类操作、REQUEST/REPLY 一问一答、50 Hz CONTROL/STATUS。
-- [本地 SML 1.2.0 头文件](../third_party/sml-1.2.0/include/boost/sml.hpp)与 [CMake 定义](../third_party/sml-1.2.0/CMakeLists.txt)：实际编译依据，头文件版本为 `BOOST_SML_VERSION == 1'2'0`。
-
-采用单个平面 `boost::sml::sm`、一个拥有状态机的 Core 线程、一个活动耗时任务。网络、串口、SDK 回调不直接调用状态机。状态机只作守卫判定、状态转换与非阻塞动作登记，不承担规划、插值或硬件闭环。不要为每个状态建立继承层次，不引入通用流程引擎、并行状态区或重复的可写业务状态变量。
-
-SML 的转换表由源状态、事件、守卫、动作和目标状态组成；无目标的内部转换适合幂等确认。本设计只用这些基础能力，参见 [SML 官方教程](https://boost-ext.github.io/sml/tutorial.html)。工程以本地固定版本为准，不依赖在线最新版。
-
-本次按已确认流程增加 READY（准备完成）和 HOMING（回 home 中），共十二个状态。旧协议的 STOPPING 不作为本设计状态；INITIALIZING 是新增过渡状态。协议差异集中列于第 9 节，不静默更改已经形成的 RS422 Word 文件或现有协议枚举。
-
-## 2. 状态定义
-
-| 状态 | 分类 | 进入后的行为 | 允许主动执行飞控目标 |
-| --- | --- | --- | --- |
-| INIT | 起始状态 | 创建状态机；检查急停锁存；无锁存时自动投递一次内部 Boot。 | 否 |
-| INITIALIZING | 过渡状态 | 初始化资源、双臂使能和关节阻抗模式设置，保持当前位置。 | 否 |
-| READY | 稳定状态 | 启动准备已完成，等待外部 ENTER_STANDBY；不自动回 home。 | 否 |
-| HOMING | 过渡状态 | 执行回 home，检查实际关节到位和停稳。 | 否 |
-| STANDBY | 稳定状态 | 双臂已实际回到 home 且停稳，保持使能及阻抗模式，等待抓握。 | 否 |
-| GRASPING | 过渡状态 | 执行既有接近/抓握程序；只允许一个活动任务。 | 否 |
-| FOLLOWING | 稳定状态 | 经授权的柔顺或目标随动；执行批准的跟随控制律。 | 否 |
-| CONTROL | 稳定状态 | 接纳合法、授权、新鲜的飞控目标，受本地输入 watchdog 限制。 | 是，仍须通过执行门控 |
-| RELEASING | 过渡状态 | 执行松开、撤离及回 home，到位后进入 STANDBY。 | 否 |
-| SAFE | 保护状态 | 中止当前普通任务、关闭主动操控、按批准策略保持/减速；待显式恢复。 | 否 |
-| ERROR | 故障状态 | 记录当前及上次错误，中止任务并执行本地保护；不得自动恢复操控。 | 否 |
-| EMERGENCY_STOP | 不可逆锁存状态 | 关闭操控、中止普通任务、请求拉动手刹并锁存急停。 | 否，永久禁止本状态机实例恢复 |
-
-INITIALIZING、HOMING、GRASPING、RELEASING 都是“命令已受理、任务尚未完成”的正式状态，不用布尔 `busy` 替代线上状态。状态名称定义业务模式，不保证物理动作已到位。
-
-### 2.1 初始化边界
-
-正常启动：`INIT → INITIALIZING → READY`；收到外部 ENTER_STANDBY 后 `READY → HOMING → STANDBY`；初始化提交失败、自检失败或超时进入 ERROR。Boot 由 Core 启动流程自动产生，不增加串口消息或外部指令。
-
-初始化包含原有资源初始化、双臂上使能和阻抗配置；沿用 RemoteLink 使能前张开并确认手的流程。Rokae 后端调用 prepare/setJointImpedance/startMove(jointImpedance)，首帧对齐实测位置后保持，不自动运动到 home。
-READY 不能直接抓握。ENTER_STANDBY 创建独立 home 任务；轨迹完成、实际位置误差满足 home_position_tolerance 且停稳后才进入 STANDBY。Managed 抓握从 home 开始，不再重复上使能/回 home。释放任务增加撤离后回 home，因此完成时仍为 STANDBY。两个 Direct Demo 的顺序流程保留。
-
-### 2.2 FOLLOWING 与退出操控
-
-FOLLOWING 不消费主动飞控 roll/pitch，即使串口仍有 50 Hz CONTROL 输入也不得缓存为未来目标。跟随来源和控制律须预先授权。
-
-`EXIT_CONTROL` 同步关闭主动飞控接纳并切换至 FOLLOWING。该转换的“完成”指控制模式和目标所有权已切换，不表示机械运动立即停止。执行器从当前参考连续接管、平滑减速或柔顺跟随，不回中、不跳到新目标；接管未稳定时 `settled=false`，拒绝新的 START_CONTROL 和释放请求，STATUS.phase 可报告 DECELERATE。
-
-这一方案不增加 STOPPING。前提是现有执行器能够非阻塞地切换目标所有权并保证指令连续性；若做不到，实施前须重新评审过渡状态，不能把等待 SDK 停止的阻塞调用藏在 EXIT_CONTROL 动作里。FOLLOWING 授权丢失时优先进入 SAFE，不直接切进无授权随动。
-
-## 3. 事件与守卫
-
-### 3.1 六个外部事件
-
-外部事件仅为 ENTER_STANDBY、GRASP_WHEEL、START_CONTROL、EXIT_CONTROL、LEAVE_WHEEL、RESET_ERROR。Gateway 验证协议和请求去重后转换为强类型事件，Core 是唯一决策者。RESET_ERROR 不重启进程，不清除急停锁存。
-
-### 3.2 必要的内部事件
-
-| 事件 | 产生者 | 用途 |
-| --- | --- | --- |
-| Boot | Core 启动流程 | INIT 自动开始初始化。 |
-| Done{generation} | 异步执行适配器 | 当前初始化、抓握或释放任务确实完成。 |
-| Fault | 故障监督/执行适配器 | 初始化或任务失败、超时、设备阻断错误、任务提交失败。错误详情进入 Context/诊断。 |
-| SafetyLost | 安全监督 | 输入超时、授权撤销、双路冲突、当前模式必要反馈失效等，进入 SAFE。 |
-| Emergency | 独立急停输入/监督器 | 最高优先级，进入 EMERGENCY_STOP 并请求手刹。 |
-
-内部事件不是新增 RS422 消息。异步任务失败回调同样携带 generation，经适配器核对仍属当前任务后才转成 Fault；与任务无关的实时设备故障不受任务编号过滤。
-
-### 3.3 最小守卫数据
-
-| 条件 | 含义与来源 |
+| 状态 | 进入后的行为 |
 | --- | --- |
-| ready | 当前操作所需设备、配置、标定及执行资源可用，无阻断故障；包括任务提交槽位可预留。 |
-| settled | 执行器报告当前切换/停止已达到批准的稳定条件；不是 TCP/关节跟踪偏差判据。 |
-| clear_of_wheel | 已完成离开程序或维护流程确认已脱离方向盘；不能由“当前状态非 CONTROL”推断。 |
-| following_authorized | 跟随模式及来源获得授权，控制律可运行。 |
-| source_authorized / input_ready | 飞控来源及链路授权有效，必要输入和反馈满足模式时效；不要求已收到开始操控后的首条 valid=1 目标。 |
-| fault_cleared | 原故障原因已排除，复位流程获准；不等于仅删除错误码。 |
-| job == none | 无活动任务，且此前任务的取消/停止已经得到确认。 |
+| INIT | 初始状态；检查急停证据，再由内部 Boot 启动初始化。 |
+| INITIALIZING | 初始化资源、使能双臂、配置阻抗，保持当前位置。 |
+| READY | 已准备完成或故障复位完成，保持当前位置，等待明确操作；不表示已回 home，也不表示已脱离方向盘。 |
+| HOMING | 执行回 home，等待实际关节到位和停稳。 |
+| STANDBY | 双臂已回到配置的 home 姿态并停稳，等待抓握。 |
+| GRASPING | 张开确认、接近、抓握。 |
+| FOLLOWING | 保持当前参考，异步切换到跟随刚度；不接收主动飞控目标。 |
+| CONTROL | 恢复默认刚度后，接纳授权且新鲜的飞控目标。 |
+| RELEASING | 必要时先结束 Servo/阻抗切换，再恢复默认刚度、松手、撤离、回 home。 |
+| ERROR | 停止并撤销普通运动输出，记录当前错误和历史错误，等待明确复位。 |
+| EMERGENCY_STOP | 锁存软件急停、取消任务、请求独立手刹通道；本实例无普通退出路径。 |
 
-守卫只读取 Core 本周期一致快照，不阻塞、不发命令、不自行更改状态。失败时请求拒绝，保持当前状态。对模式必需条件的持续检查由监督器负责，不只在转换瞬间检查一次。
+可导出的状态图：[SVG](assets/aviator_state_machine/aviator_state_machine.svg)、[PNG](assets/aviator_state_machine/aviator_state_machine.png)，源文件为同目录 `.dot`。
 
-当前双臂示例采用本地开环程序：不恢复已经废除的 TCP/关节跟踪误差或 grasp.ready 判据。软件 lock 成功只证明程序阶段完成，不能表示真实接触已验证。若飞控实装要求物理抓握证据，需要单独增加已实现的传感器能力和验收约定；缺失手部、视觉反馈仍如实标无效。
-
-## 4. 转换表
-
-### 4.1 正常转换与恢复
-
-| 当前状态 | 事件 | 守卫/前提 | 下一状态 | 动作及应答 |
-| --- | --- | --- | --- | --- |
-| INIT | Boot | 无急停锁存、任务空闲 | INITIALIZING | 登记初始化任务；内部事件无 REPLY。 |
-| INITIALIZING | Done | 当前 generation，初始化完成，ready/settled/clear_of_wheel | READY | 清活动任务。 |
-| READY | ENTER_STANDBY | ready、settled、clear_of_wheel、任务空闲 | HOMING | 登记 home 任务，ACCEPTED。 |
-| HOMING | Done | 当前 generation、ready、settled、clear_of_wheel | STANDBY | 已到 home 并停稳。 |
-| STANDBY | ENTER_STANDBY | 正常状态 | STANDBY | 内部幂等转换，COMPLETED；不重复初始化。 |
-| STANDBY | GRASP_WHEEL | ready、settled、跟随已授权、任务空闲 | GRASPING | 登记抓握任务，ACCEPTED。 |
-| GRASPING | Done | 当前 generation，动作完成，ready、跟随仍授权 | FOLLOWING | 清任务，执行器启用跟随模式。 |
-| FOLLOWING | START_CONTROL | ready、settled、跟随/飞控来源授权、input_ready、任务空闲 | CONTROL | 建立本次输入时间边界，开启目标接纳；同步模式切换成功可 COMPLETED。 |
-| CONTROL | EXIT_CONTROL | 随动仍获授权；否则先处理 SafetyLost | FOLLOWING | 关闭主动目标、清目标缓存、连续接管；COMPLETED 的含义见第 2.2 节。 |
-| FOLLOWING | EXIT_CONTROL | 无更高优先级安全事件 | FOLLOWING | 幂等 COMPLETED，不重新触发执行器。 |
-| FOLLOWING | LEAVE_WHEEL 或 ENTER_STANDBY | ready、settled、任务空闲 | RELEASING | 登记释放任务，ACCEPTED。 |
-| RELEASING | Done | 当前 generation，settled、clear_of_wheel | STANDBY | 释放、撤离及回 home 均已完成，清任务。 |
-| ERROR | RESET_ERROR | fault_cleared、settled、无急停锁存 | SAFE | 确认清当前故障，保留 last_error；COMPLETED，不自动回操控。 |
-| SAFE | ENTER_STANDBY | ready、settled、clear_of_wheel、任务空闲 | HOMING | 必要时重新使能，然后回 home，ACCEPTED。 |
-| SAFE | LEAVE_WHEEL | ready、settled、任务空闲，释放动作已获准 | RELEASING | 显式受控脱离，ACCEPTED；不是安全状态自动松手。 |
-
-ERROR 恢复统一经 SAFE：已脱离方向盘则 ENTER_STANDBY 回 home；仍处于接触关系则按批准流程 LEAVE_WHEEL。RESET_ERROR 不直接执行释放动作。
-
-CONTROL 下 ENTER_STANDBY、LEAVE_WHEEL 拒绝，须先 EXIT_CONTROL。所有未列出的外部事件均拒绝：过渡状态中的普通请求返回 BUSY，其他非法组合返回 INVALID_STATE；守卫失败按原因返回 CAPABILITY_UNAVAILABLE、INVALID_STATE 或 BUSY。不把未知事件自动当故障，也不重复执行耗时任务。
-
-### 4.2 全局保护转换
-
-| 当前状态集合 | 事件 | 下一状态 | 规则 |
-| --- | --- | --- | --- |
-| 除 EMERGENCY_STOP 外的全部状态 | Emergency | EMERGENCY_STOP | 不受普通任务占用、守卫或队列容量限制。 |
-| INIT、INITIALIZING、READY、HOMING、STANDBY、GRASPING、FOLLOWING、CONTROL、RELEASING、SAFE | Fault | ERROR | 关闭操控，中止任务，记录错误。 |
-| ERROR | Fault | ERROR | 仅更新诊断，不重复启动停止动作。 |
-| READY、HOMING、STANDBY、GRASPING、FOLLOWING、CONTROL、RELEASING | SafetyLost | SAFE | 中止本次动作，关闭主动操控；不自动释放。 |
-| INIT、INITIALIZING | 必需资源失效 | ERROR | 分类为初始化 Fault。 |
-| STANDBY、SAFE | 非当前模式必需输入断流 | 原状态 | 更新健康标志，不因待机没有飞控目标而反复报控制超时。 |
-| EMERGENCY_STOP | 任何事件 | EMERGENCY_STOP | 无出边；只允许诊断及手刹执行反馈更新。 |
+共十一个业务状态。SAFE 已取消，不再作为错误恢复或输入失效的中间状态。
+“回零”指双臂回到配置的 home 姿态，不是把方向盘角度/位移归零。
 
 ```mermaid
 stateDiagram-v2
     [*] --> INIT
-    INIT --> INITIALIZING: 自动 Boot
+    INIT --> INITIALIZING: Boot
     INITIALIZING --> READY: 初始化完成
-    INITIALIZING --> ERROR: 失败或超时
-    READY --> HOMING: ENTER_STANDBY / 回 home
-    HOMING --> STANDBY: Done / 到位停稳
+    READY --> HOMING: ENTER_STANDBY / 已脱离
+    HOMING --> STANDBY: 到位停稳
     STANDBY --> GRASPING: GRASP_WHEEL
-    GRASPING --> FOLLOWING: 抓握程序完成
+    GRASPING --> FOLLOWING: 抓握完成
     FOLLOWING --> CONTROL: START_CONTROL
     CONTROL --> FOLLOWING: EXIT_CONTROL
     FOLLOWING --> RELEASING: LEAVE_WHEEL / ENTER_STANDBY
-    RELEASING --> STANDBY: 释放完成
-    ERROR --> SAFE: RESET_ERROR
-    SAFE --> HOMING: ENTER_STANDBY / 已脱离
-    SAFE --> RELEASING: LEAVE_WHEEL / 允许释放
-    CONTROL --> SAFE: SafetyLost
-    GRASPING --> ERROR: Fault
-    RELEASING --> ERROR: Fault
+    CONTROL --> RELEASING: LEAVE_WHEEL / ENTER_STANDBY
+    READY --> RELEASING: LEAVE_WHEEL / 允许撤离
+    RELEASING --> STANDBY: 撤离并回 home 完成
+    ERROR --> READY: RESET_ERROR / 故障清除且可恢复
+    note right of ERROR
+        执行失败、阻断故障或超时直接进入
+        输入恢复不自动退出 ERROR
+    end note
     note right of EMERGENCY_STOP
-        任一其他状态可由 Emergency 进入
-        拉动手刹；无任何退出转换
+        任一其他状态可进入
+        普通请求不能解除锁存
     end note
 ```
 
-图示正常路径；故障、急停的完整适用状态以转换表为准。EMERGENCY_STOP 不画向终点的转换，因为诊断和手刹监督仍持续运行。
+## 2. 六操作与守卫
 
-## 5. 耗时操作：一个任务槽、一个代号
-
-Core 只持有一个活动任务 `Job + generation + deadline`。Job 仅有 initialize、grasp、release；generation 为进程内 uint64 递增代号，接近上限时维护，不复用。它不增加串口字段，也不替代 Gateway 的请求去重。
-
-一次处理顺序：
-
-1. 刷新一致输入快照；先处理急停、故障和 SafetyLost。
-2. 对外部请求做守卫判定，预留唯一执行槽；状态机转换到过渡状态并登记 Job/generation。
-3. `process_event()` 返回后发布新状态，再非阻塞提交已登记任务，最后形成 ACCEPTED。不能在 SML action 内执行轨迹、等待 SDK、休眠或递归调用 process_event。
-4. 任务完成回调只向 Core 入队 Done{generation}。Core 核对代号和当前 Job，转换至下一稳定状态。过期、取消后或重复完成事件直接丢弃并限速记录。
-5. 当前任务失败、提交失败或截止时间到达时形成 Fault，进入 ERROR。完成事件所需后置条件不成立时形成 Fault 或 SafetyLost，不静默丢弃后永久卡在过渡状态。
-
-任务提交成功前失败可返回 REJECTED 并进入 ERROR；已经接受/开始后失败，通过内部服务结果、错误码及 STATUS 状态报告，不追加第二条 RS422 REPLY。deadline 由本地单调时钟计算，各任务最大时长按既有程序配置冻结，不拿 100 ms 应答超时当机械动作超时。
-
-取消任务时立即推进 generation，阻止迟到回调恢复旧状态；执行器必须同步撤销旧 generation 的运动输出，清排队目标并报告取消/停止确认。在确认之前保持 settled=false、ready 或任务槽可用条件为 false，禁止开启新任务。仅在 Core 丢弃回调而设备仍继续旧轨迹不算取消。
-
-每个登记任务只提交一次，可用一次性 pending_effect/待提交标志；不能每个控制周期看到 job 非空就重发。骨架中的 Context 只演示转换数据，不包含实际提交器。
-
-## 6. 急停与手刹：不可退出
-
-Emergency 的入口可以是独立硬件急停、监护进程或经过授权的本地紧急输入；它不是新增的六类远程普通操作之一。
-
-进入 EMERGENCY_STOP 时立即完成逻辑锁存、关闭普通目标接纳、作废任务代号，并向独立安全执行通道发出“拉动手刹”请求。手刹是安全动作，不能因取消普通任务而一并取消，也不能依赖正在被停止的普通规划队列。
-
-本状态没有通向 INIT、SAFE、ERROR 或任一运行状态的出边，RESET_ERROR、ENTER_STANDBY、任务完成及普通故障均不能使其退出。重复急停不反复启动一套普通轨迹。手刹动作由独立执行器幂等接受，持续监督确认、超时和失败；拉动成功、失败或反馈未知都保持 EMERGENCY_STOP，并分别记录诊断。不能把发出请求等同手刹已拉到位。
-
-“不可退出”还要求禁止进程重启绕过锁存：急停状态由独立硬件/安全控制器锁存，并保留重启可读的证据。Core 启动先检查该证据，已锁存或证据不可确认时直接处理 Emergency，不执行 Boot 初始化。普通 RS422/ZMQ 服务不提供解锁；机械检修、物理解除和新任务启动条件属于本状态机之外的维护规程。
-
-手刹执行机构、供电域、允许动作、反馈条件和最大拉动时间需与硬件方确认。若急停切断的电源也使手刹失去动力，纯软件顺序不能保证拉动，必须由独立硬件/安全通道解决。Core 失效时不能依赖这份软件状态机才触发紧急制动。
-
-## 7. 最小代码组织与 SML 骨架
-
-建议只新增 `nodes/aviator_core/include/aviator/RobotStateMachine.hpp` 和 `nodes/aviator_core/RobotStateMachine.cpp`，复用既有操作执行器和 Core 调度循环。纯事件/转换定义放头文件，协议映射、任务提交和状态导出放 cpp；不创建十个 State 派生类。下述为可编译的转换骨架，尚不含 SDK、消息收发、日志、队列或持久化。
-
-Context 的 accepts_control 是执行门控，不是第二份状态枚举；每次真正提交目标仍检查 `sm.is(state<CONTROL>)`、门控和输入有效性。状态对外导出使用 `is()` 或 `visit_current_states()` 映射，不能再维护一个可独立修改的 current_state。
-
-```cpp
-// 节选自 include/aviator/RobotStateMachine.hpp；外层为 aviator::fsm，sml=boost::sml。
-struct INIT {}; struct INITIALIZING {}; struct READY {}; struct HOMING {}; struct STANDBY {};
-struct GRASPING {}; struct FOLLOWING {}; struct CONTROL {};
-struct RELEASING {}; struct SAFE {}; struct ERROR {};
-struct EMERGENCY_STOP {};
-struct Boot {};
-struct ENTER_STANDBY {}; struct GRASP_WHEEL {}; struct START_CONTROL {};
-struct EXIT_CONTROL {}; struct LEAVE_WHEEL {}; struct RESET_ERROR {};
-struct Done { std::uint64_t generation; };
-struct Fault {}; struct SafetyLost {}; struct Emergency {};
-enum class Job { none, initialize, home, grasp, release };
-struct Context {
-  bool ready{}, following_authorized{}, source_authorized{}, input_ready{};
-  bool settled{}, clear_of_wheel{}, fault_cleared{}, emergency_latched{};
-  bool executor_idle{}, release_authorized{}, pending_job{}, stop_requested{};
-  bool accepts_control{}, brake_requested{};
-  Job job{Job::none};
-  std::uint64_t generation{};
-  void cancel() { accepts_control = false; job = Job::none; pending_job = false; ++generation; }
-  void begin(Job value) { cancel(); job = value; pending_job = true; }
-};
-struct RobotMachine {
-  auto operator()() const {
-    using namespace sml;
-    const auto free = [](const Context& c) { return c.job == Job::none && c.executor_idle && !c.emergency_latched; };
-    const auto grasp_ok = [](const Context& c) {
-      return c.ready && c.settled && c.following_authorized && c.job == Job::none && c.executor_idle;
-    };
-    const auto control_ok = [](const Context& c) {
-      return c.ready && c.settled && c.following_authorized &&
-             c.source_authorized && c.input_ready && c.job == Job::none && c.executor_idle;
-    };
-    const auto release_ok = [](const Context& c) {
-      return c.ready && c.settled && c.release_authorized && c.job == Job::none && c.executor_idle;
-    };
-    const auto recover_ok = [](const Context& c) {
-      return c.ready && c.settled && c.clear_of_wheel && c.job == Job::none && c.executor_idle;
-    };
-    const auto reset_ok = [](const Context& c) {
-      return c.fault_cleared && c.settled && c.executor_idle && !c.emergency_latched;
-    };
-    const auto init_done = [](const Done& e, const Context& c) {
-      return e.generation == c.generation && c.job == Job::initialize &&
-             c.ready && c.settled && c.clear_of_wheel && c.executor_idle;
-    };
-    const auto home_done = [](const Done& e, const Context& c) {
-      return e.generation == c.generation && c.job == Job::home &&
-             c.ready && c.settled && c.clear_of_wheel && c.executor_idle;
-    };
-    const auto grasp_done = [](const Done& e, const Context& c) {
-      return e.generation == c.generation && c.job == Job::grasp &&
-             c.ready && c.following_authorized && c.executor_idle;
-    };
-    const auto release_done = [](const Done& e, const Context& c) {
-      return e.generation == c.generation && c.job == Job::release &&
-             c.settled && c.clear_of_wheel && c.executor_idle;
-    };
-    const auto initialize = [](Context& c) { c.begin(Job::initialize); };
-    const auto home = [](Context& c) { c.begin(Job::home); };
-    const auto grasp = [](Context& c) { c.begin(Job::grasp); };
-    const auto release = [](Context& c) { c.begin(Job::release); };
-    const auto finished = [](Context& c) { c.job = Job::none; };
-    const auto enable = [](Context& c) { c.accepts_control = true; };
-    const auto disable = [](Context& c) {
-      c.accepts_control = false; c.settled = false; c.stop_requested = true;
-    };
-    const auto stop = [](Context& c) { c.cancel(); c.stop_requested = true; };
-    const auto emergency = [](Context& c) {
-      c.cancel(); c.emergency_latched = true; c.brake_requested = true; c.stop_requested = true;
-    };
-    return make_transition_table(
-      *state<INIT> + event<Boot>[free] / initialize = state<INITIALIZING>,
-      state<INITIALIZING> + event<Done>[init_done] / finished = state<READY>,
-      state<READY> + event<ENTER_STANDBY>[recover_ok] / home = state<HOMING>,
-      state<HOMING> + event<Done>[home_done] / finished = state<STANDBY>,
-      state<STANDBY> + event<ENTER_STANDBY> / [] {},
-      state<STANDBY> + event<GRASP_WHEEL>[grasp_ok] / grasp = state<GRASPING>,
-      state<GRASPING> + event<Done>[grasp_done] / finished = state<FOLLOWING>,
-      state<FOLLOWING> + event<START_CONTROL>[control_ok] / enable = state<CONTROL>,
-      state<CONTROL> + event<EXIT_CONTROL>[([](const Context& c) { return c.following_authorized; })] / disable = state<FOLLOWING>,
-      state<FOLLOWING> + event<EXIT_CONTROL> / [] {},
-      state<FOLLOWING> + event<LEAVE_WHEEL>[release_ok] / release = state<RELEASING>,
-      state<FOLLOWING> + event<ENTER_STANDBY>[release_ok] / release = state<RELEASING>,
-      state<RELEASING> + event<Done>[release_done] / finished = state<STANDBY>,
-      state<SAFE> + event<ENTER_STANDBY>[recover_ok] / home = state<HOMING>,
-      state<SAFE> + event<LEAVE_WHEEL>[release_ok] / release = state<RELEASING>,
-      state<ERROR> + event<RESET_ERROR>[reset_ok] / stop = state<SAFE>,
-      state<READY> + event<SafetyLost> / stop = state<SAFE>,
-      state<HOMING> + event<SafetyLost> / stop = state<SAFE>,
-      state<STANDBY> + event<SafetyLost> / stop = state<SAFE>,
-      state<GRASPING> + event<SafetyLost> / stop = state<SAFE>,
-      state<FOLLOWING> + event<SafetyLost> / stop = state<SAFE>,
-      state<CONTROL> + event<SafetyLost> / stop = state<SAFE>,
-      state<RELEASING> + event<SafetyLost> / stop = state<SAFE>,
-      state<INIT> + event<Fault> / stop = state<ERROR>,
-      state<INITIALIZING> + event<Fault> / stop = state<ERROR>,
-      state<STANDBY> + event<Fault> / stop = state<ERROR>,
-      state<READY> + event<Fault> / stop = state<ERROR>,
-      state<HOMING> + event<Fault> / stop = state<ERROR>,
-      state<GRASPING> + event<Fault> / stop = state<ERROR>,
-      state<FOLLOWING> + event<Fault> / stop = state<ERROR>,
-      state<CONTROL> + event<Fault> / stop = state<ERROR>,
-      state<RELEASING> + event<Fault> / stop = state<ERROR>,
-      state<SAFE> + event<Fault> / stop = state<ERROR>,
-      state<INIT> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
-      state<INITIALIZING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
-      state<STANDBY> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
-      state<READY> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
-      state<HOMING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
-      state<GRASPING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
-      state<FOLLOWING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
-      state<CONTROL> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
-      state<RELEASING> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
-      state<SAFE> + event<Emergency> / emergency = state<EMERGENCY_STOP>,
-      state<ERROR> + event<Emergency> / emergency = state<EMERGENCY_STOP>
-    );
-  }
-};
-```
-
-Core 构造 `Context context; sml::sm<RobotMachine> machine{context};` 后，machine 初始确为 INIT。先读外部急停锁存：已锁存则处理 Emergency，否则由启动流程自动 `process_event(Boot{})`。采用显式内部 Boot 便于初始化依赖和验证初态；对飞控而言仍是自动初始化，无需发指令。
-
-骨架的 cancel 只更新任务身份和门控；实际封装必须按第 5、6 节补齐取消、停止确认、手刹通道和执行副作用。Context 中 ready 等布尔量是守卫输入的简写，不允许业务调用者随意置真跳过检查。Fault 错误码、来源和任务失败归属在封装层记录，不需要为了示例把诊断对象塞入每条转换。
-
-### 7.1 单线程分发与优先级
-
-采用一个 Core 拥有线程；其他线程仅发布强类型事件。每轮先检查不可丢失的急停锁存，再处理 Fault、SafetyLost，然后是任务完成、普通请求。普通有界队列满时拒绝新请求；急停/阻断故障使用独立锁存位和监督快照，不能排在满队列后面等待。
-
-同一轮同时出现 Done 和 Fault，以故障优先，取消后的 Done 因 generation 失效被丢弃。process_event 不跨线程调用、不在 action 内重入；本设计不依靠额外 SML 线程锁掩盖共享资源竞态。发出每个普通执行副作用前再次检查急停锁存，实际驱动通道也独立执行安全门控。
-
-`process_event()` 的 bool 只表示事件是否被状态机处理，不是动作物理成功。返回 false 后由请求适配器区分 BUSY、非法状态与守卫失败；完成事件返回 false 不产生外部拒绝应答。已处于 ERROR 的再次 Fault 在封装层更新诊断，不要求 SML 自迁移。
-
-## 8. CMake 引用本地 sml-1.2.0
-
-库已经提供 INTERFACE 目标 `sml` 和别名 `sml::sml`，无需编译库文件、find_package(Boost) 或从网络下载。项目采用 C++20，与该库要求兼容。
-
-以下片段拟放在 `nodes/aviator_core/CMakeLists.txt` 现有提前 return 判断之后、创建/链接业务目标的位置；只在 Core 实际启用时引入，避免破坏 AVIATOR_COMMUNICATION_ONLY 构建：
-
-```cmake
-# 保留文件开头原有 AVIATOR_COMMUNICATION_ONLY / robotics 判断。
-if(NOT TARGET sml::sml)
-  set(SML_BUILD_EXAMPLES OFF CACHE BOOL "Build SML examples" FORCE)
-  set(SML_BUILD_TESTS OFF CACHE BOOL "Build SML tests" FORCE)
-  set(SML_BUILD_BENCHMARKS OFF CACHE BOOL "Build SML benchmarks" FORCE)
-  add_subdirectory(
-    "${PROJECT_SOURCE_DIR}/third_party/sml-1.2.0"
-    "${CMAKE_CURRENT_BINARY_DIR}/sml"
-    EXCLUDE_FROM_ALL
-  )
-endif()
-
-# 以下两行放在已有 add_library(aviator_core_control ...) 之后。
-target_sources(aviator_core_control PRIVATE RobotStateMachine.cpp)
-target_link_libraries(aviator_core_control PUBLIC sml::sml)
-```
-
-这里采用 PUBLIC 是因为建议的公开 RobotStateMachine.hpp 包含 `<boost/sml.hpp>`；如果后续把 SML 完全隐藏到 cpp，可改为 PRIVATE，但不要仅为隐藏依赖增加不必要的 Pimpl 层。现有 `aviator_core`、`aviator_core_servo` 已链接 aviator_core_control，无需分别重复添加头文件路径。
-
-本文件只提供接入方案，没有提前添加不存在的 cpp 或修改实际构建入口。将来实现时再应用上述片段。
-
-## 9. 协议映射与必须同步的差异
-
-| 接口项 | 当前文档 | 本设计及实施时的同步要求 |
+| 当前状态 | 操作 | 条件及结果 |
 | --- | --- | --- |
-| INIT / INITIALIZING | RS422 仅有 INIT | INIT 保持 0；INITIALIZING=10、READY=11、HOMING=12，不挪用现有状态值。启动 INIT 可非常短，外部可能首次只观察到 INITIALIZING。 |
-| 其他状态值 | STANDBY=1、GRASPING=2、FOLLOWING=3、CONTROL=4、SAFE=5、ERROR=6、EMERGENCY_STOP=7、RELEASING=8、STOPPING=9 | 保留 1..8；9 退役保留，不发送；本设计不含 STOPPING。 |
-| EXIT_CONTROL | RS422 经 STOPPING 到 FOLLOWING | 改为 FOLLOWING 直接接管，phase 可为 DECELERATE；该协议变更须同时更新 Markdown/Word 并确认。 |
-| ENTER_STANDBY | RS422 主要是 STANDBY 幂等确认 | 增加 FOLLOWING→RELEASING 和 READY→HOMING 和 SAFE→HOMING 的明确路径；仍拒绝 CONTROL 直接待机。 |
-| RESET_ERROR | RS422 可恢复 SAFE/STANDBY | 收敛为 ERROR→SAFE，不直接恢复 STANDBY 或 CONTROL。 |
-| EMERGENCY_STOP | 现有协议描述为硬件急停/驱动保护 | 本设计明确手刹动作和无出口锁存。一般可恢复驱动故障归 ERROR，不一律映射成不可逆急停。 |
-| ZMQ system.state | 旧枚举缺 INITIALIZING、RELEASING | 增加 INITIALIZING、READY、HOMING、RELEASING 字符串枚举及接收端校验；保留内部服务 request_id/session/epoch 机制。 |
-| STATUS.operation | 最近受理操作类别 | 初始化 Boot 非外部操作，启动时为 0；正常外部事件受理后更新；拒绝不覆盖。 |
-| STATUS.phase | 已有阶段 0..7 | INITIALIZING 默认 NONE，详细自检子阶段写内部诊断；无需为最小设计扩展线上字段。 |
+| READY | ENTER_STANDBY | 资源就绪、停稳、执行器空闲且已脱离方向盘，登记 home 任务，进入 HOMING。 |
+| STANDBY | ENTER_STANDBY | 幂等完成，不重复回 home。 |
+| STANDBY | GRASP_WHEEL | 资源就绪、停稳、跟随授权及执行器空闲，进入 GRASPING。 |
+| FOLLOWING | START_CONTROL | 资源就绪、停稳、任务空闲、跟随/输入来源授权及输入有效，直接进入 CONTROL。 |
+| CONTROL | EXIT_CONTROL | 跟随获授权，关闭主动目标接纳，进入 FOLLOWING 并登记跟随刚度任务。 |
+| FOLLOWING | EXIT_CONTROL | 空闲时幂等完成；已有刚度任务时返回 BUSY。 |
+| FOLLOWING / CONTROL | LEAVE_WHEEL / ENTER_STANDBY | 资源就绪且释放获授权，直接进入 RELEASING；一次请求包含减速、撤离和回 home。 |
+| READY | LEAVE_WHEEL | 仍在握盘、资源就绪、停稳、执行器空闲且释放获授权，进入 RELEASING。 |
+| ERROR | RESET_ERROR | 原因已排除、资源可用、已停稳、执行器空闲且无急停锁存，进入 READY；清当前错误，保留历史错误。 |
 
-六个 REQUEST 操作码仍为 0x01..0x06，不增加线上消息类型。外部运行毫秒时间戳、双路去重和回绕处理仍在 Gateway；异步任务 generation 只用于 Core 内部。
+FOLLOWING / CONTROL 的直接撤离不要求调用方先发 EXIT_CONTROL，也不要求请求时 Servo 已停稳。
+正在进行的跟随刚度或 CONTROL 默认刚度恢复可以被撤离请求接管：取消旧任务代号，等待旧工作线程退出，
+再执行新的释放任务。不会同时使用两个工作槽，也不会先重新进入 FOLLOWING。
+RELEASING 中重复操作返回 BUSY。实际张开、撤离前必须确认 Servo 已退出，不能把逻辑切换当成物理停稳。
+释放完成包含 `releaseHandles()` 和 `moveHome()`；仅张开手或仅撤离不报告 STANDBY。
 
-RS422 REQUEST：Core 实际受理后返回一次 REPLY，过渡操作为 ACCEPTED，短模式转换或幂等确认可 COMPLETED；后续仅经 STATUS 的 state/phase/error 观察进度。最新协议没有逐请求最终结果字段，不能重新偷偷加入。ZMQ 内部可靠服务可使用已有结果查询契约；串口不因此增加 get_result 消息。
+START_CONTROL 的 COMPLETED 表示业务模式已切换；默认刚度恢复期间仍关闭运动目标接纳。
+恢复后只接纳本次 CONTROL 和刚度恢复完成之后的新鲜输入，不能回放旧目标。
+EXIT_CONTROL 保持当前参考并减速，不回到抓握起点，不自动回 home。
 
-CONTROL 只在 CONTROL 状态及门控有效时转换为执行目标；首条有效目标 100 ms 和连续输入超时采用协议既有预算。状态机周期不能用“收到任何串口字节”刷新 watchdog。错误和无效反馈规则保留，状态导出为 50 Hz 聚合，不宣称状态机或动作本身只有 50 Hz 响应能力。
+复位本身不启动运动、不松手、不重新抓握、不恢复 CONTROL。READY 下仍握盘时用 LEAVE_WHEEL；
+已脱离时用 ENTER_STANDBY。Managed 执行器保留“可恢复位置关系”的证据：使能完成、完整抓握、
+撤离完成后可恢复；接近或张开撤离中途失败且位置关系尚不明确时拒绝复位。
+初始化未完成或设备仍不可用也不能仅清除错误后宣告 READY；须先排除原因并完成必要维护。
+软件阶段/锁只作为程序证据，不代表物理接触传感确认。
 
-## 10. 验证与实施顺序
+## 3. 可恢复问题、超时与故障
 
-先验证纯状态机，再接入异步执行器，最后接协议和实机；不要在串口回调中直接调用阻塞的抓握/初始化函数。
+可恢复问题保留原业务状态、任务代号及任务执行，不执行取消/停止副作用，也不重新提交已有动作。
+当前任务完成但所需反馈暂未满足时，保留完成结果，后续周期重试完成条件；原任务期限不延期。
 
-| 验证项 | 预期 |
+| 情况 | 处理 |
 | --- | --- |
-| 正常启动 | 构造为 INIT；自动 Boot 后 INITIALIZING；使能及阻抗准备成功后 READY，收到 ENTER_STANDBY 才经 HOMING 到 STANDBY。 |
-| 初始化失败/超时/提交失败 | ERROR，不假报 STANDBY。 |
-| 正常循环 | READY→HOMING→STANDBY→GRASPING→FOLLOWING→CONTROL→FOLLOWING→RELEASING（撤离并回 home）→STANDBY。 |
-| 守卫失败/非法事件 | 状态不变，明确拒绝；STANDBY 不能直接 START_CONTROL。 |
-| 重复请求/过渡中再请求 | 同请求不重复执行，其他互斥请求 BUSY。 |
-| EXIT_CONTROL 接管 | 立即不接纳飞控目标；未稳定时拒绝释放/重新操控，指令连续。 |
-| 故障复位 | 故障未消除时拒绝；清除后 ERROR→SAFE；仍需显式恢复。 |
-| 迟到 Done/失败回调 | generation 不匹配则不改变状态；不让旧动作覆盖新状态。 |
-| 同轮故障与完成 | 先处理故障，取消代号后完成无效。 |
-| 任一状态急停 | 均进入 EMERGENCY_STOP，普通任务中止，手刹请求发出。 |
-| 急停重复/手刹失败/任务完成/RESET_ERROR | 保持 EMERGENCY_STOP，不恢复运动。 |
-| 急停后重启 | 读取外部锁存，直接急停，不先初始化再检查。 |
-| 队列满/执行器无法取消 | 不丢急停，拒绝新任务；未确认停止不得报告 settled。 |
-| 缺少手部/视觉或物理抓握证据 | 如实无效，不把软件阶段结束当物理验证。 |
+| 必需资源短暂不可用、跟随授权短暂丢失、CONTROL 输入/来源暂时无效 | 保持原状态；每类原因独立计时，恢复后清除对应计时。 |
+| 上述原因持续达到恢复窗口 | 直接 ERROR，保留具体超时原因。默认窗口 100 ms，由 `Timeouts::recovery` 定义。 |
+| CONTROL 自开始接纳或最后一条有效目标起满 100 ms 未获得有效目标 | 输入租约超时，直接 ERROR；不会再叠加恢复窗口。 |
+| 设备明确阻断故障、执行器异常、任务提交失败 | 立即 ERROR。 |
+| 初始化、回 home、抓握、释放或刚度任务超过原截止时间 | ERROR，取消旧代号，忽略迟到结果。 |
+| 非 CONTROL 下无飞控输入 | 不触发控制输入超时。 |
+| 急停锁存或急停证据不可用 | EMERGENCY_STOP，优先于普通故障、完成及请求。 |
 
-本文转换骨架已在临时独立工程中通过本地 `third_party/sml-1.2.0` 的 `add_subdirectory` / `sml::sml` 目标，以 C++20 Debug 构建并运行断言测试。覆盖启动、正常循环、守卫拒绝、释放、SafetyLost、故障复位、初始化失败、迟到完成、全部九个非急停状态进入急停，以及急停后六种外部事件均不可退出；不代表异步执行器、手刹硬件或全部故障注入已经通过实机验收。
+初始化及跟随刚度任务默认 30 s；回 home、抓握、释放默认 180 s。
+设备层保留更具体的停止、通信和动作超时。恢复窗口不延长设备 watchdog，也不覆盖明确的故障。
+CONTROL 默认刚度恢复期间不启动“首个目标”租约，但输入/来源监督仍持续，阻抗 RPC 自身有期限。
 
-实施前需冻结：FOLLOWING 连续接管接口、初始化/回 home/抓握/释放任务最大时长、ready/settled 的实际来源、取消确认机制、SAFE 释放授权、急停独立执行及跨重启锁存、INITIALIZING 状态码和旧 STOPPING 的协议迁移。
+保持 CONTROL 状态不等于接受无效数据：只有资源、跟随授权、输入来源和输入时效均有效时才能提交新的 Servo 目标。
+短暂输入失效时保持现有参考；达到超时后停止并进入 ERROR。ERROR 不随输入恢复而自动退出。
+
+## 4. 执行与取消
+
+任务类型为 initialize、home、grasp、release、following_impedance。每个任务持有 generation 和单调时钟 deadline，
+动作只登记一次，耗时函数不在 SML action 内阻塞执行。其他互斥任务返回 BUSY。
+拥有线程每轮先监督急停、阻断故障及超时，再消费工作线程结果和普通请求。
+
+取消时关闭控制接纳并推进 generation，旧完成/失败结果不得改变新状态。ERROR/急停撤销运动授权；
+正常 EXIT_CONTROL 和直接撤离由既有 Servo 流程减速，保留授权以便执行后续获准动作。
+工作线程未退出前不提交新任务，设备和执行器未停稳前不执行释放轨迹。
+
+回 home 要求实际关节到达配置 home，速度低于阈值并保持稳定窗口；不以轨迹提交或软件阶段替代到位反馈。
+失败原始原因在执行器暴露 FAULT 前记录，避免后续资源错误覆盖诊断。
+
+## 5. 协议与界面
+
+内部状态码维持既有数值：INIT=0、STANDBY=1、GRASPING=2、FOLLOWING=3、CONTROL=4、
+ERROR=6、EMERGENCY_STOP=7、RELEASING=8、INITIALIZING=10、READY=11、HOMING=12。
+旧 SAFE=5 和旧 STOPPING=9 保留不用，其他状态不重编号。
+RS422 使用独立映射，旧 SAFE 的 0x09 保留不用，详见 [RS422 协议](AVIATOR_RS422通信协议规范.md)。
+
+Gateway、状态播报、操作提示及测试使用这十一个整机状态。设备 `arms.*.status` 的 SAFE 是设备停止状态，
+不属于本次删除的整机业务状态；设备本地停止和手节点 safe_pose 策略保留。
+六操作名称不变，串口操作码仍为 0x10..0x60。ACCEPTED 表示受理，最终动作进度由状态反馈观察。
+
+## 6. 验证与实现边界
+
+离线状态机覆盖正常流程、两种状态直接撤离、刚度切换接管、复位 READY、恢复守卫、
+短暂失效恢复、持续失效超时、任务完成等待、迟到结果和急停无出口。
+Managed 测试覆盖真实工作线程与模拟设备、阻抗切换期间撤离、输入失效、失败原始诊断和恢复。
+隔离 MuJoCo 进程测试覆盖运动中 CONTROL 直接释放、输入超时停稳、ERROR 显式复位及 READY 撤离。
+具体命令见 [Core 说明](../nodes/aviator_core/README.md) 和 [测试说明](../tests/README.md)。
+
+当前本地运行适配授权跟随和释放，按设备反馈及软件阶段判断就绪、停稳和脱离。
+软件急停在当前进程锁存；独立硬件急停检测、跨重启锁存和物理手刹尚未接入，brake_confirmed 始终为 false。
+这些软件/仿真校验不代表实机验收，也不代表已实现物理接触验证或完整柔顺跟随控制律。

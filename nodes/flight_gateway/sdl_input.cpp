@@ -148,7 +148,7 @@ bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
                     unfocused_since_ = now;
                     aviator::Logger::warn("Keyboard focus lost: holding target; keyboard input expires after 5 minutes");
                 } else {
-                    aviator::Logger::info("Keyboard focus restored; if Core entered SAFE, use the displayed recovery steps");
+                    aviator::Logger::info("Keyboard focus restored; if Core entered ERROR, use the displayed recovery steps");
                 }
                 resetKeyboard(now);
             }
@@ -210,7 +210,7 @@ bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
     const bool expired = !focused_ && checked >= unfocused_since_ &&
                          checked - unfocused_since_ >= focus_timeout_us;
     if (expired && !focus_expired_ && !(joystick_ && SDL_JoystickGetAttached(joystick_)))
-        aviator::Logger::warn("Keyboard unfocused for 5 minutes: input invalid; Core CONTROL will enter SAFE");
+        aviator::Logger::warn("Keyboard unfocused for 5 minutes: input invalid; Core CONTROL will enter ERROR");
     focus_expired_ = expired;
     help_->show(window_, focused_, joystick_ && SDL_JoystickGetAttached(joystick_), repaint, expired);
     if (!drained) return true; // Do not renew the lease while input events are queued.

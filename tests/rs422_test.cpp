@@ -10,6 +10,9 @@ void check(bool b, const char* reason) {
         throw std::runtime_error(reason);
 }
 int main() try {
+    check(stateCode("SAFE") == unknown && std::string(stateName(0x09)) == "UNKNOWN",
+          "retired SAFE remains mapped");
+    check(stateCode("ERROR") == 0x10 && stateCode("READY") == 0x03, "state codes renumbered");
     check(encode(Downlink{}) == Bytes({0xeb, 0x90, 0, 0, 0, 0, 0, 0, 0x85}),
           "independent downlink vector");
     auto bytes = encode(Downlink{255, 0x30, -1000, 1000});

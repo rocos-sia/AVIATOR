@@ -21,7 +21,6 @@ cues:
   FOLLOWING_FROM_CONTROL: {text: "退出操控，进入跟随模式", priority: 1}
   CONTROL: {text: "进入操控模式", priority: 1}
   RELEASING: {text: "正在释放方向盘", priority: 0}
-  SAFE: {text: "进入保护状态", priority: 2}
   ERROR: {text: "系统故障，请检查", priority: 2}
   EMERGENCY_STOP: {text: "软件急停已触发", priority: 3}
   COMM_LOST: {text: "控制状态通信中断", priority: 2}

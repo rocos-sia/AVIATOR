@@ -40,9 +40,11 @@ struct RecordingIk : Kinematics {
 struct Device : DataLink {
     std::array<double, 14> q{};
     bool enabled[2]{};
+    unsigned locked = 0;
     double now = 0, displacement = 0;
     std::vector<std::vector<JointFrame>> trajectories;
     std::vector<GraspCommand> commands;
+    std::atomic<bool> fail_trajectory{false};
     double getJointPosition(Side s, int j) const override { return q[int(s)*7+j]; }
     double getJointVelocity(Side, int) const override { return 0; }
     void setJointPositions(const std::array<double, 14> &v) override { q = v; }
@@ -52,11 +54,17 @@ struct Device : DataLink {
     void enable(Side s) override { enabled[int(s)] = true; }
     void disable(Side s) override { enabled[int(s)] = false; }
     void setImpedanceProfile(bool) override {}
-    GraspState graspState() const override { GraspState g; g.heartbeat = now; g.displacement = displacement; return g; }
-    uint64_t sendGraspCommand(GraspCommand c) override { commands.push_back(c); return 0; }
+    GraspState graspState() const override { GraspState g; g.heartbeat = now; g.displacement = displacement; g.locked = locked; return g; }
+    uint64_t sendGraspCommand(GraspCommand c) override {
+        commands.push_back(c);
+        if (c == GraspCommand::Lock) locked = 3;
+        if (c == GraspCommand::Unlock || c == GraspCommand::ResetFault) locked = 0;
+        return 0;
+    }
     void waitTick() override { now += .001; }
     double time() const override { return now; }
     void runTrajectory(const std::vector<JointFrame> &v, const std::atomic<bool> &) override {
+        if (fail_trajectory) throw std::runtime_error("Injected retreat failure");
         trajectories.push_back(v);
         q = v.back().q; now += v.size() * .001;
     }
@@ -157,27 +165,34 @@ void cameraGrasp(const fs::path& dir, const YAML::Node& original, const YAML::No
     }
 }
 // Let the executor enter FAULT before the owner consumes the failed future. This
-// reproduces the release exception being masked by SafetyLost and a new generation.
-void managedReleaseFailure(const fs::path& config, bool camera = false) {
+// reproduces the release exception being masked by a secondary readiness failure.
+void managedReleaseFailure(const fs::path& config, bool camera = false, bool during_retreat = false) {
     std::unique_ptr<Device> device;
     if (camera) device = std::make_unique<CameraDevice>();
     else device = std::make_unique<Device>();
+    auto* raw_device = device.get();
     auto* observed = camera ? static_cast<CameraDevice*>(device.get()) : nullptr;
     device->q[1] = device->q[8] = M_PI / 2;
     auto ik = std::make_unique<RecordingIk>();
     auto* solver = ik.get();
     bool allowed = false;
     ManagedOptions options;
-    options.snapshot = [] {
+    Aviator* instance = nullptr;
+    options.snapshot = [&] {
         fsm::Snapshot s;
         s.ready = s.settled = s.clear_of_wheel = s.following_authorized = true;
         s.release_authorized = s.source_authorized = s.input_ready = s.fault_cleared = s.emergency_known = true;
+        if (instance) {
+            const auto phase = instance->GetState();
+            s.clear_of_wheel = phase == "ENABLED" || phase == "INITIALIZED" || phase == "UNINITIALIZED";
+        }
         return s;
     };
     options.allow_motion = [&](bool value) { allowed = value; };
     options.heartbeat = [] {};
     options.request_brake = [] {};
     Aviator core(std::move(device), std::move(ik), nullptr, config.string(), options);
+    instance = &core;
     const auto wait = [&](const char* state) {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
         while ((core.GetSystemState() != state || !core.GetSystemStatus().conditions.settled) && std::chrono::steady_clock::now() < deadline) {
@@ -194,17 +209,29 @@ void managedReleaseFailure(const fs::path& config, bool camera = false) {
     check(core.GraspWheel() == fsm::Reply::accepted, "Grasp was not accepted");
     wait("FOLLOWING");
     if (observed) check(observed->reads == 1, "Managed grasp did not acquire camera pose");
-    solver->fail_fk = true;
+    solver->fail_fk = !during_retreat;
+    raw_device->fail_trajectory = during_retreat;
     check(core.LeaveWheel() == fsm::Reply::accepted, "Release was not accepted");
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while (core.GetState() != "FAULT" && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     check(core.GetState() == "FAULT", "Release FK failure was not injected");
     core.Update();
-    check(core.GetSystemState() == "ERROR", "Release exception was masked by SAFE");
-    check(core.GetSystemStatus().current_error.find("Release FK failed") != std::string::npos,
+    check(core.GetSystemState() == "ERROR", "Release exception was masked by readiness loss");
+    check(core.GetSystemStatus().current_error.find(during_retreat ? "Injected retreat failure" : "Release FK failed") != std::string::npos,
           "Release failure lost the original diagnostic");
     check(!allowed, "Release failure left commands authorized");
+    solver->fail_fk = false;
+    raw_device->fail_trajectory = false;
+    if (during_retreat) {
+        check(core.ResetError() == fsm::Reply::invalid_state, "Uncertain contact pose reset to READY");
+        check(core.GetSystemState() == "ERROR", "Interrupted retreat escaped ERROR");
+    } else {
+        check(core.ResetError() == fsm::Reply::completed, "Known pose fault reset rejected");
+        check(core.GetSystemState() == "READY" && !allowed, "Reset moved/re-enabled execution");
+        check(core.LeaveWheel() == fsm::Reply::accepted, "READY could not release");
+        wait("STANDBY");
+    }
 }
 // Hold a profile RPC open to exercise CONTROL entry independently of SDK/hardware.
 struct ProfileDevice : Device {
@@ -249,6 +276,7 @@ void managedControlEntry(const fs::path& config, const std::string& outcome) {
     };
     core.Init(); wait([&] { return settled("READY"); });
     core.EnterStandby(); wait([&] { return settled("STANDBY"); });
+    const auto home_target = observed->q;
     core.GraspWheel(); wait([&] { return settled("FOLLOWING"); });
     check(observed->following_calls == 1, "Following profile missing");
     const auto before_target = observed->q;
@@ -264,26 +292,43 @@ void managedControlEntry(const fs::path& config, const std::string& outcome) {
     wait([&] { return observed->default_calls == 1; });
     const int before_heartbeats = heartbeats;
     if (outcome == "emergency") core.EmergencyStop("During profile restoration");
-    if (outcome == "input_lost") { input_ready = false; core.Update(); }
+    if (outcome == "input_lost" || outcome == "transient") {
+        input_ready = false; core.Update();
+        check(core.GetSystemState() == "CONTROL" && allowed, "Transient loss cancelled CONTROL");
+        if (outcome == "transient") {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            core.Update(); input_ready = true;
+        }
+    }
+    if (outcome == "leave") {
+        check(core.LeaveWheel() == fsm::Reply::accepted, "Leave during restoration rejected");
+        check(core.GetSystemState() == "RELEASING", "Leave did not close CONTROL immediately");
+    }
     if (outcome == "exit") {
         check(core.ExitControl() == fsm::Reply::accepted, "Exit during restoration rejected");
         check(core.GetSystemState() == "FOLLOWING", "Exit did not leave CONTROL immediately");
     }
-    if (outcome == "success") {
+    if (outcome == "success" || outcome == "transient") {
         wait([&] { return core.GetSystemStatus().accepts_control; });
         check(core.GetSystemState() == "CONTROL", "Restoration changed CONTROL state");
         check(!core.ServoWheel(.1, 0, .5, sample), "Pre-restoration target replayed");
+    } else if (outcome == "leave") {
+        wait([&] { return settled("STANDBY"); });
+        check(observed->following_calls == 1, "Direct leave unnecessarily entered FOLLOWING");
+        check(!core.GetSystemStatus().accepts_control, "Leave kept control enabled");
     } else if (outcome == "exit") {
         wait([&] { return settled("FOLLOWING"); });
         check(observed->following_calls == 2, "Cancelled restoration lost Following update");
     } else {
-        const auto expected = outcome == "failure" ? "ERROR" : outcome == "emergency" ? "EMERGENCY_STOP" : "SAFE";
+        const auto expected = outcome == "emergency" ? "EMERGENCY_STOP" : "ERROR";
         wait([&] { return core.GetSystemState() == expected && core.GetSystemStatus().conditions.executor_idle; });
         check(!allowed && !core.GetSystemStatus().accepts_control, "Late restoration escaped protection");
     }
     check(heartbeats > before_heartbeats + 2, "Restoration blocked supervision/heartbeats");
-    check(observed->default_calls == 1, "Repeated default restoration in CONTROL");
-    check(observed->q == before_target, "Profile restoration reset hold target");
+    check(observed->default_calls == (outcome == "leave" ? 2 : 1), "Incorrect default restoration count");
+    const auto& expected_target = outcome == "leave" ? home_target : before_target;
+    for (size_t j = 0; j < expected_target.size(); ++j)
+        check(std::abs(observed->q[j] - expected_target[j]) < 1e-9, "Wrong hold/home target");
 }
 // Check collision behavior independently of the real model's initial contacts.
 void collisionModelRegression(const fs::path &dir) {
@@ -427,11 +472,12 @@ int main(int argc, char **argv) try {
     runCore(split); runCore(legacy);
     cameraGrasp(dir, config, legacy);
     managedReleaseFailure(dir / "robot.yaml");
+    managedReleaseFailure(dir / "robot.yaml", false, true);
     auto camera_config = YAML::Clone(config);
     camera_config["grasp_wheel"]["source"] = "camera";
     std::ofstream(dir / "camera-managed.yaml") << camera_config;
     managedReleaseFailure(dir / "camera-managed.yaml", true);
-    for (const auto* outcome : {"success", "failure", "emergency", "input_lost", "exit"})
+    for (const auto* outcome : {"success", "failure", "emergency", "input_lost", "exit", "leave", "transient"})
         managedControlEntry(dir / "robot.yaml", outcome);
     // Real deployment geometry + Pinocchio FK/IK, without connecting any device.
     const auto posture = YAML::LoadFile((root / "config/posture.json").string());

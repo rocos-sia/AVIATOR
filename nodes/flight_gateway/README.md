@@ -78,7 +78,7 @@ cmake --build build --parallel 2
 | simulator.send_a / send_b | 默认 true；改为 false 可模拟单路停发，重启后生效 |
 | simulator.corrupt_every | 默认 0；N>0 时每 N 周期破坏 A 路下行校验，B 路保持正常 |
 
-串口固定 115200/8N1、80 Hz，无 LEN、事务 ID 或额外串口回复。双路同时发送，机器人默认主路优先，切备用后不自动抢回。串口/进程重连、计数中断后要求空闲序列，不能自动重放操作。两路同时失效发布 invalid；Core 已进入 SAFE 时链路恢复不会自动恢复 CONTROL。
+串口固定 115200/8N1、80 Hz，无 LEN、事务 ID 或额外串口回复。双路同时发送，机器人默认主路优先，切备用后不自动抢回。串口/进程重连、计数中断后要求空闲序列，不能自动重放操作。两路同时失效发布 invalid；Core 已进入 ERROR 时链路恢复不会自动恢复 CONTROL。
 
 ### 上行反馈的实际边界
 
@@ -95,7 +95,7 @@ cmake --build build --target aviator_rs422_test aviator_rs422_simulator_driver f
 ctest --test-dir build -R '^(rs422.*|gateway.*|managed_flight_process)$' --output-on-failure
 ```
 
-`rs422` 验证独立字节向量、噪声重同步、计数回绕、双路去重、5/10 拍门控、无效字段及 Core 参数。`rs422_process` 使用两个 PTY 和独立 Python 对端验证真实网关进程；`rs422_simulator` 用 SDL 虚拟手柄运行生产模拟器代码，验证轴、10 拍按钮、两路相同发送、反馈解析和手柄掉线。`managed_flight_process` 使用 MuJoCo 验证 FLIGHT 来源的六操作和 SAFE 流程，不连接真机。实际串口卡、接线和机器人坐标方向仍需台架验证。
+`rs422` 验证独立字节向量、噪声重同步、计数回绕、双路去重、5/10 拍门控、无效字段及 Core 参数。`rs422_process` 使用两个 PTY 和独立 Python 对端验证真实网关进程；`rs422_simulator` 用 SDL 虚拟手柄运行生产模拟器代码，验证轴、10 拍按钮、两路相同发送、反馈解析和手柄掉线。`managed_flight_process` 使用 MuJoCo 验证 FLIGHT 来源的六操作和 ERROR 流程，不连接真机。实际串口卡、接线和机器人坐标方向仍需台架验证。
 
 ## 构建和运行
 
@@ -141,7 +141,7 @@ cmake --build build/communication --parallel
 
 设置 `source: joystick`，启动后聚焦标题为 `flight_gateway | Input guide` 的 SDL 窗口。键盘无需指定设备，系统连接的键盘均可向此窗口输入。
 
-窗口显示中文操作指南、实际 `buttons` 配置对应的按键、当前键盘焦点/摇杆连接状态，以及 SAFE 恢复步骤。黄色提示说明：仅用键盘且处于 CONTROL 时，窗口失焦立即停止累加并保持当前目标，连续失焦满 5 分钟后输入才失效并触发 SAFE；失焦和超时都会输出提示。5 分钟内重新聚焦可继续操作；已经进入 SAFE 后重新聚焦不会自动恢复控制。仍在握盘时先松盘撤离到 STANDBY，再握盘到 FOLLOWING，最后开始控制。文字使用 FreeType 和系统 Noto CJK（也支持文泉驿微米黑）字体，在启动时预渲染，输入循环只在状态变化或窗口重绘时更新画面。
+窗口显示中文操作指南、实际 `buttons` 配置对应的按键、当前键盘焦点/摇杆连接状态，以及 ERROR 恢复步骤。黄色提示说明：仅用键盘且处于 CONTROL 时，窗口失焦立即停止累加并保持当前目标，连续失焦满 5 分钟后输入才失效并触发 ERROR；失焦和超时都会输出提示。5 分钟内重新聚焦可继续操作；已经进入 ERROR 后重新聚焦不会自动恢复控制。故障清除后先复位到 READY，仍在握盘时松盘撤离到 STANDBY，再握盘到 FOLLOWING，最后开始控制。文字使用 FreeType 和系统 Noto CJK（也支持文泉驿微米黑）字体，在启动时预渲染，输入循环只在状态变化或窗口重绘时更新画面。
 
 ```yaml
 source: joystick
@@ -212,7 +212,7 @@ ctest --test-dir build/communication -R '^(gateway.*|service)$' --output-on-fail
 
 ## 摇杆按钮状态请求
 
-按钮编号 1–11 对应 SDL 摇杆按钮索引 0–10；编号不保证与外壳标注一致。默认按钮 1–6 依次为 `enter_standby`、`grasp_wheel`、`start_control`、`exit_control`、`leave_wheel`、`reset_error`，7–11 未分配。仅这六个外部状态事件可配置，Boot/Done/Fault/SafetyLost/Emergency 不作为测试按钮接口。
+按钮编号 1–11 对应 SDL 摇杆按钮索引 0–10；编号不保证与外壳标注一致。默认按钮 1–6 依次为 `enter_standby`、`grasp_wheel`、`start_control`、`exit_control`、`leave_wheel`、`reset_error`，7–11 未分配。仅这六个外部状态事件可配置，Boot/Done/Fault/Emergency 不作为测试按钮接口。
 
 直接编辑 flight.yaml 的 buttons 列表，例如把第 7 项改为 `exit_control`、第 11 项改为 `reset_error`；填 `none` 禁用对应按钮。所有配置均从 YAML 读取。
 

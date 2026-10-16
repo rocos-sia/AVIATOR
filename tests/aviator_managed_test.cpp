@@ -73,6 +73,7 @@ int main() try {
         check(managed.GetSystemState() == "ERROR" && !allowed, "executor failure did not revoke output");
         check(!managed.GetSystemStatus().current_error.empty(), "executor failure lost diagnostic");
         check(!managed.ServoWheel(0, 0, .5, 1), "ERROR accepted a target");
+        check(managed.ResetError() != fsm::Reply::completed, "Incomplete initialization reset to READY");
         managed.EmergencyStop("test");
         managed.Update();
         check(managed.GetSystemState() == "EMERGENCY_STOP" && brakes == 1, "emergency not latched");

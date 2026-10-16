@@ -23,8 +23,8 @@ ALSA null 设备与可控播放器验证缓存原子更新、文案失配/损坏
 128 KiB 报文预算、超出窗口上限的拒绝，以及普通轨迹原有 32 点/63 样本限制。
 `control_nodes_servo_window` 使用独立端口和 MuJoCo，验证 42 ms 补窗间隔后的连续恢复、
 显式 stop 后超过 1 s 的使能保位、从停止目标重启，以及持续断流仍触发 50 ms watchdog。
-`managed_gateway_process_test.py` 验证运动期间输入失效后进入 SAFE、稳定保位、无自动恢复，
-以及显式释放回到 STANDBY；任意中途 ERROR 都会失败。`core_hand_process_test.py` 的 revoke
+`managed_gateway_process_test.py` 验证运动期间输入失效后进入 ERROR、稳定保位、无自动恢复，
+以及复位到 READY 后显式释放回到 STANDBY；预期故障注入之外的 ERROR 都会失败。`core_hand_process_test.py` 的 revoke
 场景还检查没有运动任务时撤销授权也会请求本地 stop。
 
 `grasp_tools`（完整机器人构建）验证不同左右工具变换、直接抓握目标、70/40 mm 独立触发与
@@ -32,7 +32,7 @@ ALSA null 设备与可控播放器验证缓存原子更新、文案失配/损坏
 MuJoCo TCP；无需连接真机。`control_nodes_grasp` 运行真实总线和 MuJoCo，覆盖使能、从 home
 连续接近、锁定、张开、失能和退出。
 `grasp_tools` 还注入释放阶段 FK 失败，刻意让执行器先进入 FAULT，再运行状态机监督，
-验证原始错误被保留并进入 ERROR，避免先进入 SAFE 后吞掉工作线程异常。
+验证原始错误被保留并进入 ERROR，避免资源失效掩盖工作线程异常。
 
 `camera_grasp_input` 使用独立进程内 ZMQ 发布者，验证抓握来源配置、按需订阅、拒绝请求前旧帧和
 其他相机、重复读取、等待超时与取消；`camera_wheel_input` 验证已确认的坐标换算，并区分 Servo
@@ -52,7 +52,7 @@ MuJoCo TCP；无需连接真机。`control_nodes_grasp` 运行真实总线和 Mu
 `hand-fault-result.json` 结果；不连接串口或部署总线。
 
 `robot_state_machine_hand_latched-error` 在上述过程中永久保留 `hold_control_error`，
-验证设备恢复后 Core 接受有效测量、完成张开，不进入 SAFE/ERROR；同时检查释放期间
+验证设备恢复后 Core 接受有效测量、完成张开，不进入 ERROR/ERROR；同时检查释放期间
 `arm.command` 持续发布。该场景模拟驱动已经恢复执行目标，不能替代驱动故障锁存恢复测试。
 
 `communication_test.cpp` 经 CTest 注册为 `communication`，不依赖机器人或相机硬件，使用实际 libzmq socket。

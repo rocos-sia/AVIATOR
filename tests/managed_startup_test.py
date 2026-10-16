@@ -133,19 +133,17 @@ def main():
         missing_hand.clear()
         time.sleep(.15)
         process.stdin.write('RESET_ERROR\n'); process.stdin.flush()
-        state('SAFE', require_valid=True)
+        state('READY', require_valid=True)
         # After recovery, stale RT feedback must revoke readiness even if status messages arrive.
         stale.set()
-        deadline = time.monotonic() + 3
-        while state('SAFE')['ready']:
-            assert time.monotonic() < deadline, 'stale arm feedback retained readiness'
+        assert not state('ERROR')['ready']
         process.stdin.write('GRASP_WHEEL\n'); process.stdin.flush()
         time.sleep(.1)
         assert operations.count('enable') == 1, operations
         process.stdin.write('quit\n'); process.stdin.flush()
         assert process.wait(timeout=5) == 0
         assert not failures, failures
-        print('PASS: invalid hand messages warn; missing messages trip ERROR and require recovery/reset; stale arm trips SAFE', flush=True)
+        print('PASS: invalid hand messages warn; missing messages trip ERROR and require recovery/reset; stale arm trips ERROR', flush=True)
     finally:
         stop.set()
         if thread.ident is not None: thread.join()

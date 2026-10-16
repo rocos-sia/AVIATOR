@@ -1,0 +1,40 @@
+digraph Aviator {
+  graph [rankdir=LR, bgcolor="white", pad=0.3, nodesep=0.55, ranksep=0.8,
+         label="AVIATOR 整机状态机 · Managed 模式 · 11 个状态 / 6 个外部操作", labelloc=t,
+         fontname="Noto Sans CJK SC", fontsize=24];
+  node [shape=box, style="rounded,filled", fillcolor="#eaf1ff", color="#527bc5",
+        fontname="Noto Sans CJK SC", fontsize=15, margin="0.18,0.12"];
+  edge [fontname="Noto Sans CJK SC", fontsize=11, color="#536275", arrowsize=0.7];
+  INIT [label="INIT\n起始状态", fillcolor="#fff0c2"];
+  INITIALIZING [label="INITIALIZING\n初始化 / 使能", fillcolor="#fde4e5"];
+  READY [label="READY\n准备完成，保持当前位置"];
+  HOMING [label="HOMING\n回 home / 到位确认", fillcolor="#fde4e5"];
+  STANDBY [label="STANDBY\n已回 home 且停稳"];
+  GRASPING [label="GRASPING\n接近 / 抓握", fillcolor="#fde4e5"];
+  FOLLOWING [label="FOLLOWING\n保持参考 / 跟随刚度"];
+  CONTROL [label="CONTROL\n默认刚度 / 接纳有效目标"];
+  RELEASING [label="RELEASING\n减速 / 松手 / 撤离 / 回 home", fillcolor="#fde4e5"];
+  ERROR [label="ERROR\n记录错误 / 取消任务 / 停止", fillcolor="#ffe2d5"];
+  EMERGENCY_STOP [label="EMERGENCY_STOP\n锁存急停 / 请求手刹\n无普通退出路径", fillcolor="#ffd6db"];
+  INIT -> INITIALIZING [label="Boot"];
+  INITIALIZING -> READY [label="初始化完成"];
+  READY -> HOMING [label="ENTER_STANDBY\n已脱离、就绪、停稳"];
+  HOMING -> STANDBY [label="到位停稳"];
+  STANDBY -> GRASPING [label="GRASP_WHEEL\n就绪、停稳、跟随授权"];
+  GRASPING -> FOLLOWING [label="抓握完成"];
+  FOLLOWING -> CONTROL [label="START_CONTROL\n就绪、停稳、授权、输入有效"];
+  CONTROL -> FOLLOWING [label="EXIT_CONTROL\n关闭目标接纳并减速", constraint=false];
+  FOLLOWING -> RELEASING [label="LEAVE_WHEEL / ENTER_STANDBY\n资源就绪、释放授权"];
+  CONTROL -> RELEASING [label="LEAVE_WHEEL / ENTER_STANDBY\n无需先 EXIT_CONTROL"];
+  RELEASING -> STANDBY [label="撤离并回 home 完成", constraint=false];
+  READY -> RELEASING [label="LEAVE_WHEEL\n仍握盘、就绪、停稳、释放授权", constraint=false];
+  ERROR -> READY [label="RESET_ERROR\n故障已清除、设备可用、停稳\n位置关系可确认", color="#ba6936", constraint=false];
+  operating [shape=note, fillcolor="#f5f7fa", color="#95a1b2",
+             label="任一运行状态\n可恢复问题：保留状态和任务\n持续失效满 100 ms 或任务超时：ERROR\n控制目标租约满 100 ms：ERROR\n明确阻断故障 / 执行失败：立即 ERROR"];
+  operating -> ERROR [label="超时 / Fault"];
+  all_states [shape=note, fillcolor="#f5f7fa", color="#95a1b2", label="任意非急停状态"];
+  all_states -> EMERGENCY_STOP [label="Emergency"];
+  note [shape=note, fillcolor="#f5f7fa", color="#95a1b2",
+        label="完成事件均校验任务代号与反馈；未满足条件时保留完成结果并受原任务期限约束。\n复位不启动运动；输入恢复不自动退出 ERROR。\n软件急停仅当前进程锁存，物理手刹尚未接入。\n整机 SAFE 已取消；设备停止状态及本地 watchdog 保留。"];
+  {rank=same; INIT; operating; all_states; note;}
+}

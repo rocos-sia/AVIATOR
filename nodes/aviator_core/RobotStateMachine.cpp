@@ -34,7 +34,7 @@ struct TransitionLog {
 }
 
 RobotStateMachine::RobotStateMachine(Timeouts t) : timeouts_(t) {
-    for (auto value : {t.initialize, t.grasp, t.release, t.home})
+    for (auto value : {t.initialize, t.grasp, t.release, t.home, t.recovery})
         if (!value || value > 3600000000ULL) throw std::invalid_argument("Task timeout must be 1us..1h");
 }
 void RobotStateMachine::snapshot(const Snapshot& s) {
@@ -72,14 +72,24 @@ void RobotStateMachine::supervise(const Snapshot& s, std::uint64_t now) {
         emergency("Task generation exhausted; maintenance required"); return;
     }
     if (context_.job != Job::none && now >= deadline_) { fault("Task deadline exceeded"); return; }
-    if (machine_.is(sml::state<INITIALIZING>) && !s.ready) { fault("Initialization resources lost"); return; }
+    const bool operating = !machine_.is(sml::state<INIT>) && !machine_.is(sml::state<ERROR>);
     const bool following = machine_.is(sml::state<GRASPING>) || machine_.is(sml::state<FOLLOWING>) ||
                            machine_.is(sml::state<CONTROL>);
-    if ((following && (!s.ready || !s.following_authorized)) ||
-        ((machine_.is(sml::state<RELEASING>) || machine_.is(sml::state<READY>) ||
-          machine_.is(sml::state<HOMING>) || machine_.is(sml::state<STANDBY>)) && !s.ready) ||
-        (machine_.is(sml::state<CONTROL>) && (!s.source_authorized || !s.input_ready)))
-        safetyLost("Required resource, authorization or control input lost");
+    const bool controlling = machine_.is(sml::state<CONTROL>);
+    if (controlling && s.input_timed_out) { fault("Control input deadline exceeded"); return; }
+    // Preserve the state, task and generation during a bounded recoverable loss.
+    // Track causes independently so alternating losses cannot renew the deadline.
+    const auto expired = [&](bool lost, std::optional<std::uint64_t>& since) {
+        if (!lost) { since.reset(); return false; }
+        if (!since) since = now;
+        return now >= *since && now - *since >= timeouts_.recovery;
+    };
+    const bool resource_timeout = expired(operating && !s.ready, resource_lost_);
+    const bool following_timeout = expired(following && !s.following_authorized, following_lost_);
+    const bool input_timeout = expired(controlling && (!s.source_authorized || !s.input_ready), input_lost_);
+    if (resource_timeout) fault("Required resource recovery deadline exceeded");
+    else if (following_timeout) fault("Following authorization recovery deadline exceeded");
+    else if (input_timeout) fault("Control input/authorization recovery deadline exceeded");
 }
 Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t now) {
     const TransitionLog transition{*this, operationName(op)};
@@ -96,7 +106,10 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
     };
     supervise(s, now); // Protection always precedes ordinary requests.
     if (machine_.is(sml::state<EMERGENCY_STOP>)) return reply(Reply::invalid_state);
-    if (context_.job != Job::none) return reply(Reply::busy);
+    const bool leaving = (op == Operation::leave_wheel || op == Operation::enter_standby) &&
+        (machine_.is(sml::state<CONTROL>) || machine_.is(sml::state<FOLLOWING>));
+    if (context_.job != Job::none && !(leaving && context_.job == Job::following_impedance))
+        return reply(Reply::busy);
     bool accepted = false;
     switch (op) {
     case Operation::enter_standby: accepted = machine_.process_event(ENTER_STANDBY{}); break;
@@ -113,37 +126,36 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
         return reply(Reply::completed);
     }
     const bool permitted =
-        (machine_.is(sml::state<READY>) && op == Operation::enter_standby) ||
+        (machine_.is(sml::state<READY>) && (op == Operation::enter_standby || op == Operation::leave_wheel)) ||
         (machine_.is(sml::state<STANDBY>) && op == Operation::grasp_wheel) ||
         (machine_.is(sml::state<FOLLOWING>) && (op == Operation::start_control ||
             op == Operation::leave_wheel || op == Operation::enter_standby)) ||
-        (machine_.is(sml::state<SAFE>) && (op == Operation::leave_wheel || op == Operation::enter_standby)) ||
+        (machine_.is(sml::state<CONTROL>) && leaving) ||
         (machine_.is(sml::state<ERROR>) && op == Operation::reset_error);
     if (!permitted) return reply(Reply::invalid_state);
     if (!s.executor_idle || !s.settled) return reply(Reply::busy);
-    if (((machine_.is(sml::state<SAFE>) || machine_.is(sml::state<READY>)) && op == Operation::enter_standby && !s.clear_of_wheel) ||
+    if ((machine_.is(sml::state<READY>) && op == Operation::enter_standby && !s.clear_of_wheel) ||
+        (machine_.is(sml::state<READY>) && op == Operation::leave_wheel && s.clear_of_wheel) ||
         (op == Operation::reset_error && !s.fault_cleared)) return reply(Reply::invalid_state);
     return reply(Reply::capability_unavailable);
 }
-void RobotStateMachine::done(std::uint64_t generation, const Snapshot& s, std::uint64_t now) {
+bool RobotStateMachine::done(std::uint64_t generation, const Snapshot& s, std::uint64_t now) {
     const TransitionLog transition{*this, "Done"};
     if (!now) now = last_now_;
-    last_now_ = now;
     if (generation != context_.generation || context_.job == Job::none) {
         Logger::debug("Core FSM ignored completion generation={} active_generation={} job={}",
             generation, context_.generation, static_cast<int>(context_.job));
-        return;
+        return true;
     }
-    snapshot(s);
-    if (!s.emergency_known || s.emergency_latched) { emergency("Emergency during completion"); return; }
-    if (!s.fault.empty()) { fault(s.fault); return; }
-    if (context_.job == Job::grasp && !s.following_authorized) { safetyLost("Following authorization lost"); return; }
+    supervise(s, now); // Completion cannot beat an expired deadline or a blocking fault.
+    if (generation != context_.generation || context_.job == Job::none) return true;
     const auto completed = context_.job;
-    if (!machine_.process_event(Done{generation})) fault("Task completed without required postconditions");
-    else {
-        if (completed == Job::initialize || completed == Job::home || completed == Job::release) error_.clear();
-        if (context_.job != Job::none) deadline(now);
-    }
+    // Keep the completion pending while recoverable postconditions settle. The
+    // original task deadline remains in force; never resubmit the physical action.
+    if (!machine_.process_event(Done{generation})) return false;
+    if (completed == Job::initialize || completed == Job::home || completed == Job::release) error_.clear();
+    if (context_.job != Job::none) deadline(now);
+    return true;
 }
 void RobotStateMachine::failed(std::uint64_t generation, const std::string& why) {
     if (context_.job != Job::none && generation == context_.generation) fault(why);
@@ -153,17 +165,9 @@ void RobotStateMachine::fault(const std::string& why) {
     if (error_ != why || !machine_.is(sml::state<ERROR>))
         Logger::error("Core FSM fault state={} job={} generation={} deadline_us={} reason={}",
             state(), static_cast<int>(context_.job), generation(), deadline_, why);
+    resource_lost_.reset(); following_lost_.reset(); input_lost_.reset();
     error_ = last_error_ = why;
     machine_.process_event(Fault{}); // ERROR updates diagnostics only; no second stop.
-}
-void RobotStateMachine::safetyLost(const std::string& why) {
-    const TransitionLog transition{*this, "SafetyLost"};
-    if (machine_.process_event(SafetyLost{})) {
-        error_ = last_error_ = why;
-        Logger::warn("Core FSM safety lost reason={} ready={} following_authorized={} "
-            "source_authorized={} input_ready={}", why, context_.ready,
-            context_.following_authorized, context_.source_authorized, context_.input_ready);
-    }
 }
 void RobotStateMachine::emergency(const std::string& why) {
     const TransitionLog transition{*this, "Emergency"};
@@ -184,7 +188,7 @@ bool RobotStateMachine::takeBrake() { return std::exchange(context_.brake_reques
 const char* RobotStateMachine::state() const {
 #define STATE(s) if (machine_.is(sml::state<s>)) return #s
     STATE(INIT); STATE(INITIALIZING); STATE(READY); STATE(HOMING); STATE(STANDBY); STATE(GRASPING); STATE(FOLLOWING);
-    STATE(CONTROL); STATE(RELEASING); STATE(SAFE); STATE(ERROR); STATE(EMERGENCY_STOP);
+    STATE(CONTROL); STATE(RELEASING); STATE(ERROR); STATE(EMERGENCY_STOP);
 #undef STATE
     throw std::logic_error("Unknown SML state");
 }
@@ -192,7 +196,8 @@ unsigned RobotStateMachine::stateCode() const {
     if (machine_.is(sml::state<INITIALIZING>)) return 10;
     if (machine_.is(sml::state<READY>)) return 11;
     if (machine_.is(sml::state<HOMING>)) return 12;
-    const char* states[] = {"INIT", "STANDBY", "GRASPING", "FOLLOWING", "CONTROL", "SAFE", "ERROR", "EMERGENCY_STOP", "RELEASING"};
+    // Preserve protocol numbers: retired SAFE=5 remains an unused slot.
+    const char* states[] = {"INIT", "STANDBY", "GRASPING", "FOLLOWING", "CONTROL", "", "ERROR", "EMERGENCY_STOP", "RELEASING"};
     for (unsigned i = 0; i < 9; ++i) if (std::string(state()) == states[i]) return i;
     throw std::logic_error("Unknown state code");
 }

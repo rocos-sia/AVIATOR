@@ -1,162 +1,237 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="2390" viewBox="0 0 2600 2390">
-<defs><marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto-start-reverse"><path d="M2 2 L10 6 L2 10" fill="none" stroke="#282b30" stroke-width="1.5"/></marker></defs>
-<style>text{font-family:'Microsoft YaHei','Arial',sans-serif;fill:#282b30} .event{fill:#e35c5c;font-weight:700;paint-order:stroke;stroke:white;stroke-width:12;stroke-linejoin:round} .note{fill:#687080} .guard{fill:#687080;paint-order:stroke;stroke:white;stroke-width:10} .edge{fill:none;stroke:#282b30;stroke-width:2.6;marker-end:url(#arrow)} .action{font-style:italic;font-weight:600;paint-order:stroke;stroke:white;stroke-width:9}</style>
-<rect width="100%" height="100%" fill="white"/>
-<title>AVIATOR 整机状态机流转图</title><desc>依据 RobotStateMachine.hpp 和 Aviator::Managed，含十二状态、六操作、异步任务、保护及恢复路径。下方 HOMING 与 RELEASING 是上方同名状态的引用。</desc>
-<text x="85" y="82" font-size="44" text-anchor="start" class="" font-weight="700">AVIATOR 整机状态机</text>
-<text x="85" y="127" font-size="25" text-anchor="start" class="note">Managed 模式 · 12 个状态 · 6 个外部操作 · 单任务异步执行</text>
-<text x="2515" y="83" font-size="22" text-anchor="end" class="note">与当前代码一致</text>
-<path d="M244 285 C335 285 404 285 496 285" class="edge"/>
-<text x="365" y="260" font-size="24" text-anchor="middle" class="event">Boot</text>
-<text x="365" y="291" font-size="21" text-anchor="middle" class="guard">[G0]</text>
-<path d="M624 265 C676 238 714 225 750 225" class="edge" stroke-dasharray="5 6"/>
-<text x="692" y="207" font-size="22" text-anchor="middle" class="action">initialize</text>
-<path d="M1030 225 C1090 225 1118 264 1166 278" class="edge"/>
-<text x="1100" y="210" font-size="22" text-anchor="middle" class="event">Done [D1]</text>
-<path d="M1294 285 C1400 285 1455 285 1556 285" class="edge"/>
-<text x="1425" y="254" font-size="22" text-anchor="middle" class="event">ENTER_STANDBY</text>
-<text x="1425" y="285" font-size="21" text-anchor="middle" class="guard">[G1]</text>
-<path d="M1684 264 C1740 235 1767 225 1795 225" class="edge" stroke-dasharray="5 6"/>
-<text x="1738" y="207" font-size="22" text-anchor="middle" class="action">home</text>
-<path d="M2145 225 C2180 225 2215 264 2286 278" class="edge"/>
-<text x="2200" y="204" font-size="22" text-anchor="middle" class="event">Done [D1]</text>
-<path d="M2377 241 C2485 105 2185 105 2305 243" class="edge"/>
-<text x="2330" y="176" font-size="21" text-anchor="middle" class="event">ENTER_STANDBY</text>
-<text x="2467" y="217" font-size="20" text-anchor="middle" class="note">幂等</text>
-<path d="M2350 401 C2350 478 2350 556 2350 662" class="edge"/>
-<text x="2350" y="511" font-size="24" text-anchor="middle" class="event">GRASP_WHEEL</text>
-<text x="2350" y="542" font-size="21" text-anchor="middle" class="guard">[G2]</text>
-<path d="M2286 710 C2210 710 2160 710 2110 710" class="edge" stroke-dasharray="5 6"/>
-<text x="2195" y="682" font-size="22" text-anchor="middle" class="action">grasp</text>
-<path d="M1750 710 C1570 710 1400 710 1234 710" class="edge"/>
-<text x="1500" y="684" font-size="24" text-anchor="middle" class="event">Done [D2]</text>
-<path d="M1106 679 C961 522 760 523 600 677" class="edge"/>
-<text x="846" y="565" font-size="24" text-anchor="middle" class="event">START_CONTROL</text>
-<text x="846" y="596" font-size="21" text-anchor="middle" class="guard">[G3]</text>
-<path d="M615 732 C790 845 935 845 1105 739" class="edge"/>
-<text x="850" y="819" font-size="24" text-anchor="middle" class="event">EXIT_CONTROL</text>
-<text x="850" y="850" font-size="21" text-anchor="middle" class="guard">[following_authorized]</text>
-<path d="M1205 666 C1375 448 1420 755 1234 720" class="edge"/>
-<text x="1410" y="567" font-size="22" text-anchor="middle" class="event">EXIT_CONTROL</text>
-<text x="1410" y="598" font-size="21" text-anchor="middle" class="note">幂等</text>
-<path d="M1170 831 C1170 905 1170 980 1170 1052" class="edge"/>
-<text x="1350" y="924" font-size="23" text-anchor="middle" class="event">LEAVE_WHEEL</text>
-<text x="1350" y="958" font-size="23" text-anchor="middle" class="event">或 ENTER_STANDBY</text>
-<text x="1350" y="991" font-size="22" text-anchor="middle" class="note">[G4]</text>
-<path d="M1234 1100 C1325 1100 1370 1100 1450 1100" class="edge" stroke-dasharray="5 6"/>
-<text x="1345" y="1068" font-size="23" text-anchor="middle" class="action">release</text>
-<path d="M1790 1100 C2100 1100 2500 1110 2500 820 L2500 456 C2500 345 2470 285 2414 285" class="edge"/>
-<text x="2155" y="1065" font-size="24" text-anchor="middle" class="event">Done [D3]</text>
-<text x="2180" y="1140" font-size="23" text-anchor="middle" class="note">释放、撤离并回 home 后到达 STANDBY</text>
-<ellipse cx="180" cy="285" rx="64" ry="48" fill="#d7b958" stroke="#6288d5" stroke-width="2.3"/>
-<text x="180" y="368" font-size="29" text-anchor="middle" class="" font-weight="700">INIT</text>
-<text x="180" y="400" font-size="22" text-anchor="middle" class="note">初始状态</text>
-<ellipse cx="560" cy="285" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="560" y="368" font-size="29" text-anchor="middle" class="" font-weight="700">INITIALIZING</text>
-<text x="560" y="400" font-size="22" text-anchor="middle" class="note">初始化 / 使能</text>
-<rect x="750.0" y="185" width="280" height="80" rx="39" fill="#eae3fb" stroke="#282b30" stroke-width="2.3" stroke-dasharray="4 5"/>
-<text x="890" y="226" font-size="26" text-anchor="middle" class="" font-weight="600">initialize task</text>
-<text x="890" y="254" font-size="20" text-anchor="middle" class="note">init → enable</text>
-<ellipse cx="1230" cy="285" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="1230" y="368" font-size="29" text-anchor="middle" class="" font-weight="700">READY</text>
-<text x="1230" y="400" font-size="22" text-anchor="middle" class="note">准备完成，保持当前位置</text>
-<ellipse cx="1620" cy="285" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="1620" y="368" font-size="29" text-anchor="middle" class="" font-weight="700">HOMING</text>
-<text x="1620" y="400" font-size="22" text-anchor="middle" class="note">回 home / 到位确认</text>
-<rect x="1795.0" y="185" width="350" height="80" rx="39" fill="#eae3fb" stroke="#282b30" stroke-width="2.3" stroke-dasharray="4 5"/>
-<text x="1970" y="226" font-size="26" text-anchor="middle" class="" font-weight="600">home task</text>
-<text x="1970" y="254" font-size="20" text-anchor="middle" class="note">enable if needed → moveHome</text>
-<ellipse cx="2350" cy="285" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="2350" y="368" font-size="29" text-anchor="middle" class="" font-weight="700">STANDBY</text>
-<text x="2350" y="400" font-size="22" text-anchor="middle" class="note">已到 home 且停稳</text>
-<ellipse cx="2350" cy="710" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="2350" y="793" font-size="29" text-anchor="middle" class="" font-weight="700">GRASPING</text>
-<text x="2350" y="825" font-size="22" text-anchor="middle" class="note">接近 / 抓握</text>
-<rect x="1750.0" y="670" width="360" height="80" rx="39" fill="#eae3fb" stroke="#282b30" stroke-width="2.3" stroke-dasharray="4 5"/>
-<text x="1930" y="711" font-size="26" text-anchor="middle" class="" font-weight="600">grasp task</text>
-<text x="1930" y="739" font-size="20" text-anchor="middle" class="note">prepareGrasp → approach → lock</text>
-<ellipse cx="1170" cy="710" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="1170" y="793" font-size="29" text-anchor="middle" class="" font-weight="700">FOLLOWING</text>
-<text x="1170" y="825" font-size="22" text-anchor="middle" class="note">保持参考 / 当前未实现柔顺控制</text>
-<ellipse cx="550" cy="710" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="550" y="793" font-size="29" text-anchor="middle" class="" font-weight="700">CONTROL</text>
-<text x="550" y="825" font-size="22" text-anchor="middle" class="note">唯一接纳主动操控目标的状态</text>
-<ellipse cx="1170" cy="1100" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="1170" y="1183" font-size="29" text-anchor="middle" class="" font-weight="700">RELEASING</text>
-<text x="1170" y="1215" font-size="22" text-anchor="middle" class="note">松手 / 撤离 / 回 home</text>
-<rect x="1450.0" y="1060" width="340" height="80" rx="39" fill="#eae3fb" stroke="#282b30" stroke-width="2.3" stroke-dasharray="4 5"/>
-<text x="1620" y="1101" font-size="26" text-anchor="middle" class="" font-weight="600">release task</text>
-<text x="1620" y="1129" font-size="20" text-anchor="middle" class="note">releaseHandles → moveHome</text>
-<text x="100" y="958" font-size="26" text-anchor="start" class="" font-weight="700">转换守卫</text>
-<text x="100" y="1001" font-size="21" text-anchor="start" class="">G0  任务空闲，且无急停锁存</text>
-<text x="100" y="1040" font-size="21" text-anchor="start" class="">G1  ready + settled + clear_of_wheel + 任务空闲</text>
-<text x="100" y="1079" font-size="21" text-anchor="start" class="">G2  ready + settled + following_authorized + 任务空闲</text>
-<text x="100" y="1118" font-size="21" text-anchor="start" class="">G3  G2 + source_authorized + input_ready</text>
-<text x="100" y="1157" font-size="21" text-anchor="start" class="">G4  ready + settled + release_authorized + 任务空闲</text>
-<text x="100" y="1196" font-size="21" text-anchor="start" class="">G5  fault_cleared + settled + executor_idle + 无急停锁存</text>
-<text x="100" y="1263" font-size="21" text-anchor="start" class="note">任务空闲 = job == none 且 executor_idle</text>
-<path d="M85 1310 H2515" stroke="#e3e6ec" stroke-width="2"/>
-<text x="85" y="1366" font-size="31" text-anchor="start" class="" font-weight="700">保护与恢复</text>
-<text x="2515" y="1366" font-size="22" text-anchor="end" class="note">保护先于完成事件和普通请求；下方状态集合用于合并同类连线</text>
-<ellipse cx="459" cy="1440" rx="34" ry="26" fill="#527bc5"/><ellipse cx="501" cy="1440" rx="34" ry="26" fill="#fde4e5" stroke="#6288d5" stroke-width="2"/>
-<text x="480" y="1498" font-size="25" text-anchor="middle" class="" font-weight="700">运行状态集合</text>
-<text x="480" y="1529" font-size="20" text-anchor="middle" class="note">READY / HOMING / STANDBY / GRASPING</text>
-<text x="480" y="1558" font-size="20" text-anchor="middle" class="note">FOLLOWING / CONTROL / RELEASING</text>
-<ellipse cx="1249" cy="1440" rx="34" ry="26" fill="#527bc5"/><ellipse cx="1291" cy="1440" rx="34" ry="26" fill="#fde4e5" stroke="#6288d5" stroke-width="2"/>
-<text x="1270" y="1498" font-size="25" text-anchor="middle" class="" font-weight="700">可进入故障的状态集合</text>
-<text x="1270" y="1529" font-size="20" text-anchor="middle" class="note">除 ERROR、EMERGENCY_STOP 外的全部状态</text>
-<text x="1270" y="1558" font-size="20" text-anchor="middle" class="note">ERROR 再次 Fault：仅更新诊断</text>
-<ellipse cx="2179" cy="1440" rx="34" ry="26" fill="#527bc5"/><ellipse cx="2221" cy="1440" rx="34" ry="26" fill="#fde4e5" stroke="#6288d5" stroke-width="2"/>
-<text x="2200" y="1498" font-size="25" text-anchor="middle" class="" font-weight="700">任意非急停状态</text>
-<text x="2200" y="1529" font-size="20" text-anchor="middle" class="note">包括 SAFE、ERROR 和所有过渡状态</text>
-<path d="M480 1594 L480 1652" class="edge"/>
-<text x="480" y="1630" font-size="23" text-anchor="middle" class="event">SafetyLost</text>
-<path d="M1270 1594 L1270 1652" class="edge"/>
-<text x="1270" y="1630" font-size="23" text-anchor="middle" class="event">Fault</text>
-<path d="M2200 1565 L2200 1652" class="edge"/>
-<text x="2200" y="1628" font-size="23" text-anchor="middle" class="event">Emergency</text>
-<ellipse cx="480" cy="1700" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="480" y="1783" font-size="29" text-anchor="middle" class="" font-weight="700">SAFE</text>
-<text x="480" y="1815" font-size="22" text-anchor="middle" class="note">等待显式恢复</text>
-<ellipse cx="1270" cy="1700" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="1270" y="1783" font-size="29" text-anchor="middle" class="" font-weight="700">ERROR</text>
-<text x="1270" y="1815" font-size="22" text-anchor="middle" class="note">记录错误 / 取消任务 / 请求停止</text>
-<ellipse cx="2200" cy="1700" rx="64" ry="48" fill="#527bc5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="2200" y="1783" font-size="29" text-anchor="middle" class="" font-weight="700">EMERGENCY_STOP</text>
-<text x="2200" y="1815" font-size="22" text-anchor="middle" class="note">当前实例锁存，无退出路径</text>
-<path d="M1206 1700 C1000 1700 780 1700 544 1700" class="edge"/>
-<text x="875" y="1670" font-size="24" text-anchor="middle" class="event">RESET_ERROR</text>
-<text x="875" y="1701" font-size="21" text-anchor="middle" class="guard">[G5]</text>
-<path d="M445 1740 C395 1818 310 1865 280 1924" class="edge"/>
-<text x="248" y="1878" font-size="21" text-anchor="middle" class="event">ENTER_STANDBY [G1]</text>
-<path d="M517 1740 C571 1818 652 1865 680 1924" class="edge"/>
-<text x="718" y="1878" font-size="21" text-anchor="middle" class="event">LEAVE_WHEEL [G4]</text>
-<ellipse cx="280" cy="1970" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="280" y="2053" font-size="29" text-anchor="middle" class="" font-weight="700">HOMING</text>
-<text x="280" y="2085" font-size="22" text-anchor="middle" class="note">上方同名状态</text>
-<ellipse cx="680" cy="1970" rx="64" ry="48" fill="#fde4e5" stroke="#6288d5" stroke-width="2.3"/>
-<text x="680" y="2053" font-size="29" text-anchor="middle" class="" font-weight="700">RELEASING</text>
-<text x="680" y="2085" font-size="22" text-anchor="middle" class="note">上方同名状态</text>
-<text x="1250" y="1898" font-size="22" text-anchor="middle" class="">Fault：执行失败、任务超时、阻断故障或后置条件不满足</text>
-<text x="1250" y="1936" font-size="22" text-anchor="middle" class="">SafetyLost：当前模式所需资源、授权或输入失效</text>
-<text x="1250" y="1974" font-size="22" text-anchor="middle" class="">CONTROL 输入期限 100 ms；输入恢复不会自动恢复操控</text>
-<text x="2200" y="1898" font-size="24" text-anchor="middle" class="action">cancel + stop + request_brake</text>
-<text x="2200" y="1937" font-size="22" text-anchor="middle" class="note">物理手刹尚未接入</text>
-<text x="2200" y="1975" font-size="22" text-anchor="middle" class="note">软件锁存不跨进程重启保存</text>
-<text x="85" y="2324" font-size="20" text-anchor="start" class="note">Done 均校验 generation、任务类型及 executor_idle；D1: ready + settled + clear_of_wheel；D2: ready + following_authorized；D3: settled + clear_of_wheel。</text>
-<text x="85" y="2360" font-size="20" text-anchor="start" class="note">依据 nodes/aviator_core/include/aviator/RobotStateMachine.hpp 与 Aviator::Managed；紫色框表示异步动作，完成箭头属于其前置过渡状态。</text>
-<path d="M85 2270 H2515" stroke="#e3e6ec" stroke-width="2"/>
-<ellipse cx="100" cy="2222" rx="30" ry="22" fill="#d7b958" stroke="#6288d5" stroke-width="2"/>
-<text x="145" y="2230" font-size="22" text-anchor="start" class="">初始状态</text>
-<ellipse cx="370" cy="2222" rx="30" ry="22" fill="#fde4e5" stroke="#6288d5" stroke-width="2"/>
-<text x="415" y="2230" font-size="22" text-anchor="start" class="">过渡状态</text>
-<ellipse cx="640" cy="2222" rx="30" ry="22" fill="#527bc5" stroke="#6288d5" stroke-width="2"/>
-<text x="685" y="2230" font-size="22" text-anchor="start" class="">稳定 / 保护状态</text>
-<rect x="920" y="2200" width="70" height="44" rx="22" fill="#eae3fb" stroke="#282b30" stroke-width="2" stroke-dasharray="4 5"/>
-<text x="1005" y="2230" font-size="22" text-anchor="start" class="">异步执行</text>
-<path d="M1200 2222 H1300" class="edge"/>
-<text x="1320" y="2230" font-size="22" text-anchor="start" class="">事件 / 状态流转</text>
-<path d="M1590 2222 H1690" class="edge" stroke-dasharray="5 6"/>
-<text x="1710" y="2230" font-size="22" text-anchor="start" class="">动作提交</text>
-<text x="1995" y="2230" font-size="22" text-anchor="start" class="note">[G] 转换条件    [D] 完成条件</text>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: Aviator Pages: 1 -->
+<svg width="3338pt" height="492pt"
+ viewBox="0.00 0.00 3338.20 491.70" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 470.1)">
+<title>Aviator</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-470.1 3316.6,-470.1 3316.6,21.6 -21.6,21.6"/>
+<text text-anchor="middle" x="1647.5" y="-425.3" font-family="Noto Sans CJK SC" font-size="24.00">AVIATOR 整机状态机 · Managed 模式 · 11 个状态 / 6 个外部操作</text>
+<!-- INIT -->
+<g id="node1" class="node">
+<title>INIT</title>
+<path fill="#fff0c2" stroke="#527bc5" d="M322.5,-195.5C322.5,-195.5 259.5,-195.5 259.5,-195.5 253.5,-195.5 247.5,-189.5 247.5,-183.5 247.5,-183.5 247.5,-155.5 247.5,-155.5 247.5,-149.5 253.5,-143.5 259.5,-143.5 259.5,-143.5 322.5,-143.5 322.5,-143.5 328.5,-143.5 334.5,-149.5 334.5,-155.5 334.5,-155.5 334.5,-183.5 334.5,-183.5 334.5,-189.5 328.5,-195.5 322.5,-195.5"/>
+<text text-anchor="middle" x="291" y="-174.5" font-family="Noto Sans CJK SC" font-size="15.00">INIT</text>
+<text text-anchor="middle" x="291" y="-157.5" font-family="Noto Sans CJK SC" font-size="15.00">起始状态</text>
+</g>
+<!-- INITIALIZING -->
+<g id="node2" class="node">
+<title>INITIALIZING</title>
+<path fill="#fde4e5" stroke="#527bc5" d="M845.5,-195.5C845.5,-195.5 753.5,-195.5 753.5,-195.5 747.5,-195.5 741.5,-189.5 741.5,-183.5 741.5,-183.5 741.5,-155.5 741.5,-155.5 741.5,-149.5 747.5,-143.5 753.5,-143.5 753.5,-143.5 845.5,-143.5 845.5,-143.5 851.5,-143.5 857.5,-149.5 857.5,-155.5 857.5,-155.5 857.5,-183.5 857.5,-183.5 857.5,-189.5 851.5,-195.5 845.5,-195.5"/>
+<text text-anchor="middle" x="799.5" y="-174.5" font-family="Noto Sans CJK SC" font-size="15.00">INITIALIZING</text>
+<text text-anchor="middle" x="799.5" y="-157.5" font-family="Noto Sans CJK SC" font-size="15.00">初始化 / 使能</text>
+</g>
+<!-- INIT&#45;&gt;INITIALIZING -->
+<g id="edge1" class="edge">
+<title>INIT&#45;&gt;INITIALIZING</title>
+<path fill="none" stroke="#536275" d="M334.75,-169.5C423.69,-169.5 629.1,-169.5 734.13,-169.5"/>
+<polygon fill="#536275" stroke="#536275" points="734.21,-171.95 741.21,-169.5 734.21,-167.05 734.21,-171.95"/>
+<text text-anchor="middle" x="640.5" y="-172.7" font-family="Noto Sans CJK SC" font-size="11.00">Boot</text>
+</g>
+<!-- READY -->
+<g id="node3" class="node">
+<title>READY</title>
+<path fill="#eaf1ff" stroke="#527bc5" d="M1285,-195.5C1285,-195.5 1117,-195.5 1117,-195.5 1111,-195.5 1105,-189.5 1105,-183.5 1105,-183.5 1105,-155.5 1105,-155.5 1105,-149.5 1111,-143.5 1117,-143.5 1117,-143.5 1285,-143.5 1285,-143.5 1291,-143.5 1297,-149.5 1297,-155.5 1297,-155.5 1297,-183.5 1297,-183.5 1297,-189.5 1291,-195.5 1285,-195.5"/>
+<text text-anchor="middle" x="1201" y="-174.5" font-family="Noto Sans CJK SC" font-size="15.00">READY</text>
+<text text-anchor="middle" x="1201" y="-157.5" font-family="Noto Sans CJK SC" font-size="15.00">准备完成，保持当前位置</text>
+</g>
+<!-- INITIALIZING&#45;&gt;READY -->
+<g id="edge2" class="edge">
+<title>INITIALIZING&#45;&gt;READY</title>
+<path fill="none" stroke="#536275" d="M857.74,-169.5C920.13,-169.5 1021.22,-169.5 1097.4,-169.5"/>
+<polygon fill="#536275" stroke="#536275" points="1097.69,-171.95 1104.69,-169.5 1097.69,-167.05 1097.69,-171.95"/>
+<text text-anchor="middle" x="1002.5" y="-172.7" font-family="Noto Sans CJK SC" font-size="11.00">初始化完成</text>
+</g>
+<!-- HOMING -->
+<g id="node4" class="node">
+<title>HOMING</title>
+<path fill="#fde4e5" stroke="#527bc5" d="M1602,-195.5C1602,-195.5 1469,-195.5 1469,-195.5 1463,-195.5 1457,-189.5 1457,-183.5 1457,-183.5 1457,-155.5 1457,-155.5 1457,-149.5 1463,-143.5 1469,-143.5 1469,-143.5 1602,-143.5 1602,-143.5 1608,-143.5 1614,-149.5 1614,-155.5 1614,-155.5 1614,-183.5 1614,-183.5 1614,-189.5 1608,-195.5 1602,-195.5"/>
+<text text-anchor="middle" x="1535.5" y="-174.5" font-family="Noto Sans CJK SC" font-size="15.00">HOMING</text>
+<text text-anchor="middle" x="1535.5" y="-157.5" font-family="Noto Sans CJK SC" font-size="15.00">回 home / 到位确认</text>
+</g>
+<!-- READY&#45;&gt;HOMING -->
+<g id="edge3" class="edge">
+<title>READY&#45;&gt;HOMING</title>
+<path fill="none" stroke="#536275" d="M1297.28,-169.5C1345.38,-169.5 1403.23,-169.5 1449.76,-169.5"/>
+<polygon fill="#536275" stroke="#536275" points="1449.84,-171.95 1456.84,-169.5 1449.84,-167.05 1449.84,-171.95"/>
+<text text-anchor="middle" x="1377" y="-184.7" font-family="Noto Sans CJK SC" font-size="11.00">ENTER_STANDBY</text>
+<text text-anchor="middle" x="1377" y="-172.7" font-family="Noto Sans CJK SC" font-size="11.00">已脱离、就绪、停稳</text>
+</g>
+<!-- RELEASING -->
+<g id="node9" class="node">
+<title>RELEASING</title>
+<path fill="#fde4e5" stroke="#527bc5" d="M3283,-184.5C3283,-184.5 3096,-184.5 3096,-184.5 3090,-184.5 3084,-178.5 3084,-172.5 3084,-172.5 3084,-144.5 3084,-144.5 3084,-138.5 3090,-132.5 3096,-132.5 3096,-132.5 3283,-132.5 3283,-132.5 3289,-132.5 3295,-138.5 3295,-144.5 3295,-144.5 3295,-172.5 3295,-172.5 3295,-178.5 3289,-184.5 3283,-184.5"/>
+<text text-anchor="middle" x="3189.5" y="-163.5" font-family="Noto Sans CJK SC" font-size="15.00">RELEASING</text>
+<text text-anchor="middle" x="3189.5" y="-146.5" font-family="Noto Sans CJK SC" font-size="15.00">减速 / 松手 / 撤离 / 回 home</text>
+</g>
+<!-- READY&#45;&gt;RELEASING -->
+<g id="edge12" class="edge">
+<title>READY&#45;&gt;RELEASING</title>
+<path fill="none" stroke="#536275" d="M1297.03,-150.2C1344.86,-141.04 1403.82,-130.57 1457,-123.5 2071.79,-41.73 2233.01,-48.63 2852,-87.5 2942.44,-93.18 2966.82,-85.63 3055,-106.5 3078.47,-112.05 3103.32,-120.86 3125.13,-129.66"/>
+<polygon fill="#536275" stroke="#536275" points="3124.38,-132.01 3131.79,-132.39 3126.24,-127.47 3124.38,-132.01"/>
+<text text-anchor="middle" x="2116" y="-79.7" font-family="Noto Sans CJK SC" font-size="11.00">LEAVE_WHEEL</text>
+<text text-anchor="middle" x="2116" y="-67.7" font-family="Noto Sans CJK SC" font-size="11.00">仍握盘、就绪、停稳、释放授权</text>
+</g>
+<!-- STANDBY -->
+<g id="node5" class="node">
+<title>STANDBY</title>
+<path fill="#eaf1ff" stroke="#527bc5" d="M1854,-195.5C1854,-195.5 1730,-195.5 1730,-195.5 1724,-195.5 1718,-189.5 1718,-183.5 1718,-183.5 1718,-155.5 1718,-155.5 1718,-149.5 1724,-143.5 1730,-143.5 1730,-143.5 1854,-143.5 1854,-143.5 1860,-143.5 1866,-149.5 1866,-155.5 1866,-155.5 1866,-183.5 1866,-183.5 1866,-189.5 1860,-195.5 1854,-195.5"/>
+<text text-anchor="middle" x="1792" y="-174.5" font-family="Noto Sans CJK SC" font-size="15.00">STANDBY</text>
+<text text-anchor="middle" x="1792" y="-157.5" font-family="Noto Sans CJK SC" font-size="15.00">已回 home 且停稳</text>
+</g>
+<!-- HOMING&#45;&gt;STANDBY -->
+<g id="edge4" class="edge">
+<title>HOMING&#45;&gt;STANDBY</title>
+<path fill="none" stroke="#536275" d="M1614.24,-169.5C1644.69,-169.5 1679.62,-169.5 1710.35,-169.5"/>
+<polygon fill="#536275" stroke="#536275" points="1710.65,-171.95 1717.65,-169.5 1710.65,-167.05 1710.65,-171.95"/>
+<text text-anchor="middle" x="1666" y="-172.7" font-family="Noto Sans CJK SC" font-size="11.00">到位停稳</text>
+</g>
+<!-- GRASPING -->
+<g id="node6" class="node">
+<title>GRASPING</title>
+<path fill="#fde4e5" stroke="#527bc5" d="M2154,-195.5C2154,-195.5 2078,-195.5 2078,-195.5 2072,-195.5 2066,-189.5 2066,-183.5 2066,-183.5 2066,-155.5 2066,-155.5 2066,-149.5 2072,-143.5 2078,-143.5 2078,-143.5 2154,-143.5 2154,-143.5 2160,-143.5 2166,-149.5 2166,-155.5 2166,-155.5 2166,-183.5 2166,-183.5 2166,-189.5 2160,-195.5 2154,-195.5"/>
+<text text-anchor="middle" x="2116" y="-174.5" font-family="Noto Sans CJK SC" font-size="15.00">GRASPING</text>
+<text text-anchor="middle" x="2116" y="-157.5" font-family="Noto Sans CJK SC" font-size="15.00">接近 / 抓握</text>
+</g>
+<!-- STANDBY&#45;&gt;GRASPING -->
+<g id="edge5" class="edge">
+<title>STANDBY&#45;&gt;GRASPING</title>
+<path fill="none" stroke="#536275" d="M1866.07,-169.5C1924.49,-169.5 2005.2,-169.5 2058.69,-169.5"/>
+<polygon fill="#536275" stroke="#536275" points="2058.73,-171.95 2065.73,-169.5 2058.73,-167.05 2058.73,-171.95"/>
+<text text-anchor="middle" x="1951.5" y="-184.7" font-family="Noto Sans CJK SC" font-size="11.00">GRASP_WHEEL</text>
+<text text-anchor="middle" x="1951.5" y="-172.7" font-family="Noto Sans CJK SC" font-size="11.00">就绪、停稳、跟随授权</text>
+</g>
+<!-- FOLLOWING -->
+<g id="node7" class="node">
+<title>FOLLOWING</title>
+<path fill="#eaf1ff" stroke="#527bc5" d="M2446,-195.5C2446,-195.5 2311,-195.5 2311,-195.5 2305,-195.5 2299,-189.5 2299,-183.5 2299,-183.5 2299,-155.5 2299,-155.5 2299,-149.5 2305,-143.5 2311,-143.5 2311,-143.5 2446,-143.5 2446,-143.5 2452,-143.5 2458,-149.5 2458,-155.5 2458,-155.5 2458,-183.5 2458,-183.5 2458,-189.5 2452,-195.5 2446,-195.5"/>
+<text text-anchor="middle" x="2378.5" y="-174.5" font-family="Noto Sans CJK SC" font-size="15.00">FOLLOWING</text>
+<text text-anchor="middle" x="2378.5" y="-157.5" font-family="Noto Sans CJK SC" font-size="15.00">保持参考 / 跟随刚度</text>
+</g>
+<!-- GRASPING&#45;&gt;FOLLOWING -->
+<g id="edge6" class="edge">
+<title>GRASPING&#45;&gt;FOLLOWING</title>
+<path fill="none" stroke="#536275" d="M2166.3,-169.5C2201.65,-169.5 2250.18,-169.5 2291.8,-169.5"/>
+<polygon fill="#536275" stroke="#536275" points="2291.95,-171.95 2298.95,-169.5 2291.95,-167.05 2291.95,-171.95"/>
+<text text-anchor="middle" x="2247" y="-172.7" font-family="Noto Sans CJK SC" font-size="11.00">抓握完成</text>
+</g>
+<!-- CONTROL -->
+<g id="node8" class="node">
+<title>CONTROL</title>
+<path fill="#eaf1ff" stroke="#527bc5" d="M2840,-241.5C2840,-241.5 2675,-241.5 2675,-241.5 2669,-241.5 2663,-235.5 2663,-229.5 2663,-229.5 2663,-201.5 2663,-201.5 2663,-195.5 2669,-189.5 2675,-189.5 2675,-189.5 2840,-189.5 2840,-189.5 2846,-189.5 2852,-195.5 2852,-201.5 2852,-201.5 2852,-229.5 2852,-229.5 2852,-235.5 2846,-241.5 2840,-241.5"/>
+<text text-anchor="middle" x="2757.5" y="-220.5" font-family="Noto Sans CJK SC" font-size="15.00">CONTROL</text>
+<text text-anchor="middle" x="2757.5" y="-203.5" font-family="Noto Sans CJK SC" font-size="15.00">默认刚度 / 接纳有效目标</text>
+</g>
+<!-- FOLLOWING&#45;&gt;CONTROL -->
+<g id="edge7" class="edge">
+<title>FOLLOWING&#45;&gt;CONTROL</title>
+<path fill="none" stroke="#536275" d="M2458.07,-179.09C2515.42,-186.08 2593.64,-195.63 2655.61,-203.19"/>
+<polygon fill="#536275" stroke="#536275" points="2655.45,-205.64 2662.7,-204.05 2656.05,-200.77 2655.45,-205.64"/>
+<text text-anchor="middle" x="2560.5" y="-214.7" font-family="Noto Sans CJK SC" font-size="11.00">START_CONTROL</text>
+<text text-anchor="middle" x="2560.5" y="-202.7" font-family="Noto Sans CJK SC" font-size="11.00">就绪、停稳、授权、输入有效</text>
+</g>
+<!-- FOLLOWING&#45;&gt;RELEASING -->
+<g id="edge9" class="edge">
+<title>FOLLOWING&#45;&gt;RELEASING</title>
+<path fill="none" stroke="#536275" d="M2458.21,-161.04C2515.04,-155.37 2593.66,-148.43 2663,-145.5 2805.61,-139.47 2970.12,-145.66 3076.53,-151.39"/>
+<polygon fill="#536275" stroke="#536275" points="3076.65,-153.85 3083.77,-151.79 3076.92,-148.96 3076.65,-153.85"/>
+<text text-anchor="middle" x="2757.5" y="-160.7" font-family="Noto Sans CJK SC" font-size="11.00">LEAVE_WHEEL / ENTER_STANDBY</text>
+<text text-anchor="middle" x="2757.5" y="-148.7" font-family="Noto Sans CJK SC" font-size="11.00">资源就绪、释放授权</text>
+</g>
+<!-- CONTROL&#45;&gt;FOLLOWING -->
+<g id="edge8" class="edge">
+<title>CONTROL&#45;&gt;FOLLOWING</title>
+<path fill="none" stroke="#536275" d="M2713.63,-189.5C2685.25,-172.85 2650.34,-153.62 2634,-149.5 2578.8,-135.58 2514.91,-140.66 2464.96,-149.18"/>
+<polygon fill="#536275" stroke="#536275" points="2464.48,-146.78 2458.01,-150.41 2465.33,-151.61 2464.48,-146.78"/>
+<text text-anchor="middle" x="2560.5" y="-164.7" font-family="Noto Sans CJK SC" font-size="11.00">EXIT_CONTROL</text>
+<text text-anchor="middle" x="2560.5" y="-152.7" font-family="Noto Sans CJK SC" font-size="11.00">关闭目标接纳并减速</text>
+</g>
+<!-- CONTROL&#45;&gt;RELEASING -->
+<g id="edge10" class="edge">
+<title>CONTROL&#45;&gt;RELEASING</title>
+<path fill="none" stroke="#536275" d="M2852.07,-203.1C2918.11,-194.34 3006.9,-182.57 3076.68,-173.32"/>
+<polygon fill="#536275" stroke="#536275" points="3077.19,-175.73 3083.8,-172.38 3076.54,-170.87 3077.19,-175.73"/>
+<text text-anchor="middle" x="2968" y="-214.7" font-family="Noto Sans CJK SC" font-size="11.00">LEAVE_WHEEL / ENTER_STANDBY</text>
+<text text-anchor="middle" x="2968" y="-202.7" font-family="Noto Sans CJK SC" font-size="11.00">无需先 EXIT_CONTROL</text>
+</g>
+<!-- RELEASING&#45;&gt;STANDBY -->
+<g id="edge11" class="edge">
+<title>RELEASING&#45;&gt;STANDBY</title>
+<path fill="none" stroke="#536275" d="M3083.76,-138.25C3074.06,-136.8 3064.36,-135.52 3055,-134.5 2605.17,-85.64 2486.43,-71.11 2037,-123.5 1981.91,-129.92 1920.55,-141.51 1873.15,-151.45"/>
+<polygon fill="#536275" stroke="#536275" points="1872.61,-149.06 1866.26,-152.9 1873.62,-153.85 1872.61,-149.06"/>
+<text text-anchor="middle" x="2378.5" y="-101.7" font-family="Noto Sans CJK SC" font-size="11.00">撤离并回 home 完成</text>
+</g>
+<!-- ERROR -->
+<g id="node10" class="node">
+<title>ERROR</title>
+<path fill="#ffe2d5" stroke="#527bc5" d="M888,-77.5C888,-77.5 711,-77.5 711,-77.5 705,-77.5 699,-71.5 699,-65.5 699,-65.5 699,-37.5 699,-37.5 699,-31.5 705,-25.5 711,-25.5 711,-25.5 888,-25.5 888,-25.5 894,-25.5 900,-31.5 900,-37.5 900,-37.5 900,-65.5 900,-65.5 900,-71.5 894,-77.5 888,-77.5"/>
+<text text-anchor="middle" x="799.5" y="-56.5" font-family="Noto Sans CJK SC" font-size="15.00">ERROR</text>
+<text text-anchor="middle" x="799.5" y="-39.5" font-family="Noto Sans CJK SC" font-size="15.00">记录错误 / 取消任务 / 停止</text>
+</g>
+<!-- ERROR&#45;&gt;READY -->
+<g id="edge13" class="edge">
+<title>ERROR&#45;&gt;READY</title>
+<path fill="none" stroke="#ba6936" d="M900,-74.96C952.68,-88.02 1018.24,-105.29 1076,-123.5 1092.48,-128.7 1109.98,-134.81 1126.49,-140.86"/>
+<polygon fill="#ba6936" stroke="#ba6936" points="1126.08,-143.32 1133.49,-143.44 1127.77,-138.72 1126.08,-143.32"/>
+<text text-anchor="middle" x="1002.5" y="-150.7" font-family="Noto Sans CJK SC" font-size="11.00">RESET_ERROR</text>
+<text text-anchor="middle" x="1002.5" y="-138.7" font-family="Noto Sans CJK SC" font-size="11.00">故障已清除、设备可用、停稳</text>
+<text text-anchor="middle" x="1002.5" y="-126.7" font-family="Noto Sans CJK SC" font-size="11.00">位置关系可确认</text>
+</g>
+<!-- EMERGENCY_STOP -->
+<g id="node11" class="node">
+<title>EMERGENCY_STOP</title>
+<path fill="#ffd6db" stroke="#527bc5" d="M867.5,-305C867.5,-305 731.5,-305 731.5,-305 725.5,-305 719.5,-299 719.5,-293 719.5,-293 719.5,-248 719.5,-248 719.5,-242 725.5,-236 731.5,-236 731.5,-236 867.5,-236 867.5,-236 873.5,-236 879.5,-242 879.5,-248 879.5,-248 879.5,-293 879.5,-293 879.5,-299 873.5,-305 867.5,-305"/>
+<text text-anchor="middle" x="799.5" y="-284" font-family="Noto Sans CJK SC" font-size="15.00">EMERGENCY_STOP</text>
+<text text-anchor="middle" x="799.5" y="-267" font-family="Noto Sans CJK SC" font-size="15.00">锁存急停 / 请求手刹</text>
+<text text-anchor="middle" x="799.5" y="-250" font-family="Noto Sans CJK SC" font-size="15.00">无普通退出路径</text>
+</g>
+<!-- operating -->
+<g id="node12" class="node">
+<title>operating</title>
+<polygon fill="#f5f7fa" stroke="#95a1b2" points="433,-103 143,-103 143,0 439,0 439,-97 433,-103"/>
+<polyline fill="none" stroke="#95a1b2" points="433,-103 433,-97 "/>
+<polyline fill="none" stroke="#95a1b2" points="439,-97 433,-97 "/>
+<text text-anchor="middle" x="291" y="-82" font-family="Noto Sans CJK SC" font-size="15.00">任一运行状态</text>
+<text text-anchor="middle" x="291" y="-65" font-family="Noto Sans CJK SC" font-size="15.00">可恢复问题：保留状态和任务</text>
+<text text-anchor="middle" x="291" y="-48" font-family="Noto Sans CJK SC" font-size="15.00">持续失效满 100 ms 或任务超时：ERROR</text>
+<text text-anchor="middle" x="291" y="-31" font-family="Noto Sans CJK SC" font-size="15.00">控制目标租约满 100 ms：ERROR</text>
+<text text-anchor="middle" x="291" y="-14" font-family="Noto Sans CJK SC" font-size="15.00">明确阻断故障 / 执行失败：立即 ERROR</text>
+</g>
+<!-- operating&#45;&gt;ERROR -->
+<g id="edge14" class="edge">
+<title>operating&#45;&gt;ERROR</title>
+<path fill="none" stroke="#536275" d="M439.18,-51.5C519.96,-51.5 618.32,-51.5 691.69,-51.5"/>
+<polygon fill="#536275" stroke="#536275" points="691.72,-53.95 698.72,-51.5 691.72,-49.05 691.72,-53.95"/>
+<text text-anchor="middle" x="640.5" y="-54.7" font-family="Noto Sans CJK SC" font-size="11.00">超时 / Fault</text>
+</g>
+<!-- all_states -->
+<g id="node13" class="node">
+<title>all_states</title>
+<polygon fill="#f5f7fa" stroke="#95a1b2" points="351,-288.5 225,-288.5 225,-252.5 357,-252.5 357,-282.5 351,-288.5"/>
+<polyline fill="none" stroke="#95a1b2" points="351,-288.5 351,-282.5 "/>
+<polyline fill="none" stroke="#95a1b2" points="357,-282.5 351,-282.5 "/>
+<text text-anchor="middle" x="291" y="-267" font-family="Noto Sans CJK SC" font-size="15.00">任意非急停状态</text>
+</g>
+<!-- all_states&#45;&gt;EMERGENCY_STOP -->
+<g id="edge15" class="edge">
+<title>all_states&#45;&gt;EMERGENCY_STOP</title>
+<path fill="none" stroke="#536275" d="M357.18,-270.5C447.72,-270.5 611.73,-270.5 712.3,-270.5"/>
+<polygon fill="#536275" stroke="#536275" points="712.43,-272.95 719.43,-270.5 712.43,-268.05 712.43,-272.95"/>
+<text text-anchor="middle" x="640.5" y="-273.7" font-family="Noto Sans CJK SC" font-size="11.00">Emergency</text>
+</g>
+<!-- note -->
+<g id="node14" class="node">
+<title>note</title>
+<polygon fill="#f5f7fa" stroke="#95a1b2" points="576,-414.5 0,-414.5 0,-328.5 582,-328.5 582,-408.5 576,-414.5"/>
+<polyline fill="none" stroke="#95a1b2" points="576,-414.5 576,-408.5 "/>
+<polyline fill="none" stroke="#95a1b2" points="582,-408.5 576,-408.5 "/>
+<text text-anchor="middle" x="291" y="-393.5" font-family="Noto Sans CJK SC" font-size="15.00">完成事件均校验任务代号与反馈；未满足条件时保留完成结果并受原任务期限约束。</text>
+<text text-anchor="middle" x="291" y="-376.5" font-family="Noto Sans CJK SC" font-size="15.00">复位不启动运动；输入恢复不自动退出 ERROR。</text>
+<text text-anchor="middle" x="291" y="-359.5" font-family="Noto Sans CJK SC" font-size="15.00">软件急停仅当前进程锁存，物理手刹尚未接入。</text>
+<text text-anchor="middle" x="291" y="-342.5" font-family="Noto Sans CJK SC" font-size="15.00">整机 SAFE 已取消；设备停止状态及本地 watchdog 保留。</text>
+</g>
+</g>
 </svg>

@@ -504,7 +504,7 @@ Frame0：`hand.state`。
 
 | 字段 | 类型 | 规则 |
 | --- | --- | --- |
-| `system.state` | enum string | `INIT / STANDBY / GRASPING / FOLLOWING / CONTROL / SAFE / ERROR / EMERGENCY_STOP`；其中 INIT、SAFE、EMERGENCY_STOP 来自架构建议。 |
+| `system.state` | enum string | `INIT / INITIALIZING / READY / HOMING / STANDBY / GRASPING / FOLLOWING / CONTROL / RELEASING / ERROR / EMERGENCY_STOP`。 |
 | `system.control_source` | enum string | `FLIGHT / JOYSTICK / NONE`；NONE 为本文补充，表示当前无授权输入源。 |
 | `system.current_error_code` | uint53 | 当前最高优先级阻断错误，无错误为 0。 |
 | `system.last_error_code` | uint53 | 最近一次错误，恢复后不自动清零，无历史错误为 0。 |
@@ -841,7 +841,7 @@ system.state 的 valid 表示状态快照本身可信；lifecycle=ERROR 时仍�
 }
 ```
 
-设备阻抗切换的观测扩展：`arm.state.execution.impedance_switching` 表示正在重配置，`impedance_profile` 表示最近成功应用的配置（初始为 `default`）。暂停 RT 时消息 `valid=false`，关节样本时间戳不刷新；独立的 `status_mono_us` 表示设备服务仍在运行。Core 仅在本地发起的有界切换任务中允许使用该状态心跳维持资源就绪，不能将旧关节样本作为实时反馈。新轨迹必须等待切换完成，任一臂失败停止双臂。Managed `start_control` 返回 COMPLETED 并直接进入 CONTROL（表示状态转换完成），不创建额外的 CONTROL 状态机任务。默认刚度恢复期间 `settled=false`，暂不接收运动目标；恢复并确认反馈后放行原有 Servo 流程，只接受恢复后的新鲜输入。主线程仍处理输入、服务与保护，迟到的恢复结果不能解除 SAFE／ERROR／急停。阻抗切换复用连接和 RT 控制器，仅暂停与恢复运动循环，不重新初始化 RT。
+设备阻抗切换的观测扩展：`arm.state.execution.impedance_switching` 表示正在重配置，`impedance_profile` 表示最近成功应用的配置（初始为 `default`）。暂停 RT 时消息 `valid=false`，关节样本时间戳不刷新；独立的 `status_mono_us` 表示设备服务仍在运行。Core 仅在本地发起的有界切换任务中允许使用该状态心跳维持资源就绪，不能将旧关节样本作为实时反馈。新轨迹必须等待切换完成，任一臂失败停止双臂。Managed `start_control` 返回 COMPLETED 并直接进入 CONTROL（表示状态转换完成），不创建额外的 CONTROL 状态机任务。默认刚度恢复期间 `settled=false`，暂不接收运动目标；恢复并确认反馈后放行原有 Servo 流程，只接受恢复后的新鲜输入。主线程仍处理输入、服务与保护，迟到的恢复结果不能解除 ERROR／急停。阻抗切换复用连接和 RT 控制器，仅暂停与恢复运动循环，不重新初始化 RT。
 
 ### 14.3 ServiceReply
 
@@ -1178,7 +1178,7 @@ Managed 入口的 Rokae 待机就绪判据使用 arm.state 的 `status_mono_us`�
 
 Managed 服务默认 ROUTER bind 5559，检查发布者、同机时钟、请求期限和六操作白名单，拒绝记录副本。JOYSTICK 参数为 source/button，兼容并忽略旧 server_session_id；FLIGHT 参数为 source/operation_code。会话文本不作为授权凭据，Core/Gateway 的旧 session 固定参数仅为兼容；新鲜度和序号检查仍保留。每个 Core 进程最多缓存 1024 条原始应答，不淘汰已执行身份；ACCEPTED 不等同于动作完成，最终结果看 flight.state，尚无 get_result/异步最终应答。
 
-仅 CONTROL 调用 ServoWheel；内部滚转为 `-roll*0.87266` rad，俯仰为 `0.085*(pitch-1)` m。JOYSTICK 的 POSITION_HOLD 使用经校验的设备检查时间；FLIGHT 使用串口接收样本时间。输入失效走 SAFE，输入恢复不自动恢复操控。设备轨迹仍使用 Core 的 local.task，尚未把 flight.command 原始 origin 完整贯穿至 Manipulator。其他本地入口的行为以 Core README 为准。
+仅 CONTROL 调用 ServoWheel；内部滚转为 `-roll*0.87266` rad，俯仰为 `0.085*(pitch-1)` m。JOYSTICK 的 POSITION_HOLD 使用经校验的设备检查时间；FLIGHT 使用串口接收样本时间。短暂输入失效保持原状态，恢复窗口或控制输入租约到期直接 ERROR；输入恢复不会自动退出 ERROR，RESET_ERROR 成功后到 READY。设备轨迹仍使用 Core 的 local.task，尚未把 flight.command 原始 origin 完整贯穿至 Manipulator。其他本地入口的行为以 Core README 为准。
 
 
 Core 已通过同机 hand.command / hand.state 接入真实手开合，软件 lock 不表示抓握已验证；尚未实现视觉闭环或跨主机控制。离散服务与短轨迹能力只对明确支持本节约定的节点开放，既有 simulation 节点不能直接消费此轨迹模式。

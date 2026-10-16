@@ -46,7 +46,8 @@
 | 状态码（十六进制） | 状态 |
 | --- | --- |
 | 00 / 01 / 03 | EMERGENCY_STOP / INIT / READY |
-| 05 / 07 / 08 / 09 | STANDBY / FOLLOWING / CONTROL / SAFE |
+| 05 / 07 / 08 | STANDBY / FOLLOWING / CONTROL |
+| 09 | 保留，原 SAFE 已退役，不发送 |
 | 10 / 11 / 12 / 13 / 14 | ERROR / INITIALIZING / HOMING / GRASPING / RELEASING |
 | FF | UNKNOWN |
 

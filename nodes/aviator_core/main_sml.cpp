@@ -126,14 +126,17 @@ public:
                 else {
                     // This executor simulates completed retreat; other evidence remains editable.
                     if (task.job == fsm::Job::release) snapshot_.clear_of_wheel = true;
-                    machine_.done(task.generation, snapshot_, now_);
+                    if (!machine_.done(task.generation, snapshot_, now_)) completion_ = task;
                 }
             }
         } else if (command == "late_done") {
             if (last_task_) machine_.done(last_task_->generation, snapshot_);
             else aviator::Logger::info("[mock] no previous task");
         } else if (command == "fault") machine_.fault("Injected mock fault");
-        else if (command == "safety_lost") machine_.safetyLost("Injected mock safety loss");
+        else if (command == "safety_lost") {
+            snapshot_.ready = false;
+            machine_.supervise(snapshot_, now_);
+        }
         else if (command == "emergency") machine_.emergency("Injected mock emergency");
         else throw std::runtime_error("Unknown command: " + command);
         effects(command, before);
@@ -153,6 +156,7 @@ private:
         guards();
     }
     void effects(const std::string& event, const std::string& before) {
+        if (completion_ && machine_.done(completion_->generation, snapshot_, now_)) completion_.reset();
         aviator::Logger::info("[event] {}: {} -> {}", event, before, machine_.state());
         if (machine_.takeStop()) {
             if (active_) last_task_ = active_;
@@ -172,7 +176,7 @@ private:
     }
     fsm::RobotStateMachine machine_;
     fsm::Snapshot snapshot_;
-    std::optional<fsm::Task> active_, last_task_;
+    std::optional<fsm::Task> active_, last_task_, completion_;
     std::uint64_t now_ = 1; // Virtual clock only; interactive typing never ages evidence.
 };
 } // namespace

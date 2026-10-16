@@ -134,6 +134,8 @@ int main() {
             state.body["system"]["state"] = name;
             check(flight_gateway::valid_state_summary(state), "new Core transition state rejected");
         }
+        state.body["system"]["state"] = "SAFE";
+        check(!flight_gateway::valid_state_summary(state), "retired SAFE accepted");
         state.body["system"]["state"] = "STOPPING";
         check(!flight_gateway::valid_state_summary(state), "retired STOPPING accepted");
         state.body["system"]["state"] = "CONTROL";

@@ -45,5 +45,5 @@ SDK 使用独立的可写工作目录：一键启动放在本次日志目录的 
 可用 `--sdk-work-dir` 指定父目录，启动日志会打印实际路径。
 输入配置和动态库路径先转换为绝对路径，再切换工作目录，因此原有相对路径命令仍可使用。
 不与 sudo 机械臂进程共用仓库内日志；SDK 写日志失败会直接 abort，不能依赖 C++ 异常捕获。
-脚本原有节点退出监测保留，不新增 Core SAFE/ERROR 跳转。
+脚本原有节点退出监测保留，不新增 Core ERROR 跳转。
 离线验证：`ctest --test-dir build -R 'xcore_hand|rh56ftp|scripts|core_hand' --output-on-failure`。

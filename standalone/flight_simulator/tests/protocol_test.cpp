@@ -7,6 +7,8 @@ void check(bool ok) {
         throw std::runtime_error("protocol assertion failed");
 }
 int main() try {
+    check(stateCode("SAFE") == unknown && std::string(stateName(0x09)) == "UNKNOWN");
+    check(stateCode("ERROR") == 0x10 && stateCode("READY") == 0x03);
     const Bytes neutral{0xeb, 0x90, 0, 0, 0, 0, 0, 0, 0x85};
     check(encode(Downlink{}) == neutral);
     const Bytes extreme{0xeb, 0x90, 0xff, 0x60, 0x18, 0xfc, 0xe8, 0x03, 0x27};
