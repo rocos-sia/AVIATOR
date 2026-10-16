@@ -7,7 +7,7 @@
 ## 构建与一键启动
 
 ```bash
-cmake --build build/release --target aviator_core_wheel_bandwidth aviator_bus manipulator aviator_monitor -j2
+cmake --build build --target aviator_core_wheel_bandwidth aviator_bus manipulator xCoreSDK_hand aviator_monitor -j2
 
 # 预览所有命令，不启动节点、不生成文件
 ./scripts/start_wheel_bandwidth.sh --dry-run
@@ -24,12 +24,16 @@ cmake --build build/release --target aviator_core_wheel_bandwidth aviator_bus ma
 ./scripts/start_wheel_bandwidth.sh --logger
 
 # 无相机仿真验证；首次需构建 simulation
-cmake --build build/release --target simulation -j2
+cmake --build build --target simulation -j2
 ./scripts/start_wheel_bandwidth.sh --simulation --headless --no-monitor \
     --frequencies 0.5 --settle-cycles 1 --measure-cycles 2
 ```
 
-默认二进制目录 `build/release/bin`，可用 `AVIATOR_BIN` 覆盖。脚本默认用
+默认二进制目录 `build/bin`，与 `scripts/start_aviator.sh` 的源码运行默认值一致，
+可用 `AVIATOR_BIN` 覆盖。若使用 `release` preset 构建，请先执行
+`cmake --preset release`，再将上述构建目录改为 `build/release`，启动时使用
+`AVIATOR_BIN="$PWD/build/release/bin" ./scripts/start_wheel_bandwidth.sh`。
+脚本默认用
 `/usr/bin/python3 -s`，依赖 PyYAML、NumPy、Matplotlib；`-s` 避免用户 site-packages
 影响系统科学计算库。其他 Python 环境可通过 `BANDWIDTH_PYTHON` 指定。
 真实手由独立 xCoreSDK_hand 的 SDK RS485 连接提供，Monitor 可用 `MONITOR_BIN` 指定。
@@ -118,8 +122,8 @@ W_est = inverse(O) · FK(q_measured) · T · inverse(H)
 ## 离线验证
 
 ```bash
-cmake --build build/release --target aviator_wheel_bandwidth_test -j2
-ctest --test-dir build/release -R 'wheel_bandwidth_(estimate|help)' --output-on-failure
+cmake --build build --target aviator_wheel_bandwidth_test -j2
+ctest --test-dir build -R 'wheel_bandwidth_(estimate|help)' --output-on-failure
 /usr/bin/python3 -s -m unittest discover -s tools/wheel_bandwidth -p 'test_*.py' -v
 ```
 

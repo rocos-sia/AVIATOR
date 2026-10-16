@@ -114,7 +114,7 @@ def main():
     period = float(robot.get("servo_period", .01))
     if not (.001 <= period <= .05) or max(frequencies)*max(period, .01) > .05:
         raise ValueError("servo_period 须 0.001..0.05 s，且每周期至少20个目标采样点")
-    bin_dir = Path(os.environ.get("AVIATOR_BIN", ROOT / "build/release/bin")).resolve()
+    bin_dir = Path(os.environ.get("AVIATOR_BIN", ROOT / "build/bin")).expanduser().resolve()
     config = str(output / "config/system.yaml")
     plan = [("bus", [str(bin_dir / "aviator_bus"), "--config", config], False)]
     if args.simulation:
