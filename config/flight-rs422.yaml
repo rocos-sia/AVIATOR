@@ -1,0 +1,60 @@
+# flight_gateway 启动时读取本文件；修改后重启生效。
+role: robot
+source: rs422
+# SDL 摇杆选择：auto 自动选择第一个具备所需轴的设备，支持热插拔；或填从 0 开始的 SDL 设备索引。
+# 自动选择和指定索引均排除名称含 Keyboard/Mouse（不区分大小写）或“键盘/鼠标”的设备。
+# 无摇杆时仍可使用键盘；键盘无需 device，须聚焦 flight_gateway 输入窗口。
+device: auto
+publish: tcp://127.0.0.1:5555
+subscribe: tcp://127.0.0.1:5556
+service: tcp://127.0.0.1:5559
+# 兼容旧配置，已忽略：不再固定或校验 Core 会话；按发布者和新鲜反馈接收。
+core_session: ""
+# 空字符串使用 /tmp/flight_gateway-<uid>.lock。
+lock_file: ""
+# SDL 摇杆轴索引（从 0 开始），默认 roll=0、pitch=1。
+roll_axis: 0
+pitch_axis: 1
+invert_roll: false
+invert_pitch: false
+# 键盘方向键：左/右 = roll -/+，上/下 = pitch -/+；反转参数同样生效。
+# 按住按实际经过时间累加，松开/到限位保持；相反方向同时按下停止累加；0 将两轴目标归零。
+# 失焦停止累加，键盘输入保持有效 5 分钟；超时使 CONTROL 进入 SAFE。
+# speed 为归一化行程/秒（正数）；limit 为归一化绝对位置上限 (0, 1]。
+# 以下默认从 0 到满行程需 1 秒；不依赖系统按键重复速度。
+keyboard:
+  roll_speed: 1.0
+  pitch_speed: 1.0
+  roll_limit: 1.0
+  pitch_limit: 1.0
+input_timeout_ms: 100 # 1..100，设备检查有效期
+service_timeout_ms: 100 # 1..10000，超时结果未知，不自动重试
+# SDL 摇杆按钮索引 0..10 对应按钮 1..11；none 表示禁用。
+# 主键盘和小键盘 1..9、减号对应同号按钮；0 专用于目标归零，不触发第 10 项（摇杆不受影响）。
+# 小键盘按物理键位识别，Num Lock 开关均可；状态操作键长按只触发一次。
+# 仅支持下面六种外部状态事件，可重复映射到其他按钮。
+buttons:
+  - enter_standby # 1
+  - grasp_wheel   # 2
+  - start_control # 3
+  - exit_control  # 4
+  - leave_wheel   # 5
+  - reset_error   # 6
+  - none          # 7
+  - none          # 8
+  - none          # 9
+  - none          # 10
+  - none          # 11
+
+rs422:
+  # Explicit bench profile, including unknown sentinels and RELEASING=0x14.
+  profile: aviator-bench-v1
+  channel_a: /dev/serial/by-id/REPLACE_CHANNEL_A
+  channel_b: /dev/serial/by-id/REPLACE_CHANNEL_B
+  receive_timeout_ms: 50
+  recovery_frames: 10
+  switch_max_step: 100 # 0.1 percentage-point units; failover step >10% invalidates input
+  # Empty: executable installation/build root. Must contain the running executable.
+  release_root: ""
+  # Explicit bench fallback only when ALL release metadata is absent; never on failed verification.
+  allow_test_identity: true

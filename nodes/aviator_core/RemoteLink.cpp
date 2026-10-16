@@ -705,6 +705,12 @@ void RemoteLink::io() {
                         m.body["hand_control"] = {{"enabled", true}, {"error", hand.error},
                                                    {"target_version", hand.target_version}};
                     }
+                    // Only devices explicitly exporting a measurement qualify. Never use wheel_reference.
+                    if (arm_body_.contains("wheel_measurement")) {
+                        m.body["wheel_measurement"] = arm_body_.at("wheel_measurement");
+                        m.body["wheel_measurement"]["valid"] = fresh;
+                        m.body["wheel_measurement"]["sample_mono_us"] = sample_;
+                    }
                     m.body["software_lock"] = state_.locked;
                     m.body["wheel_reference"] = {{"angle", state_.angle},
                                                  {"displacement", state_.displacement}};

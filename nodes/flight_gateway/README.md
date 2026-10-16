@@ -1,8 +1,101 @@
 # flight_gateway
 
-当前实现 USB Joystick / Keyboard → `flight.command`，并订阅 `flight.state` 的系统状态摘要。采用一个主循环，直接复用 common 的 ZMQ、消息编解码和 InputGuard；没有新增通信框架或后台线程。`main.cpp` 负责主循环，`sdl_input.hpp/.cpp` 通过 SDL2 捕获输入，复用 `gateway.hpp/.cpp` 中已有的归一化、键盘积分和消息构造。内部兼容报告仅用于复用解码逻辑，不再直接打开或查询 Linux 输入设备。
+同一程序支持本机手柄/键盘、机器人端双路 RS422、飞控模拟端双路 RS422。机器人端连接本机 ZMQ/Core；模拟端直接读取手柄并与另一台工控机串口通信，不需要 Bus、Core 或机器人 SDK 运行进程。
 
-`source` 仅接受 `joystick` 或 `rs422`。`joystick` 同时启用摇杆和键盘；RS422 串口协议尚未实现，配置 `source: rs422` 时不会初始化 SDL、打开输入窗口或接收摇杆/键盘输入，并明确报错退出。后续在本节点内添加串口适配。
+| role | source | 用途 |
+| --- | --- | --- |
+| robot（缺省） | joystick | 保留既有本机手柄/键盘，50 Hz 发布 JOYSTICK |
+| robot | rs422 | 接收双路 9B，发布 FLIGHT，双路发送 29B |
+| flight_simulator | joystick | 手柄/键盘发送双路 9B，接收/显示两路 29B |
+
+串口按 [RS422 规范第 10 节](../../docs/AVIATOR_RS422通信协议规范.md) 的 `aviator-bench-v1` 台架约定运行。基础 ICD 的未定义字段使用显式台架哨兵，不伪造传感器反馈。下面“键盘操作”和“摇杆输入”章节的 50 Hz、5 分钟失焦保持描述适用于本机模式；模拟端例外见双机运行步骤。
+
+## 双工控机运行
+
+两台机器每台需要两个独立全双工 RS422 通道。A 路对 A 路、B 路对 B 路连接 TX/RX 差分线，具体引脚、参考地和终端配置按串口卡说明书。使用 `/dev/serial/by-id/...` 或稳定 udev 别名；没有该目录的板载串口可使用实际 tty 节点。程序检查两个路径不能指向同一个设备，并使用设备文件锁避免本程序重复打开。当前用户需有串口读写权限。
+
+### 工控机 A：连接机器人
+
+1. 编辑 `config/flight-rs422.yaml` 的 `channel_a`、`channel_b`。
+2. 核对 `config/system-rs422.yaml` 中的设备配置；它设置 `flight_source: FLIGHT`。普通 `system.yaml` 仍缺省 JOYSTICK，不自动接受 FLIGHT。
+3. 构建后启动：
+
+```bash
+cmake --build build --target flight_gateway aviator_core_managed --parallel 2
+./scripts/start_aviator.sh --rs422
+# 或使用既有仿真设备完成通信联调：
+./scripts/start_aviator.sh --simulation --headless --rs422
+```
+
+若设备、Bus、Core 已按相同 FLIGHT 配置独立启动，只运行网关：
+
+```bash
+./build/bin/flight_gateway --config config/flight-rs422.yaml
+```
+
+`--rs422` 启动脚本使用专用 system/flight 配置，避免只改 Gateway 却仍让 Core 接受 JOYSTICK。`--simulation --rs422` 使用 `system-simulation-rs422.yaml` 保留仿真时效参数。
+
+### 工控机 B：接手柄、模拟飞控
+
+推荐仅复制独立项目 [standalone/flight_simulator](../../standalone/flight_simulator/README.md) 到 B，无需部署 AVIATOR 仓库。它自带 CMake、配置、测试和打包入口，仅依赖 SDL2、FreeType、yaml-cpp 和系统中文字体。
+
+```bash
+# 在独立项目目录中执行：
+cmake -S . -B build -DBUILD_TESTING=OFF
+cmake --build build --parallel 2
+# 修改 config/config.yaml 的两路串口路径后：
+./build/flight_simulator --config config/config.yaml
+```
+
+独立配置将 `profile` 放在根级，不含 Bus/Core 参数。已有 `flight_gateway --config config/flight-simulator.yaml` 和 `scripts/start_flight_simulator.sh` 入口继续兼容；其配置格式和独立项目不同，不应直接混用。
+
+输入窗口显示原有按钮映射，标题显示两路 LIVE 状态对应的机器人运行状态（无新鲜上行为 STALE）；终端每秒显示两路帧计数、主备选择、通信位、指令回绕、实测百分比、机构状态、故障、版本和短码。STALE 行保留最后值供诊断，其值不可视为当前状态。
+
+默认 `require_joystick: true`：没有手柄时不发送；拔出手柄停止两路下行。设为 false 可用聚焦键盘，无手柄且失焦立即停发。按键 1～6 默认待机、抓握、控制、退出控制、释放、复位；配置映射与本机模式相同。每次操作发送 10 拍、随后至少 10 拍空闲；期间新点击不缓存，终端提示 BUSY_OR_NEUTRAL 时需重新按键。回绕不是动作完成，必须观察上行状态。
+
+### 切回原有用法
+
+```bash
+./scripts/start_aviator.sh
+# 或：Core 使用 system.yaml；Gateway 使用默认 flight.yaml。
+./build/bin/flight_gateway
+```
+
+不在运行中自动切换来源。只打开一个机器人端 Gateway；原有锁文件仍防止串口模式和本机手柄模式同时争用本机输入。
+
+### 串口配置和测试注入
+
+| 字段 | 含义 |
+| --- | --- |
+| rs422.profile | 必须显式为 aviator-bench-v1 |
+| rs422.channel_a / channel_b | 两个不同的绝对设备路径；重连间隔 1 s |
+| rs422.receive_timeout_ms | 默认 50，允许 25～100 |
+| rs422.recovery_frames | 默认连续 10 帧后可选用通道 |
+| rs422.switch_max_step | 默认 100，即切路位置差超过 10 个百分点进入保护 |
+| rs422.release_root | 默认程序所在的安装/构建根目录；必须包含正在运行的程序 |
+| rs422.allow_test_identity | 缺省 false；台架样例显式 true，仅所有发布元数据缺失时用既有测试短码 |
+| simulator.require_joystick | 默认 true；false 允许聚焦键盘备用 |
+| simulator.send_a / send_b | 默认 true；改为 false 可模拟单路停发，重启后生效 |
+| simulator.corrupt_every | 默认 0；N>0 时每 N 周期破坏 A 路下行校验，B 路保持正常 |
+
+串口固定 115200/8N1、80 Hz，无 LEN、事务 ID 或额外串口回复。双路同时发送，机器人默认主路优先，切备用后不自动抢回。串口/进程重连、计数中断后要求空闲序列，不能自动重放操作。两路同时失效发布 invalid；Core 已进入 SAFE 时链路恢复不会自动恢复 CONTROL。
+
+### 上行反馈的实际边界
+
+`flight.state.wheel_measurement` 仅在设备提供实际测量时上报；当前 MuJoCo 设备具备此字段，未提供测量的硬件节点返回未知位置 `00 80`。后退到位、手刹物理输入尚未接入，使用 `FF`。现有 Core 通用错误 28673 发送未知故障 `FFFF`，不伪装成某个 ICD 业务错误；已分配的 50 个故障码可正常透传。详见协议第 10 节。
+
+启动身份验证调用 `scripts/aviator_release.py identity`，实际校验成功后才使用发布短码，并核对编译版本。台架测试身份在终端明确显示 bench-test，短码 `9CA1`。安装包内的配置也参与发布校验：修改交付配置后需重新生成合法发布清单，不能让校验失败退回测试身份。校验不在 80 Hz 主循环中重复执行。
+
+已经记录本机服务 request/reply；当前串口诊断写入日志，尚未实现逐字节 RS422 MCAP 录制。
+
+## 新增自动测试
+
+```bash
+cmake --build build --target aviator_rs422_test aviator_rs422_simulator_driver flight_gateway --parallel 2
+ctest --test-dir build -R '^(rs422.*|gateway.*|managed_flight_process)$' --output-on-failure
+```
+
+`rs422` 验证独立字节向量、噪声重同步、计数回绕、双路去重、5/10 拍门控、无效字段及 Core 参数。`rs422_process` 使用两个 PTY 和独立 Python 对端验证真实网关进程；`rs422_simulator` 用 SDL 虚拟手柄运行生产模拟器代码，验证轴、10 拍按钮、两路相同发送、反馈解析和手柄掉线。`managed_flight_process` 使用 MuJoCo 验证 FLIGHT 来源的六操作和 SAFE 流程，不连接真机。实际串口卡、接线和机器人坐标方向仍需台架验证。
 
 ## 构建和运行
 
@@ -18,7 +111,7 @@ cmake --build build/communication --parallel
 ./build/communication/bin/flight_gateway
 ```
 
-所有运行配置来自 [config/flight.yaml](../../config/flight.yaml)，只保留 `--help` / `-h` 查看用法，不接受原有的设备、端点、按钮等启动参数。启动时打印实际配置路径；修改文件后重启生效，不热加载。
+所有运行配置来自 [config/flight.yaml](../../config/flight.yaml)，支持 `--config <路径>` 和 `--help` / `-h`；不接受原有的设备、端点、按钮等单独启动参数。启动时打印实际配置路径；修改文件后重启生效，不热加载。
 
 构建目录中的程序默认读取编译时定位的源码 `config/flight.yaml`，不依赖当前工作目录。安装后的程序优先读取可执行文件旁的 `../share/aviator/config/flight.yaml`（随 CMake 安装）；该路径不存在时回退源码路径。配置文件必须存在且原有字段完整；新增 `keyboard` 块及其中字段可省略并使用默认值。未知/重复字段、非法按钮事件及超出范围的数值都会导致启动失败。
 
@@ -26,7 +119,7 @@ cmake --build build/communication --parallel
 
 | YAML 字段 | 默认值 / 含义 |
 | --- | --- |
-| `source` | `joystick`（摇杆+键盘）或 `rs422`（禁用本地输入，串口协议尚未实现）。 |
+| `source` | `joystick`（摇杆+键盘）或 `rs422`（机器人端双路串口，禁用本地输入）。 |
 | `device` | `auto` 自动选择，或非负 SDL 摇杆索引；不影响键盘。 |
 | `publish` / `subscribe` | `tcp://127.0.0.1:5555` / `tcp://127.0.0.1:5556`。 |
 | `service` | `tcp://127.0.0.1:5559`；本机 Core 操作服务，与总线端点不同。 |
@@ -42,7 +135,7 @@ cmake --build build/communication --parallel
 
 终端保留启动、状态变化、失焦和超时提示，不周期打印 roll/pitch。仅使用键盘时，连续失焦满 5 分钟后输入无效。
 
-生产者固定为 `flight_gateway`，线上报文 source 固定为 `JOYSTICK`。键盘作为虚拟摇杆复用该身份（包括服务请求参数），兼容现有 Core 协议和授权；YAML 的 `source: joystick` 同时接收两类本地输入。启动打印本次 session 和 clock_id，Core 应通过自己的授权流程接纳该会话；打印 STARTED 仅说明节点已初始化，不代表总线已连通或控制已获授权。
+本机手柄模式的生产者固定为 `flight_gateway`，线上报文 source 固定为 `JOYSTICK`。键盘作为虚拟摇杆复用该身份（包括服务请求参数），兼容现有 Core 协议和授权；YAML 的 `source: joystick` 同时接收两类本地输入。启动打印本次 session 和 clock_id，Core 应通过自己的授权流程接纳该会话；打印 STARTED 仅说明节点已初始化，不代表总线已连通或控制已获授权。
 
 ## 键盘操作
 
@@ -99,7 +192,7 @@ Gateway 接收通过发布者、时钟、序号和时效检查的 Core 反馈；
 
 节点启动时生成普通文本标记；Core 重启后可接收其新鲜反馈，无需同步会话 ID。请求仍需新鲜 Core 状态及 source_authorized 确认。
 
-Managed Core 的 flight.state.valid 表示设备状态及 Core 拥有线程更新新鲜，业务故障看 system.state；机械臂实时数据是否可用看 freshness.arm.valid。Rokae 未使能时也能识别 Core，不伪造 RT 采样。此处只消费系统摘要，不宣称完成双臂、双手、视觉业务 Schema 校验；USB 摇杆暂不向设备回传或发送震动，后续 RS422 回传使用独立 ICD。
+Managed Core 的 flight.state.valid 表示设备状态及 Core 拥有线程更新新鲜，业务故障看 system.state；机械臂实时数据是否可用看 freshness.arm.valid。Rokae 未使能时也能识别 Core，不伪造 RT 采样。此处只消费系统摘要，不宣称完成双臂、双手、视觉业务 Schema 校验；USB 摇杆暂不向设备回传或发送震动，RS422 回传遵循独立 ICD 及第 10 节台架约定。
 
 ## 测试与边界
 
@@ -115,7 +208,7 @@ ctest --test-dir build/communication -R '^(gateway.*|service)$' --output-on-fail
 
 真实 USB 权限、桌面焦点、按钮编号与持续操控仍需现场验证。
 
-本次未连接实际键盘或摇杆硬件，设备权限、映射、发布抖动和持续操控需真机验证。当前不实现原始数据记录和 RS422 下行。安装入口为 `${CMAKE_INSTALL_BINDIR}/flight_gateway`。
+本次未连接实际键盘或摇杆硬件，设备权限、映射、发布抖动和持续操控需真机验证。本机手柄模式不记录原始输入；RS422 模式见前述双机运行章节。安装入口为 `${CMAKE_INSTALL_BINDIR}/flight_gateway`。
 
 ## 摇杆按钮状态请求
 

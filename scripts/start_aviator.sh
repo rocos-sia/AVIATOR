@@ -6,6 +6,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
 DRY_RUN=false
 SIMULATION=false
+RS422=false
 FAKE_HAND=false
 HEADLESS=false
 LOGGER=false
@@ -14,14 +15,16 @@ for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
         --simulation) SIMULATION=true ;;
+        --rs422) RS422=true ;;
         --fake-hand) FAKE_HAND=true ;;
         --headless) HEADLESS=true ;;
         --logger) LOGGER=true ;;
         --tts) TTS=true ;;
         -h|--help)
-            echo '用法: ./scripts/start_aviator.sh [--simulation | --fake-hand] [--headless] [--logger] [--tts] [--dry-run]'
+            echo '用法: ./scripts/start_aviator.sh [--simulation | --fake-hand] [--headless] [--rs422] [--logger] [--tts] [--dry-run]'
             echo '默认启动 Rokae + RH56FTP，加载 config/system.yaml。'
             echo '--simulation 使用单个仿真进程替代设备节点，加载 config/system-simulation.yaml。'
+            echo '--rs422 选择双路串口配置，Core 输入来源为 FLIGHT；先编辑 flight-rs422.yaml。'
             echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂和相机照常启动。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
@@ -35,6 +38,12 @@ $HEADLESS && ! $SIMULATION && { echo '--headless 仅适用于 --simulation' >&2;
 SYSTEM_CONFIG=config/system.yaml
 if $SIMULATION; then
     SYSTEM_CONFIG=config/system-simulation.yaml
+fi
+FLIGHT_CONFIG=config/flight.yaml
+if $RS422; then
+    FLIGHT_CONFIG=config/flight-rs422.yaml
+    SYSTEM_CONFIG=config/system-rs422.yaml
+    $SIMULATION && SYSTEM_CONFIG=config/system-simulation-rs422.yaml
 fi
 if [[ -f $ROOT/../../release-version.json ]]; then
     AVIATOR_BIN=${AVIATOR_BIN:-$ROOT/../../bin}
@@ -200,7 +209,7 @@ if ! $DRY_RUN; then
     commands=(setsid flock ps awk google-chrome-stable curl)
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
         "$AVIATOR_BIN/aviator_core_managed" "$MONITOR_BIN")
-    files=("$SYSTEM_CONFIG" config/robot.yaml config/camera.yaml)
+    files=("$SYSTEM_CONFIG" "$FLIGHT_CONFIG" config/robot.yaml config/camera.yaml)
     if $TTS; then
         executables+=("$AVIATOR_BIN/aviator_tts")
         files+=("$TTS_CONFIG")
@@ -258,7 +267,7 @@ else
     start hand "$AVIATOR_BIN/xCoreSDK_hand" --system-config "$SYSTEM_CONFIG" \
         --sdk-work-dir "$LOG_DIR/hand-sdk" "${hand_options[@]}"
 fi
-start gateway "$AVIATOR_BIN/flight_gateway"
+start gateway "$AVIATOR_BIN/flight_gateway" --config "$FLIGHT_CONFIG"
 if $TTS; then
     start tts "$AVIATOR_BIN/aviator_tts" --config "$TTS_CONFIG" --system-config "$SYSTEM_CONFIG"
 fi

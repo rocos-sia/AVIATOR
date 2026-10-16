@@ -49,7 +49,7 @@ install(FILES "${PROJECT_BINARY_DIR}/generated/aviator/version.hpp"
 # Runtime resources shared by the selected components, including Python imports.
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/config/"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/config")
-install(PROGRAMS "${_release_tool}" DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/scripts")
+install(PROGRAMS "${_release_tool}" "${PROJECT_SOURCE_DIR}/scripts/start_flight_simulator.sh" DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/scripts")
 if(TARGET aviator_core_control)
   install(PROGRAMS "${PROJECT_SOURCE_DIR}/scripts/start_aviator.sh"
     "${PROJECT_SOURCE_DIR}/scripts/start_camera_servo.sh"

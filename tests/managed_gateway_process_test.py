@@ -20,6 +20,7 @@ from robot_state_machine_process_test import port
 def main():
     bus, manipulator, core, root = sys.argv[1:5]
     monitor = sys.argv[5] if len(sys.argv) > 5 else None
+    flight_source = os.environ.get("AVIATOR_TEST_FLIGHT_SOURCE", "JOYSTICK")
     root = Path(root)
     directory = Path(tempfile.mkdtemp(prefix="aviator-managed-gateway-"))
     print(f"Gateway process logs: {directory}", flush=True)
@@ -33,6 +34,7 @@ def main():
         robot[key] = str((root / "config" / robot[key]).resolve())
     endpoints = [f"tcp://127.0.0.1:{port()}" for _ in range(4)]
     assert len(set(endpoints)) == 4
+    config["flight_source"] = flight_source
     config.update(bus=dict(publish=endpoints[0], subscribe=endpoints[1]),
                   manipulator_service=endpoints[2], robot="robot.yaml")
     (directory / "system.yaml").write_text(yaml.safe_dump(config))
@@ -72,6 +74,9 @@ def main():
                        valid=True, source="JOYSTICK", control=dict(roll=roll, pitch=pitch),
                        input_state=dict(mode="POSITION_HOLD", device_connected=True,
                                         checked_mono_us=checked))
+            if flight_source == "FLIGHT":
+                msg.update(source="FLIGHT", sample_mono_us=checked)
+                del msg["input_state"]
             pub.send_multipart([b"flight.command", json.dumps(msg).encode()])
         pub.close(0)
 
@@ -109,11 +114,15 @@ def main():
         return message
 
     def request(op):
+        parameters = dict(source="JOYSTICK", button=1, server_session_id=core_session)
+        if flight_source == "FLIGHT":
+            operations = ["enter_standby", "grasp_wheel", "start_control", "exit_control", "leave_wheel", "reset_error"]
+            parameters = dict(source="FLIGHT", operation_code=(operations.index(op)+1)*16)
         return dict(msg_type="ServiceRequest", version="1.0", request_id=str(uuid.uuid4()),
                     client_id="flight_gateway", client_session_id=gateway_session,
                     target="aviator_core", operation=op, timestamp=time.time_ns() // 1000,
                     issued_mono_us=time.monotonic_ns() // 1000, clock_id=clock, deadline_ms=1000,
-                    parameters=dict(source="JOYSTICK", button=1, server_session_id=core_session))
+                    parameters=parameters)
 
     def call(req, expected):
         dealer.send_json(req)
@@ -179,16 +188,17 @@ def main():
         homed = state("STANDBY", 120)
         assert abs(homed["wheel_reference"]["displacement"] + .085) < 1e-9, homed
         call(request("enter_standby"), "COMPLETED")
-        req = request("enter_standby")
-        del req["parameters"]["server_session_id"]
-        call(req, "COMPLETED")
-        req = request("enter_standby")
-        req["client_session_id"] = "restarted-gateway"
-        req["parameters"]["server_session_id"] = "ignored-old-core"
-        call(req, "COMPLETED")
-        req["client_session_id"] = "another-text-marker"
-        del req["parameters"]["server_session_id"]
-        call(req, "COMPLETED")  # Same request ID still deduplicates across labels.
+        if flight_source == "JOYSTICK":
+            req = request("enter_standby")
+            del req["parameters"]["server_session_id"]
+            call(req, "COMPLETED")
+            req = request("enter_standby")
+            req["client_session_id"] = "restarted-gateway"
+            req["parameters"]["server_session_id"] = "ignored-old-core"
+            call(req, "COMPLETED")
+            req["client_session_id"] = "another-text-marker"
+            del req["parameters"]["server_session_id"]
+            call(req, "COMPLETED")  # Same request ID still deduplicates across labels.
         for field, value in (("clock_id", "foreign"),
                              ("target", "manipulator"), ("operation", "emergency"),
                              ("issued_mono_us", time.monotonic_ns() // 1000 + 10000000)):
@@ -212,6 +222,7 @@ def main():
         assert call(grasp, "ACCEPTED") == accepted
         req = copy.deepcopy(grasp)
         req["operation"] = "leave_wheel"
+        if flight_source == "FLIGHT": req["parameters"]["operation_code"] = 0x50
         assert call(req, "REJECTED")["result"]["reason"] == "REQUEST_ID_CONFLICT"
         call(request("grasp_wheel"), "REJECTED")  # BUSY during the original task.
         grasped = state("FOLLOWING", 120)
@@ -227,12 +238,12 @@ def main():
         call(request("start_control"), "COMPLETED")
         state("CONTROL")
         wait_for(lambda m: m["system"]["state"] == "CONTROL" and
-                 m["system"]["control_source"] == "JOYSTICK" and
+                 m["system"]["control_source"] == flight_source and
                  abs(m["wheel_reference"]["displacement"] + .085) < .0004, 10)
         flight_target = (.04, -.01)
         # A static hardware sample must reach the target using only fresh device checks.
         wait_for(lambda m: m["system"]["state"] == "CONTROL" and
-                 m["system"]["control_source"] == "JOYSTICK" and
+                 m["system"]["control_source"] == flight_source and
                  abs(m["wheel_reference"]["angle"] + .04 * .87266) < .002 and
                  abs(m["wheel_reference"]["displacement"] + .08585) < .0004, 20)
         check_monitor_control()

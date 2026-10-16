@@ -15,6 +15,7 @@ public:
     SdlInput(const SdlInput&) = delete;
     SdlInput& operator=(const SdlInput&) = delete;
     bool poll(JoystickSample& output, std::vector<unsigned>& pressed);
+    void title(const std::string& value) { SDL_SetWindowTitle(window_, value.c_str()); }
 private:
     void openJoystick();
     void resetKeyboard(std::uint64_t now);

@@ -12,7 +12,7 @@
 
 ## 1. 范围与约定级别
 
-本文描述 AVIATOR 内部通过 ZeroMQ 传输的消息，包括八个主要业务 Topic、三个观测扩展 Topic、离散可靠服务、独立数据记录通道及回放约定。RS422 帧、USB 报告、机器人驱动总线和相机 SDK 的外部协议不在本文件定义范围内。 RS422 双路冗余外部接口的新增评审稿见 [RS422 通信协议规范](AVIATOR_RS422通信协议规范.md)，该文档不表示串口运行功能已实现。
+本文描述 AVIATOR 内部通过 ZeroMQ 传输的消息，包括八个主要业务 Topic、三个观测扩展 Topic、离散可靠服务、独立数据记录通道及回放约定。RS422 帧、USB 报告、机器人驱动总线和相机 SDK 的外部协议不在本文件定义范围内。 双路 RS422 当前按 [RS422 通信协议规范](AVIATOR_RS422通信协议规范.md) 第 10 节台架配置实现，基础 ICD 待定项与正式接口审批仍需区分。
 
 本文按以下级别区分接口来源：
 
@@ -879,26 +879,17 @@ REQ/REP 一次请求只能有一次响应：短操作可直接返回终态；长
 
 客户端超时表示结果未知；重试使用原 ID，不创建新动作请求。REQ 超时后恢复其请求状态机或重建 socket。非幂等动作的执行身份和结果需持久化或通过设备状态对账；ACK 不保证恰好一次。服务端重启也不能把旧请求当新请求重新执行。缓存保留期限、最大重试次数、身份认证和可取消阶段必须在部署前冻结。
 
-### 14.5 RS422 Gateway → Core 高层操作服务（新增设计，待实现）
+### 14.5 RS422 Gateway → Core 高层操作服务
 
-配置 `core_operation_service=tcp://127.0.0.1:5559`，Core ROUTER bind，Gateway DEALER connect，使用第 14.1 节单帧 JSON/路由信封，不经 5555/5556。每个 socket 由固定非实时线程管理。此接口独立于第 19 节 Core → Manipulator 的 5558 REQ/REP 服务。以下操作注册到 target=`aviator_core`：
+当前实现以 [RS422 协议第 10 节](AVIATOR_RS422通信协议规范.md) `aviator-bench-v1` 为准。旧 REQUEST/REPLY、串口 timestamp_ms、事务 ID 和独立应答映射不适用于当前 9/29 字节布局。
 
-| RS422 operation | ServiceRequest.operation |
-| --- | --- |
-| 0x01 ENTER_STANDBY | `enter_standby` |
-| 0x02 GRASP_WHEEL | `grasp_wheel` |
-| 0x03 START_CONTROL | `start_control` |
-| 0x04 EXIT_CONTROL | `exit_control` |
-| 0x05 LEAVE_WHEEL | `leave_wheel` |
-| 0x06 RESET_ERROR | `reset_error` |
+Core 的 system 配置 `flight_source` 为 `FLIGHT` 或 `JOYSTICK`，缺省 JOYSTICK。网关串口模式发布 source=FLIGHT 的标准 FlightCommand，不携带 POSITION_HOLD；采样时间为机器人本机接收串口的单调时间。内部 50 Hz 发布可以复用最后有效样本，但不刷新它的采样时刻。失效时显式发布 valid=false。
 
-ServiceRequest 使用第 14.2 节信封，client_id=`flight_gateway`；parameters 必含 `server_session_id`（预期 Core 启动会话）、`rs422_connection_id`（受控建立的本次串口运行连接 UUID）、`timestamp_ms`（uint32）和 `operation_code`（上述 u8）。操作名和操作码必须一致。Core 会话由启动就绪握手或受控配置确认，不能从不受信任请求中接受任意会话。连接 ID 仅为内部关联，不增加串口字段，也不使网关具备自动识别飞控重启的能力。
+串口指令通过连续确认后，以 client_id=flight_gateway 调用现有六操作，parameters 恰好为 `{"source":"FLIGHT","operation_code":16}`（此例为 enter_standby）。操作码依次为 0x10/20/30/40/50/60，必须与 operation 名称一致；Core 仅在显式配置 FLIGHT、输入绑定且新鲜时受理。JOYSTICK 的原有 button 参数仍兼容，两个来源不自动切换。
 
-Gateway 按 `(rs422_connection_id, timestamp_ms)` 查找原请求，比较完整原始内容后分配或复用 UUID request_id；与 operation 不同的同时间戳请求按串口冲突规则拒绝，不创建第二项事务。Core 按 `(client_id, client_session_id, request_id)` 去重，并校验参数、原始期限及预期 server_session_id。Gateway 未取得结果时保留 pending 记录，重复副本不创建新的动作；允许以原请求身份进行有界内部重试。受理记录必须先于动作派发建立。
+一次通过门控的操作只创建一个内部 request_id，不自动重试。沿用已有期限、缓存应答、记录副本隔离和状态机守卫。超时表示结果未知；串口回绕不等同于动作完成。最终动作状态通过 29 字节上行的运行状态字段观察。
 
-此接口每个逻辑动作固定首个决策为 ACCEPTED、COMPLETED 或 REJECTED，重发原请求返回相同首个决策；长动作的后续结果通过新的 `get_result` 查询及记录适配器获取，不以重试原动作更新首个决策。此约定不同于第 19 节设备服务返回当前进度的行为。查询响应不得转换为第二条串口 REPLY。Gateway 将首个决策映射为串口 result=1/3/4，原样回显 timestamp_ms 和 operation，并将 Core 错误映射到 RS422 第 8 节已定义错误码；未映射错误不得截断为 u16，须在联调冻结错误映射表。
-
-同一时刻仅允许一个普通状态修改操作，安全退出可按状态机规则中止操控开始流程；ROUTER 接收循环不得被长动作占用。服务受理和串口发送共同满足建议 100 ms 应答预算，具体内部 deadline_ms 按实测分配且重试不刷新。Core 不可用或内部超时不伪造业务 REJECTED/ACCEPTED，外部按原协议重试并最终视为结果未知。连接/进程重启后停止自动重试，清理积压并核对实际状态。
+Core 新增 system.input_source 导出已配置的输入策略，system.control_source 在有效 CONTROL 时报告实际 FLIGHT/JOYSTICK。可选 wheel_measurement 包含 angle（rad）、displacement（m）、valid 和 sample_mono_us；只透传设备明确提供的测量，禁止用 wheel_reference 代替。
 
 ### 14.6 当前摇杆测试入口（已实现客户端，Core 服务端待接入）
 
@@ -1021,7 +1012,9 @@ payload_length 只核对 payload，不包含 protobuf 元数据。使用压缩�
 
 源会话与 Logger 记录会话是不同概念，不能用 Logger 会话覆盖信封 session_id。开始/结束清单需记录各源首尾序号与发送计数，和接收、写入数量对账；缺口、未知起始区间、溢出、重复和中断显式可见。上述清单与补传握手的精确格式尚待冻结。
 
-### 15.5 离散服务与 RS422 指令记录契约（新增设计，待实现）
+### 15.5 离散服务与 RS422 指令记录契约（历史设计，待重新冻结）
+
+以下 timestamp_ms/REPLY 关联字段属于旧协议，当前 9/29 字节台架实现不使用。当前已记录的是既有 record.service.request/reply；逐字节串口 MCAP 记录和下面的持久化审计契约尚未接入。
 
 本节独立于相机 CameraPacket；Logger 的总线订阅无法获取 DEALER/ROUTER 或 REQ/REP 服务内容。Gateway、Core 及参与设备服务的节点必须在非实时路径设置记录适配器。
 
@@ -1181,7 +1174,12 @@ Managed 入口的 Rokae 待机就绪判据使用 arm.state 的 `status_mono_us`�
 
 保留原示例已废除的判据：不按 TCP 偏差、关节跟踪偏差、grasp.ready 或抓握丢失阻断执行。软件锁定不等于独立抓握验证。独立 `aviator_hand` 已提供双手归一化驱动位置反馈，但关节角、关节速度和抓握验证仍为 null/false；缺失视觉测量不阻止当前本地开环任务，也不能伪装成有效测量。
 
-`aviator_core` 与 `aviator_core_servo` 为直接调用 Aviator 功能函数的本地任务入口，不经整机业务状态机；`aviator_core_sml` 只做离线状态机测试，不发布/订阅 ZMQ。`aviator_core_managed` 调用 Aviator 的六个状态机操作，导出真实整机状态并控制既有设备接口；它保留本地终端操作，并默认接入摇杆六操作 ZMQ 服务与 flight.command（`--console` 切换为终端目标测试）；RS422 路径仍未实现。Gateway 的 core_session 默认留空，从首个合法、新鲜、有效的 flight.state 自动绑定 Core 会话，请求自动携带 server_session_id；绑定后不自动跨会话切换，Core 重启需重启 Gateway 重新识别。此本地测试入口不依赖安全证据文件，守卫使用设备反馈、Gateway 时效和本地策略，软件急停仅在当前进程锁存。Managed 服务默认 ROUTER bind 5559，强制匹配 Gateway/Core 会话、同机时钟、1–10000 ms 请求期限及六操作白名单，拒绝记录副本；本次 Core 会话最多保存 1024 条原始应答去重，不淘汰执行身份。长动作即时返回 ACCEPTED，最终状态看 flight.state，尚无 get_result/异步最终应答。parameters 恰好为 source=JOYSTICK、button=1..11、server_session_id；不使用第 14.5 节尚未实现的 RS422 参数。默认绑定第一条有效输入的 Gateway 会话，也可显式指定 --gateway-session。仅 CONTROL 调用大写 ServoWheel，POSITION_HOLD 使用通过校验的设备检查时间放行目标，检查时间必须属于本次操控；输入丢失走整机 SAFE 保护，不自动恢复操控。`aviator_core_servo`：默认自动绑定第一条通过来源、时钟、有效性和时效检查的 flight_gateway 消息的 session，也可用 --gateway-session 手动指定。接收 source=JOYSTICK 的 flight.command，按 `roll * 0.87266` rad、`min(pitch, 0) * 0.170` m 映射并调用 ServoWheel(v=1)。入口显式启用 JOYSTICK POSITION_HOLD，按第 5.1 节检查设备检查时间、消息接收时效、有效位和序号；普通输入仍检查原始采样时效。失效后停止更新目标，由 Servo 超时减速，同一会话恢复有效数据后可恢复跟随。自动绑定只进行一次，网关重启后必须重启 Core 重新绑定，不在失效后自动切换会话。flight.state.control_source 在有效跟随时为 JOYSTICK，否则为 NONE。设备轨迹仍使用 Core 的 local.task 来源，尚未把网关原始 origin 贯穿到 Manipulator，不能将此入口解释为完整飞控授权链路。具体启动命令和超时边界见 Core README。
+`aviator_core` 与 `aviator_core_servo` 是本地任务入口，`aviator_core_sml` 仅做离线状态机测试。`aviator_core_managed` 使用六个状态机操作，缺省接收本机 JOYSTICK；system 配置 `flight_source: FLIGHT` 时接收第 14.5 节双路串口网关，`--console` 切换为终端目标测试。来源由配置固定，不能通过一条输入消息自动切换。
+
+Managed 服务默认 ROUTER bind 5559，检查发布者、同机时钟、请求期限和六操作白名单，拒绝记录副本。JOYSTICK 参数为 source/button，兼容并忽略旧 server_session_id；FLIGHT 参数为 source/operation_code。会话文本不作为授权凭据，Core/Gateway 的旧 session 固定参数仅为兼容；新鲜度和序号检查仍保留。每个 Core 进程最多缓存 1024 条原始应答，不淘汰已执行身份；ACCEPTED 不等同于动作完成，最终结果看 flight.state，尚无 get_result/异步最终应答。
+
+仅 CONTROL 调用 ServoWheel；内部滚转为 `-roll*0.87266` rad，俯仰为 `0.085*(pitch-1)` m。JOYSTICK 的 POSITION_HOLD 使用经校验的设备检查时间；FLIGHT 使用串口接收样本时间。输入失效走 SAFE，输入恢复不自动恢复操控。设备轨迹仍使用 Core 的 local.task，尚未把 flight.command 原始 origin 完整贯穿至 Manipulator。其他本地入口的行为以 Core README 为准。
+
 
 Core 已通过同机 hand.command / hand.state 接入真实手开合，软件 lock 不表示抓握已验证；尚未实现视觉闭环或跨主机控制。离散服务与短轨迹能力只对明确支持本节约定的节点开放，既有 simulation 节点不能直接消费此轨迹模式。
 

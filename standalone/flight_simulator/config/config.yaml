@@ -1,0 +1,35 @@
+# 飞控模拟端专用配置；修改后重启。串口路径必须按实际硬件替换。
+profile: aviator-bench-v1
+device: auto # 或 --list-joysticks 输出的设备索引
+roll_axis: 0
+pitch_axis: 1
+invert_roll: false
+invert_pitch: false
+input_timeout_ms: 100
+keyboard:
+  roll_speed: 1.0
+  pitch_speed: 1.0
+  roll_limit: 1.0
+  pitch_limit: 1.0
+# SDL 按钮 1..11；键盘 1..9、- 对应同号按钮，0 专用于目标归零。
+buttons:
+  - enter_standby
+  - grasp_wheel
+  - start_control
+  - exit_control
+  - leave_wheel
+  - reset_error
+  - none
+  - none
+  - none
+  - none
+  - none
+rs422:
+  channel_a: /dev/serial/by-id/REPLACE_CHANNEL_A
+  channel_b: /dev/serial/by-id/REPLACE_CHANNEL_B
+  receive_timeout_ms: 50
+simulator:
+  require_joystick: true # false 允许聚焦键盘备用；无手柄且失焦即停发
+  send_a: true
+  send_b: true
+  corrupt_every: 0 # 非零 N：每 N 周期破坏 A 路校验，用于故障测试

@@ -6,6 +6,7 @@
 #include <set>
 #include <stdexcept>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <yaml-cpp/yaml.h>
 
 namespace flight_gateway {
@@ -58,7 +59,7 @@ Config load_config(const std::string& path) {
                                             "invert_pitch",
                                             "input_timeout_ms",
                                             "service_timeout_ms",
-                                            "buttons", "keyboard"};
+                                            "buttons", "keyboard", "role", "rs422", "simulator"};
         require(root.IsMap(), "expected mapping");
         std::set<std::string> seen;
         for (const auto& item : root) {
@@ -67,8 +68,10 @@ Config load_config(const std::string& path) {
                     "unknown or duplicate key: " + key);
         }
         for (const auto& key : allowed)
-            require(key == "keyboard" || seen.count(key), "missing key: " + key);
+            require(key == "keyboard" || key == "role" || key == "rs422" || key == "simulator" || seen.count(key), "missing key: " + key);
         Config c;
+        if(root["role"]) c.role = string(root["role"]);
+        require(c.role == "robot" || c.role == "flight_simulator", "invalid role");
         c.source = string(root["source"]);
         require(c.source == "joystick" || c.source == "rs422", "source must be joystick or rs422");
         c.device = string(root["device"]);
@@ -128,6 +131,50 @@ Config load_config(const std::string& path) {
                     "invalid button operation: " + operation);
             c.buttons[i] = operation == "none" ? "" : operation;
         }
+        if(const auto rs = root["rs422"]) {
+            require(rs.IsMap(), "rs422 must be a map");
+            std::set<std::string> keys;
+            for(const auto& item : rs) {
+                const auto key = string(item.first);
+                require(keys.insert(key).second, "duplicate rs422 key: " + key);
+                if(key == "profile") c.rs422.profile = string(item.second);
+                else if(key == "channel_a") c.rs422.channel_a = string(item.second);
+                else if(key == "channel_b") c.rs422.channel_b = string(item.second);
+                else if(key == "receive_timeout_ms") c.rs422.receive_timeout_ms = number(item.second,100);
+                else if(key == "recovery_frames") c.rs422.recovery_frames = number(item.second,100);
+                else if(key == "switch_max_step") c.rs422.switch_max_step = number(item.second,2000,true);
+                else if(key == "release_root") c.rs422.release_root = string(item.second);
+                else if(key == "allow_test_identity") c.rs422.allow_test_identity = boolean(item.second);
+                else require(false, "unknown rs422 key: " + key);
+            }
+            require(c.rs422.profile == "aviator-bench-v1", "rs422.profile must be aviator-bench-v1");
+            require(c.rs422.receive_timeout_ms >= 25, "RS422 timeout must be 25..100 ms");
+            require(std::filesystem::path(c.rs422.channel_a).is_absolute() &&
+                    std::filesystem::path(c.rs422.channel_b).is_absolute() &&
+                    c.rs422.channel_a != c.rs422.channel_b, "two distinct absolute serial paths required");
+            struct stat a{}, b{};
+            if(::stat(c.rs422.channel_a.c_str(), &a)==0 && ::stat(c.rs422.channel_b.c_str(), &b)==0)
+                require(!(a.st_dev==b.st_dev && a.st_ino==b.st_ino) &&
+                        !(S_ISCHR(a.st_mode) && S_ISCHR(b.st_mode) && a.st_rdev==b.st_rdev),
+                        "serial paths alias one device");
+            if(!c.rs422.release_root.empty() && std::filesystem::path(c.rs422.release_root).is_relative())
+                c.rs422.release_root = (std::filesystem::absolute(path).parent_path()/c.rs422.release_root).lexically_normal().string();
+        }
+        if(const auto sim = root["simulator"]) {
+            require(sim.IsMap(), "simulator must be a map");
+            std::set<std::string> keys;
+            for(const auto& item : sim) {
+                const auto key = string(item.first);
+                require(keys.insert(key).second, "duplicate simulator key: " + key);
+                if(key == "require_joystick") c.simulator.require_joystick = boolean(item.second);
+                else if(key == "send_a") c.simulator.send_a = boolean(item.second);
+                else if(key == "send_b") c.simulator.send_b = boolean(item.second);
+                else if(key == "corrupt_every") c.simulator.corrupt_every = number(item.second,100000,true);
+                else require(false, "unknown simulator key: " + key);
+            }
+        }
+        require(c.role != "flight_simulator" || (c.source == "joystick" && root["rs422"]),
+                "flight_simulator requires joystick source and rs422 configuration");
         return c;
     } catch (const std::exception& e) {
         throw std::invalid_argument("flight config " + path + ": " + e.what());

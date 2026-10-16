@@ -52,6 +52,8 @@ MotionConfig loadMotionConfig(const std::filesystem::path &path) {
     c.subscribe = y["bus"]["subscribe"].as<std::string>();
     c.service = y["manipulator_service"].as<std::string>();
     c.config_id = y["config_id"].as<std::string>();
+    c.flight_source = y["flight_source"].as<std::string>("JOYSTICK");
+    require(c.flight_source == "JOYSTICK" || c.flight_source == "FLIGHT", "flight_source must be JOYSTICK or FLIGHT");
     require(!c.config_id.empty(), "Missing config_id");
     c.timeout_us = y["command_timeout_ms"].as<unsigned>() * 1000;
     c.origin_timeout_us = y["origin_timeout_ms"].as<unsigned>() * 1000;

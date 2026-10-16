@@ -2,6 +2,7 @@
 #include "gateway.hpp"
 #include "config.hpp"
 #include "sdl_input.hpp"
+#include "rs422_runtime.hpp"
 #include "service.hpp"
 #include "startup.hpp"
 #include "transport.hpp"
@@ -28,14 +29,14 @@ int main(int argc, char** argv) {
     int signals_fd = -1, lock_fd = -1, result = 0;
     try {
         if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
-            aviator::Logger::info("Usage: flight_gateway\n"
+            aviator::Logger::info("Usage: flight_gateway [--config path]\n"
                 "Configuration: config/flight.yaml (installed: share/aviator/config/flight.yaml).\n"
-                "Edit the YAML file for joystick/rs422 source, SDL device, speeds and button mappings.\n"
-                "Publishes at 50 Hz; restart after configuration changes.");
+                "Roles: robot (joystick or rs422), flight_simulator (joystick to dual RS422).\n"
+                "Local Core 50 Hz; RS422 80 Hz. Restart after configuration changes.");
             return 0;
         }
-        require(argc == 1, "startup options are not supported; edit config/flight.yaml");
-        const auto config_path = flight_gateway::default_config_path();
+        require(argc == 1 || (argc == 3 && std::string(argv[1]) == "--config"), "use --config <path>");
+        const auto config_path = argc == 3 ? std::string(argv[2]) : flight_gateway::default_config_path();
         const auto config = flight_gateway::load_config(config_path);
         const auto& path = config.device;
         const auto& core_session = config.core_session;
@@ -60,9 +61,11 @@ int main(int argc, char** argv) {
         require(lock_fd >= 0 && fstat(lock_fd, &info) == 0 && S_ISREG(info.st_mode) && info.st_uid == getuid(),
                 "cannot open owned regular lock file");
         require(flock(lock_fd, LOCK_EX | LOCK_NB) == 0, "another flight_gateway holds the lock");
-        // RS422 is reserved; reject before initializing any SDL device or window.
-        require(config.source == "joystick",
-                "RS422 mode not implemented; joystick and keyboard disabled");
+        if (config.source == "rs422" || config.role == "flight_simulator") {
+            flight_gateway::runRs422(config, signals_fd);
+            close(signals_fd); close(lock_fd);
+            return 0;
+        }
         flight_gateway::SdlInput input(config);
         flight_gateway::JoystickSample sample{
             {roll_axis, -32768, 32767, 0, invert_roll},

@@ -1,0 +1,41 @@
+# Robot-side RS422 profile. Start gateway with flight-rs422.yaml.
+flight_source: FLIGHT
+# Both nodes and the bus run on this host. Paths are relative to this file.
+robot: robot.yaml
+config_id: aviator-control-v1
+bus:
+  publish: tcp://127.0.0.1:5555
+  subscribe: tcp://127.0.0.1:5556
+manipulator_service: tcp://127.0.0.1:5558
+command_timeout_ms: 50
+origin_timeout_ms: 100
+# Arm command/state: 100 Hz. Local dual-arm execution: 1 ms.
+# local.task is the explicitly enabled Core task supervisor, not a FlightCommand.
+
+# Core -> hand device. The hardware hand node and simulation expose the same interface.
+core_hand:
+  enabled: true
+  # publisher_id: inspire_hand
+  publisher_id: rh56ftp_hand
+  completion_timeout_ms: 1000
+  feedback_timeout_ms: 500
+  open_tolerance: 1.0
+  # Order: thumb rotation, thumb flexion, index, middle, ring, pinky. Range [0,1].
+  open:
+    left: [0.5, 1, 1, 1, 1, 1]
+    right: [0.5, 1, 1, 1, 1, 1]
+  # 进入 hand_closing_distance 后的闭合起始位置；缺省沿用 open。
+  # 拇指沿用 open 起点，其余四指从 0.6 向 close 插值；进入前及松手仍使用 open。
+  closing_start:
+    left: [0.5, 1, 0.6, 0.6, 0.6, 0.6]
+    right: [0.5, 1, 0.6, 0.6, 0.6, 0.6]
+  # User-selected close targets; keep thumb rotation first.
+  close:
+    left: [0.5, 0, 0, 0, 0, 0]
+    right: [0.5, 0, 0, 0, 0, 0]
+
+# Independent SDK hand process; paths are relative to this file.
+xcore_sdk_hand:
+  enabled: true
+  fake_hand: false
+  config: rh56ftp_hand.yaml

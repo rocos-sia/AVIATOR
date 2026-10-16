@@ -54,11 +54,12 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
     };
     options.report = [&](const SystemStatus& status) {
         const auto& s = status.conditions;
-        const auto source = gateway && gateway->fresh() && status.accepts_control ? "JOYSTICK" : "NONE";
+        const std::string source = gateway && gateway->fresh() && status.accepts_control ? gateway->source() : "NONE";
         connection->report(instance->GetState(), source);
         connection->reportSystem({{"state", status.state}, {"state_code", status.state_code},
             {"ready", s.ready}, {"settled", s.settled}, {"control_source", source},
             {"input_ready", s.input_ready}, {"source_authorized", s.source_authorized},
+            {"input_source", gateway ? gateway->source() : "NONE"},
             {"current_error_code", status.current_error.empty() ? 0 : 28673},
             {"last_error_code", status.last_error.empty() ? 0 : 28673},
             {"current_error", status.current_error}, {"last_error", status.last_error},

@@ -12,6 +12,7 @@ public:
     void receiveInput();
     void receiveRequests(Aviator&, const std::string& core_session);
     void drive(Aviator&);
+    const std::string& source() const { return policy_.source; }
     bool bound() const { return input_.has_value(); }
     bool fresh() const { return input_ && !input_->expired(monotonic_us()); }
 private:

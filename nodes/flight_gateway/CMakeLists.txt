@@ -1,10 +1,16 @@
 find_package(Threads REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(Freetype REQUIRED)
-add_executable(flight_gateway main.cpp sdl_input.cpp input_help.cpp gateway.cpp config.cpp)
+add_library(aviator_rs422 rs422.cpp serial_port.cpp rs422_telemetry.cpp)
+target_include_directories(aviator_rs422 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(aviator_rs422 PUBLIC aviator_runtime)
+add_executable(flight_gateway main.cpp sdl_input.cpp input_help.cpp gateway.cpp config.cpp rs422_runtime.cpp release_identity.cpp)
 target_compile_features(flight_gateway PRIVATE cxx_std_17)
-target_link_libraries(flight_gateway PRIVATE aviator_service aviator_transport aviator_runtime Threads::Threads yaml-cpp SDL2::SDL2 Freetype::Freetype)
+target_link_libraries(flight_gateway PRIVATE aviator_rs422 aviator_service aviator_transport aviator_runtime Threads::Threads yaml-cpp SDL2::SDL2 Freetype::Freetype)
 install(TARGETS flight_gateway RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 target_compile_definitions(flight_gateway PRIVATE AVIATOR_FLIGHT_CONFIG="${PROJECT_SOURCE_DIR}/config/flight.yaml")
 install(FILES ${PROJECT_SOURCE_DIR}/config/flight.yaml DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/config)
+
+target_compile_definitions(flight_gateway PRIVATE AVIATOR_RELEASE_TOOL="${PROJECT_SOURCE_DIR}/scripts/aviator_release.py")
+install(FILES ${PROJECT_SOURCE_DIR}/config/flight-rs422.yaml ${PROJECT_SOURCE_DIR}/config/flight-simulator.yaml DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/config)

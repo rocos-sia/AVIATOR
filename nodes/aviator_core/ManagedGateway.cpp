@@ -1,5 +1,6 @@
 #include "Logger.hpp"
 #include "ManagedGateway.hpp"
+#include "flight_operation.hpp"
 #include <algorithm>
 
 namespace aviator {
@@ -13,8 +14,8 @@ ManagedGateway::ManagedGateway(const MotionConfig& config, const ManagedGatewayO
         throw std::runtime_error("Operation service must use a distinct tcp://127.0.0.1:<port> endpoint");
     policy_.publisher_id = "flight_gateway";
     policy_.clock_id = local_clock_id();
-    policy_.source = "JOYSTICK";
-    policy_.allow_joystick_position_hold = true;
+    policy_.source = config.flight_source;
+    policy_.allow_joystick_position_hold = policy_.source == "JOYSTICK";
     policy_.timeout_us = std::min<uint64_t>(100000, config.origin_timeout_us);
     configure(sub_, {64, 64, 0});
     subscribe(sub_, "flight.command");
@@ -79,13 +80,9 @@ Json ManagedGateway::request(Aviator& robot, const std::string& session, const J
     if (req.at("target") != "aviator_core") return reply("REJECTED", "WRONG_TARGET", 1);
     if (req.at("clock_id") != policy_.clock_id) return reply("REJECTED", "CLOCK_DOMAIN_MISMATCH", 1);
     if (!input_) return reply("REJECTED", "GATEWAY_NOT_BOUND", 1);
-    if (params.size() != (params.contains("server_session_id") ? 3u : 2u) ||
-        !params.contains("source") || params.at("source") != "JOYSTICK" || !params.contains("button") ||
-        !params.at("button").is_number_unsigned() || params.at("button").get<uint64_t>() < 1 ||
-        params.at("button").get<uint64_t>() > 11 || req.contains("gateway_observation"))
-        return reply("REJECTED", "INVALID_PARAMETERS", 1);
     const auto op = req.at("operation").get<std::string>();
-    if (!state_operation(op)) return reply("REJECTED", "UNKNOWN_OPERATION", 1);
+    if (req.contains("gateway_observation") || !validFlightOperation(params, op, policy_.source))
+        return reply("REJECTED", "INVALID_PARAMETERS", 1);
     const auto now = monotonic_us();
     const auto issued = req.at("issued_mono_us").get<uint64_t>();
     const auto budget = req.at("deadline_ms").get<uint64_t>();
@@ -98,6 +95,7 @@ Json ManagedGateway::request(Aviator& robot, const std::string& session, const J
     if (auto it = cache_.find(key); it != cache_.end())
         return it->second.body == body ? it->second.reply : reply("REJECTED", "REQUEST_ID_CONFLICT", 1);
     if (now - issued >= budget * 1000) return reply("EXPIRED", "REQUEST_EXPIRED", 1);
+    if (policy_.source == "FLIGHT" && !fresh()) return reply("REJECTED", "FLIGHT_INPUT_STALE", 1);
     // Never evict an executed identity and accidentally execute it again with altered timestamps.
     if (cache_.size() >= 1024) return reply("REJECTED", "REQUEST_CACHE_FULL", 1);
     auto entry = cache_.emplace(key, Cached{body, reply("UNKNOWN", "DISPATCHING")}).first;

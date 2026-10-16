@@ -391,3 +391,37 @@ if(TARGET xCoreSDK_hand AND TARGET aviator_core_hand_link_driver AND Python3_Int
     $<TARGET_FILE:xCoreSDK_hand>)
   set_tests_properties(xcore_hand_process PROPERTIES TIMEOUT 90)
 endif()
+
+aviator_add_test_executable(aviator_rs422_test rs422_test.cpp)
+target_link_libraries(aviator_rs422_test PRIVATE aviator_rs422)
+add_test(NAME rs422 COMMAND aviator_rs422_test)
+set_tests_properties(rs422 PROPERTIES TIMEOUT 10)
+if(Python3_Interpreter_FOUND)
+  execute_process(COMMAND ${Python3_EXECUTABLE} -c "import yaml, zmq"
+    RESULT_VARIABLE RS422_PYTHON_DEPS OUTPUT_QUIET ERROR_QUIET)
+  if(RS422_PYTHON_DEPS EQUAL 0)
+    add_test(NAME rs422_process COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/rs422_process_test.py $<TARGET_FILE:flight_gateway> ${PROJECT_SOURCE_DIR})
+    set_tests_properties(rs422_process PROPERTIES TIMEOUT 20)
+  endif()
+endif()
+aviator_add_test_executable(aviator_rs422_simulator_driver rs422_simulator_driver.cpp
+  ../nodes/flight_gateway/rs422_runtime.cpp ../nodes/flight_gateway/release_identity.cpp
+  ../nodes/flight_gateway/config.cpp ../nodes/flight_gateway/gateway.cpp
+  ../nodes/flight_gateway/sdl_input.cpp ../nodes/flight_gateway/input_help.cpp)
+target_link_libraries(aviator_rs422_simulator_driver PRIVATE aviator_rs422 aviator_service SDL2::SDL2 Freetype::Freetype yaml-cpp)
+target_compile_definitions(aviator_rs422_simulator_driver PRIVATE
+  AVIATOR_FLIGHT_CONFIG="${PROJECT_SOURCE_DIR}/config/flight.yaml"
+  AVIATOR_RELEASE_TOOL="${PROJECT_SOURCE_DIR}/scripts/aviator_release.py")
+if(Python3_Interpreter_FOUND AND RS422_PYTHON_DEPS EQUAL 0)
+  add_test(NAME rs422_simulator COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/rs422_simulator_test.py $<TARGET_FILE:aviator_rs422_simulator_driver> ${PROJECT_SOURCE_DIR})
+  set_tests_properties(rs422_simulator PROPERTIES TIMEOUT 15)
+endif()
+
+if(TARGET aviator_core_managed AND TARGET simulation AND Python3_Interpreter_FOUND AND FSM_PYTHON_DEPS EQUAL 0)
+  add_test(NAME managed_flight_process COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/managed_gateway_process_test.py
+    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
+  set_tests_properties(managed_flight_process PROPERTIES TIMEOUT 300 ENVIRONMENT "AVIATOR_TEST_FLIGHT_SOURCE=FLIGHT")
+endif()

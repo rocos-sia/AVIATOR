@@ -602,3 +602,8 @@ Core 的运动学与碰撞检查均读取 `robot.yaml` 的 `urdf`（默认 `mode
 旧模型对轮盘轴承、腕部壳体和抓握圆柱的额外排除不再沿用。
 当前检查接口只传入双臂与轮盘位置，其余关节（包括手指）按 URDF 零位检查，
 尚不能检查实际手指开合过程。`collision_check_enabled` 控制是否启用此检查。
+
+
+### 双路 RS422 输入
+
+Managed Core 现在可通过 system YAML 的 `flight_source: FLIGHT` 接受串口网关；缺省仍为 JOYSTICK。使用 `scripts/start_aviator.sh --rs422` 会同时选中 `system-rs422.yaml` 和 `flight-rs422.yaml`，`--simulation --rs422` 使用专用仿真配置。六操作仍由原状态机执行；串口服务参数为 source=FLIGHT、operation_code，并校验二者与配置和操作名称一致。连续输入必须新鲜，恢复后不自动退出 SAFE。设备明确提供的 wheel_measurement 带采样时刻透传，上行网关不会把 wheel_reference 当作实测。详见 [Gateway 双机步骤](../flight_gateway/README.md)。

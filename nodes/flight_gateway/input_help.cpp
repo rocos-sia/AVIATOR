@@ -87,9 +87,11 @@ InputHelp::InputHelp(const Config& config) {
         font.text(surface, 28, 79, focused ? "键盘：已聚焦，可接收按键" : "键盘：未聚焦，请点击本窗口", focused ? green : amber);
         font.text(surface, 475, 79, attached ? "摇杆：已连接，可后台使用" : "摇杆：未连接，仅使用键盘", attached ? green : muted);
         box({24, 99, 832, 82}, 65, 46, 26);
-        font.text(surface, 40, 130, state == 4 ? "失焦已满 5 分钟：键盘输入失效，CONTROL 将进入 SAFE" :
+        font.text(surface, 40, 130, config.role == "flight_simulator" ?
+                  (config.simulator.require_joystick ? "飞控模拟：手柄断开即停止两路下行发送" : "飞控模拟：无手柄且窗口失焦即停止发送") : state == 4 ? "失焦已满 5 分钟：键盘输入失效，CONTROL 将进入 SAFE" :
                   "仅用键盘时：失焦保持目标，满 5 分钟后进入 SAFE", amber, 22);
-        font.text(surface, 40, 161, "失焦立即停止累加；超时进入 SAFE 后，聚焦不会自动恢复控制。", white);
+        font.text(surface, 40, 161, config.role == "flight_simulator" ? "操作连续发送 10 拍；回绕不等于完成。反馈详情见终端。" :
+                  "失焦立即停止累加；超时进入 SAFE 后，聚焦不会自动恢复控制。", white);
         font.text(surface, 28, 215, "方向键操作", green, 21);
         font.text(surface, 28, 246, "左 / 右：roll − / +       上 / 下：pitch − / +");
         font.text(surface, 28, 274, "按住累加，松开或到限位后保持；[0] 回到初始原点。", muted);

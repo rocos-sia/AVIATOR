@@ -52,6 +52,11 @@ class ScriptsTests(unittest.TestCase):
                 self.assertEqual('--fake-hand' in text,'--fake-hand' in options)
         text=self.run_script('start_aviator.sh','--dry-run','--simulation','--headless','--logger','--tts')
         self.assertIn('simulation',text);self.assertNotIn('/manipulator ',text)
+        for flags, system in ((['--rs422'], 'system-rs422.yaml'),
+                              (['--rs422','--simulation','--headless'], 'system-simulation-rs422.yaml')):
+            text=self.run_script('start_aviator.sh','--dry-run',*flags)
+            self.assertIn('flight-rs422.yaml',text)
+            self.assertIn(system,text)
         self.run_script('start_aviator.sh','--dry-run','--simulation','--fake-hand',ok=False)
         self.run_script('start_aviator.sh','--dry-run','--headless',ok=False)
         self.assertEqual(list(self.directory.iterdir()),[],'dry-run wrote files')

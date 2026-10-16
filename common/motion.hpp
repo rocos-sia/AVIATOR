@@ -13,6 +13,7 @@ inline constexpr uint64_t kImpedanceServiceDeadlineMs = 20000;
 struct MotionConfig {
     std::filesystem::path system, robot;
     std::string publish, subscribe, service, config_id;
+    std::string flight_source = "JOYSTICK";
     unsigned period_us = 10000, timeout_us = 50000, origin_timeout_us = 100000;
 };
 MotionConfig loadMotionConfig(const std::filesystem::path &file);

@@ -8,6 +8,7 @@ std::map<SDL_JoystickID, const char*> device_names;
 }
 extern "C" const char* __real_SDL_JoystickNameForIndex(int index);
 extern "C" const char* __wrap_SDL_JoystickNameForIndex(int index) {
+    if (!SDL_JoystickIsVirtual(index)) return "Keyboard physical device excluded from tests";
     const auto it = device_names.find(SDL_JoystickGetDeviceInstanceID(index));
     return it == device_names.end() ? __real_SDL_JoystickNameForIndex(index) : it->second;
 }

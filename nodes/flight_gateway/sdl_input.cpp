@@ -44,7 +44,7 @@ SdlInput::SdlInput(const Config& config, std::function<std::uint64_t()> clock)
     : config_(config), clock_(std::move(clock)), stick_(sample(config)), keys_(sample(config)),
       keyboard_(keys_, config.keyboard) {
     if (config.source != "joystick")
-        throw std::runtime_error("RS422 mode not implemented; joystick and keyboard disabled");
+        throw std::runtime_error("SDL input is disabled for RS422 source");
     help_ = std::make_unique<InputHelp>(config);
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) != 0) {
@@ -237,7 +237,9 @@ bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
     if (!expired && keyboard_active_[1]) {
         output.pitch_value = keys_.pitch_value;
     }
-    output.device_connected = attached || !expired;
+    output.device_connected = config_.role == "flight_simulator"
+        ? (config_.simulator.require_joystick ? attached : (attached || focused_))
+        : (attached || !expired);
     output.valid = output.device_connected && !output.failed;
     // The merged software target is sampled after this SDL pump, including source changes.
     output.sample_us = output.checked_us = now;

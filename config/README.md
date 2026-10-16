@@ -29,3 +29,6 @@ FK tool 中心到对应抓握目标的距离分别触发闭合，以五次平滑
 - `robot.yaml`：机械臂后端、模型与规划参数。`system.yaml`：总线、设备服务与 Core 配置；`core_hand` 控制真实手接入、双手归一化开合目标与反馈时限，当前张开为 `[0,1,1,1,1,1]`、闭合为 `[0.3,0,0,0,0,0]`。MuJoCo 后端不发布真实手命令；见 [Core 使用说明](../nodes/aviator_core/README.md#core-控制真实机械手)。
 
 除 Monitor 网页配置外，参数修改后重启会话，不支持热加载。帧率由相机采集端决定；Logger 不隐式降采样。队列大小与压缩参数为试验初值，需实机验证。完整接入过程见 [实现说明](../docs/Logger配置与图像记录实现说明.md)。
+
+
+双路 RS422 台架使用 `flight-rs422.yaml` + `system-rs422.yaml`，后者显式设置 Core 的 `flight_source: FLIGHT`。MuJoCo 使用 `system-simulation-rs422.yaml`。第二台工控机推荐仅复制 [独立飞控模拟器项目](../standalone/flight_simulator/README.md)，使用其自带 `config/config.yaml`，无需整个 AVIATOR 仓库。`flight-simulator.yaml` 继续兼容仓库内 flight_gateway 模拟模式，不启动 Bus/Core。串口路径需按实际设备修改；默认配置仍为本机手柄。完整步骤见 [Gateway README](../nodes/flight_gateway/README.md)。
