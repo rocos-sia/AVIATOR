@@ -132,18 +132,33 @@ class CameraTracker:
         self.last_sequence, self.last_sample = seq, sample
         wheel = data.get("steering_wheel")
         confidence = data.get("confidence")
-        if (data.get("valid") is not True or data.get("status") != "TRACKING" or
-                not number(confidence) or not self.args.min_confidence <= confidence <= 1 or
-                not isinstance(wheel, dict) or wheel.get("valid") is not True or
-                wheel.get("axis_match") is False):
-            return self.reject("相机/轮盘未有效跟踪或置信度不足")
+        if data.get("valid") is not True or data.get("status") != "TRACKING":
+            return self.reject(f"相机未有效跟踪：status={data.get('status')}，valid={data.get('valid')}")
+        if not number(confidence):
+            return self.reject("相机置信度不是有效数值")
+        if not self.args.min_confidence <= confidence <= 1:
+            return self.reject(f"相机置信度不合格：{confidence:.3f}，要求 [{self.args.min_confidence:.3f}, 1]")
+        if not isinstance(wheel, dict):
+            return self.reject("缺少轮盘测量 steering_wheel")
+        if wheel.get("valid") is not True:
+            reason = wheel.get("reason") or "未提供原因"
+            detail = wheel.get("calibration_error") or wheel.get("pose_error")
+            return self.reject(f"轮盘测量无效：{reason}" + (f"；{detail}" if detail else ""))
+        if wheel.get("axis_match") is False:
+            error = wheel.get("axis_error_rad")
+            detail = f"轴夹角 {math.degrees(error):.2f}°，允许 ≤5°" if number(error) else "axis_match=false"
+            return self.reject(f"轮盘旋转轴与标定轴不匹配：{detail}；请检查相机/标记安装及轮盘轴标定")
         calibration_id = wheel.get("calibration_id")
         if not isinstance(calibration_id, str) or not calibration_id:
             return self.reject("缺少轮盘标定标识")
         if self.calibration_id is not None and calibration_id != self.calibration_id:
             raise CalibrationError("采样期间相机标定发生改变，请重新采样")
         theta, travel = wheel.get("theta_rad"), wheel.get("translation_along_axis_m")
-        angle, displacement = camera_wheel(theta, travel)
+        try:
+            angle, displacement = camera_wheel(theta, travel)
+        except CalibrationError as exc:
+            raise CalibrationError(f"轮盘角度/位移无效：theta_rad={theta!r}，"
+                                   f"translation_along_axis_m={travel!r}；{exc}") from exc
         self.calibration_id = calibration_id
         result = dict(sample_mono_us=sample, sequence=seq, session_id=session,
                       calibration_id=calibration_id, angle_rad=angle, displacement_m=displacement,

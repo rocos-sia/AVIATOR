@@ -98,12 +98,12 @@ class ProtocolTests(unittest.TestCase):
                         publisher_id="calibration", session_id="test", valid=True, control_epoch=epoch,
                         mode="NORMALIZED_POSITION", origin=dict(publisher_id="calibration", session_id="test",
                             sequence=sequence, sample_mono_us=stamp, clock_id=clock),
-                        hands={side:dict(drive_position_normalized=[.5,.2,.2,.2,.2,.2]) for side in ("left","right")})
+                        hands={side:dict(drive_position_normalized=[.5,.2,.2,.2,.2,.2], calibration_revision=1) for side in ("left","right")})
                     commands.send_multipart([b"hand.command",json.dumps(command).encode()])
                     if states.poll(20):
                         _, payload = states.recv_multipart()
                         accepted = json.loads(payload)
-                        if accepted.get("accepted_command") and accepted["valid"]:
+                        if accepted.get("command_valid") and accepted["valid"]:
                             break
                 self.assertIsNotNone(accepted)
                 self.assertTrue(accepted["simulated"])

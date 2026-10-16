@@ -337,6 +337,29 @@ class CalibrationControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.grasp_path, new_grasp)
         self.assertEqual(len(self.instances), 2)
 
+    def test_hand_fault_keeps_session_and_invalidates_preview(self):
+        native = self.prepare()
+        self.action("sample", angle_deg=0, displacement_m=-.085)
+        self.assertIsNotNone(self.controller.snapshot()["result"])
+        link = self.controller.link
+        original = link.snapshot()
+        faulty = dict(original, ready=False, fresh=False, fault="left 机械手故障")
+        with patch.object(link, "snapshot", return_value=faulty):
+            status = self.wait_for(lambda s: s["result"] is None)
+            self.assertTrue(status["prepared"])
+            self.assertFalse(status["can_sample"])
+            self.assertFalse(native.closed)
+        self.wait_for(lambda s: s["can_sample"])
+
+    def test_failed_hand_action_keeps_session_for_retry(self):
+        native = self.prepare()
+        with patch.object(self.controller.link, "wait_ready", side_effect=RuntimeError("left recovering")):
+            status = self.action("hand", side="left", pose="close")
+        self.assertTrue(status["prepared"])
+        self.assertFalse(native.closed)
+        self.assertIn("recovering", status["error"])
+        self.assertIsNone(status["result"])
+
     def test_browser_lease_expiry_cleans_drag_before_releasing_hands(self):
         native = self.prepare()
         self.action("drag_start", side="both")

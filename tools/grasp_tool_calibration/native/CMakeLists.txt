@@ -4,7 +4,7 @@ endif()
 
 add_executable(aviator_grasp_tool_state main.cpp)
 target_link_libraries(aviator_grasp_tool_state PRIVATE aviator_core_control)
-add_executable(aviator_grasp_tool_session session.cpp)
+add_executable(aviator_grasp_tool_session session.cpp calibration_hand.cpp)
 target_link_libraries(aviator_grasp_tool_session PRIVATE aviator_core_control aviator_hand_runtime)
 
 if(AVIATOR_BUILD_XCORE_SDK)

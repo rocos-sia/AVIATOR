@@ -178,7 +178,8 @@ def _conflicting_command(argv):
                 and "--dry-run" not in argv)
     return (executable.startswith("aviator_core")
             or executable in ("manipulator", "aviator_manipulator", "aviator_grasp_calibration",
-                              "aviator_grasp_calibration_session", "aviator_grasp_tool_session")
+                              "aviator_grasp_calibration_session", "aviator_grasp_tool_session",
+                              "xCoreSDK_hand", "xCoreSDK_RH56FTP_485", "rh56_485_probe")
             or executable.startswith("change_stiffness")) and "--dry-run" not in argv
 
 
@@ -214,6 +215,8 @@ class HandCameraLink:
         self._presets = {"open": self._targets(open_targets), "close": self._targets(close_targets)}
         self._targets_now = copy.deepcopy(self._presets["open"])
         self._poses = dict(left="open", right="open")
+        self._revisions = dict(left=1, right=1)
+        self._target_sequences = dict(left=1, right=1)
         self.publisher_id = "grasp_calibration_ui"
         self.session_id, self.control_epoch = str(uuid.uuid4()), str(uuid.uuid4())
         self.clock_id = _clock_id()
@@ -266,6 +269,8 @@ class HandCameraLink:
             for name in (("left", "right") if side == "both" else (side,)):
                 self._targets_now[name] = list(self._presets[pose][name])
                 self._poses[name] = pose
+                self._revisions[name] += 1
+                self._target_sequences[name] = self._sequence + 1
             self._target_sequence = self._sequence + 1
         self._changed.set()
 
@@ -284,7 +289,8 @@ class HandCameraLink:
             value["origin"] = {key: value[key] for key in (
                 "publisher_id", "session_id", "sequence", "sample_mono_us", "clock_id")}
             if targets is not None:
-                value["hands"] = {s: dict(drive_position_normalized=list(targets[s])) for s in ("left", "right")}
+                value["hands"] = {s: dict(drive_position_normalized=list(targets[s]),
+                                         calibration_revision=self._revisions[s]) for s in ("left", "right")}
             return value
 
     def _accept_hand(self, data, now):
@@ -315,7 +321,9 @@ class HandCameraLink:
             state = self._state or {}
             hands = state.get("hands") if isinstance(state.get("hands"), dict) else {}
             sample = state.get("sample_mono_us", 0)
-            fresh = bool(state.get("valid") is True and 0 <= now - sample < self._feedback_us)
+            envelope_fresh = bool(state and 0 <= now - sample < self._feedback_us)
+            fresh = bool(state.get("valid") is True and envelope_fresh)
+            available_sides, ready_sides = {}, {}
             fault = self._conflict or self._error or state.get("hold_control_error") or None
             if state.get("feedback_only"):
                 fault = "手节点处于 feedback-only，只读模式不能控制"
@@ -330,18 +338,21 @@ class HandCameraLink:
                     positions_valid = True
                 except ValueError:
                     positions_valid = False
-                fresh &= (hand.get("valid") is True and hand.get("feedback_available") is True
+                available_sides[side] = bool(envelope_fresh and hand.get("valid") is True and hand.get("feedback_available") is True
                           and positions_valid and type(stamp) is int
                           and 0 <= now - stamp < self._feedback_us)
+                fresh &= available_sides[side]
                 protection = hand.get("fault_protection") or {}
                 error_codes = hand.get("error_codes")
                 if error_codes is not None and not isinstance(error_codes, list):
                     fresh = False
+                    available_sides[side] = False
                     error_codes = []
                 if (hand.get("status") == "ERROR" or hand.get("error_code")
                         or any(error_codes or [])
                         or (isinstance(protection, dict) and protection.get("fault_count"))):
                     fault = fault or f"{side} 机械手故障"
+                    available_sides[side] = False
             ack = state.get("accepted_command") or {}
             if not isinstance(ack, dict):
                 ack = {}
@@ -353,10 +364,26 @@ class HandCameraLink:
                              and state.get("command_valid") is True
                              and all(ack.get(key) == getattr(self, key) for key in (
                                  "publisher_id", "session_id", "control_epoch")))
+            if state.get("calibration_control"):
+                ack_identity = bool(type(ack_seq) is int and type(ack_stamp) is int
+                                    and self._sent.get(ack_seq) == ack_stamp
+                                    and 0 <= now - ack_stamp < self._ack_us
+                                    and all(ack.get(key) == getattr(self, key) for key in (
+                                        "publisher_id", "session_id", "control_epoch")))
+                for side in ("left", "right"):
+                    hand = hands.get(side) if isinstance(hands.get(side), dict) else {}
+                    ready_sides[side] = bool(available_sides[side] and ack_identity
+                        and ack_seq >= self._target_sequences[side]
+                        and hand.get("command_valid") is True
+                        and hand.get("applied_revision") == self._revisions[side])
+                ack_valid = all(ready_sides.values())
+            else:
+                ready_sides = {s: bool(available_sides[s] and ack_valid) for s in ("left", "right")}
             running = bool(self._thread and self._thread.is_alive() and not self._stop.is_set())
             return copy.deepcopy(dict(
                 running=running, ready=bool(running and fresh and ack_valid and not fault),
                 error=self._error, conflict=self._conflict, fault=fault, fresh=bool(fresh),
+                available_sides=available_sides, ready_sides=ready_sides,
                 publisher_id=self.publisher_id, session_id=self.session_id,
                 control_epoch=self.control_epoch, clock_id=self.clock_id, sequence=self._sequence,
                 targets=self._targets_now, poses=self._poses, hands=hands, state=self._state,
@@ -364,13 +391,18 @@ class HandCameraLink:
                          age_ms=(now - ack_stamp) / 1000 if type(ack_stamp) is int else None),
                 camera=dict(raw=self._camera, received_mono_us=self._camera_received)))
 
-    def wait_ready(self, timeout=5):
+    def wait_ready(self, timeout=5, side="both"):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             status = self.snapshot()
-            if status["ready"]:
+            selected = ("left", "right") if side == "both" else (side,)
+            if status["ready"] or (side != "both" and status["running"]
+                    and not status["conflict"] and not status["error"]
+                    and all(status["ready_sides"].get(s) for s in selected)):
                 return status
-            if status["fault"]:
+            if status["conflict"] or status["error"]:
+                raise RuntimeError(status["conflict"] or status["error"])
+            if status["fault"] and not (status.get("state") or {}).get("calibration_control"):
                 raise RuntimeError(status["fault"])
             if not status["running"]:
                 raise RuntimeError("hand/camera link stopped before receiving feedback")
@@ -443,6 +475,9 @@ class HandCameraLink:
             # an open/invalidation command against somebody else's hand controller.
             if pub is not None and sent_any and not self._conflict:
                 try:
+                    with self._lock:
+                        for side in ("left", "right"):
+                            self._revisions[side] += 1
                     for targets in [self._presets["open"]] * 3 + [None] * 3:
                         pub.send_multipart([b"hand.command", json.dumps(self._message(targets)).encode()], zmq.NOBLOCK)
                         time.sleep(.02)

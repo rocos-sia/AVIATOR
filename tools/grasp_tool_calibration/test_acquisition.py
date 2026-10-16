@@ -101,6 +101,32 @@ class CameraTrackerTests(unittest.TestCase):
                 self.assertEqual(len(tracker.records), 1)
                 self.assertEqual(tracker.last_sequence, 10)
 
+    def test_good_detection_reports_axis_mismatch_instead_of_low_confidence(self):
+        tracker = self.tracker()
+        data = frame(confidence=.87, steering_wheel=dict(frame()["steering_wheel"],
+            axis_match=False, axis_error_rad=.3853552483614861,
+            theta_rad=-.072522, translation_along_axis_m=-.119658))
+        self.assertIsNone(tracker.accept(data, 1_120_000))
+        reason = next(iter(tracker.rejected))
+        self.assertIn("旋转轴与标定轴不匹配", reason)
+        self.assertIn("22.08°", reason)
+        self.assertNotIn("置信度", reason)
+        data["steering_wheel"]["axis_match"] = True
+        with self.assertRaisesRegex(CalibrationError, "translation_along_axis_m=-0.119658.*displacement_m"):
+            self.tracker().accept(data, 1_120_000)
+
+    def test_camera_quality_and_wheel_calibration_have_distinct_reasons(self):
+        cases = [(frame(confidence=.49), "置信度不合格：0.490"),
+                 (frame(status="LOST", valid=False), "相机未有效跟踪"),
+                 (frame(steering_wheel=None), "缺少轮盘测量"),
+                 (frame(steering_wheel=dict(valid=False, reason="calibration_unavailable",
+                        calibration_error="missing calibration file")), "missing calibration file")]
+        for data, reason in cases:
+            with self.subTest(reason=reason):
+                tracker = self.tracker()
+                self.assertIsNone(tracker.accept(data, 1_120_000))
+                self.assertIn(reason, next(iter(tracker.rejected)))
+
     def test_new_invalid_frame_advances_watermark(self):
         tracker = self.tracker()
         self.assertIsNotNone(tracker.accept(frame(sequence=10), 1_120_000))

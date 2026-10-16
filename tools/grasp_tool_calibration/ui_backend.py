@@ -30,14 +30,24 @@ class NativeSession:
         self._responses = queue.Queue()
         self._id = 0
         self._broken = False
-        self.log_path = Path(log_dir) / f"arms-{time.time_ns()}.log"
+        self.log_path = Path(log_dir).resolve() / f"arms-{time.time_ns()}.log"
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        # xCoreSDK opens ./logs/global_logger_DATE.log during connect and aborts
+        # if it cannot write it. Redirecting stderr does not relocate that log.
+        # Give each helper a fresh writable working directory alongside its log,
+        # including when the UI fell back from root-owned repository logs to /tmp.
+        self.sdk_work_dir = self.log_path.with_suffix("")
+        (self.sdk_work_dir / "logs").mkdir(parents=True, exist_ok=False)
+        executable = (ROOT / executable).resolve()
+        robot_config = (ROOT / robot_config).resolve()
         self._errors = self.log_path.open("w", encoding="utf-8")
+        self._errors.write(f"SDK working directory: {self.sdk_work_dir}\n")
+        self._errors.flush()
         argv = [str(executable), "--robot-config", str(robot_config)]
         if dry_run:
             argv.append("--dry-run")
         try:
-            self.process = subprocess.Popen(argv, cwd=ROOT, stdin=subprocess.PIPE,
+            self.process = subprocess.Popen(argv, cwd=self.sdk_work_dir, stdin=subprocess.PIPE,
                                             stdout=subprocess.PIPE, stderr=self._errors,
                                             text=True, encoding="utf-8", bufsize=1,
                                             start_new_session=True)
@@ -152,7 +162,7 @@ class DemoLink:
                     hands={s: dict(valid=True, status="模拟", drive_position_normalized=list(t))
                            for s, t in self.targets.items()})
 
-    def wait_ready(self, timeout=5):
+    def wait_ready(self, timeout=5, side="both"):
         return self.snapshot()
 
     def stop(self):
@@ -338,7 +348,7 @@ class CalibrationController:
                 elif action == "hand":
                     self._invalidate()
                     self.link.set_hand(request["side"], request["pose"])
-                    self.link.wait_ready(timeout=5)
+                    self.link.wait_ready(timeout=5, side=request["side"])
                     self._set(message="手节点已接受目标；是否握住把手请现场确认", phase="ready")
                 elif action == "sample":
                     self._sample(request)
@@ -349,7 +359,7 @@ class CalibrationController:
                 if self._cancel.is_set():
                     self.log("当前操作已取消，正在清理设备会话")
                     self._stop()
-                elif request["action"] in ("prepare", "drag_start", "drag_stop", "hand"):
+                elif request["action"] in ("prepare", "drag_start", "drag_stop"):
                     self.log(f"操作失败：{exc}")
                     self._stop(str(exc))
                 else:
@@ -398,7 +408,9 @@ class CalibrationController:
             self._check_cancel()
             self.link = self.link_factory(publish, subscribe, opened, closed, self.log,
                                           camera_id=self.options.camera_id,
-                                          hand_publisher=presets.get("publisher_id", "rh56ftp_hand"))
+                                          hand_publisher=presets.get("publisher_id", "rh56ftp_hand"),
+                                          feedback_timeout_ms=max(3000, hand_config.get("feedback_timeout_ms", 500)),
+                                          ack_timeout_ms=1000)
             self.link.start()
             self._check_cancel()
             if source == "camera":
@@ -418,7 +430,13 @@ class CalibrationController:
             self.native.request("hand_start", system_config=str(self.options.system_config),
                                 hand_config=str(self.options.hand_config),
                                 fake_hand=getattr(self.options, "fake_hand", False))
-            self.link.wait_ready(timeout=15)
+            try:
+                self.link.wait_ready(timeout=15)
+            except RuntimeError as exc:
+                status = self.link.snapshot()
+                if status.get("conflict") or status.get("error") or not status.get("running"):
+                    raise
+                self.log(f"手部尚未就绪，保留连接等待恢复；恢复后重新点击开合：{exc}")
         self._check_cancel()
         self._refresh_arms()
         self._set(prepared=True, phase="ready", message="校准环境已就绪；可拖动、握紧，停稳后采样")
@@ -450,12 +468,17 @@ class CalibrationController:
             if not node["running"]:
                 raise CalibrationError(f"{node['name']} 节点已退出；日志 {node['log_path']}")
         hand = self.link.snapshot()
+        if hand.get("conflict") or hand.get("error") or not hand.get("running", True):
+            raise CalibrationError(hand.get("conflict") or hand.get("error") or "手部通信线程已退出")
         if not hand.get("ready"):
+            if self._bad_hand_since is None:
+                self._invalidate()
+                self.log("手部反馈或指令确认不可用；保留连接，恢复后重新点击对应手的开合按钮")
             self._bad_hand_since = self._bad_hand_since or now
-            if hand.get("fault") or now - self._bad_hand_since > .5:
-                raise CalibrationError(hand.get("fault") or "机械手反馈/ACK 持续失效，结束校准会话")
-        else:
+            self._set(message="等待机械手恢复／重新下发；双手就绪后可采样")
+        elif self._bad_hand_since is not None:
             self._bad_hand_since = None
+            self._set(message="双手机械手反馈和指令确认已恢复")
         if now >= self._monitor_at:
             self._monitor_at = now + 1
             self._refresh_arms()

@@ -18,17 +18,25 @@ struct Config {
 };
 Config loadConfig(const std::filesystem::path& system, bool fake_override = false,
                   const std::filesystem::path& hand_file = {});
+// Bus-facing interface shared by the regular and calibration control policies.
+class Endpoint {
+  public:
+    virtual ~Endpoint() = default;
+    virtual void receive(const Message&) = 0;
+    virtual unsigned periodUs() const = 0;
+    virtual Message state() = 0;
+};
 // Worker owns control policy; independent readers and bus snapshots never wait
 // for a control write. Owner must destroy Runtime before its SDK connections.
-class Runtime {
+class Runtime : public Endpoint {
   public:
     Runtime(Config, std::array<std::unique_ptr<Device>, 2>);
-    ~Runtime();
+    ~Runtime() override;
     Runtime(const Runtime&) = delete;
     Runtime& operator=(const Runtime&) = delete;
-    void receive(const Message&); // bounded latest-command mailbox, no device I/O
-    unsigned periodUs() const;
-    Message state(); // current envelope + original per-side timestamps
+    void receive(const Message&) override; // bounded latest-command mailbox, no device I/O
+    unsigned periodUs() const override;
+    Message state() override; // current envelope + original per-side timestamps
   private:
     class Impl;
     std::unique_ptr<Impl> impl_;
@@ -37,7 +45,7 @@ class Runtime {
 // created and used in this bus thread; no additional controller connection.
 class Bus {
   public:
-    Bus(Runtime&, const std::string& publish, const std::string& subscribe);
+    Bus(Endpoint&, const std::string& publish, const std::string& subscribe);
     ~Bus();
 
   private:

@@ -30,12 +30,12 @@ class RokaeSessionArm {
     void connect();
     SessionArmStatus status();
     void startDrag();
-    void stopDrag();
+    void stopDrag(bool resume_hand = true);
     std::array<double, 7> position();
     // Attempts both drag cleanup and disconnection and reports every failure.
     // The SDK documents that disconnect itself stops robot motion.
     void disconnect();
-    void handTimeout(int milliseconds);
+    void startHand();
     std::vector<uint8_t> handTransfer(const std::vector<uint8_t>&, size_t);
 
  private:

@@ -358,6 +358,23 @@ target_link_libraries(aviator_target_trace_test PRIVATE Threads::Threads)
 add_test(NAME target_trace COMMAND aviator_target_trace_test)
 set_tests_properties(target_trace PROPERTIES TIMEOUT 15)
 
+if(TARGET aviator_grasp_tool_session)
+  aviator_add_test_executable(aviator_calibration_sdk_test
+    ../tools/grasp_tool_calibration/native/test_rokae_session.cpp
+    ../tools/grasp_tool_calibration/native/rokae_session.cpp)
+  target_include_directories(aviator_calibration_sdk_test PRIVATE
+    ../tools/grasp_tool_calibration/native/test_sdk)
+  target_link_libraries(aviator_calibration_sdk_test PRIVATE Threads::Threads)
+  add_test(NAME calibration_sdk COMMAND aviator_calibration_sdk_test)
+  set_tests_properties(calibration_sdk PROPERTIES TIMEOUT 10)
+  aviator_add_test_executable(aviator_calibration_hand_test
+    ../tools/grasp_tool_calibration/native/test_calibration_hand.cpp
+    ../tools/grasp_tool_calibration/native/calibration_hand.cpp)
+  target_link_libraries(aviator_calibration_hand_test PRIVATE aviator_hand_runtime)
+  add_test(NAME calibration_hand COMMAND aviator_calibration_hand_test)
+  set_tests_properties(calibration_hand PROPERTIES TIMEOUT 20)
+endif()
+
 if(TARGET aviator_hand_runtime)
   aviator_add_test_executable(aviator_manipulator_hand_test manipulator_hand_test.cpp)
   target_link_libraries(aviator_manipulator_hand_test PRIVATE aviator_hand_runtime)

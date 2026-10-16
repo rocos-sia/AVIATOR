@@ -25,7 +25,7 @@
         <button id="prepare" class="primary" type="button">准备环境 · 双手张开</button>
         <button id="stop" class="stop" type="button" disabled>结束会话 · 结束拖动并张开双手</button>
       </div>
-      <p class="hint">自动管理本工具启动的 Bus、机械手和相机节点。准备前请退出 Core、Manipulator 和其他设备控制程序。</p>
+      <p class="hint">准备时设置双臂末端负载，并请求电机上电以控制机械手；自动管理本工具启动的 Bus、机械手和相机。准备前请退出 Core、Manipulator 和其他设备控制程序。</p>
       <div id="nodes" class="node-strip"></div>
       <details class="configuration"><summary>配置与设备地址</summary><dl id="config-list"></dl></details>
     </section>
@@ -38,8 +38,8 @@
           <article class="arm" data-arm="left"><div class="arm-heading"><h3>左侧</h3><span id="left-arm-state" class="badge">未连接</span></div><p id="left-arm-detail" class="arm-detail">等待连接机械臂</p><div class="button-row"><button type="button" data-action="drag_start" data-side="left" disabled>开启拖动</button><button type="button" data-action="drag_stop" data-side="left" disabled>结束拖动</button></div><div class="divider"></div><p id="left-hand-state" class="arm-detail">机械手：等待反馈</p><div class="button-row"><button type="button" data-action="hand" data-side="left" data-pose="open" disabled>张开</button><button type="button" data-action="hand" data-side="left" data-pose="close" disabled>握紧</button></div><details><summary>目标 / 反馈</summary><pre id="left-hand-detail">—</pre></details></article>
           <article class="arm" data-arm="right"><div class="arm-heading"><h3>右侧</h3><span id="right-arm-state" class="badge">未连接</span></div><p id="right-arm-detail" class="arm-detail">等待连接机械臂</p><div class="button-row"><button type="button" data-action="drag_start" data-side="right" disabled>开启拖动</button><button type="button" data-action="drag_stop" data-side="right" disabled>结束拖动</button></div><div class="divider"></div><p id="right-hand-state" class="arm-detail">机械手：等待反馈</p><div class="button-row"><button type="button" data-action="hand" data-side="right" data-pose="open" disabled>张开</button><button type="button" data-action="hand" data-side="right" data-pose="close" disabled>握紧</button></div><details><summary>目标 / 反馈</summary><pre id="right-hand-detail">—</pre></details></article>
         </div>
-        <p class="hint">拖动使用手动模式、下电、关节空间自由拖动；保留机械臂末端拖动按钮的要求。结束后不自动上电。采样前须结束双臂拖动并保持轮盘静止。</p>
-        <p class="hint">“指令已确认”表示机械手节点接收了命令，不能证明双手已实际握住把手。</p>
+        <p class="hint">拖动使用手动模式、下电、关节空间自由拖动；保留机械臂末端拖动按钮的要求。真机手控制启动后，结束拖动会请求恢复该侧电机上电。采样前须结束双臂拖动并保持轮盘静止。</p>
+        <p class="hint">“指令已确认”表示当前开合参数已收到设备写入应答且反馈有效，不能证明已握住把手。手部故障时保留会话，恢复后请重新点击该侧开合。</p>
       </section>
 
       <section class="card capture">

@@ -231,6 +231,38 @@ class HandCameraTests(unittest.TestCase):
                            transform=lambda s: s["hands"].pop("right"))
         self.assertFalse(status["fresh"] or status["ready"])
 
+    def test_calibration_side_ack_and_retry_do_not_depend_on_faulted_peer(self):
+        def calibration(state):
+            state.update(calibration_control=True, valid=False, command_valid=False)
+            state["hands"]["left"].update(valid=False, status="RECOVERING")
+            state["hands"]["right"].update(command_valid=True,
+                applied_revision=self.link._revisions["right"])
+        status = self.pump(predicate=lambda s: s["ready_sides"].get("right"), transform=calibration)
+        self.assertFalse(status["ready"])
+        self.assertFalse(status["available_sides"]["left"])
+        self.link.wait_ready(side="right", timeout=.1)
+        left_revision = self.link._revisions["left"]
+        self.link.set_hand("right", "close")
+        self.assertEqual(self.link._revisions["left"], left_revision)
+        self.assertFalse(self.link.snapshot()["ready_sides"]["right"])
+        self.pump(predicate=lambda s: s["ready_sides"].get("right"), transform=calibration)
+        self.link.wait_ready(side="right", timeout=.1)
+        # Re-clicking the same target produces a new revision after recovery.
+        previous = self.link._revisions["right"]
+        self.link.set_hand("right", "close")
+        self.assertEqual(self.link._revisions["right"], previous + 1)
+        self.assertFalse(self.link.snapshot()["ready_sides"]["right"])
+
+    def test_calibration_retry_required_allows_buttons_but_blocks_sampling(self):
+        def calibration(state):
+            state.update(calibration_control=True, command_valid=False)
+            for hand in state["hands"].values():
+                hand.update(command_valid=False, applied_revision=0, retry_required=True)
+        status = self.pump(predicate=lambda s: bool((s["state"] or {}).get("calibration_control")),
+                           transform=calibration)
+        self.assertTrue(all(status["available_sides"].values()))
+        self.assertFalse(status["ready"] or any(status["ready_sides"].values()))
+
     def test_camera_filter_and_deep_snapshot(self):
         self.pump()
         other = dict(msg_type="CameraDetection", camera_id="other", sequence=1)

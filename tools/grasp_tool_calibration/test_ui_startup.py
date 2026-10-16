@@ -4,12 +4,14 @@ from io import StringIO
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from calibration import CalibrationError
 import ui
+import ui_backend
 
 
 class LogDirectoryTests(unittest.TestCase):
@@ -87,6 +89,43 @@ class LogDirectoryTests(unittest.TestCase):
                 ui.prepare_log_directory(requested)
         self.assertIn(str(requested), str(raised.exception))
         self.assertEqual(list(requested.iterdir()), [])
+
+    def test_native_sdk_logs_follow_fallback_directory_and_config_stays_absolute(self):
+        repository_logs = self.root / "logs"
+        repository_logs.mkdir()
+        self.deny_writes(repository_logs)
+        helper = self.root / "fake-sdk-session"
+        helper.write_text("#!" + sys.executable + "\n" + """
+import json, pathlib, sys
+config = pathlib.Path(sys.argv[sys.argv.index('--robot-config') + 1])
+for line in sys.stdin:
+    request = json.loads(line)
+    log = pathlib.Path('logs/global_logger_test.log')
+    log.write_text('SDK connected without touching repository logs')
+    print(json.dumps(dict(id=request['id'], ok=True, result=dict(
+        cwd=str(pathlib.Path.cwd()), config=str(config), content=config.read_text()))), flush=True)
+""")
+        helper.chmod(0o700)
+        config = self.root / "robot config.yaml"
+        config.write_text("test config")
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            log_dir = ui.prepare_log_directory(None)
+        self.addCleanup(shutil.rmtree, log_dir)
+        with patch.object(ui_backend, "ROOT", self.root):
+            session = ui_backend.NativeSession(Path(helper.name), Path(config.name), False, log_dir, lambda _: None)
+        try:
+            state = session.request("connect")
+            self.assertEqual(Path(state["config"]), config)
+            self.assertEqual(state["content"], "test config")
+            self.assertEqual(Path(state["cwd"]), session.sdk_work_dir)
+            self.assertEqual(session.sdk_work_dir.parent, log_dir)
+            self.assertTrue((session.sdk_work_dir / "logs/global_logger_test.log").is_file())
+            self.assertIn(str(session.sdk_work_dir), session.log_path.read_text())
+            self.assertEqual(list(repository_logs.iterdir()), [])
+        finally:
+            session.close()
+        self.assertEqual(session.process.returncode, 0)
 
     def test_help_does_not_prepare_or_create_directories(self):
         with patch.object(ui, "prepare_log_directory") as prepare, redirect_stdout(StringIO()):

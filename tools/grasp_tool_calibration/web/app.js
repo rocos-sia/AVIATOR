@@ -41,8 +41,8 @@
     for (const button of document.querySelectorAll("[data-action]")) {
       const side = button.dataset.side;
       const arms = side === "both" ? [s.arms?.left, s.arms?.right] : [s.arms?.[side]];
-      if (button.dataset.action === "hand") button.disabled = blocked || !s.prepared || !s.hand?.ready || Boolean(s.hand?.conflict);
-      else if (button.dataset.action === "drag_start") button.disabled = blocked || !s.prepared || !arms.every((arm) => arm?.connected && !arm.dragging);
+      if (button.dataset.action === "hand") button.disabled = blocked || !s.prepared || !(side === "both" ? ["left", "right"] : [side]).every((name) => s.hand?.available_sides?.[name] ?? s.hand?.ready) || Boolean(s.hand?.conflict);
+      else if (button.dataset.action === "drag_start") button.disabled = blocked || !s.prepared || !s.hand?.ready || !arms.every((arm) => arm?.connected && !arm.dragging);
       else button.disabled = blocked || !s.prepared || !arms.some((arm) => arm?.connected && arm.dragging);
     }
     if (manualChanged) text("save-hint", "手动轮盘值已更改，请重新采样后再写回。下方仍显示上一次采样的结果。");
@@ -109,7 +109,7 @@
       badge(`${side}-arm-state`, !arm.connected ? "未连接" : arm.dragging ? "拖动已开启" : "已连接", arm.dragging ? "active" : arm.connected ? "good" : "");
       text(`${side}-arm-detail`, arm.connected ? `状态：${arm.operation_state || "未知"} · ${arm.powered === true ? "已上电" : arm.powered === false ? "已下电" : "电源状态未知"}` : "等待连接机械臂");
       const pose = hand.poses?.[side];
-      text(`${side}-hand-state`, `机械手目标：${pose === "open" ? "张开" : pose === "close" ? "握紧" : "—"}${hand.fresh ? " · 反馈有效" : " · 等待反馈"}`);
+      text(`${side}-hand-state`, `${hand.hands?.[side]?.retry_required ? "恢复后请重新点击开合 · " : hand.hands?.[side]?.status === "RECOVERING" ? "等待通信／故障恢复 · " : ""}机械手目标：${pose === "open" ? "张开" : pose === "close" ? "握紧" : "—"}${(hand.available_sides?.[side] ?? hand.fresh) ? " · 反馈有效" : " · 等待反馈"}`);
       text(`${side}-hand-detail`, JSON.stringify({target: hand.targets?.[side] || null, feedback: hand.hands?.[side] || null}, null, 2));
     }
     const camera = s.camera || {};

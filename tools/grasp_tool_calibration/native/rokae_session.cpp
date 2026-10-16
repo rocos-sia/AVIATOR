@@ -48,6 +48,10 @@ class RokaeSessionArm::Impl {
     std::string ip;
     bool connected = false;
     bool drag_owned = false;
+    bool hand_started = false;
+    bool power_attempted = false;
+    bool rt_mode_attempted = false;
+    bool load_set = false;
     const volatile std::sig_atomic_t* cancellation = nullptr;
 
     Impl(std::string address, const volatile std::sig_atomic_t* stop)
@@ -109,9 +113,39 @@ void RokaeSessionArm::connect() {
     }
     impl_->checkCancellation();
     // operationState is only available after connecting. Refuse taking over an
-    // existing drag/controller; leave the read-only connection visible so the
+    // existing drag/controller; leave the connection visible so the
     // caller sees the real state and can ask the operator to finish it.
     impl_->requireIdle();
+    if (!impl_->load_set) {
+        std::error_code ec;
+        // Same physical payload as nodes/manipulator/rokae_sdk.cpp. Keep the
+        // existing frames; calibration computes the flange FK independently.
+        const rokae::Load load(0.71, {0.02134, -0.02368, 0.11188}, {0., 0., 0.});
+        auto toolset = impl_->robot.toolset(ec);
+        impl_->check(ec, "toolset");
+        toolset.load = load;
+        impl_->robot.setToolset(toolset, ec);
+        impl_->check(ec, "setToolset(load)");
+        impl_->rt_mode_attempted = true;
+        impl_->robot.setMotionControlMode(rokae::MotionControlMode::RtCommand, ec);
+        impl_->check(ec, "setMotionControlMode(RtCommand for payload)");
+        try {
+            auto rt = impl_->robot.getRtMotionController().lock();
+            if (!rt) throw std::runtime_error("getRtMotionController returned null");
+            rt->setLoad(load, ec);
+            impl_->check(ec, "setLoad");
+        } catch (...) {
+            impl_->robot.setMotionControlMode(rokae::MotionControlMode::Idle, ec);
+            if (!ec) impl_->rt_mode_attempted = false;
+            throw;
+        }
+        impl_->robot.setMotionControlMode(rokae::MotionControlMode::Idle, ec);
+        impl_->check(ec, "setMotionControlMode(Idle after payload)");
+        impl_->rt_mode_attempted = false;
+        impl_->load_set = true;
+        std::cerr << "Calibration " << impl_->ip
+                  << " setLoad: mass=0.71 kg cog=[0.02134,-0.02368,0.11188] m inertia=[0,0,0] kg*m^2\n";
+    }
 }
 
 SessionArmStatus RokaeSessionArm::status() {
@@ -167,7 +201,7 @@ void RokaeSessionArm::startDrag() {
     impl_->waitFor([&] { return impl_->operation() == rokae::OperationState::drag; }, "drag enabled", true);
 }
 
-void RokaeSessionArm::stopDrag() {
+void RokaeSessionArm::stopDrag(bool resume_hand) {
     std::lock_guard<std::recursive_mutex> rpc(impl_->rpc_mutex);
     impl_->requireConnected();
     if (!impl_->drag_owned) {
@@ -183,6 +217,7 @@ void RokaeSessionArm::stopDrag() {
         return state == rokae::OperationState::idle || state == rokae::OperationState::jog;
     }, "drag disabled and arm stationary");
     impl_->drag_owned = false;
+    if (resume_hand && impl_->hand_started) startHand();
 }
 
 std::array<double, 7> RokaeSessionArm::position() {
@@ -200,10 +235,20 @@ void RokaeSessionArm::disconnect() {
     if (!impl_->connected) return;
     std::string errors;
     if (impl_->drag_owned) {
-        try { stopDrag(); }
+        try { stopDrag(false); }
         catch (const std::exception& error) { errors = error.what(); }
     }
     std::error_code ec;
+    if (impl_->rt_mode_attempted) {
+        impl_->robot.setMotionControlMode(rokae::MotionControlMode::Idle, ec);
+        if (ec) errors += "; reset motion control: " + ec.message();
+        else impl_->rt_mode_attempted = false;
+    }
+    if (impl_->power_attempted) {
+        impl_->robot.setPowerState(false, ec);
+        if (ec) errors += "; power off: " + ec.message();
+        else impl_->power_attempted = false;
+    }
     impl_->robot.disconnectFromRobot(ec);
     if (ec) {
         if (!errors.empty()) errors += "; ";
@@ -211,6 +256,8 @@ void RokaeSessionArm::disconnect() {
     } else {
         impl_->connected = false;
         impl_->drag_owned = false;
+        impl_->hand_started = false;
+        impl_->load_set = false;
     }
     if (!errors.empty()) throw std::runtime_error(errors);
 }
@@ -218,26 +265,29 @@ void RokaeSessionArm::disconnect() {
 } // namespace aviator::calibration
 
 namespace aviator::calibration {
-void RokaeSessionArm::handTimeout(int milliseconds) {
+void RokaeSessionArm::startHand() {
     std::lock_guard<std::recursive_mutex> rpc(impl_->rpc_mutex);
-    impl_->requireConnected();
-    if (milliseconds < 50 || milliseconds > 10000)
-        throw std::runtime_error("Invalid RS485 timeout");
+    impl_->checkCancellation();
+    impl_->requireIdle();
     std::error_code ec;
-    impl_->robot.setxPanelRS485Overtime(milliseconds, ec);
-    impl_->check(ec, "setxPanelRS485Overtime");
+    impl_->power_attempted = true;
+    impl_->robot.setPowerState(true, ec);
+    impl_->check(ec, "setPowerState(true for hand)");
+    impl_->hand_started = true;
+    std::cerr << "Calibration " << impl_->ip << " hand power on; using current RS485 configuration and timeout\n";
 }
 std::vector<uint8_t> RokaeSessionArm::handTransfer(const std::vector<uint8_t>& tx, size_t count) {
     if (tx.empty() || tx.size() > 64 || count == 0 || count > 64)
         throw std::runtime_error("RS485 requires 1..64 bytes");
-    std::unique_lock<std::recursive_mutex> rpc(impl_->rpc_mutex, std::try_to_lock);
-    if (!rpc.owns_lock())
-        throw std::runtime_error("Calibration lifecycle RPC busy");
+    std::lock_guard<std::recursive_mutex> rpc(impl_->rpc_mutex);
     impl_->requireConnected();
     std::vector<uint8_t> rx(count);
     std::error_code ec;
+    const auto start = Clock::now();
     impl_->robot.XPRS485SendData(int(tx.size()), int(count), tx, rx, ec);
     impl_->check(ec, "XPRS485SendData");
+    if (Clock::now() - start > std::chrono::seconds(3))
+        throw std::runtime_error(impl_->ip + " RS485 transaction exceeded 3 seconds");
     return rx;
 }
 } // namespace aviator::calibration

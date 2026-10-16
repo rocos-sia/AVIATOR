@@ -1,5 +1,6 @@
 #include "aviator/backend.hpp"
 #include "HandRuntime.hpp"
+#include "calibration_hand.hpp"
 #ifdef AVIATOR_GRASP_HAVE_ROKAE
 #include "rokae_session.hpp"
 #endif
@@ -182,20 +183,30 @@ class Session {
             auto cfg=aviator::hand::loadConfig(system, request.value("fake_hand",false)||dry_,
                 fs::path(request.at("hand_config").get<std::string>()));
             require(cfg.enabled && cfg.sides[0] && cfg.sides[1], "Calibration requires both hands enabled");
-            std::array<std::unique_ptr<aviator::hand::Device>,2> devices;
+            std::array<aviator::hand::Transfer,2> transfers;
             for(int s=0;s<2;++s) {
-                if(cfg.fake) devices[s]=aviator::hand::fakeDevice(cfg.motion_rate);
 #ifdef AVIATOR_GRASP_HAVE_ROKAE
-                else {
-                    arms_[s]->handTimeout(cfg.rs485_timeout_ms);
-                    devices[s]=aviator::hand::rs485Device(cfg.ids[s],[this,s](const auto& tx,size_t count) {
+                if(!cfg.fake) {
+                    arms_[s]->startHand();
+                    transfers[s]=[this,s](const auto& tx,size_t count) {
                         return arms_[s]->handTransfer(tx,count);
-                    });
+                    };
                 }
 #endif
             }
             auto config=YAML::LoadFile(system.string());
-            hands_=std::make_unique<aviator::hand::Runtime>(cfg,std::move(devices));
+            std::array<aviator::hand::Values,2> opened{aviator::hand::open_pose, aviator::hand::open_pose};
+            for (int s=0;s<2;++s) {
+                const auto preset = config["core_hand"]["open"][sideName(s)];
+                if (!preset) continue;
+                require(preset.IsSequence() && preset.size()==6, "Invalid hand open preset");
+                for (int i=0;i<6;++i) {
+                    const double v=preset[i].as<double>();
+                    require(std::isfinite(v) && v>=0 && v<=1, "Invalid hand open target");
+                    opened[s][i]=int(std::floor(v*1000+.5));
+                }
+            }
+            hands_=std::make_unique<aviator::calibration::CalibrationHands>(cfg,std::move(transfers),opened);
             hand_bus_=std::make_unique<aviator::hand::Bus>(*hands_,config["bus"]["publish"].as<std::string>(),
                 config["bus"]["subscribe"].as<std::string>());
             return {{"started",true},{"fake_hand",cfg.fake}};
@@ -250,7 +261,7 @@ class Session {
             if(dry_) dragging_[i]=false;
 #ifdef AVIATOR_GRASP_HAVE_ROKAE
             else if(arms_[i]) {
-                try { if(arms_[i]->status().drag_owned) arms_[i]->stopDrag(); }
+                try { if(arms_[i]->status().drag_owned) arms_[i]->stopDrag(false); }
                 catch(const std::exception& error) { addError(errors,error.what()); }
             }
 #endif
@@ -334,7 +345,7 @@ class Session {
 #ifdef AVIATOR_GRASP_HAVE_ROKAE
     std::array<std::unique_ptr<aviator::calibration::RokaeSessionArm>, 2> arms_;
 #endif
-    std::unique_ptr<aviator::hand::Runtime> hands_;
+    std::unique_ptr<aviator::calibration::CalibrationHands> hands_;
     std::unique_ptr<aviator::hand::Bus> hand_bus_;
 };
 

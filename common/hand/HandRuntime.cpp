@@ -835,7 +835,7 @@ class Bus::Impl {
   public:
     std::atomic<bool> stop{false};
     std::thread thread;
-    Impl(Runtime& runtime, const std::string& publish, const std::string& endpoint) {
+    Impl(Endpoint& runtime, const std::string& publish, const std::string& endpoint) {
         thread = std::thread([this, &runtime, publish, endpoint] {
             try {
                 zmq::context_t context(1);
@@ -881,7 +881,7 @@ class Bus::Impl {
             thread.join();
     }
 };
-Bus::Bus(Runtime& r, const std::string& p, const std::string& s)
+Bus::Bus(Endpoint& r, const std::string& p, const std::string& s)
     : impl_(std::make_unique<Impl>(r, p, s)) {}
 Bus::~Bus() = default;
 } // namespace aviator::hand
