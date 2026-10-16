@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include <condition_variable>
+#include <future>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -41,11 +43,63 @@ void check(bool async) {
         require(text.find(fmt::format("worker={} item=2499", worker)) != std::string::npos,
                 "async queue not drained");
 }
+// Hold the output sink indefinitely, including warning/error auto-flushes.
+// Producers must progress even after exceeding the entire bounded log queue.
+class BlockedSink final : public spdlog::sinks::base_sink<std::mutex> {
+public:
+    std::mutex gate;
+    std::condition_variable changed;
+    bool entered = false, released = false, recovered = false;
+    void release() {
+        std::lock_guard<std::mutex> lock(gate);
+        released = true;
+        changed.notify_all();
+    }
+private:
+    void sink_it_(const spdlog::details::log_msg& message) override {
+        std::unique_lock<std::mutex> lock(gate);
+        entered = true;
+        changed.notify_all();
+        changed.wait(lock, [&] { return released; });
+        if (std::string(message.payload.data(), message.payload.size()) == "recovery marker")
+            recovered = true;
+    }
+    void flush_() override {}
+};
+void nonblocking_check() {
+    auto sink = std::make_shared<BlockedSink>();
+    aviator::Logger::configureNonBlocking(sink);
+    aviator::Logger::info("block output");
+    bool entered;
+    {
+        std::unique_lock<std::mutex> lock(sink->gate);
+        entered = sink->changed.wait_for(lock, std::chrono::seconds(2), [&] { return sink->entered; });
+    }
+    auto producer = std::async(std::launch::async, [] {
+        for (int i = 0; i < 10000; ++i) {
+            aviator::Logger::warn("hand warning {}", i);
+            aviator::Logger::error("motion fault {}", i);
+        }
+        aviator::Logger::flush();
+    });
+    const bool finished = producer.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+    const auto overruns = aviator::Logger::overrunCount();
+    sink->release(); // Always unblock cleanup, including the negative test case.
+    producer.get();
+    aviator::Logger::info("recovery marker");
+    aviator::Logger::configure(); // Drain and join before checking output recovery.
+    require(entered, "test sink never blocked");
+    require(finished, "control producer waited for blocked output/full log queue");
+    require(overruns > 0, "test did not saturate the diagnostic queue");
+    require(sink->recovered, "logging did not resume after output recovered");
+    require(aviator::Logger::overrunCount() == 0, "old overrun count leaked into new logger");
+}
 }
 int main() {
     try {
         check(false);
         check(true);
+        nonblocking_check();
         return 0;
     } catch (const std::exception& error) {
         aviator::Logger::error("Logger test: {}", error.what());

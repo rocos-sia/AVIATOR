@@ -36,13 +36,17 @@ int main(int argc, char** argv) {
                    handles[side] * tools[side].inverse();
         };
         JointFrame start;
+        // Start from the configured grasp pose, matching the approach seeds.
+        // An unrelated IK solve at the end stop can choose a J2 boundary branch.
+        start.angle = config["wheel_initial"]["angle"].as<double>();
+        start.displacement = config["wheel_initial"]["displacement"].as<double>();
         for (int side = 0; side < 2; ++side) {
             auto seed = posture[side ? "right_approach_seed_deg" : "left_approach_seed_deg"]
                             .as<std::vector<double>>();
             std::array<double, 7> q{}, out{};
             for (int j = 0; j < 7; ++j)
                 q[j] = seed[j] * M_PI / 180;
-            if (!kin->solveIk(static_cast<Side>(side), q, target(side, 0, 0), out))
+            if (!kin->solveIk(static_cast<Side>(side), q, target(side, start.angle, start.displacement), out))
                 throw std::runtime_error("Initial IK");
             std::copy(out.begin(), out.end(), start.q.begin() + side * 7);
         }
@@ -70,7 +74,7 @@ int main(int argc, char** argv) {
                     throw std::runtime_error("Rebased Servo hold jumped to nominal geometry");
         auto rebased_previous = held.back();
         for (int k = 0; k < 100; ++k) {
-            const auto block = rebased_planner.advance(.01, 0, 1, false);
+            const auto block = rebased_planner.advance(rebased.angle + .01, rebased.displacement, 1, false);
             if (block.front().q != rebased_previous.q || block.front().dq != rebased_previous.dq ||
                 block.front().ddq != rebased_previous.ddq)
                 throw std::runtime_error("Rebased Servo boundary discontinuity");
@@ -118,8 +122,9 @@ int main(int argc, char** argv) {
             throw std::runtime_error("Did not stop");
         std::cout << "Servo step/reversal/braking C2 passed; joint peaks v=" << peak_v
                   << " a=" << peak_a << " j=" << peak_j << '\n';
-        // User's faster wheel parameters: small initial offset, then a rapid reversal.
-        ServoPlanner fast(*kin, target, check, origin, start, .02, {.8, .08}, {1.0, .1}, {.5, .05});
+        // Small initial offset, then a rapid reversal. Exercise joint dynamics
+        // beyond the old caps with the XML-authoritative grasp geometry.
+        ServoPlanner fast(*kin, target, check, origin, start, .02, {.8, .08}, {2.0, .2}, {1., .1});
         previous = start;
         peak_a = peak_j = 0;
         for (int k = 0; k < 800; ++k) {
@@ -200,15 +205,22 @@ int main(int argc, char** argv) {
         if (!latest->stopped()) throw std::runtime_error("Latest Servo did not stop");
         std::cout << "Latest 1 ms Servo passed: steps=" << count << " mean_us=" << total_us/count
                   << " max_us=" << max_us << " (wall time includes scheduler jitter)\n";
-        // Captured after compliant grasp: using the old wheel reference (0, -.085)
-        // adds its drift to every goal; an unweighted wrist also hits +/-60 degrees.
+        // A compliant hold uses the measured wheel reference, not (0, -.085).
+        // Use the configured grasp posture instead of retaining a recorded
+        // J2 ~= 88 deg fixture from an older installation. The nonzero measured
+        // reference deliberately differs from the nominal pose of these arms.
         JointFrame compliant;
         compliant.angle = .15734908702110342;
         compliant.displacement = -.08848852357910701;
-        compliant.q = {-.2441592211, 1.5483223663, -1.4718264843, 1.5707879272,
-                       -.1045421521, .1352043964, .1238566744,
-                       .2951912808, 1.5256245130, 1.2800535572, 1.7130233472,
-                       -.0972914518, -.0946703438, -.4992555569};
+        for (int side = 0; side < 2; ++side) {
+            auto solved = posture[side ? "right_approach_seed_deg" : "left_approach_seed_deg"]
+                              .as<std::array<double, 7>>();
+            for (auto& angle : solved) angle *= M_PI / 180;
+            // Model a small compliant displacement while remaining inside the task limits.
+            solved[3] -= .01;
+            std::copy(solved.begin(), solved.end(), compliant.q.begin() + side * 7);
+        }
+        check(compliant);
         // Verify acceleration against a central difference of the weighted
         // velocity field, independently of Ruckig's within-tick jerk switches.
         std::array<double, 7> q{}, dq{}, ddq{}, plus{}, minus{}, unused{};

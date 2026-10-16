@@ -53,6 +53,9 @@ int main(int argc, char** argv) {
         sigemptyset(&signals); sigaddset(&signals, SIGINT); sigaddset(&signals, SIGTERM);
         const auto mask_error = pthread_sigmask(SIG_BLOCK, &signals, nullptr);
         require(mask_error == 0, "cannot block termination signals");
+        // Start the log worker only after blocking termination signals. Disk or
+        // console backpressure must not hold up input sampling/publication.
+        aviator::Logger::configureNonBlocking();
         signals_fd = signalfd(-1, &signals, SFD_NONBLOCK | SFD_CLOEXEC);
         require(signals_fd >= 0, "cannot create signal fd");
         lock_fd = open(lock.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);
@@ -134,6 +137,7 @@ int main(int argc, char** argv) {
         };
         aviator::ReceiveState receive_state;
         std::uint64_t sequence = 0, next_publish = aviator::monotonic_us();
+        std::uint64_t last_publish = 0, previous_loop_end = next_publish;
         std::string error, payload, last_status = "STALE", system_state;
         std::string feedback_error;
         bool last_service_ready = false;
@@ -153,9 +157,11 @@ int main(int argc, char** argv) {
                                     {sub.handle(), 0, ZMQ_POLLIN, 0},
                                     {service.handle(), 0, ZMQ_POLLIN, 0}};
             zmq::poll(items, 3, std::chrono::milliseconds(wait_ms));
+            const auto input_begin = aviator::monotonic_us();
             if (items[0].revents) { running = false; break; }
             std::vector<unsigned> pressed;
             running = input.poll(sample, pressed);
+            const auto input_end = aviator::monotonic_us();
             if (!running) break;
             for (const auto index : pressed)
                 if (sample.fresh(aviator::monotonic_us(), timeout_ms * 1000ULL)) request_button(index);
@@ -233,9 +239,23 @@ int main(int argc, char** argv) {
                 last_service_ready = service_ready;
             }
             if (current >= next_publish) {
-                publish(aviator::monotonic_us());
+                const auto publish_begin = aviator::monotonic_us();
+                publish(publish_begin);
+                const auto publish_end = aviator::monotonic_us();
+                const auto gap = last_publish ? publish_begin - last_publish : 0;
+                if (gap >= 50000 || publish_end - now >= 50000)
+                    aviator::Logger::warn(
+                        "Gateway loop delayed: publish_gap_us={} between_loops_us={} poll_wait_us={} "
+                        "requested_wait_ms={} input_us={} feedback_service_us={} publish_us={} "
+                        "sample_age_us={} log_overruns={}",
+                        gap, now - previous_loop_end, input_begin - now, wait_ms,
+                        input_end - input_begin, publish_begin - input_end, publish_end - publish_begin,
+                        publish_begin >= sample.checked_us ? publish_begin - sample.checked_us : 0,
+                        aviator::Logger::overrunCount());
+                last_publish = publish_begin;
                 next_publish += ((current - next_publish) / 20000 + 1) * 20000;
             }
+            previous_loop_end = aviator::monotonic_us();
         }
         sample.valid = false;
         publish(aviator::monotonic_us()); // Best effort; PUB/SUB has no delivery ACK.

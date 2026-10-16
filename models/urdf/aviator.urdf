@@ -74,19 +74,21 @@
     <limit lower="-0.170" upper="0" effort="10.0" velocity="1.0"/>
   </joint>
 
+  <!-- Main yoke: each grip inset 25 mm; shaft/tag plate unchanged.
+       Derived mesh: scripts/narrow_steering_wheel.py. -->
   <!-- Steering Wheel -->
   <link name="steering_wheel">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="../meshes/Cessna/steering_wheel_qr.STL" scale="1 1 1"/>
+        <mesh filename="../meshes/Cessna/narrow/steering_wheel_qr.STL" scale="1 1 1"/>
       </geometry>
       <material name="blue"/>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <mesh filename="../meshes/Cessna/steering_wheel_qr.STL" scale="1 1 1"/>
+        <mesh filename="../meshes/Cessna/narrow/steering_wheel_qr.STL" scale="1 1 1"/>
       </geometry>
     </collision>
     <inertial>
@@ -137,16 +139,17 @@
 
 
 
+  <!-- Both arm mounts: +10 mm aircraft Y (left), +16 mm aircraft Z (up). -->
   <joint name="left_arm_base" type="fixed">
     <parent link="aircraft"/>
     <child link="AR5-5_07L-W4C4A2_base"/>
-    <origin xyz="-0.91333 0.010 0.12156" rpy="-1.5707 1.5708 0"/> <!-- -0.1745329 + 1.5708 -->
+    <origin xyz="-0.91333 0.020 0.13756" rpy="-1.5707 1.5708 0"/> <!-- -0.1745329 + 1.5708 -->
   </joint>
 
   <joint name="right_arm_base" type="fixed">
     <parent link="aircraft"/>
     <child link="AR5-5_07R-W4C4A2_base"/>
-    <origin xyz="-0.91333 -0.010 0.12156" rpy="1.5707 1.5708 0"/> <!-- -0.1745329 + 1.5708 -->
+    <origin xyz="-0.91333 0.000 0.13756" rpy="1.5707 1.5708 0"/> <!-- -0.1745329 + 1.5708 -->
   </joint>
 
 

@@ -4,6 +4,11 @@
 `manipulator` 与 `rh56ftp_hand`。Core 使用相同配置、可靠服务和消息协议，
 不判断硬件类型；`robot.yaml` 不再包含 `backend`。
 
+simulation 使用独立日志线程，8192 条诊断队列满时覆盖旧日志，执行线程不等待日志写入。
+退出时会等待日志排空。设备执行的反馈读取/缓存更新、Servo 规划/日志/目标写入、
+物理 tick 等待超过 50 ms 时分别记录 `Device snapshot delayed`、`Device Servo step delayed`、
+`Device Servo tick delayed`；这些耗时包含线程调度等待，不会刷新反馈时间戳或放宽看门狗。
+
 ## 启动
 
 在不同终端执行，等待 simulation 的 `READY simulation` 再启动 Core：
@@ -31,6 +36,8 @@ AVIATOR_BIN="$PWD/build/debug/bin" ./scripts/start_aviator.sh --simulation
 
 - `--config`：与 Core 使用同一个 `system.yaml`。设备服务默认绑定
   `manipulator_service: tcp://127.0.0.1:5558`，总线默认 5555/5556。
+- 仿真完整流程使用 `config/system-simulation.yaml`，其中
+  `grasp_camera_publisher: simulation` 让 Core 从仿真相机读取抓握位姿；真机默认使用 `camera`。
 - `robot.yaml` 的 `model` 指向含双臂和完整双手的 `models/mjcf/aviator.xml`；
   `viewer` 控制窗口。`wheel_initial`、URDF 限位、工具变换和制动参数与真机共用。
 - `--model` 可覆盖模型路径；`--pub-endpoint` / `--sub-endpoint` 可覆盖总线。
@@ -141,6 +148,16 @@ D436 虚拟相机固定在双臂底座安装件上方，朝向驾驶盘中位的
 
 ## URDF 与 MJCF 同步
 
+主、副驾驶盘在 MJCF 中启用 `gravcomp="1"`，抵消 CAD 滑动轴微小倾斜引起的
+重力漂移。轮盘仍保留质量、惯性、阻尼和关节限位，可由抓握约束或外力带动；
+静置时保持当前位置。这是仿真的理想重力平衡假设，不代表真实轮盘已标定的受力特性。
+
+双臂基座相对原位置沿机身 +Y 平移 10 mm、+Z 平移 16 mm，URDF 与 MJCF 同步。
+主驾驶盘的两个把手及各自连接件沿轮盘局部 X 向内各移 25 mm，抓握 site、接触代理和
+`config/grasp.json` 同步平移。`Cessna/narrow` 的派生网格缩短中间连接段，保留把手尺寸、
+中央轴和标签板；由 `python3 scripts/narrow_steering_wheel.py` 重建（需 NumPy/SciPy）。
+原始 CAD 资源与第二驾驶盘保留，历史示例仍使用原资源。
+
 [aviator.xml](../../models/mjcf/aviator.xml) 使用当前
 [aviator.urdf](../../models/urdf/aviator.urdf) 的机身、外壳、带标签板的主驾驶盘及
 第二驾驶盘显示网格、材质和关节范围。第二驾驶盘位于 Y=0.47 m，通过两个 joint equality
@@ -156,7 +173,7 @@ D436 虚拟相机固定在双臂底座安装件上方，朝向驾驶盘中位的
 120×120 mm，含四周各 15 mm 白边的整体尺寸为 150×150 mm。
 纹理覆盖在新网格的标签板表面，纸面超出原有约 120 mm 的 CAD 安装板；
 标签沿局部 +Z 外移 1 mm，避免放大的白边与周围网格重叠，虚拟相机同步微调瞄准。
-不缩放驾驶盘、支架或 URDF 网格。STL 本身不携带纹理。
+标签覆盖层不缩放驾驶盘、支架或 URDF 网格。STL 本身不携带纹理。
 
 MuJoCo 单个二进制 STL 限制 200,000 面，而轻量机身有 244,284 面。
 [Cessna/mjcf](../../models/meshes/Cessna/mjcf) 内的两个网格由

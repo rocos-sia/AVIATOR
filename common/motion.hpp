@@ -12,6 +12,7 @@ struct MotionConfig {
     std::filesystem::path system, robot;
     std::string publish, subscribe, service, config_id;
     unsigned period_us = 10000, timeout_us = 50000, origin_timeout_us = 100000;
+    std::string grasp_camera_publisher = "camera";
 };
 MotionConfig loadMotionConfig(const std::filesystem::path &file);
 struct WheelReference { double angle = 0, displacement = 0; };

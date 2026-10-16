@@ -25,6 +25,27 @@ int main() {
         rejected([] { joystickWheelDisplacement(std::numeric_limits<double>::quiet_NaN()); });
         const auto robot_file = std::filesystem::temp_directory_path() / ("wheel-initial-" + session + ".yaml");
         struct Cleanup { std::filesystem::path p; ~Cleanup() { std::filesystem::remove(p); } } cleanup{robot_file};
+        const auto system_file = std::filesystem::temp_directory_path() / ("motion-config-" + session + ".yaml");
+        Cleanup system_cleanup{system_file};
+        auto watchdogConfig = [&](unsigned command_ms, unsigned origin_ms) {
+            std::ofstream(system_file)
+                << "robot: robot.yaml\nconfig_id: test\n"
+                   "bus: {publish: 'tcp://127.0.0.1:5555', subscribe: 'tcp://127.0.0.1:5556'}\n"
+                   "manipulator_service: tcp://127.0.0.1:5558\n"
+                << "command_timeout_ms: " << command_ms << '\n'
+                << "origin_timeout_ms: " << origin_ms << '\n';
+            return loadMotionConfig(system_file);
+        };
+        for (const unsigned ms : {30u, 100u, 300u, 1000u}) {
+            const auto config = watchdogConfig(ms, 1000);
+            check(config.timeout_us == ms * 1000 && config.origin_timeout_us == 1000000,
+                  "watchdog millisecond range/conversion");
+        }
+        rejected([&] { watchdogConfig(29, 1000); });
+        rejected([&] { watchdogConfig(1001, 1000); });
+        rejected([&] { watchdogConfig(1000, 1001); });
+        rejected([&] { watchdogConfig(300, 200); });
+        rejected([&] { watchdogConfig(4294968u, 1000); }); // Must not wrap during ms -> us conversion.
         std::ofstream(robot_file) << "{}\n";
         check(loadInitialWheel(robot_file).displacement == 0, "legacy initial wheel default changed");
         std::ofstream(robot_file) << "wheel_initial: {angle: 0, displacement: -0.085}\n";

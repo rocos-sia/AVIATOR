@@ -5,6 +5,7 @@ volatile std::sig_atomic_t interrupted = 0;
 void interrupt(int) { interrupted = 1; }
 }
 int main(int argc, char** argv) try {
+    aviator::Logger::configureNonBlocking();
     auto config = aviator::defaultSystemConfig();
     aviator::ManagedGatewayOptions gateway;
     gateway.enabled = true;

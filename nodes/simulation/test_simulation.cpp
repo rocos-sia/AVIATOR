@@ -34,6 +34,55 @@ aviator::Message command(Simulation& sim,aviator::Topic topic,std::uint64_t now,
     }
     return m;
 }
+void wheel_idle_test(const std::string& path) {
+    Simulation sim(path);
+    auto* m = sim.model();
+    auto* d = sim.data();
+    std::array<int, 4> q{}, v{};
+    int index = 0;
+    for (const char* name : {"roll_input_joint", "pitch_input_joint",
+                             "roll_input_joint_2", "pitch_input_joint_2"}) {
+        const int joint = mj_name2id(m, mjOBJ_JOINT, name);
+        check(joint >= 0, "wheel joint missing");
+        q[index] = m->jnt_qposadr[joint];
+        v[index++] = m->jnt_dofadr[joint];
+    }
+    const auto advance = [&](double seconds) {
+        for (int i = 0; i < static_cast<int>(std::ceil(seconds / m->opt.timestep)); ++i)
+            sim.step(1000000);
+    };
+    // Longer than the observed idle interval that previously drove the yoke
+    // from center to its lower stop. Exercise both center and an off-center pose.
+    for (const auto& pose : {std::array<double, 2>{0, -.085},
+                             std::array<double, 2>{.2, -.12}}) {
+        sim.setInitialWheel(pose[0], pose[1]);
+        advance(300);
+        for (int i = 0; i < 4; ++i) {
+            check(std::abs(d->qpos[q[i]] - pose[i % 2]) < 1e-7,
+                  "passive wheel drifts while idle");
+            check(std::abs(d->qvel[v[i]]) < 1e-7, "idle wheel velocity is nonzero");
+        }
+    }
+    // Compensation must not freeze either degree of freedom or break the
+    // secondary wheel linkage. Apply force/torque only to the primary yoke.
+    const double roll = d->qpos[q[0]], pitch = d->qpos[q[1]];
+    d->qfrc_applied[v[0]] = .005;
+    d->qfrc_applied[v[1]] = .05;
+    advance(1);
+    check(d->qpos[q[0]] > roll + .005, "balanced wheel cannot rotate under torque");
+    check(d->qpos[q[1]] > pitch + .005, "balanced wheel cannot slide under force");
+    d->qfrc_applied[v[0]] = d->qfrc_applied[v[1]] = 0;
+    advance(10);
+    const double resting_roll = d->qpos[q[0]], resting_pitch = d->qpos[q[1]];
+    advance(10);
+    check(std::abs(d->qpos[q[0]] - resting_roll) < 1e-6 &&
+          std::abs(d->qpos[q[1]] - resting_pitch) < 1e-6,
+          "released wheel does not settle at its new pose");
+    check(std::abs(d->qpos[q[0]] - d->qpos[q[2]]) < 1e-6 &&
+          std::abs(d->qpos[q[1]] - d->qpos[q[3]]) < 1e-6,
+          "secondary wheel no longer follows primary wheel");
+    aviator::Logger::info("wheel idle: two 300 s holds and external-force/release response passed");
+}
 void model_test(const std::string& path) {
     Simulation sim(path,{"aviator_core",core,epoch,"flight_gateway",origin,200000});
     sim.setInitialWheel(.2, -.12);
@@ -393,6 +442,7 @@ void process_test(const char* executable,const char* path,bool camera) {
 int main(int argc,char** argv) {
     try {
         if(argc==2) { model_test(argv[1]); managed_hand_test(argv[1]); }
+        else if(argc==3 && std::string(argv[2])=="wheel-idle") wheel_idle_test(argv[1]);
         else if(argc==4) process_test(argv[1],argv[2],std::string(argv[3])=="camera");
         else throw std::runtime_error("invalid test arguments");
         aviator::Logger::info("simulation tests passed"); return 0;

@@ -16,7 +16,7 @@ python scripts\split_stl.py models\meshes\Cessna\aircraft_visual.STL models\mesh
 ## 一键启动
 
 按 [启动流程](../docs/启动流程.txt) 启动 Bus、Manipulator（sudo）、Gateway、
-RH56FTP、Core、Camera、Monitor，打开全屏 Chrome；指定 `--logger` 时最后启动 Logger：
+RH56FTP、Core、Camera、Monitor，并打开监控页面；指定 `--logger` 时最后启动 Logger：
 
 ```bash
 ./scripts/start_aviator.sh --dry-run
@@ -25,6 +25,9 @@ RH56FTP、Core、Camera、Monitor，打开全屏 Chrome；指定 `--logger` 时�
 ./scripts/start_aviator.sh --fake-hand  # 真实机械臂和相机 + 模拟 RH56FTP 双手
 ./scripts/start_aviator.sh --tts  # 已准备音频包时开启离线语音提醒
 ```
+
+浏览器依次尝试 Chrome、Chromium、Firefox、`xdg-open`；Chrome/Chromium 使用全屏窗口。
+没有浏览器或打开失败不会阻止节点运行，可手动访问 `http://127.0.0.1:8081/`。
 
 脚本可从任意目录调用。启动前检查文件，通过标准输入自动提交脚本内配置的 sudo 密码；
 Manipulator 在独立会话内直接认证，停止时也直接认证，不依赖 sudo 缓存，

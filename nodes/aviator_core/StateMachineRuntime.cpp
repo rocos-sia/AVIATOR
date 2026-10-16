@@ -82,7 +82,21 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
     std::deque<std::pair<std::string, uint64_t>> commands;
     bool quit = false;
     bool console_open = true;
+    uint64_t previous_loop = monotonic_us(), logging_check = previous_loop;
+    size_t log_overruns = 0;
     while (!quit && !interrupted) {
+        const auto loop_start = monotonic_us();
+        if (loop_start - previous_loop >= 50000)
+            Logger::warn("Core owner loop delayed: interval_us={} limit_us=100000", loop_start - previous_loop);
+        previous_loop = loop_start;
+        if (loop_start - logging_check >= 1000000) {
+            logging_check = loop_start;
+            const auto count = Logger::overrunCount();
+            if (count != log_overruns) {
+                Logger::warn("Core diagnostic log queue overflow: overwritten_total={}; control does not wait for log IO", count);
+                log_overruns = count;
+            }
+        }
         if (gateway) gateway->receiveInput();
         robot.Update();
         pollfd descriptor{STDIN_FILENO, POLLIN, 0};

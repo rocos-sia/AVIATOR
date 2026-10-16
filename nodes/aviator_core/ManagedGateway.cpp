@@ -15,7 +15,7 @@ ManagedGateway::ManagedGateway(const MotionConfig& config, const ManagedGatewayO
     policy_.clock_id = local_clock_id();
     policy_.source = "JOYSTICK";
     policy_.allow_joystick_position_hold = true;
-    policy_.timeout_us = std::min<uint64_t>(100000, config.origin_timeout_us);
+    policy_.timeout_us = std::min<uint64_t>(1000000, config.origin_timeout_us);
     configure(sub_, {64, 64, 0});
     subscribe(sub_, "flight.command");
     sub_.connect(config.subscribe);

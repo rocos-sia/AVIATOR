@@ -129,11 +129,18 @@ void SdlInput::resetKeyboard(std::uint64_t now) {
     }
 }
 bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
+    // Diagnostic timing uses real monotonic time, independently of the input
+    // clock injected by tests. These measurements never renew input leases.
+    const auto began = aviator::monotonic_us();
+    std::uint64_t pump_us = 0;
     pressed.clear();
     SDL_Event event{};
     bool drained = false, repaint = false;
     for (unsigned n = 0; n < 128; ++n) {
-        if (!SDL_PollEvent(&event)) { drained = true; break; }
+        const auto pump_begin = aviator::monotonic_us();
+        const auto received = SDL_PollEvent(&event);
+        pump_us += aviator::monotonic_us() - pump_begin;
+        if (!received) { drained = true; break; }
         const auto now = clock_();
         if (event.type == SDL_QUIT || (event.type == SDL_WINDOWEVENT &&
             event.window.event == SDL_WINDOWEVENT_CLOSE)) return false;
@@ -206,13 +213,22 @@ bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
             pressed.insert(pressed.end(), hits.begin(), hits.end());
         }
     }
+    const auto events_end = aviator::monotonic_us();
     const auto checked = clock_();
     const bool expired = !focused_ && checked >= unfocused_since_ &&
                          checked - unfocused_since_ >= focus_timeout_us;
     if (expired && !focus_expired_ && !(joystick_ && SDL_JoystickGetAttached(joystick_)))
         aviator::Logger::warn("Keyboard unfocused for 5 minutes: input invalid; Core CONTROL will enter SAFE");
     focus_expired_ = expired;
+    const auto display_begin = aviator::monotonic_us();
     help_->show(window_, focused_, joystick_ && SDL_JoystickGetAttached(joystick_), repaint, expired);
+    const auto display_end = aviator::monotonic_us();
+    if (display_end - began >= 50000)
+        aviator::Logger::warn(
+            "Gateway SDL delayed: total_us={} event_pump_us={} event_handlers_us={} "
+            "focus_check_us={} display_us={} focused={} repaint={} drained={}",
+            display_end - began, pump_us, events_end - began - pump_us,
+            display_begin - events_end, display_end - display_begin, focused_, repaint, drained);
     if (!drained) return true; // Do not renew the lease while input events are queued.
     const auto now = clock_();
     const bool attached = joystick_ && SDL_JoystickGetAttached(joystick_);

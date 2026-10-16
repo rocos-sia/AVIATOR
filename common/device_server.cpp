@@ -88,18 +88,27 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
     bool have = false;
     uint64_t last_message = 0, highest_trajectory = 0;
     auto snapshot = [&] {
+        const auto began = monotonic_us();
         auto f = device.armFeedback();
+        const auto feedback_end = monotonic_us();
         const auto g = device.graspState();
+        const auto grasp_end = monotonic_us();
         state.measured_angle = g.angle;
         state.measured_displacement = g.displacement;
         state.q = f.q;
         state.dq = f.dq;
         state.target = f.target;
         state.enabled = f.enabled;
-        std::lock_guard<std::mutex> lock(shared.mutex);
-        shared.state = state;
-        shared.accepted_instance = active_instance;
-        shared.feedback = f;
+        {
+            std::lock_guard<std::mutex> lock(shared.mutex);
+            shared.state = state;
+            shared.accepted_instance = active_instance;
+            shared.feedback = f;
+        }
+        const auto ended = monotonic_us();
+        if (ended - began >= 50000)
+            Logger::warn("Device snapshot delayed: feedback_us={} grasp_us={} publish_cache_us={}",
+                feedback_end - began, grasp_end - feedback_end, ended - grasp_end);
     };
     auto disable = [&] {
         device.commandDeadline(0);
@@ -138,6 +147,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
             servo_report = began;
             servo_steps = servo_work_us = servo_max_us = 0;
         }
+        const auto reported = monotonic_us();
         for (size_t j = 0; j < 14; ++j) {
             require(std::isfinite(f.q[j]) && std::isfinite(f.dq[j]) && std::isfinite(f.ddq[j]) &&
                         f.q[j] >= lo[j] && f.q[j] <= hi[j],
@@ -151,6 +161,10 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
         velocity = f.dq;
         ++state.cursor;
         servo_step_valid = true;
+        const auto ended = monotonic_us();
+        if (ended - began >= 50000)
+            Logger::warn("Device Servo step delayed: plan_us={} report_us={} validate_write_us={} log_overruns={}",
+                elapsed, reported - began - elapsed, ended - reported, Logger::overrunCount());
     };
     auto stop = [&] {
         // Local bounded deceleration from the last command; never jump to measured q.
@@ -163,7 +177,11 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
             device.commandDeadline(double(deadline) / 1e6);
             do {
                 require(monotonic_us() < deadline, "Latest servo braking timeout");
+                const auto wait_begin = monotonic_us();
                 device.waitTick();
+                const auto wait_us = monotonic_us() - wait_begin;
+                if (wait_us >= 50000)
+                    Logger::warn("Device Servo tick delayed: wait_us={}", wait_us);
                 servoStep();
                 if (state.cursor % 5 == 0) snapshot();
             } while (!servo->stopped());
@@ -463,7 +481,11 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                     now - goal.goal.input_sample >= uint64_t(servo_timeout * 1e6)) servo_stop = true;
                 device.commandDeadline(double(std::min(goal.sample + config.timeout_us,
                     goal.origin_sample + config.origin_timeout_us)) / 1e6 + .02);
+                const auto wait_begin = monotonic_us();
                 device.waitTick();
+                const auto wait_us = monotonic_us() - wait_begin;
+                if (wait_us >= 50000)
+                    Logger::warn("Device Servo tick delayed: wait_us={}", wait_us);
                 servoStep();
                 if (servo_stop && servo->stopped()) {
                     device.waitTick();

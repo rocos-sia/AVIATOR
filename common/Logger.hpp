@@ -31,11 +31,12 @@ class Logger {
     struct Backend {
         std::shared_ptr<spdlog::details::thread_pool> pool;
         std::shared_ptr<spdlog::logger> logger;
-        explicit Backend(bool async, spdlog::sink_ptr sink) {
+        explicit Backend(bool async, spdlog::sink_ptr sink,
+                         spdlog::async_overflow_policy overflow) {
             if (async) {
                 pool = std::make_shared<spdlog::details::thread_pool>(8192, 1);
                 logger = std::make_shared<spdlog::async_logger>("aviator", sink, pool,
-                    spdlog::async_overflow_policy::block);
+                    overflow);
             } else {
                 logger = std::make_shared<spdlog::logger>("aviator", sink);
             }
@@ -45,15 +46,28 @@ class Logger {
         ~Backend() noexcept { try { logger->flush(); } catch (...) {} }
     };
     static std::shared_ptr<Backend>& backend() {
-        static auto instance = std::make_shared<Backend>(false, std::make_shared<ConsoleSink>());
+        static auto instance = std::make_shared<Backend>(false, std::make_shared<ConsoleSink>(),
+                                                        spdlog::async_overflow_policy::block);
         return instance;
     }
 public:
     static void configure(bool async = false, spdlog::level::level_enum level = spdlog::level::info,
-                          spdlog::sink_ptr sink = nullptr) {
-        auto next = std::make_shared<Backend>(async, sink ? std::move(sink) : std::make_shared<ConsoleSink>());
+                          spdlog::sink_ptr sink = nullptr,
+                          spdlog::async_overflow_policy overflow = spdlog::async_overflow_policy::block) {
+        auto next = std::make_shared<Backend>(async, sink ? std::move(sink) : std::make_shared<ConsoleSink>(), overflow);
         next->logger->set_level(level);
         std::atomic_store(&backend(), std::move(next));
+    }
+    // Configure before starting control workers. Sink IO runs only on the log
+    // worker; a full queue replaces old diagnostics instead of waiting on disk.
+    // Reconfiguration/shutdown drains the worker and may wait for the sink.
+    static void configureNonBlocking(spdlog::sink_ptr sink = nullptr) {
+        configure(true, spdlog::level::info, std::move(sink),
+                  spdlog::async_overflow_policy::overrun_oldest);
+    }
+    static size_t overrunCount() {
+        const auto current = std::atomic_load(&backend());
+        return current->pool ? current->pool->overrun_counter() : 0;
     }
     static void set_level(spdlog::level::level_enum level) {
         std::atomic_load(&backend())->logger->set_level(level);

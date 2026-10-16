@@ -82,6 +82,9 @@ def run(path):
     for side, letter in zip(SIDES, ("L", "R")):
         joints = np.array([model.joint(f"AR5-5_07{letter}-W4C4A2_joint_{j}").id
                            for j in range(1, 8)])
+        margin = posture["joint2_planning_margin_deg"]
+        model.jnt_range[joints[1]] = np.deg2rad(
+            np.array(posture["joint2_limits_deg"]) + [margin, -margin])
         flange = model.body(f"AR5-5_07{letter}-W4C4A2_flan_link").id
         tool = grasp["tool"][side]
         goal = wheel_p + wheel_r @ np.array(grasp[side]["position"])

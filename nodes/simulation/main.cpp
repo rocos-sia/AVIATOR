@@ -31,6 +31,9 @@ void usage() {
 }
 } // namespace
 int main(int argc, char** argv) try {
+    // Device execution must never wait for console/disk output, including the
+    // periodic Servo timing report emitted by the device server worker.
+    aviator::Logger::configureNonBlocking();
     auto file = aviator::defaultSystemConfig();
     std::string model, pub_endpoint, sub_endpoint, camera_config, preview_endpoint, recording_config;
     std::string camera_id = "cockpit";

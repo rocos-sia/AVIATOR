@@ -214,6 +214,16 @@ if(TARGET aviator_core_servo AND TARGET simulation)
         $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR}
         $<TARGET_FILE:aviator_monitor>)
       set_tests_properties(managed_gateway_process PROPERTIES TIMEOUT 300)
+      add_test(NAME core_blocked_output COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/robot_state_machine_process_test.py
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed>
+        ${PROJECT_SOURCE_DIR} --blocked-core-output)
+      set_tests_properties(core_blocked_output PROPERTIES TIMEOUT 180)
+      add_test(NAME simulation_blocked_output COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/robot_state_machine_process_test.py
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed>
+        ${PROJECT_SOURCE_DIR} --blocked-simulation-output)
+      set_tests_properties(simulation_blocked_output PROPERTIES TIMEOUT 180)
       add_test(NAME following_hold_process COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/following_process_test.py
         $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})

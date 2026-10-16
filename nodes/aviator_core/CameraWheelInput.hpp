@@ -17,12 +17,14 @@ class CameraWheelInput {
 public:
     enum class Mode { Servo, Grasp };
     CameraWheelInput(std::string camera_id, std::string clock, uint64_t timeout_us,
-                     uint64_t start_us = 0, Mode mode = Mode::Servo)
-        : camera_id_(std::move(camera_id)), guard_(policy(std::move(clock), timeout_us)),
+                     uint64_t start_us = 0, Mode mode = Mode::Servo,
+                     std::string publisher = "camera")
+        : camera_id_(std::move(camera_id)), publisher_(std::move(publisher)),
+          guard_(policy(std::move(clock), timeout_us, publisher_)),
           start_us_(start_us), mode_(mode) {}
 
     bool accept(const Message& message, uint64_t now, std::string& error) {
-        if (message.topic != Topic::camera_detection || message.header.publisher_id != "camera" ||
+        if (message.topic != Topic::camera_detection || message.header.publisher_id != publisher_ ||
             !message.body.is_object() || !message.body.contains("camera_id") ||
             message.body.at("camera_id") != camera_id_) return false;
         // A bad observation from our camera immediately revokes the cached target.
@@ -69,15 +71,15 @@ public:
     const CameraWheelTarget& target() const { return target_; }
 
 private:
-    static InputPolicy policy(std::string clock, uint64_t timeout_us) {
+    static InputPolicy policy(std::string clock, uint64_t timeout_us, const std::string& publisher) {
         InputPolicy p;
         p.topic = Topic::camera_detection;
-        p.publisher_id = "camera";
+        p.publisher_id = publisher;
         p.clock_id = std::move(clock);
         p.timeout_us = timeout_us;
         return p;
     }
-    std::string camera_id_;
+    std::string camera_id_, publisher_;
     InputGuard guard_;
     uint64_t start_us_, last_sample_ = 0;
     Mode mode_;

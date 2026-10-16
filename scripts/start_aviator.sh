@@ -125,7 +125,7 @@ start() {
 
 if ! $DRY_RUN; then
     [[ $EUID != 0 ]] || { echo '请以普通用户执行，脚本仅对 manipulator 使用 sudo。' >&2; exit 1; }
-    commands=(setsid flock google-chrome-stable curl)
+    commands=(setsid flock curl)
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
         "$AVIATOR_BIN/aviator_core_managed" "$MONITOR_BIN")
     files=("$SYSTEM_CONFIG" config/robot.yaml config/camera.yaml)
@@ -220,10 +220,31 @@ if ! $DRY_RUN; then
     done
     $ready || { echo 'Monitor 在 30 次检查后仍未就绪。' >&2; exit 1; }
 fi
-printf '启动 Chrome: google-chrome-stable --start-fullscreen http://127.0.0.1:8081\n'
-# Chrome 可能复用已打开的浏览器，不将其纳入节点退出监控。
-if ! $DRY_RUN; then
-    google-chrome-stable --start-fullscreen http://127.0.0.1:8081 >"$LOG_DIR/chrome.log" 2>&1 < /dev/null 9>&- &
+MONITOR_URL=http://127.0.0.1:8081
+browser_command=()
+for browser in google-chrome-stable google-chrome chromium chromium-browser firefox xdg-open; do
+    command -v "$browser" >/dev/null || continue
+    case "$browser" in
+        google-chrome*|chromium*) browser_command=("$browser" --start-fullscreen) ;;
+        firefox) browser_command=("$browser" --new-window) ;;
+        xdg-open) browser_command=("$browser") ;;
+    esac
+    break
+done
+printf '监控页面: %s\n' "$MONITOR_URL"
+if ((${#browser_command[@]})); then
+    printf '打开浏览器:'
+    printf ' %q' "${browser_command[@]}" "$MONITOR_URL"
+    printf '\n'
+    # 浏览器可能复用已有窗口；启动失败不影响控制节点，也不继承启动锁。
+    if ! $DRY_RUN; then
+        (
+            "${browser_command[@]}" "$MONITOR_URL" >"$LOG_DIR/browser.log" 2>&1 ||
+                printf '浏览器未能打开，请手动访问 %s；详情见 %s/browser.log\n' "$MONITOR_URL" "$LOG_DIR" >&2
+        ) < /dev/null 9>&- &
+    fi
+else
+    echo '未找到可用浏览器，节点继续运行；请手动打开监控页面。'
 fi
 if $LOGGER; then
     if ! $DRY_RUN; then mkdir -p "$ROOT/logs"; fi

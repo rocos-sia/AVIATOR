@@ -32,10 +32,11 @@ int main() try {
     const std::string endpoint = "inproc://camera-grasp-test";
     pub.bind(endpoint);
     uint64_t sequence = 0;
-    const auto publish = [&](uint64_t sample, double theta, double travel, const char* camera = "cockpit") {
+    const auto publish = [&](uint64_t sample, double theta, double travel, const char* camera = "cockpit",
+                             const char* publisher = "camera") {
         Message m;
         m.topic = Topic::camera_detection;
-        m.header.publisher_id = "camera";
+        m.header.publisher_id = publisher;
         m.header.session_id = "camera-test";
         m.header.clock_id = local_clock_id();
         m.header.sequence = ++sequence;
@@ -51,21 +52,23 @@ int main() try {
     const auto old_sample = monotonic_us();
     publish(old_sample, -.1, .01);
     for (int attempt = 0; attempt < 2; ++attempt) {
+        const char* publisher = attempt ? "simulation" : "camera";
         std::atomic<int> supervised{0};
         auto result = std::async(std::launch::async, [&] {
             return acquireGraspWheel(context, endpoint, "cockpit", 200000, 1000000,
-                                     [&] { ++supervised; });
+                                     [&] { ++supervised; }, publisher);
         });
         for (int i = 0; i < 30; ++i) {
-            publish(old_sample, -.1, .01); // Republished with a new sequence, still an old acquisition.
-            publish(monotonic_us(), -.7, .04, "other-camera");
+            publish(old_sample, -.1, .01, "cockpit", publisher); // New sequence, old acquisition.
+            publish(monotonic_us(), -.7, .04, "other-camera", publisher);
+            publish(monotonic_us(), -.7, .04, "cockpit", attempt ? "camera" : "simulation");
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
         check(result.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready,
               "Pre-request or foreign observation satisfied grasp");
         const double theta = attempt ? .2 : -.15, travel = attempt ? -.02 : .04;
         for (int i = 0; i < 100 && result.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready; ++i) {
-            publish(monotonic_us(), theta, travel);
+            publish(monotonic_us(), theta, travel, "cockpit", publisher);
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
         const auto pose = result.get();

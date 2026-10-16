@@ -24,6 +24,24 @@ static Message observation(uint64_t seq, uint64_t sample, double theta = .3, dou
 }
 int main() try {
     std::string error;
+    {
+        CameraWheelInput input("cockpit", "local", 200000, 1000000,
+                               CameraWheelInput::Mode::Grasp, "simulation");
+        auto message = observation(1, 1000000, -.15, .04);
+        check(!input.accept(message, 1000000, error), "Simulation grasp accepted real camera publisher");
+        message.header.publisher_id = "simulation";
+        check(input.accept(message, 1000000, error), error.c_str());
+        near(input.target().angle, .15);
+        near(input.target().displacement, -.125);
+        message.header.sequence = 2;
+        message.header.sample_mono_us = 999999;
+        check(!input.accept(message, 1010000, error), "Simulation accepted a pre-request observation");
+        check(!input.fresh(1010000), "Old simulation observation left cached target usable");
+        message.header.sequence = 3;
+        message.header.sample_mono_us = 1020000;
+        check(input.accept(message, 1020000, error), "Fresh simulation observation did not recover");
+        check(!input.fresh(1220000), "Simulation observation did not expire");
+    }
     for (const double travel : {-.085, 0., .085}) {
         CameraWheelInput input("cockpit", "local", 200000);
         auto m = observation(1, 1000000, .3, travel);

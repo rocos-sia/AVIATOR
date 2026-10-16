@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 
 import yaml
 import zmq
@@ -28,9 +29,17 @@ def main():
                   2 if '--hand-overtemperature' in sys.argv[5:] else 0)
     assert not (hand_fault and hand_timeout), 'hand fault and message timeout are separate scenarios'
     root = Path(root)
+    blocked_core = '--blocked-core-output' in sys.argv[5:]
+    blocked_simulation = '--blocked-simulation-output' in sys.argv[5:]
+    assert not (blocked_core and blocked_simulation), 'block one process per scenario'
+    blocked_output = blocked_core or blocked_simulation
+    blocked_node = 'manipulator' if blocked_simulation else 'core'
     directory = Path(tempfile.mkdtemp(prefix="aviator-fsm-test-"))
     print(f"FSM process logs: {directory}", flush=True)
-    config = yaml.safe_load((root / "config/system.yaml").read_text())
+    config = yaml.safe_load((root / ("config/system-simulation.yaml" if blocked_output else "config/system.yaml")).read_text())
+    if blocked_output:
+        # Log isolation must pass without relying on locally relaxed watchdogs.
+        config.update(command_timeout_ms=100, origin_timeout_ms=200)
     if hand_timeout:
         config['core_hand'].update(enabled=True, publisher_id='unavailable_test_hand', completion_timeout_ms=500)
     if hand_fault:
@@ -39,6 +48,9 @@ def main():
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot["viewer"] = False
     robot["settle_duration"] = .15
+    if blocked_output:
+        # Test control/device log IO isolation without requiring a GPU/camera.
+        robot["grasp_wheel"] = {"source": "wheel_initial"}
     for key in ("model", "urdf", "grasp", "posture"):
         robot[key] = str((root / "config" / robot[key]).resolve())
     endpoints = [f"tcp://127.0.0.1:{port()}" for _ in range(3)]
@@ -55,6 +67,8 @@ def main():
     (directory / "device-system.yaml").write_text(yaml.safe_dump(device_config))
     (directory / "robot.yaml").write_text(yaml.safe_dump(robot))
     children, logs = [], []
+    blocked_reader = None
+    drain_thread = None
     context = zmq.Context()
     hand = FakeRH56FTPHand(context, endpoints, config['core_hand'], directory, latched_error) if hand_fault else None
     sub = context.socket(zmq.SUB)
@@ -62,12 +76,37 @@ def main():
     sub.connect(endpoints[1])
 
     def start(name, args):
+        nonlocal blocked_reader
         log = (directory / (name + ".log")).open("w")
         logs.append(log)
-        child = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=log, stderr=log,
+        output = log
+        if name == blocked_node and blocked_output:
+            blocked_reader, output = os.pipe()
+            os.set_blocking(output, False)
+            try:
+                while True:
+                    os.write(output, b"blocked output test\n".ljust(4096, b"\n"))
+            except BlockingIOError:
+                pass
+            os.set_blocking(output, True)
+        child = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=output, stderr=output,
                                  text=True, env={**os.environ, "LD_BIND_NOW": "1"})
+        if isinstance(output, int):
+            os.close(output)
         children.append(child)
         return child
+
+    def drain_output():
+        nonlocal drain_thread, blocked_reader
+        if blocked_reader is None or drain_thread is not None:
+            return
+        reader = blocked_reader
+        def drain():
+            with os.fdopen(reader, "rb") as source, (directory / (blocked_node + ".log")).open("ab") as dest:
+                while chunk := source.read(8192):
+                    dest.write(chunk)
+        drain_thread = threading.Thread(target=drain)
+        drain_thread.start()
 
     def wait_state(expected, timeout=100):
         deadline = time.monotonic() + timeout
@@ -150,11 +189,15 @@ def main():
         time.sleep(.2)
         wait_state("EMERGENCY_STOP", 3)
         command("quit")
+        drain_output() # Shutdown may drain logs; motion above ran with no output reader.
         assert process.wait(timeout=10) == 0
         assert not list(directory.glob("*.emergency"))
         assert not list(directory.glob("*.brake-request"))
         print("PASS: file-free FSM cycle, input gate, release and process-local emergency latch", flush=True)
+        if blocked_output:
+            print(f"PASS: {blocked_node} stdout/stderr blocked throughout home/grasp/control/release; watchdogs unchanged", flush=True)
     finally:
+        drain_output()
         for child in reversed(children):
             if child.poll() is None:
                 child.terminate()
@@ -163,6 +206,9 @@ def main():
                 except subprocess.TimeoutExpired:
                     child.kill()
                     child.wait()
+        if drain_thread is not None:
+            drain_thread.join(timeout=5)
+            assert not drain_thread.is_alive(), "Core log drain did not finish"
         for log in logs:
             log.close()
         if hand and hand.thread.ident is not None:

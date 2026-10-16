@@ -1,5 +1,11 @@
 # aviator_core
 
+`aviator_core_managed` 在创建控制线程前启用独立日志线程，控制路径不等待终端或
+日志文件写入。8192 条诊断队列满时覆盖旧记录，并报告累计覆盖次数；状态机错误仍
+通过 `flight.state` / `system.state` 发布，诊断队列不参与控制授权。正常退出会排空
+日志，因此退出阶段仍可能等待输出端恢复。主循环超过 50 ms 会记录延迟，Servo
+反馈不可用时记录接收年龄、采样年龄及有效标志；原有心跳与指令超时保持不变。
+
 当前保留直接执行、受状态机管理、纯离线测试三类入口：
 
 | 程序 | 用途 | 执行方式 |
@@ -557,7 +563,7 @@ grasp_wheel:
   wait_timeout_ms: 2000  # 等待有效新帧上限，max_age_ms..10000 ms
 ```
 
-`wheel_initial` 模式保持上述行为；省略 `grasp_wheel` 也使用该模式。`camera` 模式只在抓取指令执行后、回 home 完成且开始规划接近前订阅 `camera.detection`，要求 `publisher_id=camera`、指定的 `camera_id`、本机时钟，以及采集时间不早于本次读取请求。初始化、使能和 Managed 的进入 STANDBY 不采集相机位形；每次重抓都重新等待新帧。
+`wheel_initial` 模式保持上述行为；省略 `grasp_wheel` 也使用该模式。`camera` 模式只在抓取指令执行后、回 home 完成且开始规划接近前订阅 `camera.detection`，要求匹配配置的发布者、指定的 `camera_id`、本机时钟，以及采集时间不早于本次读取请求。发布者由 system 配置的 `grasp_camera_publisher` 指定，仅允许 `camera` 或 `simulation`，默认 `camera`；`system-simulation.yaml` 显式指定 `simulation`。每次读取仅接受所选发布者，时效、序号及有效性检查保持一致。初始化、使能和 Managed 的进入 STANDBY 不采集相机位形；每次重抓都重新等待新帧。
 
 使用 `steering_wheel` 派生字段换算：`angle=-theta_rad`（rad），`displacement=-translation_along_axis_m-0.085`（m），不叠加 `wheel_initial`。该约定要求相机标定零位对应控制模型的零转角、行程中位，标定轴方向与控制端正方向相反。无需转换原始标签 `pose` 或 `translation_vector_m`。两层 `valid` 均须为 true；`axis_match` 仅保留为相机诊断，不作为抓握门槛，false、null 或缺失均不阻止读取。过期、乱序、非有限值、越界或缺失必需字段不能用于抓握；等待超时则终止抓握并报告原因，不回退、不限幅。
 

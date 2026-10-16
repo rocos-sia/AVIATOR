@@ -593,9 +593,13 @@ class Aviator::Impl {
 
     std::string GetState() const { std::lock_guard<std::mutex> lock(status_mutex_); return state_; }
     void setState(const std::string &value) {
-        std::lock_guard<std::mutex> lock(status_mutex_);
-        if (state_ != value) aviator::Logger::info("Core executor from={} to={}", state_, value);
-        state_ = value;
+        std::string previous;
+        {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            previous = state_;
+            state_ = value;
+        }
+        if (previous != value) aviator::Logger::info("Core executor from={} to={}", previous, value);
     }
 
   private:
@@ -617,10 +621,15 @@ class Aviator::Impl {
     }
 
     void setMotionError(const std::string &error) {
-        std::lock_guard<std::mutex> lock(status_mutex_);
-        if (!error.empty() && motion_error_ != error)
-            aviator::Logger::error("Core executor state={} motion failed: {}", state_, error);
-        motion_error_ = error;
+        std::string phase;
+        bool changed;
+        {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            changed = !error.empty() && motion_error_ != error;
+            phase = state_;
+            motion_error_ = error;
+        }
+        if (changed) aviator::Logger::error("Core executor state={} motion failed: {}", phase, error);
     }
 
     double jointTravelTime(const Joints &from, const Joints &to, double v) const {
@@ -731,13 +740,18 @@ class Aviator::Impl {
                 next_state = "FAULT";
                 stopSafely();
             }
-            std::lock_guard<std::mutex> mailbox(servo_mutex_);
-            std::lock_guard<std::mutex> status(status_mutex_);
-            servo_active_ = false;
-            if (state_ != next_state)
-                aviator::Logger::info("Core Servo from={} to={} reason={}", state_, next_state, motion_error_);
-            state_ = next_state;
+            std::string previous, reason;
+            {
+                std::lock_guard<std::mutex> mailbox(servo_mutex_);
+                std::lock_guard<std::mutex> status(status_mutex_);
+                servo_active_ = false;
+                previous = state_;
+                reason = motion_error_;
+                state_ = next_state;
+            }
             control.unlock();
+            if (previous != next_state)
+                aviator::Logger::info("Core Servo from={} to={} reason={}", previous, next_state, reason);
         }
     }
 

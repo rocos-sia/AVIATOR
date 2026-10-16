@@ -1,5 +1,6 @@
 """Check URDF/MJCF visuals, kinematics, mimic constraints and lossless STL chunks."""
 import importlib.util
+import json
 import struct
 import tempfile
 import unittest
@@ -36,6 +37,40 @@ class ModelTests(unittest.TestCase):
         cls.urdf = ET.parse(ROOT / "models/urdf/aviator.urdf").getroot()
         cls.xml = ET.parse(ROOT / "models/mjcf/aviator.xml").getroot()
         cls.model = mj.MjModel.from_xml_path(str(ROOT / "models/mjcf/aviator.xml"))
+
+    def test_mount_offsets_and_narrow_grips(self):
+        for letter, y in (("L", .020), ("R", .000)):
+            body = self.model.body(f"AR5-5_07{letter}-W4C4A2_base").id
+            np.testing.assert_allclose(self.model.body_pos[body], [-.91333, y, .13756])
+        grasp = json.loads((ROOT / "config/grasp.json").read_text())
+        for side in ("left", "right"):
+            geom = self.xml.find(f".//geom[@name='steering_wheel_{side}_grip']")
+            np.testing.assert_allclose(np.fromstring(geom.get("pos"), sep=" "),
+                                       grasp["handle_geometry"][side]["center"])
+            site = self.xml.find(f".//site[@name='{side}_handle']")
+            np.testing.assert_allclose(np.fromstring(site.get("pos"), sep=" "),
+                                       grasp[side]["position"])
+            np.testing.assert_allclose(np.fromstring(site.get("quat"), sep=" "),
+                                       grasp[side]["quaternion"])
+        self.assertAlmostEqual(grasp["handle_geometry"]["right"]["center"][0] -
+                               grasp["handle_geometry"]["left"]["center"][0], .20150422)
+        record = np.dtype([("normal", "<f4", 3), ("vertices", "<f4", (3, 3)),
+                           ("attribute", "<u2")])
+        mesh_dir = ROOT / "models/meshes/Cessna"
+        old = np.frombuffer((mesh_dir / "steering_wheel_qr.STL").read_bytes(),
+                            dtype=record, offset=84)["vertices"].reshape(-1, 3)
+        new = np.frombuffer((mesh_dir / "narrow/steering_wheel_qr.STL").read_bytes(),
+                            dtype=record, offset=84)["vertices"].reshape(-1, 3)
+        self.assertEqual(old.shape, new.shape)
+        # The grip ends move rigidly: shortening spacing must not shrink handles.
+        for sign in (-1, 1):
+            grip = (old[:, 2] > .43) & (sign * old[:, 0] > .09)
+            self.assertTrue(grip.any())
+            np.testing.assert_allclose(new[grip] - old[grip],
+                                       np.tile([-sign * .025, 0, 0], (grip.sum(), 1)), atol=2e-8)
+        # Shaft and tag face stay at their original positions and sizes.
+        fixed = (abs(old[:, 0]) < .03) | (old[:, 1] > .1)
+        np.testing.assert_array_equal(new[fixed], old[fixed])
 
     def test_visuals_and_lossless_chunks(self):
         assets = {mesh.get("name"): mesh for mesh in self.xml.findall("asset/mesh")}
@@ -106,6 +141,24 @@ class ModelTests(unittest.TestCase):
                 leader = data.qpos[self.model.joint(mimic.get("joint")).qposadr]
                 np.testing.assert_allclose(q, float(mimic.get("offset", "0")) +
                                            float(mimic.get("multiplier", "1")) * leader)
+
+    def test_home_and_seed_task_limits(self):
+        posture = json.loads((ROOT / "config/posture.json").read_text())
+        margin = posture["joint2_planning_margin_deg"]
+        task_limits = np.deg2rad(np.array(posture["joint2_limits_deg"]) + [margin, -margin])
+        data = mj.MjData(self.model)
+        mj.mj_resetDataKeyframe(self.model, data, self.model.key("aviator_home").id)
+        for side, letter in (("left", "L"), ("right", "R")):
+            joints = [self.model.joint(f"AR5-5_07{letter}-W4C4A2_joint_{j}").id
+                      for j in range(1, 8)]
+            home = np.deg2rad(posture[side + "_home_deg"])
+            np.testing.assert_allclose(data.qpos[self.model.jnt_qposadr[joints]], home, atol=1e-12)
+            for kind in ("home", "approach_seed"):
+                q = np.deg2rad(posture[side + "_" + kind + "_deg"])
+                self.assertTrue(np.all(q >= self.model.jnt_range[joints, 0]))
+                self.assertTrue(np.all(q <= self.model.jnt_range[joints, 1]))
+                self.assertGreaterEqual(q[1], task_limits[0])
+                self.assertLessEqual(q[1], task_limits[1])
 
     def test_apriltag_physical_dimensions(self):
         config = yaml.safe_load((ROOT / "config/camera.yaml").read_text(encoding="utf-8"))

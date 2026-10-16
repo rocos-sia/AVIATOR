@@ -53,7 +53,7 @@ collision_check_enabled: false
 grasp: grasp.json
 
 # 姿态配置：双臂初始角度、接近逆解种子及 J2 范围，角度单位为度。
-# 当前 J2 要求为 85°～94°，规划时向内预留 0.5° 跟踪余量。
+# 当前 J2 要求为 100°～104°，规划时向内预留 0.5° 跟踪余量。
 posture: posture.json
 
 # Ruckig 自动计算时长；以下为关节峰值约束，两臂共用同步轨迹。

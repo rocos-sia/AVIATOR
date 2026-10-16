@@ -2,12 +2,14 @@
 # Wider watchdog limits allow scheduling jitter on slower simulation hosts.
 robot: robot.yaml
 config_id: aviator-control-v1
+# Virtual camera observations are published by the simulation node.
+grasp_camera_publisher: simulation
 bus:
   publish: tcp://127.0.0.1:5555
   subscribe: tcp://127.0.0.1:5556
 manipulator_service: tcp://127.0.0.1:5558
-command_timeout_ms: 100
-origin_timeout_ms: 200
+command_timeout_ms: 1000
+origin_timeout_ms: 1000
 # Arm command/state: 100 Hz. Local dual-arm execution: 1 ms.
 # local.task is the explicitly enabled Core task supervisor, not a FlightCommand.
 

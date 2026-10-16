@@ -228,7 +228,7 @@ std::array<double, 2> RemoteLink::readCameraWheel(const std::string& camera_id,
             if (!motion_allowed_ || quit_) throw MotionCancelled();
         }
         check();
-    });
+    }, config_.grasp_camera_publisher);
 }
 void RemoteLink::handTarget(bool close) {
     if (!hand_.enabled()) return;
@@ -287,7 +287,11 @@ bool RemoteLink::latestServo(const ServoGoal& goal) {
     const auto now = monotonic_us();
     if (!latest_supported_ || !enabled_ || state_.fault || !error_.empty() || !feedback_valid_ ||
         now - received_ >= config_.timeout_us || now - sample_ >= config_.timeout_us)
-        throw std::runtime_error("Latest servo feedback unavailable: " + state_.error + error_);
+        throw std::runtime_error("Latest servo feedback unavailable: receive_age_us=" +
+            std::to_string(now - received_) + " sample_age_us=" + std::to_string(now - sample_) +
+            " limit_us=" + std::to_string(config_.timeout_us) +
+            " valid=" + std::to_string(feedback_valid_) + " enabled=" + std::to_string(enabled_) +
+            " fault=" + std::to_string(state_.fault) + " " + state_.error + error_);
     if (latest_mode_ && !latest_finished_ && state_.id == trajectory_id_ && state_.servo_stopped && !state_.servo_active)
         return false; // The device timed out first; let Core finish this run before accepting another.
     if (!latest_mode_ || latest_finished_) {

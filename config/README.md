@@ -1,5 +1,24 @@
 # 配置
 
+`system-simulation.yaml` 的 `command_timeout_ms` 同时控制机械臂命令和反馈的时效，
+允许范围为 30～1000 ms；`origin_timeout_ms` 必须大于等于它且不超过 1000 ms。
+当前仿真两项均为 1000 ms；修改后重启仿真节点和 Core。
+该校验由所有 system 配置共用；真机默认值仍为 50/100 ms。
+这些配置不调整 flight 输入、Core 主循环心跳或手部反馈的独立超时。
+
+双臂安装位置由 `models/urdf/aviator.urdf` 和 `models/mjcf/aviator.xml` 定义：
+左臂 `(-0.91333, 0.020, 0.13756)` m，右臂 `(-0.91333, 0.000, 0.13756)` m，
+相对原安装位置沿机身 +Y（机器人左侧）移动 10 mm、+Z（竖直向上）移动 16 mm，朝向不变。
+主轮盘左右把手沿轮盘局部 X 分别平移 +25/-25 mm，横向中心间距由 251.50422 mm
+减至 201.50422 mm；`grasp.json` 的抓握位置和 `handle_geometry.center` 同步调整。
+抓握位姿以 XML 原有 `left_handle` / `right_handle` site 为准：各向内平移 25 mm，
+保留原 XML 的 Y/Z 和四元数，再同步到 `grasp.json` 的 `left` / `right`。
+`handle_geometry.center` 描述把手几何中心，与 TCP 抓握约束点含义不同。
+`posture.json` 的 J2 范围为 100°～104°，规划范围预留余量后为 100.5°～103.5°。
+双臂 home 和轮盘中位抓握种子均按 J2=102°重新求解，保持原 home 末端位姿和抓握目标，
+MuJoCo 的 `aviator_home` 关键帧同步使用新 home 关节角。修改 J2 范围时必须同时校验这些姿态。
+轮盘原点、法兰到工具的变换及相机标定不随机械臂基座平移。
+
 `tts.yaml` 配置同机 Managed Core 的语音提醒来源、时效、启动宽限、音频设备、音频目录、
 中文文案与优先级。路径相对于配置文件；修改文案后重新生成音频并重启节点，
 详见 [aviator_tts](../nodes/aviator_tts/README.md)。启动脚本 `--tts` 会将所选 system 配置的

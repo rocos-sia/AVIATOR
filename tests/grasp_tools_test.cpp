@@ -43,6 +43,13 @@ struct Device : DataLink {
     double now = 0, displacement = 0;
     std::vector<std::vector<JointFrame>> trajectories;
     std::vector<GraspCommand> commands;
+    void loadHome(const YAML::Node& config) {
+        const auto posture = YAML::LoadFile(config["posture"].as<std::string>());
+        for (int side = 0; side < 2; ++side) {
+            const auto home = posture[side ? "right_home_deg" : "left_home_deg"].as<std::vector<double>>();
+            for (int j = 0; j < 7; ++j) q[side * 7 + j] = home[j] * M_PI / 180;
+        }
+    }
     double getJointPosition(Side s, int j) const override { return q[int(s)*7+j]; }
     double getJointVelocity(Side, int) const override { return 0; }
     void setJointPositions(const std::array<double, 14> &v) override { q = v; }
@@ -100,7 +107,7 @@ void cameraGrasp(const fs::path& dir, const YAML::Node& original, const YAML::No
         std::ofstream(dir / "camera-robot.yaml") << config;
         auto device = std::make_unique<CameraDevice>();
         auto* observed = device.get();
-        observed->q[1] = observed->q[8] = M_PI / 2;
+        observed->loadHome(config);
         observed->displacement = -.085;
         observed->fail_camera = mode == "failure";
         auto ik = std::make_unique<RecordingIk>();
@@ -163,7 +170,7 @@ void managedReleaseFailure(const fs::path& config, bool camera = false) {
     if (camera) device = std::make_unique<CameraDevice>();
     else device = std::make_unique<Device>();
     auto* observed = camera ? static_cast<CameraDevice*>(device.get()) : nullptr;
-    device->q[1] = device->q[8] = M_PI / 2;
+    device->loadHome(YAML::LoadFile(config.string()));
     auto ik = std::make_unique<RecordingIk>();
     auto* solver = ik.get();
     bool allowed = false;
@@ -220,7 +227,7 @@ struct ProfileDevice : Device {
 void managedControlEntry(const fs::path& config, const std::string& outcome) {
     auto device = std::make_unique<ProfileDevice>();
     auto* observed = device.get();
-    device->q[1] = device->q[8] = M_PI / 2;
+    device->loadHome(YAML::LoadFile(config.string()));
     device->fail_default = outcome == "failure";
     bool allowed = false, input_ready = true;
     int heartbeats = 0;
@@ -373,11 +380,12 @@ int main(int argc, char **argv) try {
     config["posture"] = (root / "config/posture.json").string();
     config["grasp"] = (dir / "grasp.yaml").string();
     config["collision_check_enabled"] = false;
+    config["grasp_wheel"]["source"] = "wheel_initial"; // Camera scenarios opt in below.
     auto runCore = [&](const YAML::Node &g) {
         std::ofstream(dir / "grasp.yaml") << g;
         std::ofstream(dir / "robot.yaml") << config;
         auto device = std::make_unique<Device>();
-        device->q[1] = device->q[8] = M_PI / 2;
+        device->loadHome(config);
         auto *executed = device.get();
         auto ik = std::make_unique<RecordingIk>();
         auto *record = ik.get();

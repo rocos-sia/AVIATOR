@@ -1,6 +1,11 @@
 # flight_gateway
 
-当前实现 USB Joystick / Keyboard → `flight.command`，并订阅 `flight.state` 的系统状态摘要。采用一个主循环，直接复用 common 的 ZMQ、消息编解码和 InputGuard；没有新增通信框架或后台线程。`main.cpp` 负责主循环，`sdl_input.hpp/.cpp` 通过 SDL2 捕获输入，复用 `gateway.hpp/.cpp` 中已有的归一化、键盘积分和消息构造。内部兼容报告仅用于复用解码逻辑，不再直接打开或查询 Linux 输入设备。
+当前实现 USB Joystick / Keyboard → `flight.command`，并订阅 `flight.state` 的系统状态摘要。输入采样和通信采用一个主循环，直接复用 common 的 ZMQ、消息编解码和 InputGuard。`main.cpp` 负责主循环，`sdl_input.hpp/.cpp` 通过 SDL2 捕获输入，复用 `gateway.hpp/.cpp` 中已有的归一化、键盘积分和消息构造。内部兼容报告仅用于复用解码逻辑，不再直接打开或查询 Linux 输入设备。
+
+运行日志由独立线程写入，8192 条队列满时覆盖旧诊断，避免磁盘或控制台阻塞输入发布；退出时仍会等待日志排空。
+发布间隔或主循环耗时达到 50 ms 时输出 `Gateway loop delayed`，分别记录循环间隔、ZMQ 等待、输入处理、反馈/服务处理和发布耗时。
+SDL 事件处理及窗口刷新达到 50 ms 时输出 `Gateway SDL delayed`，区分底层事件泵、事件处理和窗口刷新。
+这些耗时包含线程被调度出去的时间，不能仅凭某阶段耗时断定其内部函数一直在执行；诊断不修改输入时间戳或任何超时阈值。
 
 `source` 仅接受 `joystick` 或 `rs422`。`joystick` 同时启用摇杆和键盘；RS422 串口协议尚未实现，配置 `source: rs422` 时不会初始化 SDL、打开输入窗口或接收摇杆/键盘输入，并明确报错退出。后续在本节点内添加串口适配。
 

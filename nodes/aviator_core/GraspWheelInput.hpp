@@ -37,7 +37,7 @@ struct GraspWheelConfig {
 // or between grasps. Require an acquisition timestamp after this request began.
 inline std::array<double, 2> acquireGraspWheel(zmq::context_t& context, const std::string& endpoint,
         const std::string& camera_id, uint64_t freshness_us, uint64_t wait_us,
-        const std::function<void()>& check) {
+        const std::function<void()>& check, const std::string& publisher = "camera") {
     check();
     const auto began = monotonic_us();
     zmq::socket_t sub(context, zmq::socket_type::sub);
@@ -46,7 +46,7 @@ inline std::array<double, 2> acquireGraspWheel(zmq::context_t& context, const st
     sub.connect(endpoint);
     ReceiveState receiver;
     CameraWheelInput input(camera_id, local_clock_id(), freshness_us, began,
-                           CameraWheelInput::Mode::Grasp);
+                           CameraWheelInput::Mode::Grasp, publisher);
     std::string reason = "no new camera observation";
     while (monotonic_us() - began < wait_us) {
         check();

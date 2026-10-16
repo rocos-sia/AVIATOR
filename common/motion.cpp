@@ -53,11 +53,16 @@ MotionConfig loadMotionConfig(const std::filesystem::path &path) {
     c.service = y["manipulator_service"].as<std::string>();
     c.config_id = y["config_id"].as<std::string>();
     require(!c.config_id.empty(), "Missing config_id");
-    c.timeout_us = y["command_timeout_ms"].as<unsigned>() * 1000;
-    c.origin_timeout_us = y["origin_timeout_ms"].as<unsigned>() * 1000;
-    require(c.timeout_us >= 30000 && c.timeout_us <= 100000 && c.origin_timeout_us >= c.timeout_us &&
-                c.origin_timeout_us <= 1000000,
-            "Invalid watchdog configuration");
+    c.grasp_camera_publisher = y["grasp_camera_publisher"].as<std::string>("camera");
+    require(c.grasp_camera_publisher == "camera" || c.grasp_camera_publisher == "simulation",
+            "grasp_camera_publisher must be camera or simulation");
+    const auto timeout_ms = y["command_timeout_ms"].as<unsigned>();
+    const auto origin_timeout_ms = y["origin_timeout_ms"].as<unsigned>();
+    require(timeout_ms >= 30 && timeout_ms <= 1000 && origin_timeout_ms >= timeout_ms &&
+                origin_timeout_ms <= 1000,
+            "Invalid watchdog configuration: require 30 <= command_timeout_ms <= origin_timeout_ms <= 1000");
+    c.timeout_us = timeout_ms * 1000;
+    c.origin_timeout_us = origin_timeout_ms * 1000;
     for (const auto *endpoint : {&c.publish, &c.subscribe, &c.service})
         require(endpoint->rfind("tcp://127.0.0.1:", 0) == 0,
                 "Motion nodes currently require same-host loopback TCP");
