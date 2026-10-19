@@ -18,7 +18,9 @@ version_u16 = (MAJOR << 12) | (MINOR << 8) | PATCH
 
 构建生成 `build/<配置>/generated/aviator/version.hpp` 和 `release-build.json`。版本头文件通过 `aviator_logging` 的接口依赖提供给节点，也安装到 `include/aviator/version.hpp`。发布记录包含版本、编码、发布配置、构建类型、实际 Git 提交、dirty 状态、工具链、已发现的依赖版本、构建开关及仓库内第三方源码目录标识；Git 提交用于定位这些源码。目录标识列举仓库源码，不表示全部依赖均被选择编译。系统动态库和 Python 环境仍属于外部部署依赖。
 
-项目 skill 位于 `.agents/skills/aviator-version/SKILL.md`，根 `AGENTS.md` 要求助手在创建提交前读取：不兼容变更升 MAJOR，兼容功能升 MINOR，兼容修复和交付修订升 PATCH；纯文档、测试和工具维护也升 PATCH。按待提交内容判断最高级别，不按行数判断，重试或 amend 不重复递增。溢出时停止，不回绕。
+项目 skill 位于 `.agents/skills/aviator-version/SKILL.md`，根 `AGENTS.md` 要求助手在每次创建提交前读取：先按用户指令确认内部测试更新或 PATCH 更新，未指定时询问。内部测试保持三段版本不变，只递增 `rc.N`，在提交说明的 `AVIATOR-Test-Version` trailer 中记录；PATCH 更新递增修订号，不带测试后缀。MAJOR、MINOR 或具体版本按用户明确指令处理，同时说明兼容性影响。重试或 amend 不重复递增，溢出时停止，不回绕。
+
+当前尚未发布正式版本，三段版本按用户要求从 `7.0.0` 重设为 `1.0.0`，本次内部测试标识为 `v1.0.0-rc.1`。测试标识仅用于 Git 提交追踪，当前 CMake、构建元数据和 RS422 仍使用三段版本；数字 `1.0.0` 本身不表示已经正式发布。
 
 普通编辑或构建不升级版本。本功能首次提交按兼容性功能增加，将版本从 `0.1.0` 升至 `0.2.0`。skill 不会拦截人工 Git 操作，不新增 Git hook，也不自动打标签或推送。
 
