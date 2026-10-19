@@ -119,11 +119,12 @@ python3 scripts/aviator_release.py identity build/release/dist \
 
 测试输出显式带 `mode: bench-test`、`verified: false`、`release_profile: bench-test`、`test_vector_sha256`，不提供伪造的 `release_digest`。版本 `0.2.0` 对应上行字节 22～25 为 `00 02 A1 9C`；`identity` 输出 `rs422_bytes_22_25` 供台架对照。测试身份只用于飞控联调，不作为交付验收通过或进入正式可操控状态的依据。
 
-**软件短码与整帧累加校验必须同时存在。** 对 29 字节上行帧，先填入偏移 22～23 的版本和 24～25 的短码，再计算偏移 26：
+**软件短码与整帧累加校验必须同时存在。** 对 64 字节上行帧，先填入偏移 22～23 的版本和 24～25 的短码，将偏移 26～62 的备用位填零，再计算偏移 63：
 
 ```python
-frame[26] = (-sum(frame[0:26])) & 0xFF
-# frame[27:29] 是帧尾；短码不能替代 frame[26]。
+frame[26:63] = bytes(37)
+frame[63] = (-sum(frame[0:63])) & 0xFF
+# 无帧尾；短码不能替代 frame[63]。
 ```
 
 工具模块提供 `identity()` 和 `uplink_frame_checksum()`，供测试程序复用。正式 Gateway 后续应在启动时完成实际文件验证、缓存身份，在 80 Hz 周期中仅编码缓存值和计算帧累加校验，不扫描磁盘。

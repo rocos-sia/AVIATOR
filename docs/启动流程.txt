@@ -21,6 +21,12 @@
 //1、启动bus
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_bus --config config/system.yaml 
 
+//1.1、启动 X1 光电采集（Bus 后、设备和 Core 前；仅真机）
+./build/bin/aviator_photoelectric --config config/photoelectric.yaml
+// /dev/ttyUSB0，38400；Core 等待有效、新鲜的 X1=1 才允许初始化。
+// start_aviator.sh 已自动管理此节点（含 --fake-hand/--rs422），不要重复手动启动。
+// --simulation 不启动光电节点；相机随动/带宽/校准入口未接入 Managed Core 的光电急停联锁。
+
 //2、启动manipulator 注意sudo
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ sudo ./build/bin/manipulator  --config config/system.yaml 
 

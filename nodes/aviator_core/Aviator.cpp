@@ -1245,17 +1245,20 @@ public:
 private:
     void report() { if (options_.report) options_.report(status()); }
     void protection() {
+        // Submit emergency power-off before allow_motion(false) can queue an ordinary stop.
+        if (machine_.takeBrake()) {
+            cancelled_ = true;
+            executor_.stop();
+            brake_requested_ = true;
+            try { options_.request_brake(); }
+            catch (const std::exception& e) { machine_.fault(e.what()); }
+        }
         if (machine_.takeStop()) {
             cancelled_ = true;
             executor_.stop();
             input_at_ = 0;
             if (std::string(machine_.state()) != "FOLLOWING" &&
                 std::string(machine_.state()) != "RELEASING") options_.allow_motion(false);
-        }
-        if (machine_.takeBrake()) {
-            brake_requested_ = true;
-            try { options_.request_brake(); }
-            catch (const std::exception& e) { machine_.fault(e.what()); }
         }
     }
     void effects() {

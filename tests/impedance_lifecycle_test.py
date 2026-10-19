@@ -10,7 +10,8 @@ from robot_state_machine_process_test import port
 bus, driver, root = sys.argv[1:]
 root = Path(root)
 for mode in ("success", "slow_pause", "failure", "cancel", "heartbeat", "timeout", "unchanged", "fallback", "latest",
-             "latest_impedance", "latest_heartbeat", "latest_cancel", "rebase", "wheel_rebase", "joint_takeover", "unchanged_locked"):
+             "latest_impedance", "latest_heartbeat", "latest_cancel", "rebase", "wheel_rebase", "joint_takeover", "unchanged_locked",
+             "emergency", "emergency_enable", "emergency_failure", "emergency_braking"):
     folder = Path(tempfile.mkdtemp(prefix=f"aviator-impedance-{mode}-"))
     print(folder, flush=True)
     config = yaml.safe_load((root / "config/system.yaml").read_text())
@@ -46,6 +47,10 @@ for mode in ("success", "slow_pause", "failure", "cancel", "heartbeat", "timeout
         assert server_log.count("RESUMED") == expected_resumes, server_log
         if mode == "latest":
             assert server_log.count("SERVO_STEP_FAILURE") == 1, server_log
+        if mode.startswith("emergency"):
+            assert "DISABLE 0" in server_log and "DISABLE 1" in server_log, server_log
+        if mode == "emergency_failure":
+            assert server_log.count("DISABLE 0") >= 2 and "retrying" in server_log, server_log
     finally:
         for child in reversed(children):
             child.terminate()

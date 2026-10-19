@@ -37,9 +37,9 @@ def checksum_u16(digest):
 
 
 def uplink_frame_checksum(prefix):
-    """RS422 byte 26: additive two's complement over bytes 0..25."""
-    if not isinstance(prefix, bytes) or len(prefix) != 26:
-        raise ValueError("RS422 uplink checksum requires exactly bytes 0..25")
+    """RS422 byte 63: additive two's complement over bytes 0..62."""
+    if not isinstance(prefix, bytes) or len(prefix) != 63:
+        raise ValueError("RS422 uplink checksum requires exactly bytes 0..62")
     return (-sum(prefix)) & 0xff
 
 

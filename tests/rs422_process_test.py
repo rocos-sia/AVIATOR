@@ -17,6 +17,7 @@ import zmq
 
 def down(counter, operation=0, roll=0, pitch=0):
     data = struct.pack('<BBBBhh', 0xeb, 0x90, counter % 256, operation, roll, pitch)
+    data += bytes(23)
     return data + bytes([-sum(data) & 255])
 
 
@@ -27,8 +28,7 @@ def frames(buffer, size):
             del buffer[0]
             continue
         candidate = bytes(buffer[:size])
-        end = 9 if size == 9 else 27
-        if sum(candidate[:end]) & 255 or (size == 29 and candidate[-2:] != b'\xed\x03'):
+        if sum(candidate) & 255:
             del buffer[0]
             continue
         found.append(candidate)
@@ -99,7 +99,7 @@ def main():
                     except BlockingIOError:
                         continue
                     buffers[i].extend(data)
-                    received[i].extend(frames(buffers[i], 29))
+                    received[i].extend(frames(buffers[i], 64))
                 while commands.poll(0):
                     seen_commands.append(json.loads(commands.recv_multipart()[1]))
                 while service.poll(0):

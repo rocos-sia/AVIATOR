@@ -8,6 +8,10 @@ target_link_libraries(aviator_communication_test PRIVATE
   aviator_transport aviator_runtime)
 add_test(NAME communication COMMAND aviator_communication_test)
 set_tests_properties(communication PROPERTIES TIMEOUT 20)
+aviator_add_test_executable(aviator_photoelectric_emergency_test photoelectric_emergency_test.cpp)
+target_link_libraries(aviator_photoelectric_emergency_test PRIVATE aviator_photoelectric_emergency)
+add_test(NAME photoelectric_emergency COMMAND aviator_photoelectric_emergency_test)
+set_tests_properties(photoelectric_emergency PROPERTIES TIMEOUT 10)
 
 find_package(Threads REQUIRED)
 aviator_add_test_executable(aviator_bus_test bus_test.cpp)
@@ -335,6 +339,11 @@ set_tests_properties(arm_target_recorder PROPERTIES TIMEOUT 20)
 if(TARGET aviator_core_control AND Python3_Interpreter_FOUND AND FSM_PYTHON_DEPS EQUAL 0)
   aviator_add_test_executable(aviator_impedance_lifecycle_driver impedance_lifecycle_driver.cpp)
   target_link_libraries(aviator_impedance_lifecycle_driver PRIVATE aviator_core_control aviator_device_server)
+  add_test(NAME photoelectric_emergency_process COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/photoelectric_emergency_process_test.py
+    $<TARGET_FILE:aviator_bus> $<TARGET_FILE:aviator_impedance_lifecycle_driver>
+    $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
+  set_tests_properties(photoelectric_emergency_process PROPERTIES TIMEOUT 60)
   add_test(NAME impedance_lifecycle COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/impedance_lifecycle_test.py
     $<TARGET_FILE:aviator_bus> $<TARGET_FILE:aviator_impedance_lifecycle_driver> ${PROJECT_SOURCE_DIR})

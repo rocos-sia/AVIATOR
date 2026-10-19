@@ -15,8 +15,8 @@ python scripts\split_stl.py models\meshes\Cessna\aircraft_visual.STL models\mesh
 
 ## 一键启动
 
-按 [启动流程](../docs/启动流程.txt) 启动 Bus、Manipulator（sudo）、Gateway、
-Core、Camera、Monitor（RH56FTP 集成在 Manipulator 内），打开全屏 Chrome；指定 `--logger` 时最后启动 Logger：
+按 [启动流程](../docs/启动流程.txt) 依次启动 Bus、光电节点、Manipulator（sudo）、
+独立手节点、Gateway、Managed Core、Camera、Monitor，打开全屏 Chrome；指定 `--logger` 时最后启动 Logger：
 
 ```bash
 ./scripts/start_aviator.sh --dry-run
@@ -25,6 +25,20 @@ Core、Camera、Monitor（RH56FTP 集成在 Manipulator 内），打开全屏 Ch
 ./scripts/start_aviator.sh --fake-hand  # 真实机械臂和相机 + 模拟 RH56FTP 双手
 ./scripts/start_aviator.sh --tts  # 已准备音频包时开启离线语音提醒
 ```
+
+真机模式（含 `--fake-hand`、`--rs422`）自动启动 `aviator_photoelectric`，默认读取
+`config/photoelectric.yaml`（`/dev/ttyUSB0`，38400，X1）。首次使用先构建
+`cmake --build build --target aviator_photoelectric -j2`，也可用 `AVIATOR_BIN` 指定整套二进制目录。
+`PHOTOELECTRIC_CONFIG` 可指定其他光电配置路径；相对路径以项目根目录（安装包中为
+`share/aviator`）为基准。发布地址和发布者标识须与 system 配置一致。
+启动前检查光电二进制、配置文件并执行 `--check-config`；校验失败时不启动设备。
+Core 收到新鲜有效的 X1=1 才允许初始化；启动间隔不代替信号检查。
+光电进程属于必需节点，退出时停止本次会话；正常清理先等待 Core，再停止光电节点和总线。
+光电日志写入 `photoelectric.log`；重定向日志时不打印终端动态刷新行。
+不要再另外启动采集进程。`--simulation` 使用关闭光电联锁的仿真配置，不启动或检查串口节点。
+
+上述联锁仅接入 Managed Core。`start_camera_servo.sh`、`start_wheel_bandwidth.sh`
+和 `start_grasp_calibration_ui.sh` 使用独立控制入口，没有该 X1 急停联锁，也不启动光电节点。
 
 脚本可从任意目录调用。启动前检查文件，通过标准输入自动提交脚本内配置的 sudo 密码；
 Manipulator 在 sudo 内另建独立会话，将实际进程组号记录到本次日志目录的 `manipulator.pid`；停止时同时清理实际节点组和 sudo 包装组，不依赖 sudo 缓存，

@@ -2,6 +2,7 @@
 #include "StateMachineRuntime.hpp"
 #include "ManagedGateway.hpp"
 #include "ManagedReadiness.hpp"
+#include "PhotoelectricEmergency.hpp"
 #include "RemoteLink.hpp"
 #include "aviator/Aviator.hpp"
 #include "aviator/CollisionChecker.hpp"
@@ -16,6 +17,7 @@
 namespace aviator {
 int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t& interrupted,
                     const ManagedGatewayOptions& gateway_options) {
+    PhotoelectricEmergency photoelectric(config);
     std::unique_ptr<ManagedGateway> gateway;
     if (gateway_options.enabled) gateway = std::make_unique<ManagedGateway>(config, gateway_options);
     auto link = std::make_unique<RemoteLink>(config);
@@ -27,9 +29,9 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
     ManagedOptions options;
     options.snapshot = [&] {
         fsm::Snapshot s;
-        // This local test entry authorizes following/release. There is no external safety
-        // supervisor or hardware emergency input; software EmergencyStop stays latched in SML.
-        s.emergency_known = true;
+        const auto safety = photoelectric.snapshot();
+        s.emergency_known = safety.healthy;
+        s.emergency_latched = safety.latched;
         s.following_authorized = s.release_authorized = true;
         s.source_authorized = !gateway || gateway->bound();
         s.input_ready = !gateway || gateway->fresh();
@@ -48,24 +50,33 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
         return s;
     };
     options.heartbeat = [&] { connection->heartbeat(); };
-    options.allow_motion = [&](bool allowed) { revoked = !allowed; connection->allowMotion(allowed); };
+    options.allow_motion = [&](bool allowed) {
+        if (allowed && !photoelectric.snapshot().healthy) throw MotionCancelled();
+        revoked = !allowed; connection->allowMotion(allowed);
+    };
     options.request_brake = [&] {
-        aviator::Logger::error("Software emergency latched in this process; physical brake adapter unavailable");
+        connection->emergencyDisable();
     };
     options.report = [&](const SystemStatus& status) {
         const auto& s = status.conditions;
         const std::string source = gateway && gateway->fresh() && status.accepts_control ? gateway->source() : "NONE";
         connection->report(instance->GetState(), source);
-        connection->reportSystem({{"state", status.state}, {"state_code", status.state_code},
+        const auto power_off = connection->emergencyStatus();
+        const auto safety = photoelectric.snapshot();
+        // Power-off acknowledgement is distinct from a physical brake/STO confirmation.
+        auto report = Json{{"state", status.state}, {"state_code", status.state_code},
             {"ready", s.ready}, {"settled", s.settled}, {"control_source", source},
             {"input_ready", s.input_ready}, {"source_authorized", s.source_authorized},
-            {"input_source", gateway ? gateway->source() : "NONE"},
-            {"current_error_code", status.current_error.empty() ? 0 : 28673},
-            {"last_error_code", status.last_error.empty() ? 0 : 28673},
             {"current_error", status.current_error}, {"last_error", status.last_error},
             {"task_phase", instance->GetState()}, {"generation", status.generation},
             {"brake_requested", status.brake_requested}, {"brake_confirmed", false},
-            {"brake_status", status.brake_requested ? "UNAVAILABLE" : "NOT_REQUESTED"}});
+            {"brake_status", status.brake_requested ? "UNAVAILABLE" : "NOT_REQUESTED"}, {"emergency_power_off", power_off},
+            {"photoelectric", {{"enabled", config.photoelectric.enabled}, {"healthy", safety.healthy},
+                {"latched", safety.latched}, {"reason", safety.reason}, {"sample_mono_us", safety.sample}}}};
+        report["input_source"] = gateway ? gateway->source() : "NONE";
+        report["current_error_code"] = status.current_error.empty() ? 0 : 28673;
+        report["last_error_code"] = status.last_error.empty() ? 0 : 28673;
+        connection->reportSystem(report);
         if (last_state != status.state) {
             last_state = status.state;
             aviator::Logger::info("system.state={} error={}", last_state, status.current_error);
@@ -73,6 +84,19 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
     };
     Aviator robot(std::move(link), nullptr, nullptr, config.robot.string(), std::move(options));
     instance = &robot;
+    if (config.photoelectric.enabled)
+        Logger::info("Waiting for fresh photoelectric X1=1 before initialization/power-on");
+    while (!interrupted) {
+        const auto safety = photoelectric.snapshot();
+        if (safety.latched) { robot.EmergencyStop(safety.reason); break; }
+        if (safety.healthy) break;
+        connection->heartbeat();
+        connection->reportSystem({{"state", "INIT"}, {"state_code", 0}, {"ready", false},
+            {"photoelectric", {{"enabled", true}, {"healthy", false}, {"latched", false},
+                                {"reason", "Waiting for fresh X1=1"}}}});
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    if (interrupted) return 0;
     robot.Init();
     aviator::Logger::info("Managed Aviator: ENTER_STANDBY | GRASP_WHEEL | START_CONTROL | EXIT_CONTROL | LEAVE_WHEEL "
         "| RESET_ERROR\n"
@@ -84,6 +108,8 @@ int runStateMachine(const MotionConfig& config, const volatile std::sig_atomic_t
     bool quit = false;
     bool console_open = true;
     while (!quit && !interrupted) {
+        const auto safety = photoelectric.snapshot();
+        if (safety.latched) robot.EmergencyStop(safety.reason);
         if (gateway) gateway->receiveInput();
         robot.Update();
         pollfd descriptor{STDIN_FILENO, POLLIN, 0};

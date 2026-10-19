@@ -53,6 +53,23 @@ MotionConfig loadMotionConfig(const std::filesystem::path &path) {
     c.service = y["manipulator_service"].as<std::string>();
     c.config_id = y["config_id"].as<std::string>();
     c.flight_source = y["flight_source"].as<std::string>("JOYSTICK");
+    if (const auto p = y["photoelectric_emergency"]) {
+        require(p.IsMap(), "photoelectric_emergency must be a map");
+        for (const auto& entry : p) {
+            const auto key = entry.first.as<std::string>();
+            require(key == "enabled" || key == "publisher_id" || key == "channel" || key == "timeout_ms",
+                    "Unknown photoelectric_emergency key");
+        }
+        c.photoelectric.enabled = p["enabled"].as<bool>();
+        c.photoelectric.publisher = p["publisher_id"].as<std::string>("aviator_photoelectric");
+        c.photoelectric.channel = p["channel"].as<std::string>("X1");
+        const int timeout = p["timeout_ms"].as<int>(150);
+        require(timeout >= 50 && timeout <= 5000, "Photoelectric timeout_ms must be 50..5000");
+        c.photoelectric.timeout_us = uint64_t(timeout) * 1000;
+        require(!c.photoelectric.publisher.empty() && c.photoelectric.publisher.size() <= 128 &&
+                c.photoelectric.publisher.find('\0') == std::string::npos, "Invalid photoelectric publisher_id");
+        require(c.photoelectric.channel == "X1", "Photoelectric emergency currently requires X1");
+    }
     require(c.flight_source == "JOYSTICK" || c.flight_source == "FLIGHT", "flight_source must be JOYSTICK or FLIGHT");
     require(!c.config_id.empty(), "Missing config_id");
     c.timeout_us = y["command_timeout_ms"].as<unsigned>() * 1000;

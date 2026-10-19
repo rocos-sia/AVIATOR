@@ -23,12 +23,13 @@ for arg in "$@"; do
         -h|--help)
             echo '用法: ./scripts/start_aviator.sh [--simulation | --fake-hand] [--headless] [--rs422] [--logger] [--tts] [--dry-run]'
             echo '默认启动 Rokae + RH56FTP，加载 config/system.yaml。'
+            echo '真机先启动 Bus 和 X1 光电节点，再启动设备和 Core；Core 收到有效 1 后才允许初始化。'
             echo '--simulation 使用单个仿真进程替代设备节点，加载 config/system-simulation.yaml。'
             echo '--rs422 选择双路串口配置，Core 输入来源为 FLIGHT；先编辑 flight-rs422.yaml。'
             echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂和相机照常启动。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
-            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, START_DELAY, AVIATOR_RECORDING_DIR'
+            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, PHOTOELECTRIC_CONFIG, START_DELAY, AVIATOR_RECORDING_DIR'
             exit 0 ;;
         *) echo "未知参数: $arg" >&2; exit 2 ;;
     esac
@@ -61,6 +62,7 @@ CONDA_ROOT=${CONDA_ROOT:-$HOME/miniconda3}
 CAMERA_PYTHON=${CAMERA_PYTHON:-$CONDA_ROOT/envs/apriltag_realsense/bin/python}
 MONITOR_BIN=${MONITOR_BIN:-$AVIATOR_BIN/aviator_monitor}
 TTS_CONFIG=${TTS_CONFIG:-$ROOT/config/tts.yaml}
+PHOTOELECTRIC_CONFIG=${PHOTOELECTRIC_CONFIG:-$ROOT/config/photoelectric.yaml}
 START_DELAY=${START_DELAY:-2}
 AVIATOR_RECORDING_DIR=${AVIATOR_RECORDING_DIR:-$ROOT/logs}
 [[ $AVIATOR_RECORDING_DIR == /* ]] || { echo 'AVIATOR_RECORDING_DIR 必须为绝对目录' >&2; exit 2; }
@@ -125,7 +127,7 @@ cleanup() {
     trap - EXIT
     set +e
     echo '正在停止本次启动的节点…'
-    # Keep arm/hand processes alive while Core releases and disables.
+    # Keep arm/hand, photoelectric and bus alive while Core releases and disables.
     if [[ -n $CORE_PID ]] && kill -0 -- "-$CORE_PID" 2>/dev/null; then
         kill -TERM -- "-$CORE_PID" 2>/dev/null || true
         for ((attempt=0; attempt<150; attempt++)); do
@@ -225,8 +227,8 @@ if ! $DRY_RUN; then
         executables+=("$AVIATOR_BIN/simulation")
     else
         commands+=(sudo)
-        executables+=("$AVIATOR_BIN/manipulator" "$AVIATOR_BIN/xCoreSDK_hand" "$CAMERA_PYTHON")
-        files+=(config/camera.yaml config/rh56ftp_hand.yaml nodes/camera/main.py)
+        executables+=("$AVIATOR_BIN/aviator_photoelectric" "$AVIATOR_BIN/manipulator" "$AVIATOR_BIN/xCoreSDK_hand" "$CAMERA_PYTHON")
+        files+=("$PHOTOELECTRIC_CONFIG" config/camera.yaml config/rh56ftp_hand.yaml nodes/camera/main.py)
     fi
     for command in "${commands[@]}"; do
         command -v "$command" >/dev/null || { echo "缺少命令: $command" >&2; exit 1; }
@@ -249,6 +251,10 @@ if ! $DRY_RUN; then
     if $TTS; then "$AVIATOR_BIN/aviator_tts" --config "$TTS_CONFIG" --check; fi
     exec 9>"${XDG_RUNTIME_DIR:-/tmp}/aviator-start-${UID}.lock"
     flock -n 9 || { echo "启动脚本或上次残留节点仍持有启动锁，请先停止。锁文件: ${XDG_RUNTIME_DIR:-/tmp}/aviator-start-${UID}.lock（不要删除锁文件绕过检查）" >&2; exit 1; }
+    # Validate without opening the serial port, before any device process starts.
+    if ! $SIMULATION; then
+        "$AVIATOR_BIN/aviator_photoelectric" --config "$PHOTOELECTRIC_CONFIG" --check-config
+    fi
     if ! $SIMULATION; then sudo -S -p '' -v <<< "$SUDO_PASSWORD"; fi
     LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/aviator-start.XXXXXXXX")
     echo "日志目录: $LOG_DIR"
@@ -266,6 +272,10 @@ else
 fi
 
 start bus "$AVIATOR_BIN/aviator_bus" --config "$SYSTEM_CONFIG"
+if ! $SIMULATION; then
+    start photoelectric "$AVIATOR_BIN/aviator_photoelectric" --config "$PHOTOELECTRIC_CONFIG"
+    echo 'Core 初始化条件：收到有效、新鲜的 X1=1。'
+fi
 if $SIMULATION; then
     simulation_options=()
     $HEADLESS && simulation_options+=(--headless)

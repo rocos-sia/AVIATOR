@@ -12,6 +12,8 @@ RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), sess
     if (info.at("config_id") != c.config_id)
         throw std::runtime_error("Core/device config_id mismatch");
     latest_supported_ = info.value("capabilities", Json::object()).value("latest_servo", false);
+    if (c.photoelectric.enabled && !info.value("capabilities", Json::object()).value("emergency_disable", false))
+        throw std::runtime_error("Photoelectric interlock requires a manipulator with emergency_disable support");
     hand_.configure(c.system);
     aviator::Logger::info("Core hand control: {}",
         (hand_.enabled() ? "dedicated ZMQ worker (50 Hz)" : "disabled by configuration"));
@@ -24,12 +26,15 @@ RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), sess
     try {
         hand_.start(context_, config_, session_, heartbeat_, authorize);
         thread_ = std::thread([this] { io(); });
+        emergency_worker_ = std::thread([this] { emergencyIo(); });
         std::unique_lock<std::mutex> lock(mutex_);
         if (!changed_.wait_for(lock, std::chrono::seconds(5), [&] { return received_ || !error_.empty(); }))
             throw std::runtime_error("No arm.state via bus; start aviator_bus and manipulator");
         if (!error_.empty()) throw std::runtime_error(error_);
     } catch (...) {
         quit_ = true;
+        changed_.notify_all();
+        if (emergency_worker_.joinable()) emergency_worker_.join();
         hand_.stop();
         if (thread_.joinable()) thread_.join();
         throw;
@@ -38,6 +43,8 @@ RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), sess
 RemoteLink::~RemoteLink() {
     if (protective_stop_.valid()) protective_stop_.wait();
     quit_ = true;
+    changed_.notify_all();
+    if (emergency_worker_.joinable()) emergency_worker_.join();
     hand_.stop();
     if (thread_.joinable()) thread_.join();
 }
@@ -75,10 +82,11 @@ DeviceState RemoteLink::snapshot(bool& fresh, bool* status_fresh) const {
 }
 void RemoteLink::allowMotion(bool allowed) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (allowed && emergency_requested_) throw MotionCancelled();
     if (allowed && protective_stop_.valid() &&
         protective_stop_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
         throw std::runtime_error("Device protective stop is still pending");
-    const bool stop = !allowed && motion_allowed_ && enabled_;
+    const bool stop = !allowed && motion_allowed_ && enabled_ && !emergency_requested_;
     motion_allowed_ = allowed;
     hand_.allow(allowed);
     if (!allowed) { if (!impedance_deadline_) publishing_ = false; changed_.notify_all(); }
@@ -95,8 +103,55 @@ void RemoteLink::allowMotion(bool allowed) {
         });
     }
 }
+void RemoteLink::emergencyDisable() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (emergency_requested_) return;
+    emergency_requested_ = true;
+    motion_allowed_ = publishing_ = false;
+    hand_.allow(false);
+    changed_.notify_all();
+}
+void RemoteLink::emergencyIo() {
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        changed_.wait(lock, [&] { return quit_ || emergency_requested_; });
+        if (!emergency_requested_) return;
+    }
+    bool first_attempt = true;
+    while (first_attempt || !quit_) {
+        first_attempt = false; // A simultaneous process exit must not discard a latched request.
+        try {
+            // Dedicated socket inside callService: never waits on service_mutex_/stop_mutex_.
+            auto request = serviceRequest(session_, "emergency_disable", {{"config_id", config_.config_id}});
+            request["deadline_ms"] = 1000;
+            const auto result = callService(context_, config_, request);
+            if (!result.value("disabled_confirmed", false))
+                throw std::runtime_error("Device did not confirm dual-arm power off");
+            std::lock_guard<std::mutex> guard(mutex_);
+            emergency_confirmed_ = true;
+            emergency_error_.clear();
+            enabled_ = false;
+            changed_.notify_all();
+            return;
+        } catch (const std::exception& e) {
+            std::lock_guard<std::mutex> guard(mutex_);
+            if (emergency_error_ != e.what()) Logger::error("Emergency power off: {}", e.what());
+            emergency_error_ = e.what();
+        }
+        for (int n = 0; n < 10 && !quit_; ++n)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+Json RemoteLink::emergencyStatus() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return {{"requested", emergency_requested_}, {"confirmed", emergency_confirmed_},
+            {"status", !emergency_requested_ ? "NOT_REQUESTED" : emergency_confirmed_ ? "CONFIRMED" :
+                       emergency_error_.empty() ? "PENDING" : "RETRYING"}, {"error", emergency_error_}};
+}
 Json RemoteLink::operation(const std::string &op, Json parameters) {
     std::lock_guard<std::mutex> lock(service_mutex_);
+    { std::lock_guard<std::mutex> guard(mutex_);
+      if (emergency_requested_) throw MotionCancelled(); }
     parameters["config_id"] = config_.config_id;
     auto request = serviceRequest(session_, op, parameters);
     if (op == "set_impedance_profile") request["deadline_ms"] = kImpedanceServiceDeadlineMs;

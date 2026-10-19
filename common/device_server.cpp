@@ -28,6 +28,9 @@ struct Shared {
     std::string window_instance, accepted_instance;
     bool has_window = false, revoke = false;
     std::atomic<bool> quit{false};
+    std::atomic<bool> emergency{false};
+    bool emergency_confirmed = false;
+    std::string emergency_error;
     std::atomic<uint64_t> accept_after{0}, control_alive{0}, retired_trajectory{0};
 };
 Json armState(const DeviceState& s, const ArmFeedback& f, const DeviceServerOptions& options) {
@@ -86,6 +89,9 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
     const double servo_timeout = settings.robot["servo_timeout"].as<double>(.25);
     std::string active_instance;
     bool have = false;
+    const auto checkEmergency = [&] {
+        require(!shared.emergency, "Emergency power-off latched");
+    };
     uint64_t last_message = 0, highest_trajectory = 0;
     auto snapshot = [&] {
         auto f = device.armFeedback();
@@ -118,8 +124,34 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
             std::rethrow_exception(failure);
     };
     Joints velocity{};
+    uint64_t next_emergency_attempt = 0;
+    bool emergency_complete = false;
+    const auto emergency = [&] {
+        have = false;
+        servo.reset();
+        velocity = {};
+        state.servo_active = state.servo_stopped = state.stopping = state.impedance_switching = false;
+        state.id = state.cursor = 0;
+        state.fault = true;
+        state.error = "Emergency power-off latched";
+        if (!emergency_complete && monotonic_us() >= next_emergency_attempt) {
+            next_emergency_attempt = monotonic_us() + 100000;
+            std::string error;
+            try { device.commandDeadline(0); device.emergencyDisable(); emergency_complete = true; }
+            catch (const std::exception& e) { error = e.what(); }
+            catch (...) { error = "Unknown emergency power-off failure"; }
+            std::lock_guard<std::mutex> lock(shared.mutex);
+            if (!error.empty() && error != shared.emergency_error)
+                Logger::error("Emergency power-off failed, retrying: {}", error);
+            shared.emergency_error = error;
+            shared.emergency_confirmed = emergency_complete;
+        }
+        try { snapshot(); }
+        catch (...) { std::lock_guard<std::mutex> lock(shared.mutex); shared.state = state; }
+    };
     uint64_t servo_report = 0, servo_steps = 0, servo_work_us = 0, servo_max_us = 0;
     auto servoStep = [&] {
+        checkEmergency();
         auto command = goal.goal;
         command.stop = servo_stop;
         // A failed solve/write may have advanced planner state without submitting
@@ -143,6 +175,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                         f.q[j] >= lo[j] && f.q[j] <= hi[j],
                     "Latest servo joint continuity/limit violation");
         }
+        checkEmergency();
         device.setJointPositions(f.q);
         device.setWheelReference(f.angle, f.displacement);
         state.target = f.q;
@@ -153,6 +186,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
         servo_step_valid = true;
     };
     auto stop = [&] {
+        checkEmergency();
         // Local bounded deceleration from the last command; never jump to measured q.
         state.stopping = true;
         snapshot();
@@ -180,6 +214,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
         const auto initial = velocity;
         for (size_t k = 1; k <= ticks; ++k) {
             device.waitTick();
+            checkEmergency();
             auto next = state.target;
             for (size_t j = 0; j < 14; ++j) {
                 next[j] += initial[j] * (1 - double(k) / ticks) * .001;
@@ -202,6 +237,11 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
     };
     uint64_t last_snapshot = 0;
     while (!shared.quit) {
+        if (shared.emergency) {
+            emergency();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
         std::string key;
         Json request;
         TrajectoryWindow incoming;
@@ -241,22 +281,24 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
             shared.revoke = false;
         }
         try {
+            checkEmergency();
             if (!key.empty()) {
                 const auto op = request.at("operation").get<std::string>();
                 Json result = Json::object();
                 if (op == "enable") {
                     require(!state.fault, "Reset fault before enabling");
                     try {
-                        device.enable(Side::Left);
-                        device.enable(Side::Right);
+                        device.enableChecked(Side::Left, checkEmergency);
+                        device.enableChecked(Side::Right, checkEmergency);
                     } catch (...) {
-                        disable();
+                        if (!shared.emergency) disable();
                         throw;
                     }
                     servo.reset();
                     state.servo_active = state.servo_stopped = false;
                     // Every enable starts with the configured default, including simulation.
-                    device.setJointStiffness(settings.default_stiffness, [] {});
+                    device.setJointStiffness(settings.default_stiffness, checkEmergency);
+                    checkEmergency();
                     current_stiffness = settings.default_stiffness;
                     state.impedance_profile = "default";
                     state.target = device.jointTargets();
@@ -288,6 +330,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                         const uint64_t deadline = request.at("issued_mono_us").get<uint64_t>() +
                             request.at("deadline_ms").get<uint64_t>() * 1000;
                         const auto check = [&] {
+                            checkEmergency();
                             const auto now = monotonic_us();
                             const auto alive = shared.control_alive.load();
                             require(!shared.quit && now < deadline, "Impedance update cancelled or expired");
@@ -358,6 +401,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                     std::lock_guard<std::mutex> lock(shared.mutex);
                     shared.has_window = shared.has_servo = false;
                 }
+                checkEmergency();
                 snapshot();
                 std::lock_guard<std::mutex> lock(shared.mutex);
                 auto& record = shared.operations.at(key);
@@ -507,6 +551,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                         velocity[j] =
                             active.streaming ? f.dq[j] : (f.q[j] - state.target[j]) * 1000;
                     }
+                    checkEmergency();
                     device.setJointPositions(f.q);
                     device.setWheelReference(f.angle, f.displacement);
                     state.target = f.q;
@@ -536,6 +581,15 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
                 }
             }
         } catch (const std::exception& e) {
+            if (shared.emergency) {
+                emergency();
+                if (!key.empty()) {
+                    std::lock_guard<std::mutex> lock(shared.mutex);
+                    shared.operations.at(key).status = "FAILED";
+                    shared.operations.at(key).error = "Interrupted by emergency power-off";
+                }
+                continue;
+            }
             state.impedance_switching = false;
             state.fault = true;
             state.error = e.what();
@@ -544,7 +598,7 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
             } catch (...) {
             }
             try {
-                disable();
+                if (shared.emergency) emergency(); else disable();
             } catch (const std::exception& stop_error) {
                 state.error += "; " + std::string(stop_error.what());
             }
@@ -564,8 +618,8 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
         }
     }
     try {
-        stop();
-        disable();
+        if (shared.emergency) emergency();
+        else { stop(); disable(); }
     } catch (const std::exception& e) {
         Logger::error("manipulator shutdown: {}", e.what());
     }
@@ -683,7 +737,26 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                                        {"q", state.q},
                                        {"speed", speed},
                                        {"config_id", config.config_id},
-                                       {"capabilities", {{"status_before_enable", true}, {"impedance_profiles", true}, {"latest_servo", bool(options.servo)}}}};
+                                       {"capabilities", {{"status_before_enable", true}, {"impedance_profiles", true},
+                                           {"emergency_disable", true}, {"latest_servo", bool(options.servo)}}}};
+                else if (op == "emergency_disable") {
+                    const auto& params = req.at("parameters");
+                    require(params.size() == 1 && params.at("config_id") == config.config_id,
+                            "Invalid emergency configuration");
+                    // Reserved sticky operation: independent of pending operations and dedup capacity.
+                    std::lock_guard<std::mutex> lock(shared.mutex);
+                    shared.emergency = true;
+                    shared.has_window = shared.has_servo = false;
+                    if (!shared.pending.empty()) {
+                        auto& pending = shared.operations.at(shared.pending);
+                        pending.status = "FAILED";
+                        pending.error = "Cancelled by emergency power-off";
+                        shared.pending.clear();
+                    }
+                    reply["status"] = shared.emergency_confirmed ? "COMPLETED" : "ACCEPTED";
+                    reply["result"] = {{"disabled_confirmed", shared.emergency_confirmed},
+                        {"latched", true}, {"error", shared.emergency_error}};
+                }
                 else if (op == "get_result") {
                     const auto& params = req.at("parameters");
                     require(params.size() == 2u + params.count("server_session") +
@@ -704,6 +777,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                         reply["result"]["result"] = found->second.result;
                     }
                 } else {
+                    require(!shared.emergency, "Emergency latched; restart device process to rearm");
                     const auto& params = req.at("parameters");
                     require(params.is_object() &&
                                 params.size() == 1u + params.count("server_session") + (op == "set_impedance_profile" ? 1u : 0u),
@@ -837,6 +911,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                 } else window = decodeWindow(m, lo, hi, speed);
                 require(m.header.sample_mono_us >= shared.accept_after.load(),
                         "Command predates lifecycle barrier");
+                require(!shared.emergency, "Emergency latched; arm commands rejected");
                 if (!guard->accept(m, monotonic_us(), error)) {
                     if (error == "invalid business data") {
                         std::lock_guard<std::mutex> lock(shared.mutex);

@@ -11,6 +11,9 @@ target_link_libraries(aviator_robot_state_machine PUBLIC sml::sml aviator_loggin
 add_executable(aviator_core_sml main_sml.cpp)
 target_link_libraries(aviator_core_sml PRIVATE aviator_robot_state_machine)
 install(TARGETS aviator_core_sml RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+add_library(aviator_photoelectric_emergency PhotoelectricEmergency.cpp)
+target_include_directories(aviator_photoelectric_emergency PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(aviator_photoelectric_emergency PUBLIC aviator_motion_protocol)
 if(AVIATOR_COMMUNICATION_ONLY OR NOT AVIATOR_BUILD_ROBOTICS_LIBS)
   return()
 endif()
@@ -27,7 +30,7 @@ add_executable(aviator_core_wheel_bandwidth ${PROJECT_SOURCE_DIR}/tools/wheel_ba
 target_link_libraries(aviator_core_wheel_bandwidth PRIVATE aviator_core_control)
 install(TARGETS aviator_core_wheel_bandwidth RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 add_executable(aviator_core_managed main_managed.cpp StateMachineRuntime.cpp ManagedGateway.cpp)
-target_link_libraries(aviator_core_managed PRIVATE aviator_core_control aviator_service)
+target_link_libraries(aviator_core_managed PRIVATE aviator_core_control aviator_service aviator_photoelectric_emergency)
 install(TARGETS aviator_core aviator_core_servo aviator_core_camera_servo aviator_core_managed RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/config/ DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/config)
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/urdf ${PROJECT_SOURCE_DIR}/models/meshes

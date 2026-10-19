@@ -123,7 +123,7 @@ ctest --test-dir build -R '^(robot_state_machine|core_sml_demo|core_sml_cli)$' -
 | `ResetError()` | RESET_ERROR；故障已排除后确认本地错误，ERROR → READY，不调用会隐式解锁/失能的 resetFault |
 | `ServoWheel(a,d,v,sample_mono_us)` | 目标接口，不是第七个操作；仅 CONTROL 接受本次操控后的有效时间戳，拒绝过期、未来、重复/倒退目标 |
 | `Update()` | 拥有线程每约 5 ms 调用，刷新证据/心跳，监督、收取任务结果和执行转换 |
-| `EmergencyStop(reason)` | 内部急停输入，撤销普通输出并请求独立手刹通道，不是普通六操作 |
+| `EmergencyStop(reason)` | 内部急停输入，锁存 EMERGENCY_STOP、撤销输出并异步请求双臂紧急下使能，不是普通六操作 |
 
 直接接口为 `init/enable/disable/approachHandles/lockHandles/moveWheel/servoWheel/unlockHandles/releaseHandles/resetFault/acknowledgeFault/stop`。
 原来的单步大写 Enable、ApproachHandles、LockHandles 等不再作为公共 API；调用方使用直接接口或六个业务操作。
@@ -158,9 +158,58 @@ cmake --build build --target aviator_core_managed -j2
 - clear_of_wheel：设备软件锁已解除，且执行器处于初始化/已使能/已失能等非接触流程阶段；这只是程序判据，不是物理脱离检测。
 - following_authorized / release_authorized：启动这个本地测试入口即允许这两类业务操作，具体执行仍由状态机守卫决定。
 
-终端 emergency 和 Aviator::EmergencyStop 仍进入不可用普通请求退出的 EMERGENCY_STOP。
-锁存仅在当前进程内保存，不再读写 `.emergency` / `.brake-request` 文件；进程重启不恢复该软件锁存。
+终端 emergency 和 Aviator::EmergencyStop 进入不可用普通请求退出的 EMERGENCY_STOP，
+同时通过独立服务调用请求 `emergency_disable`，不等待普通 stop/阻抗服务的互斥锁。
+Core 和设备进程分别锁存；光电恢复为 1、RESET_ERROR、重新发送 enable 都不能解除。
+排除原因后需停止并重启 Core 和设备进程；重启后仍须取得新鲜 X1=1 才允许初始化上使能。
+锁存不写入文件，不能跨进程重启保存。
 硬件急停状态未独立接入，不能将软件急停状态解释为硬件急停检测。
+
+### X1 光电急停联锁
+
+`aviator_core_managed` 在 Gateway 和 `--console` 模式下都使用独立订阅线程接收
+`photoelectric.state`。直接执行器入口 `aviator_core` / Servo 示例没有这套整机状态机，
+使用该联锁应启动 `aviator_core_managed`。
+
+`config/system.yaml` 和 `system-rs422.yaml` 默认启用：
+
+```yaml
+photoelectric_emergency:
+  enabled: true
+  publisher_id: aviator_photoelectric
+  channel: X1
+  timeout_ms: 150
+```
+
+总线地址沿用所选 system 配置的 `bus.subscribe`；串口仍仅由
+`aviator_photoelectric --config config/photoelectric.yaml` 打开。
+仿真配置显式设置 `enabled: false`；缺省未配置本节时也关闭联锁。
+
+- 未收到有效输入时保持 INIT，等待新鲜的 X1=1，不提交初始化/上使能任务。
+- 收到有效 X1=0 立即锁存，包括刚启动时；收到一帧 0 后紧接着收到 1 也不会丢失急停。
+- 首次取得有效 1 后，`valid=false`、非法信号值、样本过期或发布中断均触发急停。
+- 校验发布者、通道、本机时钟、序号及原始采样时间；错误来源不作为信号输入，
+  重复发送旧样本不能延长有效期。
+- 监听线程约每 2 ms 检查输入；FSM 所属线程约每 5 ms 优先处理锁存结果。
+  不跨线程操作状态机，也不等待抓握、回零或阻抗任务正常完成。
+
+`system.state.system` / `flight.state.system` 中的 `photoelectric` 导出信号健康状态、
+锁存原因和最后采样时间；`emergency_power_off` 导出 `requested`、`confirmed`、
+`status`（NOT_REQUESTED/PENDING/RETRYING/CONFIRMED）和错误信息。
+`confirmed=true` 来自设备端双臂下使能成功确认，与物理手刹的 `brake_confirmed` 区分。
+
+紧急下使能跳过普通减速轨迹和正常松手流程的等待。设备端会在 SDK 操作边界检查取消，
+分别向两侧 SDK 并行发起下使能，停止必要的 SDK 运动后调用 `setPowerState(false)` 并查询电源状态；一侧失败仍尝试另一侧，
+失败时继续重试，未确认前不宣称下使能成功。接收线程清理及轨迹文件导出不阻挡另一臂下电。
+这仍是软件联锁：20 Hz 采集/发布、操作系统调度、网络与 SDK 同步调用都有延迟，
+不能中断尚未返回的 SDK 调用，不能据此保证物理“零延迟”断电。
+
+使用 `scripts/start_aviator.sh` 启动硬件系统时，脚本在 Bus 后、设备和 Core 前
+自动启动光电节点（包括 `--fake-hand` 和 `--rs422`），启动前校验光电配置。
+Core 仍以新鲜有效的 X1=1 作为初始化条件，脚本的启动间隔不代表信号就绪。
+光电进程退出会触发整套节点清理；正常退出先等待 Core，再停止光电节点和 Bus。
+`--simulation` 不启动光电节点。日志见本次日志目录的 `photoelectric.log`；
+不要再手动启动第二个采集进程。测试不应同时连接生产总线和模拟光电发布者。
 
 **当前接入限制**：未接入独立安全监督器和物理手刹驱动，brake_confirmed 始终为 false，急停时 brake_status=UNAVAILABLE；FOLLOWING
 仅保持现有参考，需要相应策略授权，不是柔顺控制。保护/退出撤销手目标后仍沿用手节点的默认张开 safe_pose，
@@ -207,10 +256,12 @@ Direct Demo 原先只检查 home 停稳的逻辑保持不变；此新位置判�
 CAN 接口按手节点 README 预先配置，`config/robot.yaml` 选择实际后端。
 
 ```bash
-cmake --build build --target aviator_bus aviator_hand manipulator aviator_core_managed flight_gateway -j2
+cmake --build build --target aviator_bus aviator_photoelectric aviator_hand manipulator aviator_core_managed flight_gateway -j2
 
 # 1. Bus
 ./build/bin/aviator_bus
+# 另开终端：X1 光电输入，保持运行
+./build/bin/aviator_photoelectric --config config/photoelectric.yaml
 # 2. 真实手节点
 ./build/bin/aviator_hand --config config/inspire_hand.yaml
 # 3. 双臂设备节点；sudo 用于真机实时调度权限

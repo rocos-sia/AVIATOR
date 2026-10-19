@@ -83,7 +83,7 @@ void codec_tests() {
     check(!decode("flight.command", json.dump(), parsed, error), "nesting bound");
     check(parsed.body == flight().body, "failed decode preserves output");
     // All registered topic/type mappings; business validation remains node-owned.
-    for (int i = 0; i < 11; ++i) {
+    for (int i = 0; i <= static_cast<int>(Topic::photoelectric_state); ++i) {
         message = flight();
         message.topic = static_cast<Topic>(i);
         if (message.topic == Topic::arm_command || message.topic == Topic::hand_command) {

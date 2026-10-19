@@ -93,6 +93,19 @@ class DataLink {
     virtual bool isEnabled(Side side) const = 0;
     virtual void enable(Side side) = 0;   // 失败抛 std::runtime_error
     virtual void disable(Side side) = 0;  // 失败抛 std::runtime_error
+    virtual void enableChecked(Side side, const std::function<void()>& check) {
+        check(); enable(side); check();
+    }
+    // Executor-thread only. Never follows normal braking or hand-opening workflows.
+    virtual void emergencyDisable() {
+        std::exception_ptr error;
+        for (auto side : {Side::Left, Side::Right}) {
+            try { disable(side); } catch (...) { error = std::current_exception(); }
+        }
+        if (error) std::rethrow_exception(error);
+        if (isEnabled(Side::Left) || isEnabled(Side::Right))
+            throw std::runtime_error("Dual-arm power-off not confirmed");
+    }
 
     // Non-RT, dual-arm lifecycle operation. check() must run between SDK stages.
     // Rebase the hold to fresh measured joints before changing stiffness; read back jointTargets().

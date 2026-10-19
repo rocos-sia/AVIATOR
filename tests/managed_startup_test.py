@@ -20,6 +20,7 @@ def main():
     directory = Path(tempfile.mkdtemp(prefix="aviator-idle-startup-"))
     print(f"Idle startup logs: {directory}", flush=True)
     config = yaml.safe_load((root / 'config/system.yaml').read_text())
+    config["photoelectric_emergency"] = {"enabled": False}  # This fixture has no optical input.
     # Only Core's kinematic initialization uses this file; no hardware backend is instantiated.
     config['robot'] = str(root / 'config/robot.yaml')
     # Invalid but continuously arriving hand messages warn without blocking READY.

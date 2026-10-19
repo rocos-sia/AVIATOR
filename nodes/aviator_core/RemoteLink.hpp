@@ -16,6 +16,8 @@ class RemoteLink final : public DataLink {
     void reportSystem(const Json&); // Immutable owner-thread FSM export, separate from executor phase.
     DeviceState snapshot(bool& fresh, bool* status_fresh = nullptr) const;
     void allowMotion(bool); // Revoke queued output and asynchronously request device-local stop.
+    void emergencyDisable(); // Sticky, asynchronous; bypasses the normal service mutex.
+    Json emergencyStatus() const;
     const std::string& session() const { return session_; }
     double getJointPosition(Side, int) const override;
     double getJointVelocity(Side, int) const override;
@@ -49,6 +51,7 @@ class RemoteLink final : public DataLink {
     friend struct RemoteLinkTestAccess; // Fault injection: block arm IO without blocking hand IO.
     Json operation(const std::string &, Json parameters = Json::object());
     void io();
+    void emergencyIo();
     void trimStreamHistory(); // Caller holds mutex_; retain four samples behind feedback cursor.
     void handTarget(bool close);
     MotionConfig config_;
@@ -61,6 +64,9 @@ class RemoteLink final : public DataLink {
     std::mutex service_mutex_;
     std::mutex stop_mutex_;
     std::future<void> protective_stop_;
+    std::thread emergency_worker_;
+    bool emergency_requested_ = false, emergency_confirmed_ = false;
+    std::string emergency_error_;
     std::condition_variable changed_;
     DeviceState state_;
     Json arm_body_ = Json::object(), hand_body_ = Json::object();

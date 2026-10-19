@@ -28,6 +28,7 @@ def main():
     posture = json.loads((root / "config/posture.json").read_text())
     home = [math.radians(x) for x in posture["left_home_deg"] + posture["right_home_deg"]]
     config = yaml.safe_load((root / "config/system.yaml").read_text())
+    config["photoelectric_emergency"] = {"enabled": False}  # This fixture has no optical input.
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot.update(viewer=False, settle_duration=.15)
     for key in ("model", "urdf", "grasp", "posture"):

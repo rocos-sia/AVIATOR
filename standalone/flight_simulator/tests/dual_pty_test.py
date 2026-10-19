@@ -35,15 +35,15 @@ def main():
             try:
                 while child.poll() is None and time.monotonic()-start<8:
                     seq+=1
-                    up=bytearray(29); up[:2]=b'\xeb\x90';up[2]=seq%256
+                    up=bytearray(64); up[:2]=b'\xeb\x90';up[2]=seq%256
                     up[10]=7;up[11]=up[12]=255;up[22:26]=bytes.fromhex('03 10 cd ab')
-                    up[26]=-sum(up[:26]) & 255;up[27:]=b'\xed\x03'
+                    up[63]=-sum(up[:63]) & 255
                     for i,(m,_) in enumerate(pairs):
                         os.write(m,up)
                         try: data=os.read(m,4096)
                         except BlockingIOError: continue
                         buffers[i].extend(data)
-                        received[i].extend((time.monotonic()-start,f) for f in frames(buffers[i],9))
+                        received[i].extend((time.monotonic()-start,f) for f in frames(buffers[i],32))
                     time.sleep(.006)
                 assert child.wait(timeout=3)==0
                 for collection in received:

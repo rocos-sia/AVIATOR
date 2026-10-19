@@ -18,6 +18,8 @@ std::atomic<bool> moving_on_resume{false};
 std::atomic<bool> invalid_on_resume{false};
 std::atomic<bool> freeze_feedback_on_hold{false};
 std::atomic<int> pause_calls{0};
+std::array<std::atomic<int>, 2> emergency_calls{};
+std::atomic<bool> require_parallel_emergency{false}, fail_emergency_left{false};
 std::array<std::atomic<double>, 2> live_hold_since{};
 double expected_hold_duration = .5;
 }
@@ -90,13 +92,16 @@ void RokaeArm::beginTargetTrace(const std::array<double, 7>&) {
 }
 void RokaeArm::pollTargetTrace() {}
 bool RokaeArm::motionFailed() const { return impl_->failed; }
-void RokaeArm::prepare() {}
+void RokaeArm::prepare(const std::function<void()>& cancelled) { cancelled(); }
 void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample&)> callback,
-                     std::function<void(const std::array<double, 7>&)> initialize) {
+                     std::function<void(const std::array<double, 7>&)> initialize,
+                     const std::function<void()>& cancelled) {
+    cancelled();
     impl_->callback = std::move(callback); impl_->initialize = std::move(initialize);
     impl_->initialize(position()); impl_->run(false);
 }
-void RokaeArm::pauseImpedance() {
+void RokaeArm::pauseImpedance(const std::function<void()>& cancelled) {
+    cancelled();
     impl_->stop();
     check(impl_->last_target == impl_->q, "Paused before sending the measured hold to SDK");
     const double held_since = live_hold_since[impl_->side];
@@ -116,6 +121,18 @@ void RokaeArm::resumeImpedance(const std::function<void()>& guard) {
     impl_->run(true);
 }
 void RokaeArm::stop() { impl_->stop(); }
+void RokaeArm::emergencyStop() {
+    ++emergency_calls[impl_->side];
+    if (require_parallel_emergency && impl_->side == 0) {
+        const auto deadline = now() + .5;
+        while (!emergency_calls[1] && now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        check(emergency_calls[1] > 0, "Right power-off waited for left SDK RPC");
+    }
+    impl_->stop();
+    if (impl_->side == 0 && fail_emergency_left.exchange(false))
+        throw std::runtime_error("Injected left power-off confirmation failure");
+}
 }
 int main(int argc, char** argv) try {
     using namespace aviator;
@@ -184,6 +201,16 @@ int main(int argc, char** argv) try {
     device->enable(Side::Left); device->enable(Side::Right);
     device->setJointStiffness(stiffness, [] {}, true);
     check(pause_calls == 10, "Configured dwell did not complete both pause stages");
+    emergency_calls[0] = emergency_calls[1] = 0;
+    require_parallel_emergency = fail_emergency_left = true;
+    bool power_off_failed = false;
+    try { device->emergencyDisable(); } catch (...) { power_off_failed = true; }
+    check(power_off_failed && emergency_calls[0] == 1 && emergency_calls[1] == 1,
+          "Emergency did not attempt both arms or hid failure");
+    check(device->isEnabled(Side::Left) && !device->isEnabled(Side::Right),
+          "Failed left confirmation was fabricated or right was left enabled");
+    device->emergencyDisable();
+    check(!device->isEnabled(Side::Left) && !device->isEnabled(Side::Right), "Emergency retry did not disable both arms");
     device.reset();
     for (double invalid : {0., -1., std::numeric_limits<double>::infinity(),
                            std::numeric_limits<double>::quiet_NaN()}) {

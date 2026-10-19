@@ -1,5 +1,16 @@
 # 配置
 
+`photoelectric.yaml` 配置 X1 光电开关采集节点的串口、Modbus 站号、采集/发布频率及超时。
+默认 `/dev/ttyUSB0`、38400 波特率、8N1、站号 1，以 20 Hz 发布 `photoelectric.state`。
+详见 [aviator_photoelectric](../nodes/aviator_photoelectric/README.md)。
+
+`system.yaml` / `system-rs422.yaml` 的 `photoelectric_emergency` 默认启用 Managed Core 的 X1 急停联锁。
+启动需先收到新鲜的 1；0、运行中无效或超过 150 ms 的旧样本会锁存急停并请求双臂下使能。
+信号恢复不自动上使能；仿真配置显式关闭。`scripts/start_aviator.sh` 在真机模式
+（包括 `--fake-hand`、`--rs422`）自动在 Bus 之后、设备和 Core 之前启动光电节点，
+无需另开终端。`--simulation` 不启动串口采集。可用 `PHOTOELECTRIC_CONFIG` 指定配置文件；
+修改发布地址或发布者标识时，须与所选 system 配置的 Bus 地址及联锁来源保持一致。
+
 `tts.yaml` 配置同机 Managed Core 的语音提醒来源、时效、启动宽限、音频设备、音频目录、
 中文文案与优先级。路径相对于配置文件；修改文案后重新生成音频并重启节点，
 详见 [aviator_tts](../nodes/aviator_tts/README.md)。启动脚本 `--tts` 会将所选 system 配置的

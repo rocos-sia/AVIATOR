@@ -9,14 +9,14 @@
 namespace aviator {
 namespace {
 using Json = nlohmann::json;
-constexpr std::array<std::string_view, 11> names{
+constexpr std::array<std::string_view, 12> names{
     "flight.command", "flight.state", "arm.command", "arm.state",
     "hand.command", "hand.state", "camera.command", "camera.detection",
-    "system.state", "system.diagnostic", "system.event"};
-constexpr std::array<std::string_view, 11> types{
+    "system.state", "system.diagnostic", "system.event", "photoelectric.state"};
+constexpr std::array<std::string_view, 12> types{
     "FlightCommand", "FlightState", "ArmCommand", "ArmState",
     "HandCommand", "HandState", "CameraCommand", "CameraDetection",
-    "SystemState", "SystemDiagnostic", "SystemEvent"};
+    "SystemState", "SystemDiagnostic", "SystemEvent", "PhotoelectricState"};
 constexpr std::array<const char*, 9> header_keys{
     "msg_type", "version", "sequence", "timestamp", "sample_mono_us",
     "clock_id", "publisher_id", "session_id", "valid"};

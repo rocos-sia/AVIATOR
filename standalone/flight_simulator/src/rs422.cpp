@@ -28,8 +28,7 @@ const std::array<std::pair<uint8_t, const char*>, 11> states{{{0, "EMERGENCY_STO
                                                               {0x13, "GRASPING"},
                                                               {0x14, "RELEASING"}}};
 bool envelope(const Bytes& b, size_t n) {
-    return b.size() == n && b[0] == 0xeb && b[1] == 0x90 &&
-           checksum(b.data(), n == 9 ? 9 : 27) == 0 && (n == 9 || (b[27] == 0xed && b[28] == 3));
+    return b.size() == n && b[0] == 0xeb && b[1] == 0x90 && checksum(b.data(), n) == 0;
 }
 } // namespace
 uint8_t checksum(const uint8_t* p, size_t n) {
@@ -83,18 +82,18 @@ Bytes encode(const Downlink& f) {
     if ((f.operation && !*operationName(f.operation)) || std::abs(int(f.roll)) > 1000 ||
         std::abs(int(f.pitch)) > 1000)
         throw std::invalid_argument("invalid RS422 downlink");
-    Bytes b(9);
+    Bytes b(downlink_size, 0); // Reserved bytes 8..30 are transmitted as zero.
     b[0] = 0xeb;
     b[1] = 0x90;
     b[2] = f.counter;
     b[3] = f.operation;
     put(b, 4, f.roll);
     put(b, 6, f.pitch);
-    b[8] = checksum(b.data(), 8);
+    b[downlink_checksum_offset] = checksum(b.data(), downlink_checksum_offset);
     return b;
 }
 Bytes encode(const Uplink& f) {
-    Bytes b(29);
+    Bytes b(uplink_size, 0); // Reserved bytes 26..62 are transmitted as zero.
     b[0] = 0xeb;
     b[1] = 0x90;
     b[2] = f.counter;
@@ -113,13 +112,11 @@ Bytes encode(const Uplink& f) {
     b[21] = f.severity;
     put(b, 22, f.version);
     put(b, 24, f.checksum);
-    b[26] = checksum(b.data(), 26);
-    b[27] = 0xed;
-    b[28] = 3;
+    b[uplink_checksum_offset] = checksum(b.data(), uplink_checksum_offset);
     return b;
 }
 bool decode(const Bytes& b, Downlink& f) {
-    if (!envelope(b, 9))
+    if (!envelope(b, downlink_size))
         return false;
     Downlink v{b[2], b[3], i16(b, 4), i16(b, 6)};
     if ((v.operation && !*operationName(v.operation)) || std::abs(int(v.roll)) > 1000 ||
@@ -129,7 +126,7 @@ bool decode(const Bytes& b, Downlink& f) {
     return true;
 }
 bool decode(const Bytes& b, Uplink& f) {
-    if (!envelope(b, 29))
+    if (!envelope(b, uplink_size))
         return false;
     if ((b[3] > 1 && b[3] != unknown) || b[4] > 3 || (b[5] && !*operationName(b[5])) ||
         (b[10] != unknown && stateCode(stateName(b[10])) != b[10]) ||
@@ -162,7 +159,7 @@ std::vector<Bytes> Parser::feed(const uint8_t* data, size_t n) {
                 break;
             Downlink down;
             Uplink up;
-            if (size_ == 9 ? decode(buffer_, down) : decode(buffer_, up)) {
+            if (size_ == downlink_size ? decode(buffer_, down) : decode(buffer_, up)) {
                 out.push_back(buffer_);
                 buffer_.clear();
             } else {

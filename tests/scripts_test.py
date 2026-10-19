@@ -50,13 +50,27 @@ class ScriptsTests(unittest.TestCase):
                 self.assertNotIn('rh56ftp_node.py',text)
                 self.assertNotIn('fake_rh56ftp_hand.py',text)
                 self.assertEqual('--fake-hand' in text,'--fake-hand' in options)
+                if name == 'start_aviator.sh':
+                    order = re.findall(r'^启动 ([^:]+):', text, re.M)
+                    self.assertLess(order.index('bus'), order.index('photoelectric'))
+                    self.assertLess(order.index('photoelectric'), order.index('manipulator'))
+                    self.assertLess(order.index('manipulator'), order.index('core'))
+                    self.assertIn('photoelectric.yaml', text)
         text=self.run_script('start_aviator.sh','--dry-run','--simulation','--headless','--logger','--tts')
         self.assertIn('simulation',text);self.assertNotIn('/manipulator ',text)
+        self.assertNotIn('启动 photoelectric:', text)
         for flags, system in ((['--rs422'], 'system-rs422.yaml'),
                               (['--rs422','--simulation','--headless'], 'system-simulation-rs422.yaml')):
             text=self.run_script('start_aviator.sh','--dry-run',*flags)
             self.assertIn('flight-rs422.yaml',text)
             self.assertIn(system,text)
+            self.assertEqual('启动 photoelectric:' in text, '--simulation' not in flags)
+        custom_config = str(self.directory / 'optical config.yaml')
+        text = self.run_script('start_aviator.sh', '--dry-run',
+                               env={'PHOTOELECTRIC_CONFIG': custom_config})
+        import shlex
+        optical = next(line for line in text.splitlines() if line.startswith('启动 photoelectric:'))
+        self.assertEqual(shlex.split(optical.split(':', 1)[1])[-2:], ['--config', custom_config])
         self.run_script('start_aviator.sh','--dry-run','--simulation','--fake-hand',ok=False)
         self.run_script('start_aviator.sh','--dry-run','--headless',ok=False)
         self.assertEqual(list(self.directory.iterdir()),[],'dry-run wrote files')
@@ -100,14 +114,15 @@ class ScriptsTests(unittest.TestCase):
         node.write_text("#!/usr/bin/python3\n" +
             "import os,signal,sys,time\n" +
             "name=os.path.basename(sys.argv[0])\n" +
+            "if '--check-config' in sys.argv: sys.exit(int(os.environ.get('TEST_CONFIG_EXIT','0')))\n" +
             "def event(kind):\n    with open(os.environ['TEST_EVENTS'],'a') as f: f.write(kind+' '+name+' '+str(os.getpid())+'\\n')\n" +
-            "def stop(*args):\n    signal.signal(signal.SIGTERM,signal.SIG_IGN)\n    event('stop')\n    if name.startswith('aviator_core'): time.sleep(.4)\n    sys.exit(0)\n" +
+            "def stop(*args):\n    signal.signal(signal.SIGTERM,signal.SIG_IGN)\n    event('stop')\n    if name.startswith('aviator_core'): time.sleep(.4)\n    event('exit')\n    sys.exit(0)\n" +
             "signal.signal(signal.SIGTERM,stop)\nevent('start')\n" +
             "if name in ('manipulator','camera-python') and os.fork()==0:\n" +
             "    name+='-worker'\n    signal.signal(signal.SIGTERM,signal.SIG_IGN)\n    event('start')\n" +
             "while True: time.sleep(.02)\n")
         node.chmod(0o755)
-        for name in ('aviator_bus','manipulator','xCoreSDK_hand','flight_gateway','aviator_core_managed',
+        for name in ('aviator_bus','aviator_photoelectric','manipulator','xCoreSDK_hand','flight_gateway','aviator_core_managed',
                      'aviator_core_camera_servo','camera-python','aviator_monitor'):
             (mock/name).symlink_to(node)
         for name in ('google-chrome-stable','curl'):
@@ -132,10 +147,19 @@ class ScriptsTests(unittest.TestCase):
                'TEST_EVENTS':str(events), 'TMPDIR':str(self.directory), 'XDG_RUNTIME_DIR':str(self.directory)}
         # START_DELAY deliberately uses the accepted decimal spelling.
         env['START_DELAY']='0.1'
+        # Missing/invalid optical configuration must fail before starting any node.
+        self.run_script('start_aviator.sh', '--fake-hand', ok=False,
+                        env={**env, 'PHOTOELECTRIC_CONFIG': str(self.directory/'missing.yaml')})
+        self.assertFalse(events.exists())
+        self.run_script('start_aviator.sh', '--fake-hand', ok=False,
+                        env={**env, 'TEST_CONFIG_EXIT': '2'})
+        self.assertFalse(events.exists())
         cases = [(script, core, stop_signal)
                  for script, core in (('start_aviator.sh','aviator_core_managed'),
                                       ('start_camera_servo.sh','aviator_core_camera_servo'))
                  for stop_signal in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)]
+        # Optical process failure is critical and must initiate the same ordered cleanup.
+        cases.append(('start_aviator.sh', 'aviator_core_managed', None))
         for script, core, stop_signal in cases:
             events.write_text('')
             log=self.directory/(script+'.log')
@@ -153,7 +177,12 @@ class ScriptsTests(unittest.TestCase):
                     blocked=self.run_script(script,'--fake-hand',ok=False,env=env)
                     self.assertIn('仍持有启动锁',blocked)
                 finally:
-                    child.send_signal(stop_signal)
+                    if stop_signal is None:
+                        row = next(row for row in events.read_text().splitlines()
+                                   if row.startswith('start aviator_photoelectric '))
+                        os.kill(int(row.split()[2]), signal.SIGKILL)
+                    else:
+                        child.send_signal(stop_signal)
                     if stop_signal == signal.SIGINT:
                         until=time.monotonic()+3
                         while time.monotonic()<until and 'stop '+core+' ' not in events.read_text():
@@ -163,7 +192,9 @@ class ScriptsTests(unittest.TestCase):
                             if child.poll() is None: child.send_signal(repeated)
                     try:child.wait(timeout=20)
                     except subprocess.TimeoutExpired:child.kill();child.wait();raise
-            self.assertEqual(child.returncode,128+stop_signal,log.read_text())
+            self.assertEqual(child.returncode, 1 if stop_signal is None else 128+stop_signal, log.read_text())
+            if stop_signal is None:
+                self.assertIn('photoelectric 已退出', log.read_text())
             subprocess.run(['flock','-n',str(self.directory/f'aviator-start-{os.getuid()}.lock'),
                             'true'],check=True)
             rows=events.read_text().splitlines()
@@ -172,6 +203,16 @@ class ScriptsTests(unittest.TestCase):
             hand_stop=next(i for i,row in enumerate(rows) if row.startswith("stop xCoreSDK_hand "))
             self.assertLess(core_stop,hand_stop,rows)
             self.assertLess(hand_stop,arm_stop,rows)
+            if script == 'start_aviator.sh':
+                start_order = [row.split()[1] for row in rows if row.startswith('start ')]
+                self.assertLess(start_order.index('aviator_bus'), start_order.index('aviator_photoelectric'))
+                self.assertLess(start_order.index('aviator_photoelectric'), start_order.index('manipulator'))
+                core_exit = next(i for i,row in enumerate(rows) if row.startswith('exit '+core+' '))
+                bus_stop = next(i for i,row in enumerate(rows) if row.startswith('stop aviator_bus '))
+                self.assertLess(core_exit, bus_stop, rows)
+                if stop_signal is not None:
+                    optical_stop = next(i for i,row in enumerate(rows) if row.startswith('stop aviator_photoelectric '))
+                    self.assertLess(core_exit, optical_stop, rows)
             for row in rows:
                 if row.startswith('start '):
                     pid=int(row.split()[2])

@@ -28,13 +28,15 @@ public:
     void beginTargetTrace(const std::array<double, 7>& expected);
     void pollTargetTrace();
     bool motionFailed() const;
-    void prepare(); // 上电、订阅、设置参数；不启动周期运动。
+    void prepare(const std::function<void()>& cancelled = [] {}); // 上电前及 SDK 阶段间检查取消。
     void start(std::function<std::array<double, 7>(const RokaeSample &)> callback,
-               std::function<void(const std::array<double, 7> &)> initialize_target);
-    void pauseImpedance(); // Stop motion/state reception; keep power, RtCommand and the callback.
+               std::function<void(const std::array<double, 7> &)> initialize_target,
+               const std::function<void()>& cancelled = [] {});
+    void pauseImpedance(const std::function<void()>& cancelled = [] {});
     void setPausedStiffness(const std::array<double, 7>&);
     void resumeImpedance(const std::function<void()>& check);
     void stop();
+    void emergencyStop(); // Power off and read back powerState before receiver/trace cleanup.
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;

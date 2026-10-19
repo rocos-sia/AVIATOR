@@ -15,7 +15,7 @@ constexpr std::size_t max_topic_bytes = 128;
 enum class Topic {
     flight_command, flight_state, arm_command, arm_state,
     hand_command, hand_state, camera_command, camera_detection,
-    system_state, system_diagnostic, system_event
+    system_state, system_diagnostic, system_event, photoelectric_state
 };
 
 std::string_view topic_name(Topic topic);

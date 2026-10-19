@@ -64,11 +64,13 @@ class ReleaseTest(unittest.TestCase):
                            check=True, stdout=subprocess.DEVNULL)
 
     def test_frame_checksum_is_independent(self):
-        prefix = bytes(range(22)) + struct.pack("<HH", 0x0100, 0x9ca1)
+        prefix = bytes(range(22)) + struct.pack("<HH", 0x0100, 0x9ca1) + bytes(range(37))
         checksum = release.uplink_frame_checksum(prefix)
         self.assertEqual((sum(prefix) + checksum) & 255, 0)
         with self.assertRaises(ValueError):
             release.uplink_frame_checksum(prefix[:-1])
+        with self.assertRaises(ValueError):
+            release.uplink_frame_checksum(prefix[:26])
 
     def test_repeat_and_relocate(self):
         original = release.verify(self.root)
@@ -221,6 +223,12 @@ class ReleaseTest(unittest.TestCase):
                     self.assertNotIn("nodes/rh56ftp_hand/", output)
                     self.assertIn("nodes/camera/main.py", output)
                     if name == "start_aviator.sh":
+                        line = next(line for line in output.splitlines() if line.startswith("启动 photoelectric:"))
+                        optical = shlex.split(line.split(":", 1)[1])
+                        self.assertEqual(Path(optical[0]).resolve(), Path(override or self.root / "bin") / "aviator_photoelectric")
+                        self.assertEqual(Path(optical[2]), runtime / "config/photoelectric.yaml")
+                        self.assertLess(output.index("启动 bus:"), output.index("启动 photoelectric:"))
+                        self.assertLess(output.index("启动 photoelectric:"), output.index("启动 core:"))
                         tts_output = subprocess.check_output(
                             ["bash", str(launcher), "--dry-run", "--simulation", "--tts"], env=env, text=True)
                         line = next(line for line in tts_output.splitlines() if line.startswith("启动 tts:"))
@@ -228,6 +236,7 @@ class ReleaseTest(unittest.TestCase):
                         self.assertEqual(Path(tts[0]).resolve(), Path(override or self.root / "bin") / "aviator_tts")
                         self.assertIn("config/system-simulation.yaml", tts)
                         self.assertLess(tts_output.index("启动 tts:"), tts_output.index("启动 core:"))
+                        self.assertNotIn("启动 photoelectric:", tts_output)
 
 
 if __name__ == "__main__":

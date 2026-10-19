@@ -31,6 +31,7 @@ def main():
     directory = Path(tempfile.mkdtemp(prefix="aviator-fsm-test-"))
     print(f"FSM process logs: {directory}", flush=True)
     config = yaml.safe_load((root / "config/system.yaml").read_text())
+    config["photoelectric_emergency"] = {"enabled": False}  # This fixture has no optical input.
     if hand_timeout:
         config['core_hand'].update(enabled=True, publisher_id='unavailable_test_hand', completion_timeout_ms=500)
     if hand_fault:

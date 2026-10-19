@@ -21,6 +21,7 @@ def main():
     folder = Path(tempfile.mkdtemp(prefix="aviator-following-"))
     print(f"Following process logs: {folder}", flush=True)
     config = yaml.safe_load((root / "config/system.yaml").read_text())
+    config["photoelectric_emergency"] = {"enabled": False}  # This fixture has no optical input.
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot.update(viewer=False, settle_duration=.15)
     # Stable lifecycle fixture, independent of later deployment stiffness tuning.

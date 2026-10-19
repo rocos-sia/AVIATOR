@@ -15,14 +15,16 @@ void check(bool ok, const char* reason) { if (!ok) throw std::runtime_error(reas
 class LatestProbe final : public DeviceServo {
     JointFrame frame_;
     bool stopped_ = false;
+    bool slow_stop_ = false;
+    unsigned stop_ticks_ = 0;
 public:
-    explicit LatestProbe(JointFrame f) : frame_(f) {}
+    explicit LatestProbe(JointFrame f, bool slow_stop = false) : frame_(f), slow_stop_(slow_stop) {}
     JointFrame step(const ServoGoal& g) override {
         if (g.angle == .4) {
             std::cout << "SERVO_STEP_FAILURE" << std::endl;
             throw std::runtime_error("injected servo planning failure");
         }
-        stopped_ = g.stop;
+        stopped_ = g.stop && (!slow_stop_ || ++stop_ticks_ >= 2000);
         if (!stopped_) { frame_.angle = g.angle; frame_.displacement = g.displacement; }
         return frame_;
     }
@@ -35,6 +37,7 @@ class PausingDevice final : public DataLink {
     std::string mode_;
     bool locked_ = false;
     bool slow_pause_injected_ = false;
+    bool disable_failure_injected_ = false;
 public:
     PausingDevice(const DeviceSettings& settings, const std::string& mode)
         : stiffness_(settings.default_stiffness), mode_(mode) {
@@ -49,10 +52,26 @@ public:
     double jointVelLimit(Side, int) const override { return 1; }
     bool isEnabled(Side s) const override { return feedback_.enabled[int(s)]; }
     void enable(Side s) override {
+        std::cout << "ENABLE " << int(s) << std::endl;
         feedback_.enabled[int(s)] = feedback_.valid[int(s)] = true;
         feedback_.sample_time[int(s)] = time();
     }
-    void disable(Side s) override { feedback_.enabled[int(s)] = feedback_.valid[int(s)] = false; }
+    void enableChecked(Side s, const std::function<void()>& guard) override {
+        guard(); enable(s);
+        if (mode_ == "emergency_enable" && s == Side::Left) {
+            std::cout << "ENABLE_PENDING" << std::endl;
+            for (int i = 0; i < 1000; ++i) { guard(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+        }
+        guard();
+    }
+    void disable(Side s) override {
+        std::cout << "DISABLE " << int(s) << std::endl;
+        if (mode_ == "emergency_failure" && s == Side::Left && !disable_failure_injected_) {
+            disable_failure_injected_ = true;
+            throw std::runtime_error("injected left power-off failure");
+        }
+        feedback_.enabled[int(s)] = feedback_.valid[int(s)] = false;
+    }
     GraspState graspState() const override {
         GraspState s; s.heartbeat = time(); s.locked = locked_ ? 3 : 0;
         s.angle = .15; s.displacement = -.09;
@@ -67,7 +86,7 @@ public:
     void setJointStiffness(const std::array<double, 7>& stiffness, const std::function<void()>& guard,
                            bool force_reapply = false) override {
         if (!force_reapply && stiffness == stiffness_) return;
-        for (int i = 0; i < (mode_ == "timeout" ? 5000 : 60); ++i) {
+        for (int i = 0; i < (mode_ == "timeout" || mode_ == "emergency" || mode_ == "emergency_failure" ? 5000 : 60); ++i) {
             guard();
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
@@ -99,10 +118,52 @@ int main(int argc, char** argv) try {
         PausingDevice device(settings, mode);
         DeviceServerOptions options;
         options.wheel_measurement = mode == "wheel_rebase";
-        if (mode == "latest" || after_servo) options.servo = [](const JointFrame& f) { return std::make_unique<LatestProbe>(f); };
+        if (mode == "latest" || after_servo || mode == "emergency_braking")
+            options.servo = [mode](const JointFrame& f) { return std::make_unique<LatestProbe>(f, mode == "emergency_braking"); };
         return runDeviceServer(device, config, settings, options, interrupted);
     }
     RemoteLink link(config);
+    if (mode.rfind("emergency", 0) == 0) {
+        std::future<void> pending;
+        if (mode == "emergency_enable") {
+            pending = std::async(std::launch::async, [&] { link.enable(Side::Left); });
+            for (int i = 0; i < 40; ++i) { link.heartbeat(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+        } else {
+            link.enable(Side::Left);
+            for (int i = 0; i < 20; ++i) { link.heartbeat(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+            if (mode == "emergency_braking") {
+                link.latestServo({.1, -.085, 1, monotonic_us(), false});
+                for (int i = 0; i < 5; ++i) { link.heartbeat(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+                pending = std::async(std::launch::async, [&] { link.stopTrajectory(); });
+            } else pending = std::async(std::launch::async, [&] { link.setImpedanceProfile(true); });
+            const auto deadline = monotonic_us() + 1000000;
+            for (;;) {
+                link.heartbeat(); bool fresh;
+                const auto state = link.snapshot(fresh);
+                if (mode == "emergency_braking" ? state.stopping : state.impedance_switching) break;
+                check(monotonic_us() < deadline, "Blocking operation never started");
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+        }
+        const auto began = monotonic_us();
+        link.emergencyDisable();
+        while (!link.emergencyStatus().at("confirmed").get<bool>()) {
+            check(monotonic_us() - began < 750000, "Emergency blocked behind ordinary service/operation");
+            link.heartbeat(); std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        check(pending.wait_for(std::chrono::seconds(1)) == std::future_status::ready, "Interrupted operation remained blocked");
+        try { pending.get(); } catch (const std::exception&) {}
+        bool rejected = false;
+        try { link.allowMotion(true); } catch (...) { rejected = true; }
+        check(rejected, "Core emergency re-enabled motion");
+        zmq::context_t context(1);
+        rejected = false;
+        try { callService(context, config, serviceRequest(link.session(), "enable", {{"config_id", config.config_id}})); }
+        catch (...) { rejected = true; }
+        check(rejected, "Device emergency accepted enable");
+        std::cout << "PASS " << mode << " confirmed_us=" << monotonic_us() - began << std::endl;
+        return 0;
+    }
     link.enable(Side::Left);
     for (int i = 0; i < 30; ++i) { link.heartbeat(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
     if (mode == "latest") {

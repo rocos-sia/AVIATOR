@@ -1,0 +1,18 @@
+# X1 光电开关；修改配置后重启 aviator_photoelectric。
+serial:
+  device: /dev/ttyUSB0
+  baud_rate: 38400
+  data_bits: 8
+  parity: none                 # none / even / odd
+  stop_bits: 1                 # 1 / 2
+modbus:
+  slave_address: 1
+  input_address: 0             # X1 = 0；功能码固定为 0x02，读取一路
+  response_timeout_ms: 100
+  reconnect_interval_ms: 1000  # 断开、超时或无效响应后的重试间隔
+poll_hz: 20
+publish_hz: 20                # 状态不变也发布；串口故障也发布 valid=false
+stale_timeout_ms: 150         # 最近一次成功采样超过此时间即无效
+invert: false                # true 时对模块原始输入状态取反
+publisher_id: aviator_photoelectric
+publish_endpoint: tcp://127.0.0.1:5555

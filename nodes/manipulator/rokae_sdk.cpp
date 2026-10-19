@@ -209,7 +209,7 @@ public:
             try { Logger::error("Target trace export failed endpoint={}: {}", endpoint, e.what()); } catch (...) {}
         }
     }
-    void stop() {
+    void stop(bool emergency = false) {
         std::lock_guard<std::recursive_mutex> rpc(lifecycle_mutex);
         std::exception_ptr error;
         auto attempt = [&](const char *action, auto fn) {
@@ -224,15 +224,30 @@ public:
         };
         if (looping) attempt("stopLoop (includes asynchronous SDK errors)", [&] { rt->stopLoop(); looping = false; });
         if (moving) attempt("stopMove", [&] { rt->stopMove(); moving = false; });
-        stopReceiver();
-        if (receiving) { robot.stopReceiveRobotState(); receiving = false; }
-        if (powered) attempt("power off", [&] {
+        const auto cleanupReceiver = [&] {
+            attempt("join state receiver", [&] { stopReceiver(); });
+            if (receiving) attempt("stop state reception", [&] { robot.stopReceiveRobotState(); receiving = false; });
+        };
+        if (!emergency) cleanupReceiver();
+        if (powered || emergency) attempt("power off", [&] {
             std::error_code ec;
             robot.setPowerState(false, ec);
             check(ec, "setPowerState(false)");
+            if (emergency) {
+                const auto power = robot.powerState(ec);
+                check(ec, "powerState after emergency power off");
+                if (power != rokae::PowerState::off && power != rokae::PowerState::estop &&
+                    power != rokae::PowerState::gstop)
+                    throw std::runtime_error("Power-off not confirmed: " + endpoint);
+            }
             powered = false;
         });
         prepared = false;
+        // Let the caller power off the other arm before joining receivers/exporting traces.
+        if (emergency) {
+            if (error) std::rethrow_exception(error);
+            return;
+        }
         writeTargetTrace();
         if (!timing_reported && callbacks.load() > 0) {
             timing_reported = true;
@@ -333,9 +348,10 @@ bool RokaeArm::motionFailed() const {
     std::lock_guard<std::mutex> lock(impl_->error_mutex);
     return bool(impl_->callback_error) || (impl_->rt && impl_->rt->hasMotionError());
 }
-void RokaeArm::prepare() {
+void RokaeArm::prepare(const std::function<void()>& cancelled) {
     std::lock_guard<std::recursive_mutex> rpc(impl_->lifecycle_mutex);
     auto &s = *impl_;
+    cancelled();
     if (s.prepared) return;
     { std::lock_guard<std::mutex> lock(s.error_mutex); s.callback_error = nullptr; }
     s.target_trace.reset();
@@ -363,34 +379,42 @@ void RokaeArm::prepare() {
                 std::error_code(scheduling_error, std::generic_category()).message() +
                 "; SCHED_FIFO priority 80 requires CAP_SYS_NICE or an adequate rtprio limit");
         std::error_code ec;
+        cancelled();
         stage = "setPowerState(true)";
         s.powered = true; // 部分成功也必须尝试下电。
         s.robot.setPowerState(true, ec);
         check(ec, stage);
+        cancelled();
         stage = "startReceiveRobotState";
         s.receiving = true;
         s.robot.startReceiveRobotState(std::chrono::milliseconds(1),
             {rokae::RtSupportedFields::jointPos_m, rokae::RtSupportedFields::jointVel_m,
              rokae::RtSupportedFields::tcpPose_m});
+        cancelled();
         stage = "setJointImpedance";
         s.rt->setJointImpedance(s.stiffness, ec);
         check(ec, stage);
+        cancelled();
         s.prepared = true;
     } catch (...) {
         aviator::Logger::info("[Rokae {}] prepare stage={}", s.endpoint, stage);
         auto error = std::current_exception();
-        try { s.stop(); } catch (...) {}
+        // Let the dual-arm caller dispatch both power-off requests together on cancellation.
+        try { cancelled(); } catch (...) { std::rethrow_exception(error); }
+        try { s.stop(true); } catch (...) {}
         std::rethrow_exception(error);
     }
 }
 
 void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> callback,
-                     std::function<void(const std::array<double, 7> &)> initialize_target) {
+                     std::function<void(const std::array<double, 7> &)> initialize_target,
+                     const std::function<void()>& cancelled) {
     std::lock_guard<std::recursive_mutex> rpc(impl_->lifecycle_mutex);
     auto &s = *impl_;
     const char *stage = "prepare";
     try {
-        prepare();
+        prepare(cancelled);
+        cancelled();
         s.initialize_target = initialize_target;
         stage = "setControlLoop";
         s.control_loop = [&s, callback, command = rokae::JointPosition(7)]() mutable {
@@ -449,6 +473,7 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
         bool received = false;
         while (s.robot.updateRobotState(std::chrono::steady_clock::duration::zero())) {
+            cancelled();
             received = true;
             if (std::chrono::steady_clock::now() >= deadline)
                 throw std::runtime_error("Realtime state queue did not drain within 100 ms");
@@ -470,17 +495,21 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
         aviator::Logger::info("[Rokae {}] initial_position_rad source={}:{}", s.endpoint,
             realtime_position ? "jointPos_m" : "jointPos fallback", position.str());
 
+        cancelled();
         s.moving = true;
         stage = "startMove(jointImpedance)";
         s.rt->startMove(rokae::RtControllerMode::jointImpedance);
+        cancelled();
         stage = "start latest-state receiver";
         s.startReceiver();
+        cancelled();
         s.looping = true;
         stage = "startLoop";
         ++s.loop_epoch;
         s.rt->startLoop(false);
     } catch (...) {
         auto error = std::current_exception();
+        try { cancelled(); } catch (...) { std::rethrow_exception(error); }
         try { std::rethrow_exception(error); }
         catch (const std::exception &e) { aviator::Logger::error("[Rokae {}] start stage={}: {}",
             s.endpoint, stage, e.what()); }
@@ -489,19 +518,21 @@ void RokaeArm::start(std::function<std::array<double, 7>(const RokaeSample &)> c
             try { s.printStartFailure(); }
             catch (...) { aviator::Logger::error("[Rokae {}] Controller diagnostics unavailable", s.endpoint); }
         }
-        try { s.stop(); } catch (...) {}
+        try { s.stop(true); } catch (...) {}
         std::rethrow_exception(error);
     }
 }
-void RokaeArm::pauseImpedance() {
+void RokaeArm::pauseImpedance(const std::function<void()>& cancelled) {
     std::lock_guard<std::recursive_mutex> rpc(impl_->lifecycle_mutex);
     auto& s = *impl_;
     if (!s.prepared || !s.powered || !s.receiving || !s.looping || !s.moving)
         throw std::runtime_error("Impedance update requires active realtime hold: " + s.endpoint);
     const auto step = [&](const char* name, auto operation) {
+        cancelled();
         const auto began = std::chrono::steady_clock::now();
         aviator::Logger::info("[Rokae {}] impedance pause step={} begin", s.endpoint, name);
         operation();
+        cancelled();
         aviator::Logger::info("[Rokae {}] impedance pause step={} complete elapsed_ms={}", s.endpoint, name,
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
     };
@@ -570,4 +601,5 @@ void RokaeArm::resumeImpedance(const std::function<void()>& check) {
     s.rt->startLoop(false);
 }
 void RokaeArm::stop() { impl_->stop(); }
+void RokaeArm::emergencyStop() { impl_->stop(true); }
 }

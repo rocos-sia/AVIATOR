@@ -1,11 +1,16 @@
 #pragma once
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 namespace flight_gateway::rs422 {
 inline constexpr uint64_t period_us = 12500;
+inline constexpr size_t downlink_size = 32;
+inline constexpr size_t uplink_size = 64;
+inline constexpr size_t downlink_checksum_offset = downlink_size - 1;
+inline constexpr size_t uplink_checksum_offset = uplink_size - 1;
 inline constexpr int16_t invalid_position = -32768;
 inline constexpr uint8_t unknown = 0xff;
 inline constexpr uint16_t unknown_fault = 0xffff;
@@ -37,7 +42,7 @@ int16_t quantize(double normalized, double limit = 1.0);
 bool samePayload(const Downlink&, const Downlink&);
 class Parser {
   public:
-    explicit Parser(bool uplink) : size_(uplink ? 29 : 9) {}
+    explicit Parser(bool uplink) : size_(uplink ? uplink_size : downlink_size) {}
     std::vector<Bytes> feed(const uint8_t*, size_t);
     void clear() { buffer_.clear(); }
     uint64_t rejected = 0;

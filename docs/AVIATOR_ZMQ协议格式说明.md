@@ -881,13 +881,13 @@ REQ/REP 一次请求只能有一次响应：短操作可直接返回终态；长
 
 ### 14.5 RS422 Gateway → Core 高层操作服务
 
-当前实现以 [RS422 协议第 10 节](AVIATOR_RS422通信协议规范.md) `aviator-bench-v1` 为准。旧 REQUEST/REPLY、串口 timestamp_ms、事务 ID 和独立应答映射不适用于当前 9/29 字节布局。
+当前实现以 [RS422 协议第 10 节](AVIATOR_RS422通信协议规范.md) `aviator-bench-v1` 为准。旧 REQUEST/REPLY、串口 timestamp_ms、事务 ID 和独立应答映射不适用于当前 32/64 字节布局。
 
 Core 的 system 配置 `flight_source` 为 `FLIGHT` 或 `JOYSTICK`，缺省 JOYSTICK。网关串口模式发布 source=FLIGHT 的标准 FlightCommand，不携带 POSITION_HOLD；采样时间为机器人本机接收串口的单调时间。内部 50 Hz 发布可以复用最后有效样本，但不刷新它的采样时刻。失效时显式发布 valid=false。
 
 串口指令通过连续确认后，以 client_id=flight_gateway 调用现有六操作，parameters 恰好为 `{"source":"FLIGHT","operation_code":16}`（此例为 enter_standby）。操作码依次为 0x10/20/30/40/50/60，必须与 operation 名称一致；Core 仅在显式配置 FLIGHT、输入绑定且新鲜时受理。JOYSTICK 的原有 button 参数仍兼容，两个来源不自动切换。
 
-一次通过门控的操作只创建一个内部 request_id，不自动重试。沿用已有期限、缓存应答、记录副本隔离和状态机守卫。超时表示结果未知；串口回绕不等同于动作完成。最终动作状态通过 29 字节上行的运行状态字段观察。
+一次通过门控的操作只创建一个内部 request_id，不自动重试。沿用已有期限、缓存应答、记录副本隔离和状态机守卫。超时表示结果未知；串口回绕不等同于动作完成。最终动作状态通过 64 字节上行的运行状态字段观察。
 
 Core 新增 system.input_source 导出已配置的输入策略，system.control_source 在有效 CONTROL 时报告实际 FLIGHT/JOYSTICK。可选 wheel_measurement 包含 angle（rad）、displacement（m）、valid 和 sample_mono_us；只透传设备明确提供的测量，禁止用 wheel_reference 代替。
 
@@ -1014,7 +1014,7 @@ payload_length 只核对 payload，不包含 protobuf 元数据。使用压缩�
 
 ### 15.5 离散服务与 RS422 指令记录契约（历史设计，待重新冻结）
 
-以下 timestamp_ms/REPLY 关联字段属于旧协议，当前 9/29 字节台架实现不使用。当前已记录的是既有 record.service.request/reply；逐字节串口 MCAP 记录和下面的持久化审计契约尚未接入。
+以下 timestamp_ms/REPLY 关联字段属于旧协议，当前 32/64 字节台架实现不使用。当前已记录的是既有 record.service.request/reply；逐字节串口 MCAP 记录和下面的持久化审计契约尚未接入。
 
 本节独立于相机 CameraPacket；Logger 的总线订阅无法获取 DEALER/ROUTER 或 REQ/REP 服务内容。Gateway、Core 及参与设备服务的节点必须在非实时路径设置记录适配器。
 

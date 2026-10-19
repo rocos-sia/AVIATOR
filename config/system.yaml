@@ -5,6 +5,11 @@ bus:
   publish: tcp://127.0.0.1:5555
   subscribe: tcp://127.0.0.1:5556
 manipulator_service: tcp://127.0.0.1:5558
+photoelectric_emergency:
+  enabled: true
+  publisher_id: aviator_photoelectric
+  channel: X1
+  timeout_ms: 150
 command_timeout_ms: 50
 origin_timeout_ms: 100
 # Arm command/state: 100 Hz. Local dual-arm execution: 1 ms.

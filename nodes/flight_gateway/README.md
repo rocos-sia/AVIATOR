@@ -1,12 +1,14 @@
 # flight_gateway
 
+当前 RS422 帧长为下行 32B、上行 64B，上下行均无帧尾。`aviator-bench-v1` 配置名保留，但旧 9/29 字节程序不兼容；网关与模拟器必须配套更新。
+
 同一程序支持本机手柄/键盘、机器人端双路 RS422、飞控模拟端双路 RS422。机器人端连接本机 ZMQ/Core；模拟端直接读取手柄并与另一台工控机串口通信，不需要 Bus、Core 或机器人 SDK 运行进程。
 
 | role | source | 用途 |
 | --- | --- | --- |
 | robot（缺省） | joystick | 保留既有本机手柄/键盘，50 Hz 发布 JOYSTICK |
-| robot | rs422 | 接收双路 9B，发布 FLIGHT，双路发送 29B |
-| flight_simulator | joystick | 手柄/键盘发送双路 9B，接收/显示两路 29B |
+| robot | rs422 | 接收双路 32B，发布 FLIGHT，双路发送 232B |
+| flight_simulator | joystick | 手柄/键盘发送双路 32B，接收/显示两路 232B |
 
 串口按 [RS422 规范第 10 节](../../docs/AVIATOR_RS422通信协议规范.md) 的 `aviator-bench-v1` 台架约定运行。基础 ICD 的未定义字段使用显式台架哨兵，不伪造传感器反馈。下面“键盘操作”和“摇杆输入”章节的 50 Hz、5 分钟失焦保持描述适用于本机模式；模拟端例外见双机运行步骤。
 

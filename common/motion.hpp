@@ -10,11 +10,17 @@ using Json = nlohmann::json;
 using Joints = std::array<double, 14>;
 // Shared client/server budget: settling, SDK pause/restart and result delivery.
 inline constexpr uint64_t kImpedanceServiceDeadlineMs = 20000;
+struct PhotoelectricEmergencyConfig {
+    bool enabled = false;
+    std::string publisher = "aviator_photoelectric", channel = "X1";
+    uint64_t timeout_us = 150000;
+};
 struct MotionConfig {
     std::filesystem::path system, robot;
     std::string publish, subscribe, service, config_id;
     std::string flight_source = "JOYSTICK";
     unsigned period_us = 10000, timeout_us = 50000, origin_timeout_us = 100000;
+    PhotoelectricEmergencyConfig photoelectric;
 };
 MotionConfig loadMotionConfig(const std::filesystem::path &file);
 struct WheelReference { double angle = 0, displacement = 0; };

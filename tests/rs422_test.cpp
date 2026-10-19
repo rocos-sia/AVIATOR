@@ -1,6 +1,7 @@
 #include "flight_operation.hpp"
 #include "rs422.hpp"
 #include "rs422_runtime.hpp"
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 using namespace flight_gateway;
@@ -9,22 +10,82 @@ void check(bool b, const char* reason) {
     if (!b)
         throw std::runtime_error(reason);
 }
+void checkWireBoundaries() {
+    auto require = [](bool ok) {
+        if (!ok)
+            throw std::runtime_error("32/64-byte wire boundary regression");
+    };
+    Downlink down;
+    Uplink up;
+    for (bool uplink : {false, true}) {
+        auto frame = uplink ? encode(Uplink{}) : encode(Downlink{});
+        const size_t length = uplink ? 64 : 32;
+        const size_t reserved = uplink ? 26 : 8;
+        auto valid = [&](const Bytes& b) { return uplink ? decode(b, up) : decode(b, down); };
+        require(frame.size() == length);
+        require(std::all_of(frame.begin() + reserved, frame.end() - 1,
+                            [](uint8_t b) { return b == 0; }));
+        require(valid(frame));
+        // Every reserved byte is covered by the checksum, but has no business meaning.
+        for (size_t i = reserved; i < length - 1; ++i) {
+            auto changed = frame;
+            changed[i] = 1;
+            require(!valid(changed));
+            changed.back() = checksum(changed.data(), length - 1);
+            require(valid(changed));
+        }
+        // Header/trailer patterns inside reserved data must not split the frame.
+        frame[reserved] = 0xeb;
+        frame[reserved + 1] = 0x90;
+        frame[reserved + 2] = 0xed;
+        frame[reserved + 3] = 0x03;
+        frame.back() = checksum(frame.data(), length - 1);
+        require(valid(frame));
+        Parser fragmented(uplink);
+        require(fragmented.feed(frame.data(), length - 1).empty());
+        require(fragmented.feed(frame.data() + length - 1, 1) == std::vector<Bytes>{frame});
+        Bytes stream{0x90, 0xeb, 0x00};
+        auto damaged = frame;
+        damaged.back() ^= 1;
+        stream.insert(stream.end(), damaged.begin(), damaged.end());
+        stream.insert(stream.end(), frame.begin(), frame.end());
+        stream.insert(stream.end(), frame.begin(), frame.end());
+        Parser noisy(uplink);
+        require(noisy.feed(stream.data(), stream.size()) == std::vector<Bytes>({frame, frame}));
+        // Neither an old-format frame nor an appended legacy trailer is a new frame.
+        Bytes legacy(frame.begin(), frame.begin() + reserved);
+        legacy.push_back(checksum(legacy.data(), legacy.size()));
+        if (uplink)
+            legacy.insert(legacy.end(), {0xed, 0x03});
+        require(!valid(legacy));
+        auto truncated = frame;
+        truncated.pop_back();
+        require(!valid(truncated));
+        auto extended = frame;
+        extended.insert(extended.end(), {0xed, 0x03});
+        require(!valid(extended));
+    }
+}
 int main() try {
+    checkWireBoundaries();
     check(stateCode("SAFE") == unknown && std::string(stateName(0x09)) == "UNKNOWN",
           "retired SAFE remains mapped");
     check(stateCode("ERROR") == 0x10 && stateCode("READY") == 0x03, "state codes renumbered");
-    check(encode(Downlink{}) == Bytes({0xeb, 0x90, 0, 0, 0, 0, 0, 0, 0x85}),
-          "independent downlink vector");
+    Bytes neutral(32, 0);
+    neutral[0] = 0xeb;
+    neutral[1] = 0x90;
+    neutral[31] = 0x85;
+    check(encode(Downlink{}) == neutral, "independent downlink vector");
     auto bytes = encode(Downlink{255, 0x30, -1000, 1000});
     Downlink d;
     check(bytes[4] == 0x18 && bytes[5] == 0xfc && bytes[6] == 0xe8 && bytes[7] == 3,
           "signed little endian endpoints");
     check(decode(bytes, d) && d.roll == -1000 && d.pitch == 1000, "decode endpoints");
-    bytes[8] ^= 1;
+    bytes[31] ^= 1;
     check(!decode(bytes, d), "bad checksum rejected");
     bytes = encode(Downlink{});
     bytes[3] = 0x70;
-    bytes[8] = checksum(bytes.data(), 8);
+    bytes[31] = checksum(bytes.data(), 31);
     check(!decode(bytes, d), "unknown operation rejected");
     Uplink up;
     up.version = 0x1003;
@@ -37,8 +98,8 @@ int main() try {
     up.severity = 0;
     up.roll_echo = up.pitch_echo = up.roll = up.pitch = 0;
     bytes = encode(up);
-    check(bytes[26] == 0x40 && bytes[22] == 3 && bytes[23] == 0x10 && bytes[24] == 0x78 &&
-              bytes[25] == 0xba,
+    check(bytes.size() == 64 && bytes[63] == 0x40 && bytes[22] == 3 && bytes[23] == 0x10 &&
+              bytes[24] == 0x78 && bytes[25] == 0xba,
           "independent uplink vector");
     Uplink decoded;
     check(decode(bytes, decoded), "uplink decode");
@@ -50,7 +111,7 @@ int main() try {
     auto down = encode(Downlink{1, 0, -1000, 0});
     Bytes stream{0x90, 0xeb, 0, 0xff};
     auto bad = down;
-    bad[8] ^= 2;
+    bad[31] ^= 2;
     stream.insert(stream.end(), bad.begin(), bad.end());
     stream.insert(stream.end(), down.begin(), down.end());
     stream.insert(stream.end(), down.begin(), down.end());
