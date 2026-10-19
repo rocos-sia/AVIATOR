@@ -28,8 +28,8 @@ def main():
                 while child.poll() is None and time.monotonic()-start<8:
                     seq+=1
                     up=bytearray(64); up[:2]=b'\xeb\x90';up[2]=seq%256
-                    up[10]=7;up[11]=up[12]=255;up[22:26]=bytes.fromhex('03 10 cd ab')
-                    up[63]=-sum(up[:63]) & 255
+                    up[10]=7;up[11]=up[12]=255;up[22:26]=bytes.fromhex('01 02 cd ab')
+                    up[63]=sum(up[2:63]) & 255
                     for i,(m,_) in enumerate(pairs):
                         os.write(m,up)
                         try: data=os.read(m,4096)

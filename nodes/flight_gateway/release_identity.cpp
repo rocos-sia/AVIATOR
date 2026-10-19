@@ -81,7 +81,8 @@ ReleaseIdentity releaseIdentity(const Rs422Config& config) {
     const auto version = value.at("version_u16").get<unsigned>();
     const auto checksum = value.at("checksum_u16").get<unsigned>();
     const bool bench = value.at("mode") == "bench-test";
-    if (version != aviator::release::version_u16 || checksum > 65535 ||
+    if (value.at("version").get<std::string>() != aviator::release::version ||
+        version != aviator::release::version_u16 || checksum > 65535 ||
         (bench ? !config.allow_test_identity : !value.at("verified").get<bool>()))
         throw std::runtime_error("release identity does not match running binary");
     aviator::Logger::info("RS422 identity mode={} version={} checksum={:04X}",

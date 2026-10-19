@@ -1,20 +1,22 @@
 # AVIATOR 版本管理、发布校验与台架测试方案
 
-日期：2026-10-12。依据：[软件版本号规范](AVIATOR软件版本号规范.md)、[软件校验码规范](AVIATOR软件校验码规范.md)。
+日期：2026-10-19。依据：[软件版本号规范](AVIATOR软件版本号规范.md)、[软件校验码规范](AVIATOR软件校验码规范.md)。
 
 ## 1. 实现范围
 
 本次接入 CMake 安装、版本记录、SHA-256 清单生成与验证、提交版本维护 skill，以及无安装元数据时显式启用的台架测试身份。保持业务控制逻辑不变。
 
-Gateway 已接入双路 RS422 台架模式，启动时调用 `identity` 验证当前运行目录并核对编译版本，成功后缓存身份并周期上报。其余组件混装检测、全系统启动门控和正式发布审批仍需独立完善。详见 Gateway README 和 RS422 规范第 10 节。
+Gateway 已接入双路 RS422 台架模式，启动时调用 `identity` 验证当前运行目录并核对完整编译版本字符串及线上编码，成功后缓存身份并周期上报。其余组件混装检测、全系统启动门控和正式发布审批仍需独立完善。详见 Gateway README 和 RS422 规范第 10 节。
 
 ## 2. 版本唯一来源与提交维护
 
-唯一来源为根 `CMakeLists.txt` 中的 `project(AVIATOR VERSION ...)`。显示时可以加 `v`，机器字段不带前缀。配置阶段拒绝前导零、后缀、不完整版本及超过 `15.15.255` 的分量。
+唯一来源为根 `CMakeLists.txt` 中的 `project(AVIATOR VERSION ...)`。显示时可以加 `v`，机器字段不带前缀。配置阶段拒绝前导零、后缀、不完整版本及MAJOR/MINOR 超过 255 的版本；PATCH 为非负整数并保留于完整发布版本，不占串口位。
 
 ```text
-version_u16 = (MAJOR << 12) | (MINOR << 8) | PATCH
+version_u16 = (MAJOR << 8) | MINOR
 ```
+
+线上版本不能区分同一 MAJOR.MINOR 的不同 PATCH；Gateway 启动校验必须同时比较完整版本字符串与 `version_u16`。
 
 构建生成 `build/<配置>/generated/aviator/version.hpp` 和 `release-build.json`。版本头文件通过 `aviator_logging` 的接口依赖提供给节点，也安装到 `include/aviator/version.hpp`。发布记录包含版本、编码、发布配置、构建类型、实际 Git 提交、dirty 状态、工具链、已发现的依赖版本、构建开关及仓库内第三方源码目录标识；Git 提交用于定位这些源码。目录标识列举仓库源码，不表示全部依赖均被选择编译。系统动态库和 Python 环境仍属于外部部署依赖。
 
@@ -117,14 +119,14 @@ python3 scripts/aviator_release.py identity build/release/dist \
 
 `--version` 必须与当前 CMake 项目版本一致，不能用测试码替代版本；后续 C++ 调用方可直接使用生成头文件的 `version_u16` 和 `bench_checksum_u16`。有效安装存在时，即使允许 fallback 也优先验证并使用真实发布身份。任意发布元数据存在但缺失其他文件、校验失败、数据格式错误或与可信摘要不符，必须报错，不能回退。指定可信摘要时不允许 fallback。
 
-测试输出显式带 `mode: bench-test`、`verified: false`、`release_profile: bench-test`、`test_vector_sha256`，不提供伪造的 `release_digest`。版本 `0.2.0` 对应上行字节 22～25 为 `00 02 A1 9C`；`identity` 输出 `rs422_bytes_22_25` 供台架对照。测试身份只用于飞控联调，不作为交付验收通过或进入正式可操控状态的依据。
+测试输出显式带 `mode: bench-test`、`verified: false`、`release_profile: bench-test`、`test_vector_sha256`，不提供伪造的 `release_digest`。版本 `0.2.0` 对应上行字节 22～25 为 `02 00 A1 9C`；`identity` 输出 `rs422_bytes_22_25` 供台架对照。测试身份只用于飞控联调，不作为交付验收通过或进入正式可操控状态的依据。
 
 **软件短码与整帧累加校验必须同时存在。** 对 64 字节上行帧，先填入偏移 22～23 的版本和 24～25 的短码，将偏移 26～62 的备用位填零，再计算偏移 63：
 
 ```python
 frame[26:63] = bytes(37)
-frame[63] = (-sum(frame[0:63])) & 0xFF
-# 无帧尾；短码不能替代 frame[63]。
+frame[63] = sum(frame[2:63]) & 0xFF
+# 排除帧头，直接累加；无帧尾；短码不能替代 frame[63]。
 ```
 
 工具模块提供 `identity()` 和 `uplink_frame_checksum()`，供测试程序复用。正式 Gateway 后续应在启动时完成实际文件验证、缓存身份，在 80 Hz 周期中仅编码缓存值和计算帧累加校验，不扫描磁盘。

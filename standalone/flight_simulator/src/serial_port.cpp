@@ -41,8 +41,9 @@ bool SerialPort::connect(uint64_t now) {
     cfmakeraw(&t);
     cfsetispeed(&t, B115200);
     cfsetospeed(&t, B115200);
-    t.c_cflag = (t.c_cflag & ~(CSIZE | PARENB | CSTOPB | CRTSCTS)) | CS8 | CLOCAL | CREAD;
-    t.c_iflag &= ~(IXON | IXOFF | IXANY);
+    t.c_cflag = (t.c_cflag & ~(CSIZE | PARODD | CMSPAR | CSTOPB | CRTSCTS)) |
+                CS8 | PARENB | CLOCAL | CREAD;
+    t.c_iflag = (t.c_iflag & ~(IXON | IXOFF | IXANY | IGNPAR | PARMRK | ISTRIP)) | INPCK;
     t.c_cc[VMIN] = 0;
     t.c_cc[VTIME] = 0;
     if (tcsetattr(fd_, TCSANOW, &t) < 0 || tcflush(fd_, TCIOFLUSH) < 0) {
@@ -50,7 +51,7 @@ bool SerialPort::connect(uint64_t now) {
         return false;
     }
     ++connections_;
-    std::clog << "RS422 connected " << path_ << " 115200 8N1\n";
+    std::clog << "RS422 connected " << path_ << " 115200 8E1\n";
     return true;
 }
 bool SerialPort::read(rs422::Bytes& out) {

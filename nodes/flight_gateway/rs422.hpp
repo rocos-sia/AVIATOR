@@ -28,6 +28,7 @@ struct Uplink {
     uint16_t version = 0, checksum = 0;
 };
 using Bytes = std::vector<uint8_t>;
+// Low eight bits of the supplied bytes; callers exclude header and checksum.
 uint8_t checksum(const uint8_t*, size_t);
 Bytes encode(const Downlink&);
 Bytes encode(const Uplink&);

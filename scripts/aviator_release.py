@@ -24,10 +24,11 @@ TEST_INPUT = b"AVIATOR-RS422-BENCH-TEST-v1\n"
 def version_u16(version):
     if not isinstance(version, str) or not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
         raise ValueError("version must be canonical MAJOR.MINOR.PATCH without a suffix")
-    major, minor, patch = map(int, version.split("."))
-    if major > 15 or minor > 15 or patch > 255:
-        raise ValueError("version exceeds RS422 4+4+8-bit capacity")
-    return (major << 12) | (minor << 8) | patch
+    major, minor, _patch = map(int, version.split("."))
+    if major > 255 or minor > 255:
+        raise ValueError("version exceeds RS422 8+8-bit capacity")
+    # PATCH remains in the full release version; the ICD wire field carries MAJOR.MINOR.
+    return (major << 8) | minor
 
 
 def checksum_u16(digest):
@@ -37,10 +38,10 @@ def checksum_u16(digest):
 
 
 def uplink_frame_checksum(prefix):
-    """RS422 byte 63: additive two's complement over bytes 0..62."""
+    """RS422 byte 63: sum bytes 2..62 modulo 256, excluding the EB 90 header."""
     if not isinstance(prefix, bytes) or len(prefix) != 63:
         raise ValueError("RS422 uplink checksum requires exactly bytes 0..62")
-    return (-sum(prefix)) & 0xff
+    return sum(prefix[2:]) & 0xff
 
 
 def validate_path(name):

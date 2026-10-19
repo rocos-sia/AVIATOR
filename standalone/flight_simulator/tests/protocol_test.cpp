@@ -23,12 +23,22 @@ void checkWireBoundaries() {
         require(std::all_of(frame.begin() + reserved, frame.end() - 1,
                             [](uint8_t b) { return b == 0; }));
         require(valid(frame));
+        // A same-length frame sealed by the former header-inclusive complement is rejected.
+        auto old_checksum = frame;
+        unsigned old_sum = 0;
+        for (size_t i = 0; i < length - 1; ++i)
+            old_sum += old_checksum[i];
+        old_checksum.back() = uint8_t(0 - old_sum);
+        require(!valid(old_checksum));
+        auto bad_header = frame;
+        bad_header[0] = 0;
+        require(!valid(bad_header));
         // Every reserved byte is covered by the checksum, but has no business meaning.
         for (size_t i = reserved; i < length - 1; ++i) {
             auto changed = frame;
             changed[i] = 1;
             require(!valid(changed));
-            changed.back() = checksum(changed.data(), length - 1);
+            changed.back() = checksum(changed.data() + 2, length - 3);
             require(valid(changed));
         }
         // Header/trailer patterns inside reserved data must not split the frame.
@@ -36,7 +46,7 @@ void checkWireBoundaries() {
         frame[reserved + 1] = 0x90;
         frame[reserved + 2] = 0xed;
         frame[reserved + 3] = 0x03;
-        frame.back() = checksum(frame.data(), length - 1);
+        frame.back() = checksum(frame.data() + 2, length - 3);
         require(valid(frame));
         Parser fragmented(uplink);
         require(fragmented.feed(frame.data(), length - 1).empty());
@@ -51,7 +61,10 @@ void checkWireBoundaries() {
         require(noisy.feed(stream.data(), stream.size()) == std::vector<Bytes>({frame, frame}));
         // Neither an old-format frame nor an appended legacy trailer is a new frame.
         Bytes legacy(frame.begin(), frame.begin() + reserved);
-        legacy.push_back(checksum(legacy.data(), legacy.size()));
+        unsigned legacy_sum = 0;
+        for (const auto byte : legacy)
+            legacy_sum += byte;
+        legacy.push_back(uint8_t(0 - legacy_sum));
         if (uplink)
             legacy.insert(legacy.end(), {0xed, 0x03});
         require(!valid(legacy));
@@ -70,11 +83,11 @@ int main() try {
     Bytes neutral(32, 0);
     neutral[0] = 0xeb;
     neutral[1] = 0x90;
-    neutral[31] = 0x85;
+    neutral[31] = 0x00;
     check(encode(Downlink{}) == neutral);
     Bytes extreme{0xeb, 0x90, 0xff, 0x60, 0x18, 0xfc, 0xe8, 0x03};
     extreme.resize(32, 0);
-    extreme[31] = 0x27;
+    extreme[31] = 0x5e;
     check(encode(Downlink{255, 0x60, -1000, 1000}) == extreme);
     Downlink down;
     check(decode(extreme, down) && down.roll == -1000 && down.pitch == 1000 && down.counter == 255);
@@ -83,12 +96,12 @@ int main() try {
     check(!decode(bad, down));
     bad = neutral;
     bad[3] = 0x11;
-    bad[31] = checksum(bad.data(), 31);
+    bad[31] = checksum(bad.data() + 2, 29);
     check(!decode(bad, down));
     bad = neutral;
     bad[4] = 0xe9;
     bad[5] = 3;
-    bad[31] = checksum(bad.data(), 31);
+    bad[31] = checksum(bad.data() + 2, 29);
     check(!decode(bad, down));
     Parser parser(false);
     Bytes noisy{0x12, 0xeb, 0x77};
@@ -102,14 +115,14 @@ int main() try {
     up[1] = 0x90;
     up[10] = 7;
     up[11] = up[12] = 0xff;
-    up[22] = 3;
-    up[23] = 0x10;
+    up[22] = 1;
+    up[23] = 2;
     up[24] = 0xcd;
     up[25] = 0xab;
-    up[63] = 0xf5;
+    up[63] = 0x80;
     Uplink reply;
     check(decode(up, reply));
-    check(reply.version == 0x1003 && reply.checksum == 0xabcd && reply.state == 7);
+    check(reply.version == 0x0201 && reply.checksum == 0xabcd && reply.state == 7);
     check(encode(reply) == up);
     Uplink unknown_reply;
     check(decode(encode(unknown_reply), reply));

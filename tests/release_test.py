@@ -29,20 +29,31 @@ class ReleaseTest(unittest.TestCase):
         (root / "bin").mkdir(exist_ok=True)
         (root / "bin/app").write_bytes(b"abc")
         release.write_json(root / "release-version.json", {
-            "product": "AVIATOR", "version": "1.2.15", "version_u16": 0x120f,
+            "product": "AVIATOR", "version": "1.2.15", "version_u16": 0x0102,
             "release_profile": "communication", "checksum_scope": release.scope()})
         release.seal(root)
 
     def test_version_vectors(self):
-        for version, value, raw in [("0.0.0", 0, "0000"), ("1.0.3", 0x1003, "0310"),
-                                    ("1.2.15", 0x120f, "0f12"), ("2.0.0", 0x2000, "0020"),
-                                    ("15.15.255", 65535, "ffff")]:
+        for version, value, raw in [("0.0.0", 0, "0000"), ("1.0.3", 0x0100, "0001"),
+                                    ("1.2.15", 0x0102, "0201"), ("2.1.0", 0x0201, "0102"),
+                                    ("16.16.256", 0x1010, "1010"),
+                                    ("255.255.0", 65535, "ffff")]:
             self.assertEqual(release.version_u16(version), value)
             self.assertEqual(struct.pack("<H", value).hex(), raw)
-        for invalid in ["16.0.0", "1.16.0", "1.0.256", "01.2.3", "1.02.3", "1.2.003",
+        for invalid in ["256.0.0", "1.256.0", "1.0.-1", "01.2.3", "1.02.3", "1.2.003",
                         "1.0", "1.0.0-rc.1", "1.0.0+abc", "-1.0.0", "v1.2.3", None]:
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 release.version_u16(invalid)
+
+    def test_patch_preserved_outside_wire_version(self):
+        missing = self.root.parent / "missing"
+        first = release.identity(missing, True, "2.1.0")
+        patched = release.identity(missing, True, "2.1.300")
+        self.assertEqual(first["version_u16"], 0x0201)
+        self.assertEqual(first["version_u16"], patched["version_u16"])
+        self.assertEqual(first["version"], "2.1.0")
+        self.assertEqual(patched["version"], "2.1.300")
+        self.assertEqual(patched["rs422_bytes_22_25"][:5], "01 02")
 
     def test_checksum_vectors(self):
         self.assertEqual(release.checksum_u16(hashlib.sha256(b"abc").hexdigest()), 0xba78)
@@ -66,7 +77,9 @@ class ReleaseTest(unittest.TestCase):
     def test_frame_checksum_is_independent(self):
         prefix = bytes(range(22)) + struct.pack("<HH", 0x0100, 0x9ca1) + bytes(range(37))
         checksum = release.uplink_frame_checksum(prefix)
-        self.assertEqual((sum(prefix) + checksum) & 255, 0)
+        self.assertEqual(checksum, sum(prefix[2:]) & 255)
+        self.assertEqual(release.uplink_frame_checksum(b"\xeb\x90" + bytes(61)), 0)
+        self.assertEqual(release.uplink_frame_checksum(b"\xeb\x90" + bytes([255]) * 61), 195)
         with self.assertRaises(ValueError):
             release.uplink_frame_checksum(prefix[:-1])
         with self.assertRaises(ValueError):
@@ -169,7 +182,7 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(fallback["mode"], "bench-test")
         self.assertNotIn("release_digest", fallback)
         packed = bytes.fromhex(fallback["rs422_bytes_22_25"])
-        self.assertEqual(struct.unpack("<HH", packed), (0x0100, release.checksum_u16(hashlib.sha256(release.TEST_INPUT).hexdigest())))
+        self.assertEqual(struct.unpack("<HH", packed), (0x0001, release.checksum_u16(hashlib.sha256(release.TEST_INPUT).hexdigest())))
         with self.assertRaises(ValueError):
             release.identity(missing, True, "0.1.0", "0" * 64)
         self.assertEqual(release.identity(self.root, True, "0.1.0")["mode"], "release")

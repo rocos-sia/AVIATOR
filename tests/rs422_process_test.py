@@ -18,7 +18,7 @@ import zmq
 def down(counter, operation=0, roll=0, pitch=0):
     data = struct.pack('<BBBBhh', 0xeb, 0x90, counter % 256, operation, roll, pitch)
     data += bytes(23)
-    return data + bytes([-sum(data) & 255])
+    return data + bytes([sum(data[2:]) & 255])
 
 
 def frames(buffer, size):
@@ -28,7 +28,7 @@ def frames(buffer, size):
             del buffer[0]
             continue
         candidate = bytes(buffer[:size])
-        if sum(candidate) & 255:
+        if candidate[-1] != sum(candidate[2:-1]) & 255:
             del buffer[0]
             continue
         found.append(candidate)

@@ -26,12 +26,22 @@ void checkWireBoundaries() {
         require(std::all_of(frame.begin() + reserved, frame.end() - 1,
                             [](uint8_t b) { return b == 0; }));
         require(valid(frame));
+        // A same-length frame sealed by the former header-inclusive complement is rejected.
+        auto old_checksum = frame;
+        unsigned old_sum = 0;
+        for (size_t i = 0; i < length - 1; ++i)
+            old_sum += old_checksum[i];
+        old_checksum.back() = uint8_t(0 - old_sum);
+        require(!valid(old_checksum));
+        auto bad_header = frame;
+        bad_header[0] = 0;
+        require(!valid(bad_header));
         // Every reserved byte is covered by the checksum, but has no business meaning.
         for (size_t i = reserved; i < length - 1; ++i) {
             auto changed = frame;
             changed[i] = 1;
             require(!valid(changed));
-            changed.back() = checksum(changed.data(), length - 1);
+            changed.back() = checksum(changed.data() + 2, length - 3);
             require(valid(changed));
         }
         // Header/trailer patterns inside reserved data must not split the frame.
@@ -39,7 +49,7 @@ void checkWireBoundaries() {
         frame[reserved + 1] = 0x90;
         frame[reserved + 2] = 0xed;
         frame[reserved + 3] = 0x03;
-        frame.back() = checksum(frame.data(), length - 1);
+        frame.back() = checksum(frame.data() + 2, length - 3);
         require(valid(frame));
         Parser fragmented(uplink);
         require(fragmented.feed(frame.data(), length - 1).empty());
@@ -54,7 +64,10 @@ void checkWireBoundaries() {
         require(noisy.feed(stream.data(), stream.size()) == std::vector<Bytes>({frame, frame}));
         // Neither an old-format frame nor an appended legacy trailer is a new frame.
         Bytes legacy(frame.begin(), frame.begin() + reserved);
-        legacy.push_back(checksum(legacy.data(), legacy.size()));
+        unsigned legacy_sum = 0;
+        for (const auto byte : legacy)
+            legacy_sum += byte;
+        legacy.push_back(uint8_t(0 - legacy_sum));
         if (uplink)
             legacy.insert(legacy.end(), {0xed, 0x03});
         require(!valid(legacy));
@@ -74,7 +87,7 @@ int main() try {
     Bytes neutral(32, 0);
     neutral[0] = 0xeb;
     neutral[1] = 0x90;
-    neutral[31] = 0x85;
+    neutral[31] = 0x00;
     check(encode(Downlink{}) == neutral, "independent downlink vector");
     auto bytes = encode(Downlink{255, 0x30, -1000, 1000});
     Downlink d;
@@ -85,10 +98,10 @@ int main() try {
     check(!decode(bytes, d), "bad checksum rejected");
     bytes = encode(Downlink{});
     bytes[3] = 0x70;
-    bytes[31] = checksum(bytes.data(), 31);
+    bytes[31] = checksum(bytes.data() + 2, 29);
     check(!decode(bytes, d), "unknown operation rejected");
     Uplink up;
-    up.version = 0x1003;
+    up.version = 0x0201;
     up.checksum = 0xba78;
     up.selected = 0;
     up.communication = 0;
@@ -98,7 +111,7 @@ int main() try {
     up.severity = 0;
     up.roll_echo = up.pitch_echo = up.roll = up.pitch = 0;
     bytes = encode(up);
-    check(bytes.size() == 64 && bytes[63] == 0x40 && bytes[22] == 3 && bytes[23] == 0x10 &&
+    check(bytes.size() == 64 && bytes[63] == 0x35 && bytes[22] == 1 && bytes[23] == 2 &&
               bytes[24] == 0x78 && bytes[25] == 0xba,
           "independent uplink vector");
     Uplink decoded;

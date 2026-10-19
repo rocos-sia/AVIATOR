@@ -27,7 +27,7 @@ void run(const Config& config, int stop_fd) {
     uint8_t counter = 0;
     bool was_valid = false;
     const uint64_t timeout = config.rs422.receive_timeout_ms * 1000ULL;
-    std::clog << "flight_simulator: aviator-bench-v1, 115200 8N1, 80 Hz\n";
+    std::clog << "flight_simulator: aviator-bench-v1, 115200 8E1, 80 Hz\n";
     if (!config.simulator.send_a || !config.simulator.send_b || config.simulator.corrupt_every)
         std::clog << "Fault injection enabled: send A=" << config.simulator.send_a
                   << " B=" << config.simulator.send_b

@@ -2,7 +2,7 @@
 #include "rs422.hpp"
 #include <string>
 namespace flight_gateway {
-// Owns one nonblocking full-duplex 115200 8N1 tty. At most one frame is queued.
+// Owns one nonblocking full-duplex 115200 8E1 tty. At most one frame is queued.
 class SerialPort {
   public:
     explicit SerialPort(std::string path) : path_(std::move(path)) {}

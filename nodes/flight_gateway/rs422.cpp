@@ -28,14 +28,14 @@ const std::array<std::pair<uint8_t, const char*>, 11> states{{{0, "EMERGENCY_STO
                                                               {0x13, "GRASPING"},
                                                               {0x14, "RELEASING"}}};
 bool envelope(const Bytes& b, size_t n) {
-    return b.size() == n && b[0] == 0xeb && b[1] == 0x90 && checksum(b.data(), n) == 0;
+    return b.size() == n && b[0] == 0xeb && b[1] == 0x90 && b[n - 1] == checksum(b.data() + 2, n - 3);
 }
 } // namespace
 uint8_t checksum(const uint8_t* p, size_t n) {
     unsigned sum = 0;
     for (size_t i = 0; i < n; ++i)
         sum += p[i];
-    return uint8_t(0 - sum);
+    return uint8_t(sum);
 }
 const char* operationName(uint8_t c) {
     return c && c % 16 == 0 && c <= 0x60 ? operations[c / 16] : "";
@@ -89,7 +89,7 @@ Bytes encode(const Downlink& f) {
     b[3] = f.operation;
     put(b, 4, f.roll);
     put(b, 6, f.pitch);
-    b[downlink_checksum_offset] = checksum(b.data(), downlink_checksum_offset);
+    b[downlink_checksum_offset] = checksum(b.data() + 2, downlink_checksum_offset - 2);
     return b;
 }
 Bytes encode(const Uplink& f) {
@@ -112,7 +112,7 @@ Bytes encode(const Uplink& f) {
     b[21] = f.severity;
     put(b, 22, f.version);
     put(b, 24, f.checksum);
-    b[uplink_checksum_offset] = checksum(b.data(), uplink_checksum_offset);
+    b[uplink_checksum_offset] = checksum(b.data() + 2, uplink_checksum_offset - 2);
     return b;
 }
 bool decode(const Bytes& b, Downlink& f) {
