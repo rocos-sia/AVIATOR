@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=AVIATOR Launcher
+Name[zh_CN]=AVIATOR 启动器
+Comment=Configure and manage AVIATOR launch sessions
+Exec=aviator_launcher --show
+Icon=aviator-launcher
+Terminal=false
+StartupNotify=true
+StartupWMClass=org.aviator.Launcher
+Categories=Utility;

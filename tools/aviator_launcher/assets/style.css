@@ -1,0 +1,26 @@
+.aviator-window { background: #f3f6f8; color: #193345; font-family: "Noto Sans CJK SC", "Noto Sans", sans-serif; }
+.aviator-window headerbar { background: #fff; border-bottom: 1px solid #e2e9ee; box-shadow: none; }
+.aviator-window .hero { background: #143448; color: #f4fafc; border-radius: 16px; padding: 18px; }
+.aviator-window .hero-title { font-size: 25px; font-weight: 800; letter-spacing: 2px; }
+.aviator-window .hero-subtitle { color: #bbd3df; font-size: 12px; }
+.aviator-window .eyebrow { font-size: 10px; font-weight: bold; letter-spacing: 2px; color: #61d9c4; }
+.aviator-window .card { background: #fff; border: 1px solid #e0e8ed; border-radius: 12px; padding: 14px; }
+.aviator-window .section-title { font-size: 14px; font-weight: bold; }
+.aviator-window .muted { color: #657e8c; font-size: 11px; }
+.aviator-window .mode { border: 1px solid #dfe7ec; background: #f8fafb; border-radius: 10px; padding: 14px; box-shadow: none; }
+.aviator-window .mode:checked { border: 2px solid #1a9b89; background: #eaf8f4; padding: 13px; }
+.aviator-window .mode-title { font-weight: bold; font-size: 13px; }
+.aviator-window .pill { border-radius: 20px; background: #e9f0f4; padding: 7px 13px; color: #38586a; font-size: 11px; font-weight: bold; }
+.aviator-window .pill.running { background: #dbf5eb; color: #087a61; }
+.aviator-window .pill.attention { background: #fff0d4; color: #94610c; }
+.aviator-window .notice { background: #fff4df; color: #805b18; border-radius: 8px; padding: 10px; }
+.aviator-window button { border-radius: 7px; padding: 8px 14px; }
+.aviator-window button.primary { background: #147f72; border-color: #147f72; color: #fff; font-weight: bold; padding: 12px 25px; box-shadow: none; }
+.aviator-window button.primary:hover { background: #096c60; }
+.aviator-window button.primary:disabled { background: #dce6e8; border-color: #dce6e8; color: #8b9ba3; }
+.aviator-window button.stop { color: #ac403d; border-color: #e7c5c3; background: #fff7f6; }
+.aviator-window entry, .aviator-window combobox button { background: #f8fafb; border-color: #dce5eb; min-height: 24px; }
+.aviator-window .footer { background: #fff; padding: 16px 24px; border-top: 1px solid #e0e8ed; }
+.aviator-window .console, .aviator-window .console text { background: #102c3c; color: #daedf2; font-family: "Noto Sans Mono", monospace; font-size: 11px; }
+.aviator-window separator { background: #e5ecf0; min-height: 1px; }
+.aviator-window switch:checked { background: #168f7e; border-color: #168f7e; }

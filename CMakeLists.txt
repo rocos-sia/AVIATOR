@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(AVIATOR VERSION 6.0.0 LANGUAGES C CXX)
+project(AVIATOR VERSION 6.1.0 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
   message(FATAL_ERROR "Use an out-of-source build: cmake --preset debug")
@@ -54,6 +54,12 @@ endif()
 add_subdirectory(common)
 add_subdirectory(nodes)
 add_subdirectory(tools/grasp_tool_calibration)
+option(AVIATOR_INSTALL_LAUNCHER "Install the GNOME desktop launcher" ON)
+set(AVIATOR_LAUNCHER_INSTALLED OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND AVIATOR_INSTALL_LAUNCHER AND TARGET aviator_core_control)
+  add_subdirectory(tools/aviator_launcher)
+  set(AVIATOR_LAUNCHER_INSTALLED ON)
+endif()
 
 #------------------------------------------------------------------------------
 # Examples

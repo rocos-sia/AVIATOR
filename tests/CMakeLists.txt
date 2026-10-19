@@ -399,6 +399,9 @@ endif()
 if(Python3_Interpreter_FOUND)
   add_test(NAME scripts COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts_test.py)
   set_tests_properties(scripts PROPERTIES TIMEOUT 90)
+  add_test(NAME launcher COMMAND ${Python3_EXECUTABLE} -B -m unittest discover
+    -s ${PROJECT_SOURCE_DIR}/tools/aviator_launcher/tests -v)
+  set_tests_properties(launcher PROPERTIES TIMEOUT 60)
 endif()
 
 if(TARGET xCoreSDK_hand AND TARGET aviator_core_hand_link_driver AND Python3_Interpreter_FOUND)

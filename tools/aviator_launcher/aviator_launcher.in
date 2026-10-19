@@ -1,0 +1,7 @@
+#!/usr/bin/python3
+"""Relocatable installed entry; never embeds build/staging paths."""
+from pathlib import Path
+import os
+import sys
+entry = Path(__file__).resolve().parent.parent / 'share/aviator/tools/aviator_launcher/main.py'
+os.execv('/usr/bin/python3', ['/usr/bin/python3', '-B', str(entry), *sys.argv[1:]])

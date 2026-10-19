@@ -41,6 +41,15 @@ Manipulator 在 sudo 内另建独立会话，将实际进程组号记录到本�
 启用时 Logger 使用 `config/recording.yaml`，录制输出为仓库根目录的
 `recording_年月日_时分秒_纳秒.mcap`（北京时间，按 Logger 启动时间命名）；
 其运行日志保存在上述日志目录的 `logger.log`。
+可设置 `AVIATOR_RECORDING_DIR=/绝对路径` 将 MCAP 写到用户可写目录；脚本在启动任何节点前
+检查并创建录制目录。未设置时保持原有 `$ROOT/logs`。`--dry-run` 不创建录制目录。
+
+### GNOME 桌面启动器
+
+`/usr/bin/python3 -B tools/aviator_launcher/main.py --show` 打开原生配置面板；
+安装包使用 `<prefix>/bin/aviator_launcher`，通过同包脚本启动。
+支持托盘驻留、选项保存、命令预览、运行日志和有序停止。打开工具不自动启动节点。
+依赖、安装与运行说明见 [桌面启动器](../tools/aviator_launcher/README.md)。
 
 相机默认 Python 环境为 `~/miniconda3/envs/apriltag_realsense/bin/python`，Monitor 使用
 `build/bin/aviator_monitor`。可通过 `CONDA_ROOT`、`CAMERA_PYTHON`、`MONITOR_BIN`、

@@ -28,7 +28,7 @@ for arg in "$@"; do
             echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂和相机照常启动。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
-            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, START_DELAY'
+            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, START_DELAY, AVIATOR_RECORDING_DIR'
             exit 0 ;;
         *) echo "未知参数: $arg" >&2; exit 2 ;;
     esac
@@ -62,6 +62,8 @@ CAMERA_PYTHON=${CAMERA_PYTHON:-$CONDA_ROOT/envs/apriltag_realsense/bin/python}
 MONITOR_BIN=${MONITOR_BIN:-$AVIATOR_BIN/aviator_monitor}
 TTS_CONFIG=${TTS_CONFIG:-$ROOT/config/tts.yaml}
 START_DELAY=${START_DELAY:-2}
+AVIATOR_RECORDING_DIR=${AVIATOR_RECORDING_DIR:-$ROOT/logs}
+[[ $AVIATOR_RECORDING_DIR == /* ]] || { echo 'AVIATOR_RECORDING_DIR 必须为绝对目录' >&2; exit 2; }
 [[ $START_DELAY =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo 'START_DELAY 必须为非负秒数' >&2; exit 2; }
 SESSION_FILE=/tmp/aviator_session.uuid
 PIDS=()
@@ -235,6 +237,14 @@ if ! $DRY_RUN; then
     for file in "${files[@]}"; do
         [[ -r $file ]] || { echo "文件不可读: $file" >&2; exit 1; }
     done
+    # Validate recording storage before starting any node (including hardware).
+    if $LOGGER; then
+        mkdir -p -- "$AVIATOR_RECORDING_DIR"
+        recording_probe=$(mktemp "$AVIATOR_RECORDING_DIR/.aviator-write-check.XXXXXXXX") || {
+            echo "录制目录不可写: $AVIATOR_RECORDING_DIR" >&2; exit 1;
+        }
+        rm -- "$recording_probe"
+    fi
     # Fail preparation before starting hardware; runtime audio failure is optional.
     if $TTS; then "$AVIATOR_BIN/aviator_tts" --config "$TTS_CONFIG" --check; fi
     exec 9>"${XDG_RUNTIME_DIR:-/tmp}/aviator-start-${UID}.lock"
@@ -308,8 +318,7 @@ if ! $DRY_RUN; then
     google-chrome-stable --start-fullscreen http://127.0.0.1:8081 >"$LOG_DIR/chrome.log" 2>&1 < /dev/null 9>&- &
 fi
 if $LOGGER; then
-    if ! $DRY_RUN; then mkdir -p "$ROOT/logs"; fi
-    RECORDING_FILE="$ROOT/logs/recording_$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S_%N).mcap"
+    RECORDING_FILE="$AVIATOR_RECORDING_DIR/recording_$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S_%N).mcap"
     start logger "$AVIATOR_BIN/aviator_logger" --config config/recording.yaml --output "$RECORDING_FILE"
 fi
 $DRY_RUN && exit 0

@@ -60,6 +60,31 @@ class ScriptsTests(unittest.TestCase):
         self.run_script('start_aviator.sh','--dry-run','--simulation','--fake-hand',ok=False)
         self.run_script('start_aviator.sh','--dry-run','--headless',ok=False)
         self.assertEqual(list(self.directory.iterdir()),[],'dry-run wrote files')
+
+    def test_recording_directory_override_and_early_failure(self):
+        output = self.directory/'recordings 空格'
+        text = self.run_script('start_aviator.sh','--simulation','--logger','--dry-run',
+                               env={'AVIATOR_RECORDING_DIR':str(output)})
+        self.assertIn('recordings',text)
+        self.assertFalse(output.exists(),'dry-run created recording directory')
+        text = self.run_script('start_aviator.sh','--logger','--dry-run',ok=False,
+                              env={'AVIATOR_RECORDING_DIR':'relative'})
+        self.assertIn('必须为绝对目录',text)
+        mock = self.directory/'mock-bin'
+        mock.mkdir()
+        marker = self.directory/'unexpected-node'
+        for name in ('aviator_bus','flight_gateway','aviator_core_managed','aviator_monitor',
+                     'simulation','aviator_logger','google-chrome-stable','curl'):
+            file = mock/name
+            file.write_text('#!/usr/bin/python3\nfrom pathlib import Path\nPath('+repr(str(marker))+').touch()\n')
+            file.chmod(0o755)
+        blocked = self.directory/'not-a-directory'
+        blocked.write_text('occupied')
+        self.run_script('start_aviator.sh','--simulation','--logger',ok=False,
+                        env={'AVIATOR_RECORDING_DIR':str(blocked/'child'), 'AVIATOR_BIN':str(mock),
+                             'MONITOR_BIN':str(mock/'aviator_monitor'),
+                             'PATH':str(mock)+':'+os.environ['PATH']})
+        self.assertFalse(marker.exists(),'recording path failure started a node')
     def test_launchers_own_processes_and_stop_core_before_manipulator(self):
         mock = self.directory / "fake bin"
         mock.mkdir()
