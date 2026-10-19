@@ -29,7 +29,8 @@ for arg in "$@"; do
             echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂和相机照常启动。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
-            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, PHOTOELECTRIC_CONFIG, START_DELAY, AVIATOR_RECORDING_DIR'
+            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, PHOTOELECTRIC_CONFIG, START_DELAY, AVIATOR_RECORDING_DIR, DEVICE_READY_TIMEOUT'
+            echo 'DEVICE_READY_TIMEOUT: 等待设备服务 READY 的秒数（默认60，范围1..3600）。'
             exit 0 ;;
         *) echo "未知参数: $arg" >&2; exit 2 ;;
     esac
@@ -67,6 +68,10 @@ START_DELAY=${START_DELAY:-2}
 AVIATOR_RECORDING_DIR=${AVIATOR_RECORDING_DIR:-$ROOT/logs}
 [[ $AVIATOR_RECORDING_DIR == /* ]] || { echo 'AVIATOR_RECORDING_DIR 必须为绝对目录' >&2; exit 2; }
 [[ $START_DELAY =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo 'START_DELAY 必须为非负秒数' >&2; exit 2; }
+DEVICE_READY_TIMEOUT=${DEVICE_READY_TIMEOUT:-60}
+[[ $DEVICE_READY_TIMEOUT =~ ^[1-9][0-9]{0,3}$ ]] && ((DEVICE_READY_TIMEOUT <= 3600)) || {
+    echo 'DEVICE_READY_TIMEOUT 必须为 1..3600 的整数秒数' >&2; exit 2;
+}
 SESSION_FILE=/tmp/aviator_session.uuid
 PIDS=()
 NAMES=()
@@ -174,6 +179,7 @@ check_nodes() {
                 continue
             fi
             echo "${NAMES[i]} 已退出，请查看 $LOG_DIR/${NAMES[i]}.log" >&2
+            tail -n 30 "$LOG_DIR/${NAMES[i]}.log" >&2 || true
             exit 1
         fi
     done
@@ -208,9 +214,33 @@ start() {
     check_nodes
 }
 
+# runDeviceServer emits this marker after device initialization and service bind.
+# Read only this launch's log; process liveness alone does not mean SDK readiness.
+wait_device_ready() {
+    local name=$1 deadline=$((SECONDS + DEVICE_READY_TIMEOUT))
+    echo "等待 $name 设备服务 READY（最多 ${DEVICE_READY_TIMEOUT} 秒）…"
+    $DRY_RUN && return 0
+    while true; do
+        check_nodes
+        if awk -v name="$name" '
+            index($0, "READY " name " session=") && index($0, " service=") { ready=1 }
+            END { exit !ready }
+        ' "$LOG_DIR/$name.log"; then
+            echo "$name 设备服务已就绪。"
+            return 0
+        fi
+        if ((SECONDS >= deadline)); then
+            echo "$name 在 ${DEVICE_READY_TIMEOUT} 秒内未报告 READY；设备初始化或 SDK 通信尚未完成，未启动 Core。请查看 $LOG_DIR/$name.log" >&2
+            tail -n 30 "$LOG_DIR/$name.log" >&2 || true
+            exit 1
+        fi
+        sleep .1
+    done
+}
+
 if ! $DRY_RUN; then
     [[ $EUID != 0 ]] || { echo '请以普通用户执行，脚本仅对 manipulator 使用 sudo。' >&2; exit 1; }
-    commands=(setsid flock ps awk google-chrome-stable curl)
+    commands=(setsid flock ps awk tail google-chrome-stable curl)
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
         "$AVIATOR_BIN/aviator_core_managed" "$MONITOR_BIN")
     files=("$SYSTEM_CONFIG" "$FLIGHT_CONFIG" config/robot.yaml config/camera.yaml)
@@ -282,8 +312,10 @@ if $SIMULATION; then
     start simulation "$AVIATOR_BIN/simulation" --config "$SYSTEM_CONFIG" \
         --camera-config config/camera.yaml "${recording_options[@]}" \
         --camera-id cockpit "${simulation_options[@]}"
+    wait_device_ready simulation
 else
     start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config "$SYSTEM_CONFIG"
+    wait_device_ready manipulator
     start hand "$AVIATOR_BIN/xCoreSDK_hand" --system-config "$SYSTEM_CONFIG" \
         --sdk-work-dir "$LOG_DIR/hand-sdk" "${hand_options[@]}"
 fi

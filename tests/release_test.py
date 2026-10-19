@@ -212,6 +212,62 @@ class ReleaseTest(unittest.TestCase):
             release.publish(self.root, destination)
         self.assertEqual((destination / "unknown").read_text(), "preserve")
 
+    def make_legacy_package(self, root, version="6.0.0", packed=0x6000):
+        self.make_package(root)
+        record = release.read_version(root)
+        record.update(version=version, version_u16=packed)
+        release.write_json(root / "release-version.json", record)
+        # Reproduce a package sealed by the old tool, without relaxing seal().
+        raw = release.manifest(root)
+        digest = hashlib.sha256(raw).hexdigest()
+        release.write_bytes(root / "SHA256SUMS", raw)
+        release.write_json(root / "release-checksum.json", {
+            "algorithm": release.ALGORITHM, "release_digest": digest,
+            "checksum_u16": release.checksum_u16(digest), "version": version,
+            "release_profile": record["release_profile"]})
+
+    def test_publish_upgrades_legacy_version_encoding(self):
+        destination = self.root.parent / "legacy"
+        destination.mkdir()
+        self.make_legacy_package(destination)
+        for check in (release.verify, release.identity, release.seal):
+            with self.assertRaisesRegex(ValueError, "invalid release version record"):
+                check(destination)
+        (destination / "logs").mkdir()
+        (destination / "logs/live").write_text("preserve")
+        (self.root / "bin/app").rename(self.root / "bin/new")
+        expected = release.seal(self.root)
+        self.assertEqual(release.publish(self.root, destination), expected)
+        self.assertFalse((destination / "bin/app").exists())
+        self.assertEqual((destination / "logs/live").read_text(), "preserve")
+        self.assertEqual(release.identity(destination)["version_u16"], 0x0102)
+
+    def test_publish_rejects_invalid_legacy_record(self):
+        for version, packed in [("6.0.0", 0x6001), ("16.0.0", 65536),
+                                ("1.16.0", 0x1000), ("1.0.256", 0x1100),
+                                ("0.0.1", True)]:
+            with self.subTest(version=version, packed=packed):
+                destination = self.root.parent / version
+                destination.mkdir()
+                self.make_legacy_package(destination, version, packed)
+                before = release.manifest(destination)
+                with self.assertRaisesRegex(ValueError, "invalid release version record"):
+                    release.publish(self.root, destination)
+                self.assertEqual(release.manifest(destination), before)
+                self.assertTrue((destination / "release-checksum.json").exists())
+
+    def test_publish_legacy_keeps_unmanaged_file_protection(self):
+        destination = self.root.parent / "legacy"
+        destination.mkdir()
+        self.make_legacy_package(destination)
+        (destination / "unknown").write_text("preserve")
+        with self.assertRaisesRegex(ValueError, "unmanaged files"):
+            release.publish(self.root, destination)
+        self.assertEqual((destination / "unknown").read_text(), "preserve")
+        (destination / "unknown").unlink()
+        with self.assertRaisesRegex(ValueError, "invalid release version record"):
+            release.publish(destination, self.root)
+
     def test_installed_launcher_paths(self):
         repo = Path(__file__).resolve().parents[1]
         runtime = self.root / "share/aviator"

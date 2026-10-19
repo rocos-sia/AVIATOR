@@ -99,6 +99,57 @@ class ScriptsTests(unittest.TestCase):
                              'MONITOR_BIN':str(mock/'aviator_monitor'),
                              'PATH':str(mock)+':'+os.environ['PATH']})
         self.assertFalse(marker.exists(),'recording path failure started a node')
+
+    def test_device_readiness_gate(self):
+        mock=self.directory/'bin';mock.mkdir()
+        events=self.directory/'events'
+        node=mock/'node'
+        node.write_text('#!/usr/bin/python3\n'
+            'import os,sys,time\n'
+            'name=os.path.basename(sys.argv[0])\n'
+            'with open(os.environ["TEST_EVENTS"],"a") as f: f.write(name+"\\n")\n'
+            'if name=="simulation":\n'
+            '    print("device initializing",flush=True)\n'
+            '    mode=os.environ["TEST_READY_MODE"]\n'
+            '    if mode=="exit":\n'
+            '        print("SDK initialization failed",flush=True)\n'
+            '        sys.exit(4)\n'
+            '    if mode=="ready":\n'
+            '        time.sleep(.3)\n'
+            '        with open(os.environ["TEST_EVENTS"],"a") as f: f.write("ready\\n")\n'
+            '        print("READY simulation session=test service=tcp://127.0.0.1:5558",flush=True)\n'
+            'if name=="aviator_core_managed": sys.exit(7)\n'
+            'while True: time.sleep(.02)\n')
+        node.chmod(0o755)
+        for name in ('aviator_bus','simulation','flight_gateway','aviator_core_managed','aviator_monitor'):
+            (mock/name).symlink_to(node)
+        for name in ('curl','google-chrome-stable'):
+            (mock/name).write_text('#!/bin/bash\nexit 0\n')
+            (mock/name).chmod(0o755)
+        env={'PATH':str(mock)+':'+os.environ['PATH'],'AVIATOR_BIN':str(mock),
+             'MONITOR_BIN':str(mock/'aviator_monitor'),'START_DELAY':'0',
+             'DEVICE_READY_TIMEOUT':'2','TEST_EVENTS':str(events),
+             'TMPDIR':str(self.directory),'XDG_RUNTIME_DIR':str(self.directory)}
+        for mode in ('ready','hang','exit'):
+            with self.subTest(mode=mode):
+                events.write_text('')
+                output=self.run_script('start_aviator.sh','--simulation','--headless',ok=False,
+                                       env={**env,'TEST_READY_MODE':mode})
+                rows=events.read_text().splitlines()
+                if mode=='ready':
+                    self.assertLess(rows.index('ready'),rows.index('aviator_core_managed'))
+                    self.assertIn('core 已退出',output)
+                else:
+                    self.assertNotIn('aviator_core_managed',rows)
+                    self.assertNotIn('flight_gateway',rows)
+                    self.assertIn('device initializing',output)
+                    self.assertIn('未报告 READY' if mode=='hang' else 'SDK initialization failed',output)
+                subprocess.run(['flock','-n',str(self.directory/f'aviator-start-{os.getuid()}.lock'),
+                                'true'],check=True)
+        for value in ('0','-1','1.5','3601','abc'):
+            self.assertIn('DEVICE_READY_TIMEOUT 必须为',self.run_script(
+                'start_aviator.sh','--dry-run',ok=False,env={'DEVICE_READY_TIMEOUT':value}))
+
     def test_launchers_own_processes_and_stop_core_before_manipulator(self):
         mock = self.directory / "fake bin"
         mock.mkdir()
@@ -118,6 +169,7 @@ class ScriptsTests(unittest.TestCase):
             "def event(kind):\n    with open(os.environ['TEST_EVENTS'],'a') as f: f.write(kind+' '+name+' '+str(os.getpid())+'\\n')\n" +
             "def stop(*args):\n    signal.signal(signal.SIGTERM,signal.SIG_IGN)\n    event('stop')\n    if name.startswith('aviator_core'): time.sleep(.4)\n    event('exit')\n    sys.exit(0)\n" +
             "signal.signal(signal.SIGTERM,stop)\nevent('start')\n" +
+            "if name=='manipulator':\n    time.sleep(.5)\n    event('ready')\n    print('READY manipulator session=test service=tcp://127.0.0.1:5558',flush=True)\n" +
             "if name in ('manipulator','camera-python') and os.fork()==0:\n" +
             "    name+='-worker'\n    signal.signal(signal.SIGTERM,signal.SIG_IGN)\n    event('start')\n" +
             "while True: time.sleep(.02)\n")
@@ -198,6 +250,10 @@ class ScriptsTests(unittest.TestCase):
             subprocess.run(['flock','-n',str(self.directory/f'aviator-start-{os.getuid()}.lock'),
                             'true'],check=True)
             rows=events.read_text().splitlines()
+            if script == 'start_aviator.sh':
+                arm_ready=next(i for i,row in enumerate(rows) if row.startswith('ready manipulator '))
+                hand_start=next(i for i,row in enumerate(rows) if row.startswith('start xCoreSDK_hand '))
+                self.assertLess(arm_ready,hand_start,rows)
             core_stop=next(i for i,row in enumerate(rows) if row.startswith('stop '+core+' '))
             arm_stop=next(i for i,row in enumerate(rows) if row.startswith('stop manipulator '))
             hand_stop=next(i for i,row in enumerate(rows) if row.startswith("stop xCoreSDK_hand "))

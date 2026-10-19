@@ -1,6 +1,6 @@
 # X1 光电开关；修改配置后重启 aviator_photoelectric。
 serial:
-  device: /dev/ttyUSB0
+  device: /dev/ttyUSB2
   baud_rate: 38400
   data_bits: 8
   parity: none                 # none / even / odd

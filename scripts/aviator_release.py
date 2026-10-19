@@ -133,9 +133,19 @@ def write_json(path, value):
     write_bytes(path, (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8"))
 
 
-def read_version(root):
+def read_version(root, *, allow_legacy=False):
     value = json.loads((root / "release-version.json").read_bytes())
-    if not isinstance(value, dict) or value.get("product") != "AVIATOR" or type(value.get("version_u16")) is not int or value["version_u16"] != version_u16(value.get("version")):
+    if not isinstance(value, dict) or value.get("product") != "AVIATOR" or type(value.get("version_u16")) is not int:
+        raise ValueError("invalid release version record")
+    packed = version_u16(value.get("version"))
+    accepted = {packed}
+    if allow_legacy:
+        # Only publication may replace an installation using the former 4+4+8
+        # encoding. Runtime identity and newly generated packages stay strict.
+        major, minor, patch = map(int, value["version"].split("."))
+        if major <= 15 and minor <= 15 and patch <= 255:
+            accepted.add((major << 12) | (minor << 8) | patch)
+    if value["version_u16"] not in accepted:
         raise ValueError("invalid release version record")
     if not isinstance(value.get("release_profile"), str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]*", value["release_profile"]):
         raise ValueError("invalid release profile")
@@ -242,7 +252,7 @@ def publish(stage, root):
     current = inventory(root)
     if current or any(os.path.lexists(root / p) for p in METADATA):
         # Require a complete old record, but permit replacing locally modified bytes.
-        read_version(root)
+        read_version(root, allow_legacy=True)
         old = manifest_paths((root / "SHA256SUMS").read_bytes())
         json.loads((root / "release-checksum.json").read_bytes())
         if set(current) - old:
