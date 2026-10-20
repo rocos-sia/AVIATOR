@@ -74,7 +74,7 @@ DeviceState RemoteLink::snapshot(bool& fresh, bool* status_fresh) const {
     if (protective_stop_.valid() && protective_stop_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
         result.stopping = true;
     if (!error_.empty()) { result.fault = true; result.error = error_; }
-    if (const auto hand_error = hand_.messageFault(); !hand_error.empty()) {
+    if (const auto hand_error = hand_.blockingFault(); !hand_error.empty()) {
         result.fault = true;
         result.error += (result.error.empty() ? "" : "; ") + hand_error;
     }

@@ -43,6 +43,78 @@ int main(int argc, char** argv) {
             return m;
         };
         auto state = feedback(command, now + 1, 1);
+        // A live publisher is not proof that the physical hand is available.
+        // Monitor each hand through idle/revocation/target changes and recovery.
+        for (int side = 0; side < 2; ++side) for (int failure = 0; failure < 5; ++failure) {
+            const char* name = side ? "right" : "left";
+            auto monitored = create();
+            monitored.startMonitoring(now);
+            monitored.receive(feedback(command, now + 1, 1), now + 1, session);
+            uint64_t seq = 1;
+            const auto start = now + 20000;
+            for (uint64_t dt = 0; dt <= 3000000; dt += 20000) {
+                const auto t = start + dt;
+                auto m = feedback(command, t, ++seq);
+                auto& hand = m.body["hands"][name];
+                if (failure == 0) {
+                    hand["valid"] = false;
+                    hand["sample_mono_us"] = nullptr;
+                    hand["drive_position_normalized"] = Json::array();
+                    hand["status"] = "OFFLINE";
+                } else if (failure == 1) {
+                    hand["status"] = "ERROR"; // valid measurements, actual drive fault
+                } else if (failure == 2) {
+                    hand["error_codes"] = {0, dt < 1500000 ? 4 : 2, 0, 0, 0, 0};
+                } else if (failure == 3) {
+                    hand["feedback_available"] = false;
+                } else {
+                    hand["error_code"] = 16;
+                }
+                if (dt == 1000000) monitored.request(false, t);
+                if (dt == 2000000) { monitored.revoke(); m.header.session_id = "restarted-hand"; }
+                monitored.receive(m, t, session);
+                check(monitored.messageFault(t).empty(), "live faulty device lost message liveness");
+                const auto fault = monitored.blockingFault(t);
+                check(fault.empty() == (dt < 3000000), "hand recovery deadline incorrect");
+                if (!fault.empty()) check(fault.find(name) != std::string::npos, "wrong faulty hand");
+            }
+            auto malformed = feedback(command, start + 3010000, ++seq);
+            malformed.body["hands"]["right"]["error_codes"] = "broken";
+            monitored.receive(malformed, start + 3010000, session);
+            check(!monitored.blockingFault(start + 3010000).empty(),
+                  "partially parsed healthy message cleared device fault");
+            const auto recovered = start + 3020000;
+            auto m = feedback(command, recovered, ++seq);
+            m.body["hold_control_error"] = "historical device fault";
+            monitored.receive(m, recovered, session);
+            check(monitored.blockingFault(recovered).empty(), "healthy feedback did not clear blocking cause");
+        }
+        {
+            auto monitored = create();
+            monitored.startMonitoring(now);
+            uint64_t seq = 0;
+            // Repeated transient faults must each receive a full recovery window.
+            for (uint64_t dt = 0; dt <= 6000000; dt += 20000) {
+                const auto t = now + dt;
+                auto m = feedback(command, t, ++seq);
+                if (dt % 2000000) m.body["hands"]["right"]["valid"] = false;
+                monitored.receive(m, t, session);
+                check(monitored.blockingFault(t).empty(), "recovered transient fault accumulated time");
+            }
+        }
+        {
+            auto monitored = create();
+            monitored.startMonitoring(now);
+            // Even valid=true cannot renew physical freshness with a new envelope.
+            for (uint64_t dt = 0; dt <= 3500000; dt += 100000) {
+                const auto t = now + dt;
+                auto m = feedback(command, t, dt / 100000 + 1);
+                m.body["hands"]["left"]["sample_mono_us"] = now;
+                monitored.receive(m, t, session);
+                check(monitored.blockingFault(t).empty() == (dt < 3500000),
+                      "old physical samples kept the hand healthy");
+            }
+        }
         {
             auto stream = create();
             stream.beginApproach(now);
@@ -212,6 +284,7 @@ int main(int argc, char** argv) {
             HandControl disabled;
             disabled.startMonitoring(now);
             check(disabled.messageFault(now + 2000000).empty(), "disabled hand raised message timeout");
+            check(disabled.blockingFault(now + 10000000).empty(), "disabled hand raised device fault");
         }
         auto wrong = state; wrong.header.publisher_id = "manipulator";
         h.receive(wrong, now + 1, session); check(!h.complete(now + 1), "synthetic feedback accepted");
@@ -462,6 +535,25 @@ int main(int argc, char** argv) {
             bool invalid_rejected = false;
             try { create(); } catch (...) { invalid_rejected = true; }
             check(invalid_rejected, "invalid closing start accepted");
+        }
+        {
+            std::ofstream(path) << "core_hand: {enabled: true, recovery_timeout_ms: 1000}\n";
+            auto monitored = create();
+            monitored.startMonitoring(now);
+            for (uint64_t dt = 0; dt <= 1000000; dt += 20000) {
+                const auto t = now + dt;
+                auto m = feedback(command, t, dt / 20000 + 1);
+                m.body["hands"]["left"]["valid"] = false;
+                monitored.receive(m, t, session);
+                check(monitored.blockingFault(t).empty() == (dt < 1000000),
+                      "configured recovery timeout ignored");
+            }
+            for (int timeout : {0, 999, 60001}) {
+                std::ofstream(path) << "core_hand: {enabled: true, recovery_timeout_ms: " << timeout << "}\n";
+                bool rejected = false;
+                try { create(); } catch (...) { rejected = true; }
+                check(rejected, "invalid recovery timeout accepted");
+            }
         }
         std::ofstream(path) << "core_hand: {enabled: true, close: null}\n";
         auto missing = create(); bool rejected = false;

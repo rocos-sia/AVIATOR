@@ -26,6 +26,8 @@ class FakeRH56FTPHand:
         self.error = None
         self.actual = {side: list(pose) for side, pose in self.open.items()}
         self.fault_code = 0
+        self.unavailable = False
+        self.persistent_error = 0
         self.first_open = self.opened_invalid = self.recovered = None
         self.open_commands = []
         self.states = []
@@ -51,6 +53,11 @@ class FakeRH56FTPHand:
                        for a, b in zip(self.actual[side], self.close[side])), 'hand was not closed before fault'
             self.fault_code = code
         assert self.fault_published.wait(2), 'fault state was not published'
+
+    def set_unavailable(self, unavailable, code=0):
+        with self.lock:
+            self.unavailable = unavailable
+            self.persistent_error = code
 
     def verify_release(self):
         self.check()
@@ -173,6 +180,15 @@ class FakeRH56FTPHand:
                                     current=[0, 1800 if code == 4 else 0, 0, 0, 0, 0],
                                     temperature=[30, 85 if code == 2 else 30, 30, 30, 30, 30],
                                     closing_hold_active=[False]*6, closing_hold_position_normalized=[None]*6)
+                            # Keep the node publishing while one physical hand
+                            # loses power, or reports a persistent drive fault.
+                            if self.unavailable:
+                                hands['right'].update(valid=False, status='OFFLINE', feedback_available=False,
+                                                      sample_mono_us=None, drive_position_normalized=[])
+                                invalid = True
+                            elif self.persistent_error:
+                                hands['right'].update(status='ERROR', error_code=self.persistent_error,
+                                                      error_codes=[0, self.persistent_error, 0, 0, 0, 0])
                         reported_code = self.fault_code if self.latched_error else code
                         message = dict(msg_type='HandState', version='1.0', publisher_id='rh56ftp_hand',
                             session_id=self.session, sequence=sequence, sample_mono_us=stamp,

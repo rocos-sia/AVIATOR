@@ -23,6 +23,9 @@ def port():
 def main():
     bus, manipulator, core, root = sys.argv[1:5]
     hand_timeout = '--hand-timeout' in sys.argv[5:]
+    hand_unavailable = '--hand-unavailable' in sys.argv[5:]
+    hand_persistent = '--hand-persistent-error' in sys.argv[5:]
+    hand_recovery = hand_unavailable or hand_persistent
     latched_error = '--hand-latched-error' in sys.argv[5:]
     hand_fault = (4 if latched_error or '--hand-overcurrent' in sys.argv[5:] else
                   2 if '--hand-overtemperature' in sys.argv[5:] else 0)
@@ -34,9 +37,11 @@ def main():
     config["photoelectric_emergency"] = {"enabled": False}  # This fixture has no optical input.
     if hand_timeout:
         config['core_hand'].update(enabled=True, publisher_id='unavailable_test_hand', completion_timeout_ms=500)
-    if hand_fault:
+    if hand_fault or hand_recovery:
         # Require actual simulated opening, rather than the deployment's permissive tolerance.
         config['core_hand'].update(enabled=True, publisher_id='rh56ftp_hand', open_tolerance=.03)
+    if hand_recovery:
+        config['core_hand']['recovery_timeout_ms'] = 3000
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot["viewer"] = False
     robot["settle_duration"] = .15
@@ -49,7 +54,7 @@ def main():
     config["robot"] = "robot.yaml"
     (directory / "system.yaml").write_text(yaml.safe_dump(config))
     device_config = dict(config)
-    if hand_timeout or hand_fault:
+    if hand_timeout or hand_fault or hand_recovery:
         # Simulation uses its configured hand publisher; use a distinct identity
         # so Core really receives no matching hand feedback during the full cycle.
         device_config['core_hand'] = {**config['core_hand'], 'publisher_id': 'simulated_test_hand'}
@@ -57,7 +62,7 @@ def main():
     (directory / "robot.yaml").write_text(yaml.safe_dump(robot))
     children, logs = [], []
     context = zmq.Context()
-    hand = FakeRH56FTPHand(context, endpoints, config['core_hand'], directory, latched_error) if hand_fault else None
+    hand = FakeRH56FTPHand(context, endpoints, config['core_hand'], directory, latched_error) if hand_fault or hand_recovery else None
     sub = context.socket(zmq.SUB)
     sub.subscribe(b"flight.state")
     sub.connect(endpoints[1])
@@ -70,7 +75,7 @@ def main():
         children.append(child)
         return child
 
-    def wait_state(expected, timeout=100):
+    def wait_state(expected, timeout=100, resetting=False):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if hand:
@@ -80,7 +85,7 @@ def main():
                 state = message.get("system", {})
                 if state.get("state") == expected and (expected != "FOLLOWING" or state.get("settled")):
                     return state
-                if state.get("state") in ("ERROR", "EMERGENCY_STOP"):
+                if state.get("state") in ("ERROR", "EMERGENCY_STOP") and not (resetting and state.get('state') == 'ERROR'):
                     raise AssertionError(f"Expected {expected}, got {state}")
                 if hand and state.get('state') == 'SAFE':
                     raise AssertionError(f'Hand fault unexpectedly triggered SAFE: {state}')
@@ -112,6 +117,36 @@ def main():
             print("PASS: missing hand messages cause managed FSM ERROR", flush=True)
             return
         wait_state("READY", 30)  # Init/enable completed; no automatic home.
+        if hand_recovery:
+            def fault(on):
+                hand.set_unavailable(on and hand_unavailable, 4 if on and hand_persistent else 0)
+
+            def hold_state(expected, seconds):
+                deadline = time.monotonic() + seconds
+                while time.monotonic() < deadline:
+                    wait_state(expected, 1)
+
+            fault(True)
+            hold_state('READY', 1.5)
+            fault(False)
+            hold_state('READY', 2)
+            began = time.monotonic()
+            fault(True)
+            state = wait_state('ERROR', 5)
+            elapsed = time.monotonic() - began
+            assert 2.9 <= elapsed < 4.5, elapsed
+            assert 'Hand unavailable: right' in state['current_error'], state
+            assert '3000 ms' in state['current_error'], state
+            command('RESET_ERROR')
+            hold_state('ERROR', .3)
+            fault(False)
+            hold_state('ERROR', .5)  # Recovery cannot silently resume operation.
+            command('RESET_ERROR')
+            wait_state('READY', 5, resetting=True)
+            command('quit')
+            assert process.wait(timeout=10) == 0
+            print(f'PASS: online hand recovery timeout enters ERROR after {elapsed:.3f}s, requires recovery/reset', flush=True)
+            return
         command("GRASP_WHEEL")
         time.sleep(.1)
         wait_state("READY", 3)

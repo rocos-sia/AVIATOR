@@ -206,7 +206,7 @@ if(TARGET aviator_core_servo AND TARGET simulation)
         $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR}
         --hand-timeout)
       set_tests_properties(robot_state_machine_hand_timeout PROPERTIES TIMEOUT 220)
-      foreach(fault IN ITEMS overcurrent overtemperature latched-error)
+      foreach(fault IN ITEMS overcurrent overtemperature latched-error unavailable persistent-error)
         add_test(NAME robot_state_machine_hand_${fault} COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/robot_state_machine_process_test.py
           $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR}

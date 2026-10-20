@@ -31,6 +31,7 @@ public:
     void fail(const std::string&);
     std::string fault() const;
     std::string messageFault() const;
+    std::string blockingFault() const;
     Status status() const;
 private:
     void warnLocked(const std::string& reason, bool continuing = false); // mutex_ held.

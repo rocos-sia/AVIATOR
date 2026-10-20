@@ -23,6 +23,7 @@ public:
     std::string fault(uint64_t now) const;
     void startMonitoring(uint64_t now) { monitor_started_ = now; }
     std::string messageFault(uint64_t now) const;
+    std::string blockingFault(uint64_t now) const;
     const Json& body() const { return body_; }
     uint64_t sample() const { return sample_; }
     uint64_t sequence() const { return state_sequence_; }
@@ -42,6 +43,9 @@ private:
     uint64_t received_ = 0, sample_ = 0, state_sequence_ = 0, accepted_at_ = 0;
     uint64_t progress_at_ = 0, progress_sequence_ = 0;
     uint64_t monitor_started_ = 0;
+    uint64_t recovery_timeout_ = 3000000;
+    std::array<uint64_t, 2> unhealthy_since_{}, healthy_sample_{};
+    std::array<std::string, 2> health_reason_{};
     double tolerance_ = .03;
     Json body_ = Json::object();
 };

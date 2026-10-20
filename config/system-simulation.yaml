@@ -20,6 +20,8 @@ core_hand:
   publisher_id: rh56ftp_hand
   completion_timeout_ms: 5000
   feedback_timeout_ms: 500
+  # 任一手持续无有效反馈或设备故障的恢复窗口；超时进入系统 ERROR。
+  recovery_timeout_ms: 3000
   open_tolerance: 1.0
   # Order: thumb rotation, thumb flexion, index, middle, ring, pinky. Range [0,1].
   open:

@@ -119,6 +119,10 @@ std::string HandLink::messageFault() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return control_.messageFault(monotonic_us());
 }
+std::string HandLink::blockingFault() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return control_.blockingFault(monotonic_us());
+}
 HandLink::Status HandLink::status() const {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto now = monotonic_us();

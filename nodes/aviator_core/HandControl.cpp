@@ -1,5 +1,7 @@
 #include "HandControl.hpp"
+#include <algorithm>
 #include <cmath>
+#include <vector>
 #include <yaml-cpp/yaml.h>
 
 namespace aviator {
@@ -10,12 +12,15 @@ void HandControl::configure(const std::filesystem::path& path) {
     publisher_ = node["publisher_id"].as<std::string>("inspire_hand");
     const int timeout = node["completion_timeout_ms"].as<int>(5000);
     const int feedback = node["feedback_timeout_ms"].as<int>(500);
+    const int recovery = node["recovery_timeout_ms"].as<int>(3000);
     tolerance_ = node["open_tolerance"].as<double>(.03);
     if (publisher_.empty() || timeout < 500 || timeout > 30000 || feedback < 200 || feedback > 1000 ||
+        recovery < 1000 || recovery > 60000 ||
         !std::isfinite(tolerance_) || tolerance_ <= 0 || tolerance_ > 1.1)
         throw std::runtime_error("Invalid core_hand timing/publisher/open_tolerance");
     timeout_ = uint64_t(timeout) * 1000;
     feedback_timeout_ = uint64_t(feedback) * 1000;
+    recovery_timeout_ = uint64_t(recovery) * 1000;
     auto pose = [&](const YAML::Node& p, Pose& out) {
         for (int side = 0; side < 2; ++side) {
             const auto values = p[side ? "right" : "left"];
@@ -100,6 +105,24 @@ std::string HandControl::messageFault(uint64_t now) const {
         return "hand.state message timeout (>1000 ms): publisher=" + publisher_;
     return {};
 }
+std::string HandControl::blockingFault(uint64_t now) const {
+    if (auto error = messageFault(now); !error.empty()) return error;
+    if (!enabled_ || !monitor_started_) return {};
+    for (int side = 0; side < 2; ++side) {
+        auto since = unhealthy_since_[side];
+        // A fresh envelope must not keep old physical measurements alive.
+        if (!since) {
+            if (healthy_sample_[side] && now >= healthy_sample_[side] &&
+                now - healthy_sample_[side] < feedback_timeout_) continue;
+            since = healthy_sample_[side] ? healthy_sample_[side] + feedback_timeout_ : monitor_started_;
+        }
+        if (now >= since && now - since >= recovery_timeout_)
+            return std::string("Hand unavailable: ") + (side ? "right" : "left") +
+                " recovery timeout (" + std::to_string(recovery_timeout_ / 1000) + " ms): " +
+                (health_reason_[side].empty() ? "no fresh valid feedback" : health_reason_[side]);
+    }
+    return {};
+}
 void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
     if (m.topic != Topic::hand_state || m.header.publisher_id != publisher_ ||
         m.header.clock_id != local_clock_id() || m.header.sample_mono_us > now ||
@@ -124,13 +147,57 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
         // Live validity, position, timestamps and command ACKs remain authoritative.
         bool valid = m.header.valid;
         bool timely = true;
+        std::array<uint64_t, 2> healthy_samples{};
+        std::array<std::string, 2> reasons{};
+        int index = 0;
         for (const char* side : {"left", "right"}) {
             const auto& hand = m.body.at("hands").at(side);
-            if (!hand.at("valid").get<bool>()) { valid = false; continue; }
-            const auto sample = hand.at("sample_mono_us").get<uint64_t>();
-            if (sample > now || now - sample >= feedback_timeout_) valid = timely = false;
-            const auto values = hand.at("drive_position_normalized").get<std::array<double, 6>>();
-            for (auto v : values) if (!std::isfinite(v) || v < 0 || v > 1) return;
+            const bool side_valid = hand.at("valid").get<bool>();
+            uint64_t sample = 0;
+            if (!side_valid) valid = false;
+            else {
+                sample = hand.at("sample_mono_us").get<uint64_t>();
+                if (!sample || sample > now || now - sample >= feedback_timeout_) valid = timely = false;
+                const auto values = hand.at("drive_position_normalized").get<std::array<double, 6>>();
+                for (auto v : values) if (!std::isfinite(v) || v < 0 || v > 1) return;
+            }
+            auto& reason = reasons[index];
+            const auto status = hand.value("status", "");
+            if (!side_valid || !hand.value("feedback_available", true) ||
+                !sample || sample > now || now - sample >= feedback_timeout_)
+                reason = "no fresh valid feedback";
+            else if (status == "ERROR" || status == "OFFLINE" || status == "STALE")
+                reason = "device status=" + status;
+            else if (hand.value("error_code", 0) != 0)
+                reason = "device error_code=" + hand.at("error_code").dump();
+            if (hand.contains("error_codes")) {
+                const auto codes = hand.at("error_codes").get<std::vector<int>>();
+                if (std::any_of(codes.begin(), codes.end(), [](int code) { return code != 0; }))
+                    reason = "device error_codes=" + hand.at("error_codes").dump();
+            }
+            if (reason.empty() && unhealthy_since_[index] && sample <= healthy_sample_[index])
+                reason = "no newer healthy feedback";
+            if (reason.empty()) healthy_samples[index] = sample;
+            ++index;
+        }
+        // An invalid aggregate may describe just one bad hand. Preserve the
+        // healthy side's evidence and identify the side that actually failed.
+        if (!m.header.valid && reasons[0].empty() && reasons[1].empty()) {
+            reasons = {"hand.state invalid", "hand.state invalid"};
+            healthy_samples = {};
+        }
+        // Commit health only after the entire message has been validated. New
+        // commands, revocation, error-code changes and publisher restarts cannot
+        // renew the recovery window; only fresh healthy measurements can.
+        for (int side = 0; side < 2; ++side) {
+            if (healthy_samples[side]) {
+                healthy_sample_[side] = healthy_samples[side];
+                unhealthy_since_[side] = 0;
+            } else if (!unhealthy_since_[side]) {
+                const auto expired = healthy_sample_[side] ? healthy_sample_[side] + feedback_timeout_ : monitor_started_;
+                unhealthy_since_[side] = expired ? std::min(now, expired) : now;
+            }
+            health_reason_[side] = reasons[side];
         }
         // Give recovered measurements a full completion window without changing
         // the original target/ACK identity or replay checks.
