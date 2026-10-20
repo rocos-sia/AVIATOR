@@ -49,8 +49,8 @@ buttons:
 rs422:
   # Explicit bench profile, including unknown sentinels and RELEASING=0x14.
   profile: aviator-bench-v1
-  channel_a: /dev/serial/by-id/REPLACE_CHANNEL_A
-  channel_b: /dev/serial/by-id/REPLACE_CHANNEL_B
+  channel_a: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG042VOR-if00-port0
+  channel_b: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG042EX4-if00-port0
   receive_timeout_ms: 50
   recovery_frames: 10
   switch_max_step: 100 # 0.1 percentage-point units; failover step >10% invalidates input

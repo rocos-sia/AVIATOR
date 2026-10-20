@@ -88,7 +88,7 @@ cmake --build build --parallel 2
 
 启动身份验证调用 `scripts/aviator_release.py identity`，实际校验成功后才使用发布短码，并核对编译版本。台架测试身份在终端明确显示 bench-test，短码 `9CA1`。安装包内的配置也参与发布校验：修改交付配置后需重新生成合法发布清单，不能让校验失败退回测试身份。校验不在 80 Hz 主循环中重复执行。
 
-已经记录本机服务 request/reply；当前串口诊断写入日志，尚未实现逐字节 RS422 MCAP 录制。
+已经记录本机服务 request/reply；机器人端 `flight.command.rs422` 附带 A／B 两路最近接纳的原始 32 字节及接收时间、选用通道和计数，Monitor 的“RS422 报文”页可查看 HEX 与字段含义。此信息随 50 Hz 控制消息采样，保留原始保留位，不能代替逐帧串口抓包；无效帧及重复／乱序帧不会覆盖最近接纳帧。普通摇杆／键盘消息省略该可选对象。串口诊断同时写入日志，尚未实现逐字节 RS422 MCAP 录制。
 
 ## 新增自动测试
 
@@ -230,3 +230,9 @@ Gateway 将请求副本发布至 `record.service.request`，完整响应发布�
 Managed 真机入口及启动顺序见 [Core README](../aviator_core/README.md#managed-core摇杆按钮与连续目标驱动真机)。只有 CONTROL 状态使用连续轴值。Gateway/Core 可接收对方重启后的新鲜反馈，无需复制或固定会话；故障恢复仍受状态机和控制 epoch 约束。
 
 可用 `ctest --test-dir build/communication -R '^service$' --output-on-failure` 验证模拟 ROUTER 应答、按钮事件和 MCAP 记录；`tests/managed_gateway_process_test.py` 用隔离 MuJoCo 验证真实 Managed 服务端和状态流程。未连接真实摇杆进行按钮标号验证。
+
+### RS422 合帧与操作诊断
+
+USB 串口一次读取可以包含多帧。网关按顺序确认最多 4 帧的短批次，且批次按 80 Hz 计算的首尾跨度必须小于接收有效期；更大积压重置操作确认。操作仍需先见 10 帧连续空闲（实际接收跨度至少 75 ms），再见至少 5 帧相同操作（跨度至少 50 ms），双路不重复派发。协议字节布局不变，standalone 无需配套改动。
+
+日志 `RS422 received ... (awaiting confirmation)` 仅表示解析到操作码；`RS422 operation=... QUEUED` 表示已提交 Core，实际结果查看 `RS422 Core reply`。`coalesced_batches` 是选中通道累计合帧批次数，`rejected_batches` 是不能参与操作确认的批次数。原始报文页面出现操作码不等同于 Core 接受操作。

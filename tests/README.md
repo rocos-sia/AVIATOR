@@ -80,3 +80,7 @@ ctest --test-dir build/communication --output-on-failure
 `camera_recording` 新增三模式、相机双流 TCP→MCAP→解码验证（软件 libx264/libx265、Zstd）、非法输入和图像队列溢出；不依赖相机/GPU。`camera_adapter` 使用 Python 标准库验证 Python/C++ Protobuf 信封互通。`logger_process` 同时验证 YAML 与 CLI 优先级。真实 D436、NVENC 和高分辨率持续带宽需另行实机验收。
 
 `monitor_http` 包含超过 2 s 的大网格慢接收完整性检查。`monitor_remote_model_browser_test.cjs` 使用非 localhost HTTP 域名、限速和延迟验证完整模型加载与同源资源请求；依赖 Node ≥18、playwright-core 和 Chrome，运行方式见 Monitor README。
+
+`rs422_process` 还验证真实双 PTY 接收字节完整附加到 `flight.command.rs422`（包含非零保留位）、选用通道与控制样本时间对应、A→B 切换及坏校验帧不会刷新原始报文。
+`monitor_state` 覆盖可选附加数据、原始接收时间超时、跨时钟及损坏附加字段的隔离处理。
+`node tests/monitor_rs422_browser_test.cjs build/bin/aviator_monitor` 使用隔离 ZMQ 发布者与真实 Monitor，验证无 RS422 的空状态、原始 HEX／字段含义、暂停／复制、报文过期、HTTP 断流、未知时钟、异常附加数据和布局；需要 Node ≥18、playwright-core、Chrome 和 Python pyzmq，不需要串口硬件。

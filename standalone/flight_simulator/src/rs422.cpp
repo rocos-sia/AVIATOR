@@ -147,23 +147,29 @@ bool decode(const Bytes& b, Uplink& f) {
 }
 std::vector<Bytes> Parser::feed(const uint8_t* data, size_t n) {
     std::vector<Bytes> out;
+    Bytes frame; // Contiguous scratch for the existing decoder; reused within this feed.
     for (size_t i = 0; i < n; ++i) {
-        buffer_.push_back(data[i]);
-        while (!buffer_.empty()) {
-            if (buffer_[0] != 0xeb || (buffer_.size() > 1 && buffer_[1] != 0x90)) {
-                buffer_.erase(buffer_.begin());
+        // The previous iteration leaves count_ < size_ <= buffer_.size().
+        buffer_[(head_ + count_) % buffer_.size()] = data[i];
+        ++count_;
+        while (count_) {
+            if (peek(0) != 0xeb || (count_ > 1 && peek(1) != 0x90)) {
+                consume(1);
                 ++rejected;
                 continue;
             }
-            if (buffer_.size() < size_)
+            if (count_ < size_)
                 break;
+            frame.resize(size_);
+            for (size_t j = 0; j < size_; ++j)
+                frame[j] = peek(j);
             Downlink down;
             Uplink up;
-            if (size_ == downlink_size ? decode(buffer_, down) : decode(buffer_, up)) {
-                out.push_back(buffer_);
-                buffer_.clear();
+            if (size_ == downlink_size ? decode(frame, down) : decode(frame, up)) {
+                out.push_back(frame);
+                consume(size_);
             } else {
-                buffer_.erase(buffer_.begin());
+                consume(1);
                 ++rejected;
             }
         }

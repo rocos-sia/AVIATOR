@@ -76,8 +76,95 @@ void checkWireBoundaries() {
         require(!valid(extended));
     }
 }
+void checkRingParser() {
+    auto require = [](bool ok) {
+        if (!ok)
+            throw std::runtime_error("ring parser regression");
+    };
+    for (bool uplink : {false, true}) {
+        auto frame = uplink ? encode(Uplink{}) : encode(Downlink{});
+        const size_t length = frame.size(), reserved = uplink ? 26 : 8;
+        frame[2] = 17;
+        frame.back() = checksum(frame.data() + 2, length - 3);
+        // Exercise every physical start offset and every read boundary, including
+        // a header split across the end of the ring and empty feed calls.
+        for (size_t offset = 0; offset < uplink_size; ++offset) {
+            for (size_t split = 0; split <= length; ++split) {
+                Parser parser(uplink);
+                Bytes noise(offset, 0x55);
+                require(parser.feed(noise.data(), noise.size()).empty());
+                require(parser.feed(nullptr, 0).empty());
+                auto frames = parser.feed(frame.data(), split);
+                const auto tail = parser.feed(frame.data() + split, length - split);
+                frames.insert(frames.end(), tail.begin(), tail.end());
+                require(frames == std::vector<Bytes>{frame});
+                require(parser.rejected == offset);
+            }
+        }
+        // One feed far larger than the ring must retain every complete frame
+        // and preserve the trailing partial frame for the next call.
+        Parser burst(uplink);
+        Bytes stream(63, 0x55);
+        std::vector<Bytes> expected;
+        for (unsigned i = 0; i < 256; ++i) {
+            auto next = frame;
+            next[2] = uint8_t(i);
+            next.back() = checksum(next.data() + 2, length - 3);
+            expected.push_back(next);
+            stream.insert(stream.end(), next.begin(), next.end());
+        }
+        stream.insert(stream.end(), frame.begin(), frame.end() - 1);
+        require(burst.feed(stream.data(), stream.size()) == expected);
+        require(burst.feed(frame.data() + length - 1, 1) == std::vector<Bytes>{frame});
+        require(burst.rejected == 63);
+        // Missing/inserted bytes and a bad checksum must resynchronize without
+        // losing the following good frames, including across ring wrap.
+        for (unsigned fault = 0; fault < 3; ++fault) {
+            auto damaged = frame;
+            if (fault == 0)
+                damaged.erase(damaged.begin() + reserved);
+            else if (fault == 1)
+                damaged.insert(damaged.begin() + reserved, 0x55);
+            else
+                damaged.back() ^= 1;
+            Bytes noisy(63, 0x55);
+            noisy.insert(noisy.end(), damaged.begin(), damaged.end());
+            noisy.insert(noisy.end(), frame.begin(), frame.end());
+            noisy.insert(noisy.end(), frame.begin(), frame.end());
+            for (size_t chunk : {size_t(1), size_t(7), noisy.size()}) {
+                Parser parser(uplink);
+                std::vector<Bytes> frames;
+                for (size_t pos = 0; pos < noisy.size(); pos += chunk) {
+                    const auto got = parser.feed(noisy.data() + pos,
+                                                 std::min(chunk, noisy.size() - pos));
+                    frames.insert(frames.end(), got.begin(), got.end());
+                }
+                require(frames == std::vector<Bytes>({frame, frame}));
+                require(parser.rejected == 63 + damaged.size());
+            }
+        }
+        // A false header immediately before the real header must not swallow it.
+        Parser overlap(uplink);
+        Bytes prefix(63, 0x55);
+        prefix.push_back(0xeb);
+        prefix.push_back(0x90);
+        prefix.insert(prefix.end(), frame.begin(), frame.end());
+        require(overlap.feed(prefix.data(), prefix.size()) == std::vector<Bytes>{frame});
+        require(overlap.rejected == 65);
+        // Reset a wrapped partial frame without resetting cumulative diagnostics.
+        Parser reset(uplink), independent(uplink);
+        Bytes noise(63, 0x55);
+        require(reset.feed(noise.data(), noise.size()).empty());
+        require(reset.feed(frame.data(), length - 1).empty());
+        require(independent.feed(frame.data(), length).size() == 1);
+        reset.clear();
+        require(reset.rejected == 63);
+        require(reset.feed(frame.data(), length) == std::vector<Bytes>{frame});
+    }
+}
 int main() try {
     checkWireBoundaries();
+    checkRingParser();
     check(stateCode("SAFE") == unknown && std::string(stateName(0x09)) == "UNKNOWN");
     check(stateCode("ERROR") == 0x10 && stateCode("READY") == 0x03);
     Bytes neutral(32, 0);

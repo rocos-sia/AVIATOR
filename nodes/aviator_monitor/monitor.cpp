@@ -1,6 +1,7 @@
 #include "monitor.hpp"
 #include "service.hpp"
 #include <algorithm>
+#include <stdexcept>
 
 namespace monitor {
 using Json = nlohmann::json;
@@ -12,6 +13,59 @@ Json field(const Json& body, const char* path) {
         if (value.is_primitive()) return value;
     } catch (const Json::exception&) {}
     return nullptr;
+}
+// Treat optional observation errors independently of the control message. Only
+// project bounded, typed fields into /api/state; the original remains in detail.
+Json rs422_snapshot(const Json& input, std::uint64_t now, bool same_clock,
+                    std::uint64_t receive_age, std::uint64_t stream_timeout) {
+    try {
+        const auto number = [](const Json& value, std::uint64_t maximum) {
+            if (!value.is_number_integer() || value.get<double>() < 0 ||
+                value.get<double>() > maximum)
+                throw std::invalid_argument("invalid RS422 observation number");
+            return value.get<std::uint64_t>();
+        };
+        if (input.at("format") != "aviator-downlink-32-v1")
+            throw std::invalid_argument("unsupported RS422 observation format");
+        const auto& selected = input.at("selected_channel");
+        if ((!selected.is_null() && selected != "A" && selected != "B") ||
+            !input.at("blocked").is_boolean())
+            throw std::invalid_argument("invalid RS422 selection");
+        const auto timeout = number(input.at("receive_timeout_ms"), 100) * 1000;
+        const auto& channels = input.at("channels");
+        if (!timeout || !channels.is_array() || channels.size() != 2)
+            throw std::invalid_argument("invalid RS422 channels");
+        Json result{{"format", input.at("format")}, {"selected_channel", selected},
+                    {"blocked", input.at("blocked")}, {"channels", Json::array()}};
+        for (unsigned i = 0; i < 2; ++i) {
+            const auto& channel = channels.at(i);
+            const auto& bytes = channel.at("raw_bytes");
+            if (channel.at("channel") != (i ? "B" : "A") ||
+                !channel.at("healthy").is_boolean() || !bytes.is_array() ||
+                (!bytes.empty() && bytes.size() != 32))
+                throw std::invalid_argument("invalid RS422 frame");
+            for (const auto& byte : bytes) number(byte, 255);
+            const auto sample = number(channel.at("received_mono_us"), aviator::max_json_integer);
+            const auto accepted = number(channel.at("accepted_frames"), aviator::max_json_integer);
+            const auto rejected = number(channel.at("rejected_bytes"), aviator::max_json_integer);
+            const auto age = now >= sample ? now - sample : 0;
+            std::string status = "FRESH";
+            if (bytes.empty() || !sample) status = "WAITING";
+            else if (!same_clock) status = "CLOCK_UNKNOWN";
+            else if (sample > now) status = "FUTURE";
+            else if (!channel.at("healthy").get<bool>() || age >= timeout || receive_age >= stream_timeout)
+                status = "STALE";
+            result["channels"].push_back(
+                {{"channel", channel.at("channel")}, {"raw_bytes", bytes},
+                 {"accepted_frames", accepted}, {"rejected_bytes", rejected},
+                 {"status", status},
+                 {"age_ms", same_clock && sample && now >= sample ? Json(age / 1000.0) : Json(nullptr)},
+                 {"fresh_for_ms", status == "FRESH" ? std::min(timeout - age, stream_timeout - receive_age) / 1000.0 : 0.0}});
+        }
+        return result;
+    } catch (const std::exception&) {
+        return {{"error", "RS422 附加数据格式不受支持或损坏"}, {"channels", Json::array()}};
+    }
 }
 }
 void State::reject(const std::string& reason) {
@@ -174,6 +228,9 @@ Json State::snapshot(std::uint64_t now, const std::string& clock) {
                 {"error", field(body, "/system/current_error_code")}, {"last_error", field(body, "/system/last_error_code")},
                 {"roll", field(body, "/control/roll")}, {"pitch", field(body, "/control/pitch")},
                 {"vision", field(body, "/vision/status")}, {"confidence", field(body, "/confidence")}}}};
+        if (s.message.topic == aviator::Topic::flight_command && body.contains("rs422"))
+            row["rs422"] = rs422_snapshot(body.at("rs422"), now, same_clock,
+                                          now - s.received_us, limit);
         if (s.message.topic == aviator::Topic::flight_state) {
             for (const auto* group : {"arm", "hand", "camera"}) {
                 const auto base = std::string("/freshness/") + group;

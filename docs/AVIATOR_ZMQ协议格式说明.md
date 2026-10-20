@@ -885,6 +885,24 @@ REQ/REP 一次请求只能有一次响应：短操作可直接返回终态；长
 
 Core 的 system 配置 `flight_source` 为 `FLIGHT` 或 `JOYSTICK`，缺省 JOYSTICK。网关串口模式发布 source=FLIGHT 的标准 FlightCommand，不携带 POSITION_HOLD；采样时间为机器人本机接收串口的单调时间。内部 50 Hz 发布可以复用最后有效样本，但不刷新它的采样时刻。失效时显式发布 valid=false。
 
+机器人端 RS422 模式还附带可选的 `rs422` 观测对象，原有 `source`、`control`、头部 `valid` 和输入时效策略保持不变。普通摇杆／键盘及旧版发布者可以完全省略该对象，Core 不依赖它控制设备。字段如下：
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `rs422.format` | string | `aviator-downlink-32-v1`，表示当前 32 字节下行布局。 |
+| `rs422.selected_channel` | string / null | `A` / `B` / null，当前接收器选用通道。选中不等于控制有效，仍须检查头部 `valid`。 |
+| `rs422.blocked` | bool | 接收器是否处于双路冲突／切换跳变保护。 |
+| `rs422.receive_timeout_ms` | uint | 配置中的串口接收超时（25～100 ms）。 |
+| `rs422.channels` | array | 固定 A、B 顺序的两个通道对象。 |
+| `channels[].channel` | string | `A` 或 `B`。 |
+| `channels[].raw_bytes` | uint8 array | 实际收到且通过解析、序号接纳的完整 32 字节；尚无数据时为空数组。含同步字、保留字节、校验字节，不从 control 反向编码。 |
+| `channels[].received_mono_us` | uint53 | 对应原始报文的本机接收时间，与消息 `clock_id` 同域。空数组时为 0；ZMQ 重发不会刷新此值。 |
+| `channels[].healthy` | bool | 发布时该通道接收租约是否有效，关闭时为 false。 |
+| `channels[].accepted_frames` | uint53 | 进程内该通道累计接纳帧数，重复／乱序帧不累计。 |
+| `channels[].rejected_bytes` | uint53 | 进程内解析器累计丢弃字节数，不是坏帧数，也不包含已解析但序号被拒绝的帧。 |
+
+有效控制消息中，选用通道的 `received_mono_us` 与头部 `sample_mono_us` 一致，其原始滚转／俯仰除以 1000 对应 `control`。失效后可保留旧报文用于诊断，此时不得把它当作当前控制依据；串口重连时清空该通道的旧报文字节。此扩展随现有 50 Hz 发布取最近样本，不提供全部 80 Hz 串口帧历史或无效帧抓包。Monitor 另按原始接收时间计算年龄、剩余有效期，并区分时钟域未知、等待和过期。
+
 串口指令通过连续确认后，以 client_id=flight_gateway 调用现有六操作，parameters 恰好为 `{"source":"FLIGHT","operation_code":16}`（此例为 enter_standby）。操作码依次为 0x10/20/30/40/50/60，必须与 operation 名称一致；Core 仅在显式配置 FLIGHT、输入绑定且新鲜时受理。JOYSTICK 的原有 button 参数仍兼容，两个来源不自动切换。
 
 一次通过门控的操作只创建一个内部 request_id，不自动重试。沿用已有期限、缓存应答、记录副本隔离和状态机守卫。超时表示结果未知；串口回绕不等同于动作完成。最终动作状态通过 64 字节上行的运行状态字段观察。

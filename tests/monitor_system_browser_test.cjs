@@ -61,8 +61,11 @@ async function port() { return new Promise(resolve => { const s=net.createServer
     });
     await page.waitForFunction(()=>document.querySelectorAll('.resource-summary strong')[1].textContent === '—');
     await page.unroute('**/api/system');
-    assert.deepEqual(await page.locator('[role=tab]').allTextContents(),['直观监测','系统消息','系统状态','日志','配置']);
+    assert.deepEqual(await page.locator('[role=tab]').allTextContents(),['直观监测','系统消息','RS422 报文','系统状态','日志','配置']);
     await page.locator('#tab-messages').focus(); await page.keyboard.press('ArrowRight');
+    assert.equal(await page.locator('#tab-rs422').getAttribute('aria-selected'),'true');
+    assert(await page.locator('#rs422').isVisible());
+    await page.keyboard.press('ArrowRight');
     assert.equal(await page.locator('#tab-resources').getAttribute('aria-selected'),'true');
     assert(await page.locator('#resources').isVisible());
     assert.equal(await page.locator('.resource-panel').count(),4);

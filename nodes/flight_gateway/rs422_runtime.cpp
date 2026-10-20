@@ -74,7 +74,8 @@ class CoreClient {
                 ++it;
         }
     }
-    void publish(const DualReceiver& input, uint64_t now, bool shutdown = false) {
+    void publish(const DualReceiver& input, const std::array<Bytes, 2>& raw_frames,
+                 const std::array<Parser, 2>& parsers, uint64_t now, bool shutdown = false) {
         aviator::Message m;
         m.topic = aviator::Topic::flight_command;
         // Invalid snapshots also carry a fresh revocation time so InputGuard can revoke
@@ -86,6 +87,23 @@ class CoreClient {
             {"source", "FLIGHT"},
             {"control",
              {{"roll", input.target().roll / 1000.0}, {"pitch", input.target().pitch / 1000.0}}}};
+        // Optional observation only. Preserve received bytes (including reserved bytes),
+        // never reconstruct a frame from the normalized control values.
+        auto& observation = m.body["rs422"];
+        observation = {{"format", "aviator-downlink-32-v1"},
+                       {"selected_channel", input.selected() < 0 ? nlohmann::json(nullptr)
+                                                                 : nlohmann::json(input.selected() ? "B" : "A")},
+                       {"blocked", input.blocked()},
+                       {"receive_timeout_ms", config_.rs422.receive_timeout_ms},
+                       {"channels", nlohmann::json::array()}};
+        for (unsigned i = 0; i < 2; ++i)
+            observation["channels"].push_back(
+                {{"channel", i ? "B" : "A"},
+                 {"raw_bytes", raw_frames[i]},
+                 {"received_mono_us", raw_frames[i].empty() ? 0 : input.channels[i].received},
+                 {"healthy", !shutdown && input.healthy(i, now)},
+                 {"accepted_frames", input.channels[i].generation},
+                 {"rejected_bytes", parsers[i].rejected}});
         std::string raw, error;
         if (!aviator::encode(m, raw, error))
             throw std::runtime_error(error);
@@ -145,7 +163,9 @@ void runRs422(const Config& config, int signals_fd) {
     std::array<SerialPort, 2> ports{
         {SerialPort(config.rs422.channel_a), SerialPort(config.rs422.channel_b)}};
     std::array<Parser, 2> parsers{{Parser(simulator), Parser(simulator)}};
+    std::array<Bytes, 2> raw_frames;
     std::array<uint64_t, 2> connections{}, received{};
+    std::array<uint8_t, 2> observed_operations{};
     std::array<Uplink, 2> replies{};
     const uint64_t timeout = config.rs422.receive_timeout_ms * 1000ULL;
     DualReceiver receiver(timeout, config.rs422.recovery_frames, config.rs422.switch_max_step);
@@ -172,6 +192,8 @@ void runRs422(const Config& config, int signals_fd) {
                 parsers[i].clear();
                 received[i] = 0;
                 receiver.disconnect(i);
+                raw_frames[i].clear();
+                observed_operations[i] = 0;
                 sender.reset();
             }
         }
@@ -211,8 +233,16 @@ void runRs422(const Config& config, int signals_fd) {
                         received[i] = now;
                     } else {
                         Downlink down;
-                        if (decode(frame, down))
-                            receiver.receive(i, down, now);
+                        if (decode(frame, down) && receiver.receive(i, down, now)) {
+                            raw_frames[i] = frame;
+                            if (down.operation != observed_operations[i]) {
+                                if (down.operation)
+                                    aviator::Logger::info(
+                                        "RS422 received channel={} operation={} counter={} (awaiting confirmation)",
+                                        i ? "B" : "A", operationName(down.operation), down.counter);
+                                observed_operations[i] = down.operation;
+                            }
+                        }
                     }
                 }
             }
@@ -225,7 +255,7 @@ void runRs422(const Config& config, int signals_fd) {
             if (!valid)
                 echo_operation = 0;
             if (now >= next_pub || valid != was_valid) {
-                core->publish(receiver, now);
+                core->publish(receiver, raw_frames, parsers, now);
                 next_pub = now + 20000;
             }
             was_valid = valid;
@@ -321,12 +351,14 @@ void runRs422(const Config& config, int signals_fd) {
                     aviator::Logger::info(
                         "SIM {} {} seq={} selected={} comm={} state={} echo_op={:02X} echo=({}, "
                         "{}) measured=({}, {}) rear={} brake={} fault={} previous={} "
-                        "severity={:02X} version={:04X} checksum={:04X} bad_bytes={}",
+                        "severity={:02X} version={:04X} checksum={:04X} bad_bytes={} "
+                        "port={} rx_bytes={} tx_frames={} dropped={}",
                         i ? "B" : "A", fresh ? "LIVE" : "STALE", f.counter, f.selected,
                         f.communication, stateName(f.state), f.operation, position(f.roll_echo),
                         position(f.pitch_echo), position(f.roll), position(f.pitch), f.rear,
                         f.brake, f.fault, f.last_fault, f.severity, f.version, f.checksum,
-                        parsers[i].rejected);
+                        parsers[i].rejected, ports[i].fd() >= 0 ? "open" : "closed",
+                        ports[i].rx_bytes, ports[i].tx_frames, ports[i].dropped);
                 }
                 const bool a = received[0] && now - received[0] < timeout,
                            b = received[1] && now - received[1] < timeout;
@@ -335,14 +367,22 @@ void runRs422(const Config& config, int signals_fd) {
                              " B:" + (b ? stateName(replies[1].state) : "STALE"));
             } else
                 aviator::Logger::info("RS422 A={} B={} selected={} valid={} blocked={} switches={} "
-                                      "duplicates={} conflicts={} bad_bytes={}/{}",
+                                      "duplicates={} conflicts={} bad_bytes={}/{} "
+                                      "port={}/{} rx_bytes={}/{} tx_frames={}/{} dropped={}/{} "
+                                      "coalesced_batches={} rejected_batches={}",
                                       receiver.healthy(0, now), receiver.healthy(1, now),
                                       receiver.selected(), receiver.valid(now), receiver.blocked(),
                                       receiver.switches, receiver.duplicates, receiver.conflicts,
-                                      parsers[0].rejected, parsers[1].rejected);
+                                      parsers[0].rejected, parsers[1].rejected,
+                                      ports[0].fd() >= 0 ? "open" : "closed",
+                                      ports[1].fd() >= 0 ? "open" : "closed",
+                                      ports[0].rx_bytes, ports[1].rx_bytes,
+                                      ports[0].tx_frames, ports[1].tx_frames,
+                                      ports[0].dropped, ports[1].dropped,
+                                      receiver.coalesced_batches, receiver.rejected_batches);
         }
     }
     if (core)
-        core->publish(receiver, aviator::monotonic_us(), true);
+        core->publish(receiver, raw_frames, parsers, aviator::monotonic_us(), true);
 }
 } // namespace flight_gateway

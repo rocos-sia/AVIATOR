@@ -45,12 +45,20 @@ class Parser {
   public:
     explicit Parser(bool uplink) : size_(uplink ? uplink_size : downlink_size) {}
     std::vector<Bytes> feed(const uint8_t*, size_t);
-    void clear() { buffer_.clear(); }
+    void clear() { head_ = count_ = 0; }
     uint64_t rejected = 0;
 
   private:
     size_t size_;
-    Bytes buffer_;
+    // One maximum-size frame is sufficient: feed parses after each byte is appended.
+    // Consuming bytes only advances head_; unread bytes never move or get overwritten.
+    std::array<uint8_t, uplink_size> buffer_{};
+    size_t head_ = 0, count_ = 0;
+    uint8_t peek(size_t offset) const { return buffer_[(head_ + offset) % buffer_.size()]; }
+    void consume(size_t n) {
+        head_ = (head_ + n) % buffer_.size();
+        count_ -= n;
+    }
 };
 class CommandSender {
   public:

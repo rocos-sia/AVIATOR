@@ -25,7 +25,7 @@ void run(const Config& config, int stop_fd) {
     CommandSender sender;
     uint64_t next = monotonic_us(), next_log = next, ticks = 0;
     uint8_t counter = 0;
-    bool was_valid = false;
+    bool was_valid = false, input_logged = false;
     const uint64_t timeout = config.rs422.receive_timeout_ms * 1000ULL;
     std::clog << "flight_simulator: aviator-bench-v1, 115200 8E1, 80 Hz\n";
     if (!config.simulator.send_a || !config.simulator.send_b || config.simulator.corrupt_every)
@@ -81,10 +81,11 @@ void run(const Config& config, int stop_fd) {
             for (auto& port : ports)
                 port.cancelOutput();
         }
-        if (valid != was_valid) {
+        if (!input_logged || valid != was_valid) {
             std::clog << "Input=" << (valid ? "valid; transmitting" : "invalid; TX stopped")
-                      << "\n";
+                      << " require_joystick=" << config.simulator.require_joystick << "\n";
             was_valid = valid;
+            input_logged = true;
         }
         for (const auto index : pressed)
             if (valid) {
@@ -134,7 +135,11 @@ void run(const Config& config, int stop_fd) {
                      << " previous=" << f.last_fault << " severity=" << unsigned(f.severity)
                      << " version=" << std::hex << std::uppercase << std::setfill('0')
                      << std::setw(4) << f.version << " checksum=" << std::setw(4) << f.checksum
-                     << std::dec << " bad_bytes=" << parsers[i].rejected;
+                     << std::dec << " bad_bytes=" << parsers[i].rejected
+                     << " port=" << (ports[i].fd() >= 0 ? "open" : "closed")
+                     << " rx_bytes=" << ports[i].rx_bytes
+                     << " tx_frames=" << ports[i].tx_frames
+                     << " dropped=" << ports[i].dropped;
                 std::clog << line.str() << "\n";
             }
             input.title(title);

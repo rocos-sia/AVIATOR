@@ -46,6 +46,45 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
+        // RS422 is optional, and its age must follow the serial sample rather
+        // than the continuously refreshed ZMQ envelope.
+        monitor::State serial;
+        auto command = message();
+        command.topic = aviator::Topic::flight_command;
+        command.body = {{"source", "JOYSTICK"}, {"control", {{"roll", 0}, {"pitch", 0}}}};
+        serial.ingest("flight.command", encoded(command), 1000000);
+        check(!serial.snapshot(1000000, "clock")["streams"][0].contains("rs422"),
+              "ordinary joystick message requires no serial metadata");
+        auto bytes = nlohmann::json::array();
+        for (unsigned i = 0; i < 32; ++i) bytes.push_back(i);
+        command.body["source"] = "FLIGHT";
+        command.body["rs422"] = {{"format", "aviator-downlink-32-v1"},
+            {"selected_channel", "A"}, {"blocked", false}, {"receive_timeout_ms", 100},
+            {"channels", nlohmann::json::array({
+                {{"channel", "A"}, {"raw_bytes", bytes}, {"received_mono_us", 1000000},
+                 {"healthy", true}, {"accepted_frames", 5}, {"rejected_bytes", 7}},
+                {{"channel", "B"}, {"raw_bytes", nlohmann::json::array()}, {"received_mono_us", 0},
+                 {"healthy", false}, {"accepted_frames", 0}, {"rejected_bytes", 0}}})}};
+        command.header.sequence++;
+        serial.ingest("flight.command", encoded(command), 1000000);
+        auto observed = serial.snapshot(1010000, "clock")["streams"][0]["rs422"];
+        check(observed["channels"][0]["raw_bytes"] == bytes &&
+              observed["channels"][0]["age_ms"] == 10 &&
+              observed["channels"][0]["fresh_for_ms"] == 90 &&
+              observed["channels"][1]["status"] == "WAITING", "serial bytes/age/waiting");
+        command.header.sequence++;
+        command.header.sample_mono_us = 1100000;
+        serial.ingest("flight.command", encoded(command), 1100000);
+        check(serial.snapshot(1100000, "clock")["streams"][0]["rs422"]["channels"][0]["status"] == "STALE",
+              "fresh envelope must not renew serial sample");
+        check(serial.snapshot(1110000, "other")["streams"][0]["rs422"]["channels"][0]["status"] == "CLOCK_UNKNOWN",
+              "serial cross-clock freshness");
+        command.body["rs422"]["channels"][0]["raw_bytes"][0] = 256;
+        command.header.sequence++;
+        serial.ingest("flight.command", encoded(command), 1100000);
+        auto malformed = serial.snapshot(1100000, "clock");
+        check(malformed["rejected"] == 0 && malformed["streams"][0]["rs422"].contains("error"),
+              "malformed optional data must not reject control message or crash monitor");
         monitor::State state;
         check(state.snapshot(1000000, "clock")["streams"].empty(), "empty snapshot");
         auto m = message();

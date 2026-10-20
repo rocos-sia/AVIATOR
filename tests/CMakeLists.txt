@@ -436,6 +436,12 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME rs422_process COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/rs422_process_test.py $<TARGET_FILE:flight_gateway> ${PROJECT_SOURCE_DIR})
     set_tests_properties(rs422_process PROPERTIES TIMEOUT 20)
+    foreach(batch_size 2 3)
+      add_test(NAME rs422_process_batch_${batch_size} COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/rs422_process_test.py $<TARGET_FILE:flight_gateway>
+        ${PROJECT_SOURCE_DIR} ${batch_size})
+      set_tests_properties(rs422_process_batch_${batch_size} PROPERTIES TIMEOUT 20)
+    endforeach()
   endif()
 endif()
 aviator_add_test_executable(aviator_rs422_simulator_driver rs422_simulator_driver.cpp

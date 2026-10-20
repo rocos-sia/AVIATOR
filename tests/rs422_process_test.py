@@ -17,7 +17,7 @@ import zmq
 
 def down(counter, operation=0, roll=0, pitch=0):
     data = struct.pack('<BBBBhh', 0xeb, 0x90, counter % 256, operation, roll, pitch)
-    data += bytes(23)
+    data += bytes([0xa5]) + bytes(22)  # Nonzero reserved byte must survive observation.
     return data + bytes([sum(data[2:]) & 255])
 
 
@@ -64,6 +64,8 @@ def main():
         received = [[], []]
         seen_commands, requests = [], []
         tick = sequence = 0
+        batch_size = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+        pending_bytes = [bytearray(), bytearray()]
         next_tick = time.monotonic()
         last_request_count = 0
 
@@ -77,10 +79,16 @@ def main():
             data = down(tick, operation, roll, pitch)
             if malformed:
                 data = data[:-1] + bytes([data[-1] ^ 1])
-            for enabled, (master, _) in zip((a, b), pairs):
+            for channel, (enabled, (master, _)) in enumerate(zip((a, b), pairs)):
                 if enabled:
                     # Force fragmented reception, plus normal coalescing across scheduler delays.
-                    os.write(master, data[:3]); os.write(master, data[3:])
+                    pending_bytes[channel].extend(data)
+                    if tick % batch_size == 0:
+                        data_out = pending_bytes[channel]
+                        os.write(master, data_out[:3]); os.write(master, data_out[3:])
+                        pending_bytes[channel].clear()
+                else:
+                    pending_bytes[channel].clear()
             sequence += 1
             sampled = time.monotonic_ns()//1000
             if core:
@@ -122,12 +130,23 @@ def main():
             valid = [m for m in seen_commands if m['valid']]
             assert valid and valid[-1]['source'] == 'FLIGHT' and 'input_state' not in valid[-1]
             assert valid[-1]['control'] == {'roll': .125, 'pitch': -.25}
+            observation = valid[-1]['rs422']
+            assert observation['selected_channel'] == 'A'
+            for channel in observation['channels']:
+                raw = bytes(channel['raw_bytes'])
+                assert raw == down(raw[2], roll=125, pitch=-250), raw.hex()
+                assert channel['healthy'] and channel['accepted_frames'] > 0
+            assert observation['channels'][0]['received_mono_us'] == valid[-1]['sample_mono_us']
             for _ in range(10): cycle(0x20)
             for _ in range(12): cycle(0x20, a=False)
             assert len(requests) == 1 and requests[0]['operation'] == 'grasp_wheel', requests
             assert requests[0]['parameters'] == {'source': 'FLIGHT', 'operation_code': 0x20}
             assert received[1][-1][3] == 1 and received[1][-1][4] == 1, received[1][-1].hex()
-            for _ in range(15): cycle()
+            observation = seen_commands[-1]['rs422']
+            assert observation['selected_channel'] == 'B'
+            assert not observation['channels'][0]['healthy'] and observation['channels'][1]['healthy']
+            assert observation['channels'][1]['received_mono_us'] == seen_commands[-1]['sample_mono_us']
+            for _ in range(24): cycle()
             assert received[0][-1][3] == 1, 'primary recovery must not preempt'
             for _ in range(10): cycle(0x40)
             for _ in range(10): cycle()
@@ -135,6 +154,12 @@ def main():
             # Invalid CRC frames cannot renew either input lease.
             for _ in range(14): cycle(malformed=True)
             assert not seen_commands[-1]['valid'] and received[0][-1][4] == 3
+            observation = seen_commands[-1]['rs422']
+            for channel in observation['channels']:
+                assert not channel['healthy'] and channel['rejected_bytes'] > 0
+                raw = bytes(channel['raw_bytes'])
+                assert raw[-1] == sum(raw[2:-1]) & 255, 'bad checksum replaced accepted frame'
+                assert seen_commands[-1]['sample_mono_us'] - channel['received_mono_us'] >= 100000
             # Core silence must produce unknown state/measurements, not refreshed cached feedback.
             for _ in range(18): cycle(core=False)
             last = received[0][-1]

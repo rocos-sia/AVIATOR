@@ -1,3 +1,4 @@
+import {updateRs422, setRs422Visible, clearRs422} from './rs422.js';
 import './settings.js';
 import './system.js';
 import {setLogsVisible} from './logs.js';
@@ -42,7 +43,8 @@ function sourceKey(g) {
 function setTab(next) {
   tab = next;
   setLogsVisible(next === 'logs');
-  for (const name of ['overview','messages','resources','logs','settings']) {
+  setRs422Visible(next === 'rs422');
+  for (const name of ['overview','messages','rs422','resources','logs','settings']) {
     $(name).hidden = name !== next;
     $(`tab-${name}`).setAttribute('aria-selected', String(name === next));
     $(`tab-${name}`).tabIndex = name === next ? 0 : -1;
@@ -51,11 +53,11 @@ function setTab(next) {
   if (next === 'messages' && latestState && !pausedAt) renderMessages(latestState);
   if (next === 'overview') cameraRefresh();
 }
-for (const name of ['overview','messages','resources','logs','settings']) {
+for (const name of ['overview','messages','rs422','resources','logs','settings']) {
   $(`tab-${name}`).onclick = () => setTab(name);
   $(`tab-${name}`).onkeydown = event => {
     if (['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) {
-      event.preventDefault(); const tabs = ['overview','messages','resources','logs','settings'];
+      event.preventDefault(); const tabs = ['overview','messages','rs422','resources','logs','settings'];
       const index = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length-1 :
         (tabs.indexOf(name) + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
       const next = tabs[index];
@@ -300,10 +302,12 @@ async function refreshMessages() {
   stateBusy=true; lastStateFetch=performance.now();
   const session=overview.monitor_session_id;
   try {
+    const started=performance.now();
     const state=await get('/api/state');
     // A delayed response from the previous monitor must not restore its rows.
     if (session !== overview?.monitor_session_id) return;
     latestState=state;
+    updateRs422(state, performance.now()-started);
     if (tab === 'messages' && !pausedAt) renderMessages(state);
   } catch(error) {
     if (session !== overview?.monitor_session_id) return;
@@ -319,7 +323,7 @@ async function refresh() {
     if (overview && overview.monitor_session_id !== ov.monitor_session_id) {
       selected=null; ++detailGeneration; detailKey=''; ++imageGeneration; imageToken=''; preview=null; previewReceived=[];
       if (imageURL) URL.revokeObjectURL(imageURL); imageURL=''; displayedImage=null; $('camera-image').hidden=true; $('camera-large').removeAttribute('src');
-      viewer?.clearSamples(); latestState=null; displayedState=null; pausedAt=0;
+      clearRs422(); viewer?.clearSamples(); latestState=null; displayedState=null; pausedAt=0;
       text('detail','监控服务会话已变化，请重新选择记录。'); text('pause-display','暂停显示'); $('pause-display').setAttribute('aria-pressed','false');
     }
     if (overview && (overview.config_revision !== ov.config_revision || overview.monitor_session_id !== ov.monitor_session_id)) {

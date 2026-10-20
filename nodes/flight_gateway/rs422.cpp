@@ -147,23 +147,29 @@ bool decode(const Bytes& b, Uplink& f) {
 }
 std::vector<Bytes> Parser::feed(const uint8_t* data, size_t n) {
     std::vector<Bytes> out;
+    Bytes frame; // Contiguous scratch for the existing decoder; reused within this feed.
     for (size_t i = 0; i < n; ++i) {
-        buffer_.push_back(data[i]);
-        while (!buffer_.empty()) {
-            if (buffer_[0] != 0xeb || (buffer_.size() > 1 && buffer_[1] != 0x90)) {
-                buffer_.erase(buffer_.begin());
+        // The previous iteration leaves count_ < size_ <= buffer_.size().
+        buffer_[(head_ + count_) % buffer_.size()] = data[i];
+        ++count_;
+        while (count_) {
+            if (peek(0) != 0xeb || (count_ > 1 && peek(1) != 0x90)) {
+                consume(1);
                 ++rejected;
                 continue;
             }
-            if (buffer_.size() < size_)
+            if (count_ < size_)
                 break;
+            frame.resize(size_);
+            for (size_t j = 0; j < size_; ++j)
+                frame[j] = peek(j);
             Downlink down;
             Uplink up;
-            if (size_ == downlink_size ? decode(buffer_, down) : decode(buffer_, up)) {
-                out.push_back(buffer_);
-                buffer_.clear();
+            if (size_ == downlink_size ? decode(frame, down) : decode(frame, up)) {
+                out.push_back(frame);
+                consume(size_);
             } else {
-                buffer_.erase(buffer_.begin());
+                consume(1);
                 ++rejected;
             }
         }
@@ -174,14 +180,20 @@ void CommandGate::reset() {
     neutral_ = count_ = 0;
     candidate_ = 0;
     armed_ = false;
+    neutral_since_ = candidate_since_ = 0;
 }
-uint8_t CommandGate::update(const Downlink& f, bool consecutive) {
+uint8_t CommandGate::update(const Downlink& f, bool consecutive, uint64_t now) {
     if (!consecutive)
         reset();
     if (!f.operation) {
         count_ = 0;
         candidate_ = 0;
-        if (++neutral_ >= 10) {
+        if (!neutral_)
+            neutral_since_ = now;
+        neutral_ = std::min(neutral_ + 1, 10u);
+        // Up to four frames may share one USB arrival time. Ten neutral frames
+        // must still span at least six real serial periods.
+        if (neutral_ >= 10 && now - neutral_since_ >= 6 * period_us) {
             armed_ = true;
             neutral_ = 10;
         }
@@ -193,8 +205,10 @@ uint8_t CommandGate::update(const Downlink& f, bool consecutive) {
     if (candidate_ != f.operation) {
         candidate_ = f.operation;
         count_ = 0;
+        candidate_since_ = now;
     }
-    if (++count_ == 5) {
+    count_ = std::min(count_ + 1, 5u);
+    if (count_ >= 5 && now - candidate_since_ >= 4 * period_us) {
         armed_ = false;
         count_ = 0;
         return f.operation;
@@ -225,6 +239,7 @@ bool DualReceiver::healthy(unsigned i, uint64_t now) const {
 void DualReceiver::disconnect(unsigned i) {
     channels.at(i).have = false;
     channels.at(i).consecutive = 0;
+    pending_.at(i).clear();
 }
 bool DualReceiver::receive(unsigned i, const Downlink& f, uint64_t now) {
     auto& c = channels.at(i);
@@ -242,6 +257,8 @@ bool DualReceiver::receive(unsigned i, const Downlink& f, uint64_t now) {
     c.received = now;
     c.have = true;
     ++c.generation;
+    if (pending_[i].size() < 5)
+        pending_[i].push_back({f, consecutive});
     return true;
 }
 bool DualReceiver::valid(uint64_t now) const {
@@ -249,9 +266,17 @@ bool DualReceiver::valid(uint64_t now) const {
            now - sample_ < timeout_;
 }
 uint8_t DualReceiver::update(uint64_t now) {
+    // Consume both channels every update; backup history must not replay on failover.
+    std::array<std::vector<Pending>, 2> batches;
+    batches.swap(pending_);
     const bool both = healthy(0, now) && healthy(1, now);
-    const bool conflict = both && channels[0].frame.counter == channels[1].frame.counter &&
-                          !samePayload(channels[0].frame, channels[1].frame);
+    bool conflict = both && channels[0].frame.counter == channels[1].frame.counter &&
+                    !samePayload(channels[0].frame, channels[1].frame);
+    if (both)
+        for (const auto& a : batches[0])
+            for (const auto& b : batches[1])
+                if (a.frame.counter == b.frame.counter && !samePayload(a.frame, b.frame))
+                    conflict = true;
     if (conflict && !blocked_) {
         blocked_ = true;
         blocked_at_ = now;
@@ -287,8 +312,23 @@ uint8_t DualReceiver::update(uint64_t now) {
     const auto& c = channels[selected_];
     if (c.generation == processed_)
         return 0;
-    const bool consecutive = continuous_ && c.generation == processed_ + 1 &&
-                             uint8_t(c.frame.counter - target_.counter) == 1 && c.consecutive > 1;
+    const auto& batch = batches[selected_];
+    const bool bounded = !batch.empty() && batch.size() <= 4 &&
+                         (batch.size() - 1) * period_us < timeout_;
+    if (batch.size() > 1)
+        ++coalesced_batches;
+    if (!bounded) {
+        ++rejected_batches;
+        gate_.reset();
+    }
+    bool consecutive = bounded && continuous_ &&
+                       c.generation == processed_ + batch.size() &&
+                       uint8_t(batch.front().frame.counter - target_.counter) == 1 &&
+                       batch.front().consecutive;
+    for (size_t i = 1; i < batch.size(); ++i)
+        consecutive = consecutive && batch[i].consecutive;
+    const bool was_continuous = continuous_ && bounded &&
+                               c.generation == processed_ + batch.size();
     processed_ = c.generation;
     target_ = c.frame;
     sample_ = c.received;
@@ -308,6 +348,18 @@ uint8_t DualReceiver::update(uint64_t now) {
         }
         return 0;
     }
-    return gate_.update(target_, consecutive);
+    if (!bounded)
+        return 0;
+    uint8_t operation = 0;
+    for (size_t i = 0; i < batch.size(); ++i) {
+        if (!batch[i].consecutive)
+            operation = 0; // A later discontinuity cancels an earlier confirmation in this read.
+        const auto code = gate_.update(batch[i].frame,
+                                      batch[i].consecutive && (i > 0 || was_continuous),
+                                      c.received);
+        if (code)
+            operation = code;
+    }
+    return operation;
 }
 } // namespace flight_gateway::rs422

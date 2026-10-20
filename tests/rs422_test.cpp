@@ -79,8 +79,95 @@ void checkWireBoundaries() {
         require(!valid(extended));
     }
 }
+void checkRingParser() {
+    auto require = [](bool ok) {
+        if (!ok)
+            throw std::runtime_error("ring parser regression");
+    };
+    for (bool uplink : {false, true}) {
+        auto frame = uplink ? encode(Uplink{}) : encode(Downlink{});
+        const size_t length = frame.size(), reserved = uplink ? 26 : 8;
+        frame[2] = 17;
+        frame.back() = checksum(frame.data() + 2, length - 3);
+        // Exercise every physical start offset and every read boundary, including
+        // a header split across the end of the ring and empty feed calls.
+        for (size_t offset = 0; offset < uplink_size; ++offset) {
+            for (size_t split = 0; split <= length; ++split) {
+                Parser parser(uplink);
+                Bytes noise(offset, 0x55);
+                require(parser.feed(noise.data(), noise.size()).empty());
+                require(parser.feed(nullptr, 0).empty());
+                auto frames = parser.feed(frame.data(), split);
+                const auto tail = parser.feed(frame.data() + split, length - split);
+                frames.insert(frames.end(), tail.begin(), tail.end());
+                require(frames == std::vector<Bytes>{frame});
+                require(parser.rejected == offset);
+            }
+        }
+        // One feed far larger than the ring must retain every complete frame
+        // and preserve the trailing partial frame for the next call.
+        Parser burst(uplink);
+        Bytes stream(63, 0x55);
+        std::vector<Bytes> expected;
+        for (unsigned i = 0; i < 256; ++i) {
+            auto next = frame;
+            next[2] = uint8_t(i);
+            next.back() = checksum(next.data() + 2, length - 3);
+            expected.push_back(next);
+            stream.insert(stream.end(), next.begin(), next.end());
+        }
+        stream.insert(stream.end(), frame.begin(), frame.end() - 1);
+        require(burst.feed(stream.data(), stream.size()) == expected);
+        require(burst.feed(frame.data() + length - 1, 1) == std::vector<Bytes>{frame});
+        require(burst.rejected == 63);
+        // Missing/inserted bytes and a bad checksum must resynchronize without
+        // losing the following good frames, including across ring wrap.
+        for (unsigned fault = 0; fault < 3; ++fault) {
+            auto damaged = frame;
+            if (fault == 0)
+                damaged.erase(damaged.begin() + reserved);
+            else if (fault == 1)
+                damaged.insert(damaged.begin() + reserved, 0x55);
+            else
+                damaged.back() ^= 1;
+            Bytes noisy(63, 0x55);
+            noisy.insert(noisy.end(), damaged.begin(), damaged.end());
+            noisy.insert(noisy.end(), frame.begin(), frame.end());
+            noisy.insert(noisy.end(), frame.begin(), frame.end());
+            for (size_t chunk : {size_t(1), size_t(7), noisy.size()}) {
+                Parser parser(uplink);
+                std::vector<Bytes> frames;
+                for (size_t pos = 0; pos < noisy.size(); pos += chunk) {
+                    const auto got = parser.feed(noisy.data() + pos,
+                                                 std::min(chunk, noisy.size() - pos));
+                    frames.insert(frames.end(), got.begin(), got.end());
+                }
+                require(frames == std::vector<Bytes>({frame, frame}));
+                require(parser.rejected == 63 + damaged.size());
+            }
+        }
+        // A false header immediately before the real header must not swallow it.
+        Parser overlap(uplink);
+        Bytes prefix(63, 0x55);
+        prefix.push_back(0xeb);
+        prefix.push_back(0x90);
+        prefix.insert(prefix.end(), frame.begin(), frame.end());
+        require(overlap.feed(prefix.data(), prefix.size()) == std::vector<Bytes>{frame});
+        require(overlap.rejected == 65);
+        // Reset a wrapped partial frame without resetting cumulative diagnostics.
+        Parser reset(uplink), independent(uplink);
+        Bytes noise(63, 0x55);
+        require(reset.feed(noise.data(), noise.size()).empty());
+        require(reset.feed(frame.data(), length - 1).empty());
+        require(independent.feed(frame.data(), length).size() == 1);
+        reset.clear();
+        require(reset.rejected == 63);
+        require(reset.feed(frame.data(), length) == std::vector<Bytes>{frame});
+    }
+}
 int main() try {
     checkWireBoundaries();
+    checkRingParser();
     check(stateCode("SAFE") == unknown && std::string(stateName(0x09)) == "UNKNOWN",
           "retired SAFE remains mapped");
     check(stateCode("ERROR") == 0x10 && stateCode("READY") == 0x03, "state codes renumbered");
@@ -138,26 +225,31 @@ int main() try {
     both.insert(both.end(), frame.begin(), frame.end());
     check(upper.feed(both.data(), both.size()).size() == 2, "coalesced uplink frames");
     CommandGate gate;
+    uint64_t gate_time = 1000000;
+    auto gate_tick = [&](const Downlink& frame, bool consecutive) {
+        gate_time += period_us;
+        return gate.update(frame, consecutive, gate_time);
+    };
     Downlink f;
     f.operation = 0x20;
     for (int i = 0; i < 20; ++i)
-        check(!gate.update(f, true), "startup cannot execute held command");
+        check(!gate_tick(f, true), "startup cannot execute held command");
     f.operation = 0;
     for (int i = 0; i < 10; ++i)
-        gate.update(f, true);
+        gate_tick(f, true);
     f.operation = 0x20;
     for (int i = 0; i < 4; ++i)
-        check(!gate.update(f, true), "before fifth frame");
-    check(gate.update(f, true) == 0x20, "fifth frame dispatches");
+        check(!gate_tick(f, true), "before fifth frame");
+    check(gate_tick(f, true) == 0x20, "fifth frame dispatches");
     for (int i = 0; i < 40; ++i)
-        check(!gate.update(f, true), "remaining copies never repeat");
+        check(!gate_tick(f, true), "remaining copies never repeat");
     f.operation = 0;
     for (int i = 0; i < 10; ++i)
-        gate.update(f, true);
+        gate_tick(f, true);
     f.operation = 0x20;
     for (int i = 0; i < 4; ++i)
-        gate.update(f, true);
-    check(!gate.update(f, false), "gap revokes operation arm");
+        gate_tick(f, true);
+    check(!gate_tick(f, false), "gap revokes operation arm");
     CommandSender sender;
     check(!sender.request(0x10), "sender startup neutral");
     for (int i = 0; i < 10; ++i)
@@ -207,12 +299,62 @@ int main() try {
     for (int i = 20; i < 25; ++i)
         burst.receive(0, {uint8_t(i), 0x20, 0, 0}, t);
     check(!burst.update(t), "buffered five-frame burst cannot execute");
+    for (unsigned batch_size : {2u, 3u, 4u}) {
+        for (unsigned phase = 0; phase < batch_size; ++phase) {
+            DualReceiver batched(batch_size == 4 ? 60000 : 50000, 10, 100);
+            uint64_t clock = 5000000;
+            uint8_t counter = 240;
+            std::vector<Downlink> pending;
+            std::vector<uint8_t> operations;
+            auto send = [&](uint8_t op, bool immediate = false) {
+                if (!immediate)
+                    clock += period_us;
+                pending.push_back({counter++, op, 125, -250});
+                if (pending.size() != batch_size)
+                    return;
+                for (const auto& frame : pending) {
+                    batched.receive(0, frame, clock);
+                    batched.receive(1, frame, clock);
+                }
+                if (auto accepted = batched.update(clock))
+                    operations.push_back(accepted);
+                pending.clear();
+            };
+            for (unsigned i = 0; i < 40 + phase; ++i)
+                send(0);
+            for (uint8_t op : {0x10, 0x20, 0x30, 0x40, 0x50, 0x60}) {
+                for (unsigned i = 0; i < 10; ++i)
+                    send(op);
+                for (unsigned i = 0; i < 10; ++i)
+                    send(0);
+            }
+            for (unsigned i = 0; i < 12; ++i)
+                send(0);
+            check(operations == std::vector<uint8_t>({0x10, 0x20, 0x30, 0x40, 0x50, 0x60}),
+                  "USB batches preserve all six operations once, including mixed boundaries and wrap");
+            check(batched.valid(clock) && batched.target().roll == 125 &&
+                      batched.target().pitch == -250 && batched.coalesced_batches > 0,
+                  "batched input retains latest target");
+            operations.clear();
+            // Even bounded batches cannot turn an instantaneous backlog into confirmation.
+            for (unsigned i = 0; i < 12; ++i)
+                send(0x20, true);
+            check(operations.empty(), "operation requires real elapsed confirmation time");
+        }
+    }
     DualReceiver conflict(50000, 1, 100);
     t = 3000000;
     conflict.receive(0, {1, 0, 0, 0}, t);
     conflict.receive(1, {1, 0, 500, 0}, t);
     conflict.update(t);
     check(conflict.blocked() && !conflict.valid(t), "same-counter disagreement blocks");
+    DualReceiver mixed_conflict(50000, 1, 100);
+    mixed_conflict.receive(0, {1, 0x20, 0, 0}, t);
+    mixed_conflict.receive(1, {1, 0x10, 0, 0}, t);
+    mixed_conflict.receive(0, {2, 0, 0, 0}, t);
+    mixed_conflict.receive(1, {2, 0, 0, 0}, t);
+    check(!mixed_conflict.update(t) && mixed_conflict.blocked(),
+          "matching latest frames cannot hide an earlier conflict inside a batch");
     auto params = nlohmann::json{{"source", "FLIGHT"}, {"operation_code", uint64_t(0x30)}};
     check(aviator::validFlightOperation(params, "start_control", "FLIGHT"),
           "FLIGHT operation accepted");

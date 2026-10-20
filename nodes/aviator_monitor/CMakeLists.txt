@@ -26,7 +26,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   endforeach()
 endif()
 install(TARGETS aviator_monitor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES web/app.js web/system.js web/logs.js web/settings.js web/viewer.js web/vendor.js web/style.css web/THIRD_PARTY_NOTICES.md
+install(FILES web/app.js web/rs422.js web/system.js web/logs.js web/settings.js web/viewer.js web/vendor.js web/style.css web/THIRD_PARTY_NOTICES.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/monitor/web)
 install(FILES ${PROJECT_SOURCE_DIR}/config/monitor.yaml DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/monitor)
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/models/urdf ${PROJECT_SOURCE_DIR}/models/meshes

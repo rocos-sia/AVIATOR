@@ -45,17 +45,25 @@ class Parser {
   public:
     explicit Parser(bool uplink) : size_(uplink ? uplink_size : downlink_size) {}
     std::vector<Bytes> feed(const uint8_t*, size_t);
-    void clear() { buffer_.clear(); }
+    void clear() { head_ = count_ = 0; }
     uint64_t rejected = 0;
 
   private:
     size_t size_;
-    Bytes buffer_;
+    // One maximum-size frame is sufficient: feed parses after each byte is appended.
+    // Consuming bytes only advances head_; unread bytes never move or get overwritten.
+    std::array<uint8_t, uplink_size> buffer_{};
+    size_t head_ = 0, count_ = 0;
+    uint8_t peek(size_t offset) const { return buffer_[(head_ + offset) % buffer_.size()]; }
+    void consume(size_t n) {
+        head_ = (head_ + n) % buffer_.size();
+        count_ -= n;
+    }
 };
 // Startup, discontinuity and failover require ten neutral frames before any operation.
 class CommandGate {
   public:
-    uint8_t update(const Downlink&, bool consecutive);
+    uint8_t update(const Downlink&, bool consecutive, uint64_t now);
     void reset();
     bool armed() const { return armed_; }
 
@@ -63,6 +71,7 @@ class CommandGate {
     unsigned neutral_ = 0, count_ = 0;
     uint8_t candidate_ = 0;
     bool armed_ = false;
+    uint64_t neutral_since_ = 0, candidate_since_ = 0;
 };
 class CommandSender {
   public:
@@ -84,7 +93,8 @@ struct Channel {
     unsigned consecutive = 0;
     bool have = false;
 };
-// Latest samples only: queued bursts cannot satisfy the five-cycle operation gate.
+// Targets use the latest sample. Small USB batches retain their individual operation
+// frames; oversized backlogs cannot satisfy the operation gate.
 class DualReceiver {
   public:
     DualReceiver(uint64_t timeout, unsigned recovery, int jump)
@@ -100,6 +110,7 @@ class DualReceiver {
     bool blocked() const { return blocked_; }
     std::array<Channel, 2> channels;
     uint64_t duplicates = 0, conflicts = 0, switches = 0;
+    uint64_t coalesced_batches = 0, rejected_batches = 0;
 
   private:
     uint64_t timeout_, sample_ = 0, processed_ = 0, blocked_at_ = 0;
@@ -108,5 +119,11 @@ class DualReceiver {
     bool blocked_ = false, had_target_ = false, continuous_ = false;
     Downlink target_;
     CommandGate gate_;
+    struct Pending {
+        Downlink frame;
+        bool consecutive;
+    };
+    // Five entries are sufficient to detect and reject an oversized batch.
+    std::array<std::vector<Pending>, 2> pending_;
 };
 } // namespace flight_gateway::rs422
