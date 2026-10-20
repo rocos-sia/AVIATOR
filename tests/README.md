@@ -81,6 +81,6 @@ ctest --test-dir build/communication --output-on-failure
 
 `monitor_http` 包含超过 2 s 的大网格慢接收完整性检查。`monitor_remote_model_browser_test.cjs` 使用非 localhost HTTP 域名、限速和延迟验证完整模型加载与同源资源请求；依赖 Node ≥18、playwright-core 和 Chrome，运行方式见 Monitor README。
 
-`rs422_process` 还验证真实双 PTY 接收字节完整附加到 `flight.command.rs422`（包含非零保留位）、选用通道与控制样本时间对应、A→B 切换及坏校验帧不会刷新原始报文。
-`monitor_state` 覆盖可选附加数据、原始接收时间超时、跨时钟及损坏附加字段的隔离处理。
-`node tests/monitor_rs422_browser_test.cjs build/bin/aviator_monitor` 使用隔离 ZMQ 发布者与真实 Monitor，验证无 RS422 的空状态、原始 HEX／字段含义、暂停／复制、报文过期、HTTP 断流、未知时钟、异常附加数据和布局；需要 Node ≥18、playwright-core、Chrome 和 Python pyzmq，不需要串口硬件。
+`rs422_process` 还验证真实双 PTY 接收字节完整附加到 `flight.command.rs422`（包含非零保留位）、选用通道与控制样本时间对应、A→B 切换及坏校验帧不会刷新原始报文；操作与空闲帧同批到达时仍保留操作，再次发送相同操作不继承旧请求 ID。
+`monitor_state` 覆盖可选附加数据、原始接收时间超时、跨时钟及损坏附加字段的隔离处理，以及保留帧校验、精确请求关联、等待／拒绝结果与新操作清除旧应答。
+`node tests/monitor_rs422_browser_test.cjs build/bin/aviator_monitor` 使用隔离 ZMQ 发布者与真实 Monitor，验证无 RS422 的空状态、原始 HEX／字段含义、操作帧保留与替换、实时刷新、Core 等待／拒绝结果、页面切换／刷新、暂停／复制、报文过期、HTTP 断流、未知时钟、异常附加数据和布局；需要 Node ≥18、playwright-core、Chrome 和 Python pyzmq，不需要串口硬件。

@@ -102,10 +102,10 @@ wheel_linear_speed: 2.5   # m/s
 
 # Servo 在线规划的轮盘加速度、加加速度上限；换目标时继承当前速度/加速度。
 # 以下为保守起始值，不能仅增大轮盘约束而忽略关节限位和奇异位形。
-wheel_angular_acceleration: 6.0  # rad/s²
-wheel_linear_acceleration: 4.0 # m/s²
-wheel_angular_jerk: 12.0        # rad/s³
-wheel_linear_jerk: 8.0       # m/s³
+wheel_angular_acceleration: 30.0  # rad/s²
+wheel_linear_acceleration: 20.0 # m/s²
+wheel_angular_jerk: 300.0        # rad/s³
+wheel_linear_jerk: 200.0       # m/s³
 
 # 刚度恢复首帧保持新鲜实测关节角；随后从保持角度直接规划到当前绝对目标。
 # 接管共用 wheel_angular_speed/acceleration/jerk 作为关节空间响应参数，

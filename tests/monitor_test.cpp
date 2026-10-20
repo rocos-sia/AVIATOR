@@ -85,6 +85,57 @@ int main(int argc, char** argv) {
         auto malformed = serial.snapshot(1100000, "clock");
         check(malformed["rejected"] == 0 && malformed["streams"][0]["rs422"].contains("error"),
               "malformed optional data must not reject control message or crash monitor");
+        monitor::State retained;
+        command.header.publisher_id = "flight_gateway";
+        command.header.session_id = "serial-client";
+        command.header.sample_mono_us = 1000000;
+        bytes = nlohmann::json::array();
+        for (unsigned i = 0; i < 32; ++i) bytes.push_back(0);
+        bytes[0] = 235; bytes[1] = 144; bytes[2] = 7; bytes[3] = 32; bytes[31] = 39;
+        auto& channel = command.body["rs422"]["channels"][0];
+        channel["raw_bytes"] = bytes;
+        channel["last_operation"] = {{"raw_bytes", bytes}, {"received_mono_us", 1000000},
+            {"received_utc_us", 1792466880000000ULL}, {"request_id", nullptr}};
+        auto ingest_saved = [&] {
+            command.header.sequence++;
+            retained.ingest("flight.command", encoded(command), 1010000);
+            return retained.snapshot(1010000, "clock")["streams"][0]["rs422"]["channels"][0];
+        };
+        auto held = ingest_saved();
+        check(held["last_operation"]["execution"]["status"] == "RECEIVED" &&
+              held["last_operation"]["age_ms"] == 10, "retained frame is historical reception only");
+        auto req = aviator::make_service_request("flight_gateway", "serial-client", "aviator_core",
+            "grasp_wheel", {{"source", "FLIGHT"}, {"operation_code", 32}}, 100);
+        req["clock_id"] = "clock"; req["issued_mono_us"] = 1000000;
+        req["gateway_observation"] = "QUEUED";
+        channel["last_operation"]["request_id"] = req["request_id"];
+        channel["raw_bytes"][3] = 0; channel["raw_bytes"][31] = 7;
+        held = ingest_saved();
+        check(held["raw_bytes"][3] == 0 && held["last_operation"]["raw_bytes"][3] == 32 &&
+              held["last_operation"]["execution"]["status"] == "CONFIRMED",
+              "idle live frame coexists with retained operation without fabricating a Core reply");
+        auto other_req = req; other_req["request_id"] = aviator::new_session_id();
+        retained.ingest(aviator::service_request_topic, other_req.dump(), 1010000);
+        check(retained.snapshot(1010000, "clock")["rejected"] == 0 &&
+              ingest_saved()["last_operation"]["execution"]["status"] == "CONFIRMED",
+              "same operation name is not sufficient to associate a request");
+        retained.ingest(aviator::service_request_topic, req.dump(), 1010000);
+        check(ingest_saved()["last_operation"]["execution"]["status"] == "WAITING",
+              "exact request association reports pending Core reply");
+        auto rep = aviator::make_service_reply(req, "aviator_core", "core", "REJECTED", 1,
+            {{"reason", "INVALID_STATE"}, {"state", "READY"}});
+        retained.ingest(aviator::service_reply_topic, rep.dump(), 1010000);
+        held = ingest_saved();
+        check(held["last_operation"]["execution"]["status"] == "REJECTED" &&
+              held["last_operation"]["execution"]["reason"] == "INVALID_STATE",
+              "Core rejection is attached to the exact retained request");
+        channel["last_operation"]["request_id"] = nullptr;
+        check(ingest_saved()["last_operation"]["execution"]["status"] == "RECEIVED",
+              "a later same-code operation does not inherit the previous reply");
+        channel["last_operation"]["raw_bytes"][31] = 0;
+        held = ingest_saved();
+        check(held["last_operation"].contains("error") && held["status"] == "FRESH",
+              "bad retained checksum is isolated from live reception");
         monitor::State state;
         check(state.snapshot(1000000, "clock")["streams"].empty(), "empty snapshot");
         auto m = message();

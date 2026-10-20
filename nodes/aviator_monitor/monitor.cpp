@@ -14,6 +14,49 @@ Json field(const Json& body, const char* path) {
     } catch (const Json::exception&) {}
     return nullptr;
 }
+Json saved_operation(const Json& input, std::uint64_t now, bool same_clock) {
+    if (input.is_null()) return nullptr;
+    try {
+        const auto integer = [](const Json& value, std::uint64_t maximum) {
+            if (!value.is_number_integer() || value.get<double>() < 0 || value.get<double>() > maximum)
+                throw std::invalid_argument("invalid operation number");
+            return value.get<std::uint64_t>();
+        };
+        const auto& bytes = input.at("raw_bytes");
+        if (!bytes.is_array() || bytes.size() != 32) throw std::invalid_argument("frame size");
+        for (const auto& b : bytes) integer(b, 255);
+        const auto op = bytes[3].get<unsigned>();
+        unsigned sum = 0;
+        for (unsigned i = 2; i < 31; ++i) sum += bytes[i].get<unsigned>();
+        if (bytes[0] != 235 || bytes[1] != 144 || (sum & 255) != bytes[31] ||
+            !op || op > 0x60 || op % 16) throw std::invalid_argument("invalid operation frame");
+        for (unsigned offset : {4u, 6u}) {
+            const auto word = bytes[offset].get<unsigned>() | (bytes[offset + 1].get<unsigned>() << 8);
+            const int value = word > 32767 ? int(word) - 65536 : int(word);
+            if (value < -1000 || value > 1000) throw std::invalid_argument("operation position");
+        }
+        const auto sample = integer(input.at("received_mono_us"), aviator::max_json_integer);
+        const auto utc = integer(input.at("received_utc_us"), aviator::max_json_integer);
+        const auto& id = input.at("request_id");
+        if (!sample || !utc || (!id.is_null() && (!id.is_string() ||
+            id.get_ref<const std::string&>().empty() || id.get_ref<const std::string&>().size() > 128)))
+            throw std::invalid_argument("operation metadata");
+        return {{"raw_bytes", bytes}, {"received_utc_us", utc}, {"request_id", id},
+                {"age_ms", same_clock && now >= sample ? Json((now - sample) / 1000.0) : Json(nullptr)},
+                {"execution", {{"status", id.is_null() ? "RECEIVED" : "CONFIRMED"}}}};
+    } catch (const std::exception&) {
+        return {{"error", "保留的操作帧格式不受支持或损坏"}};
+    }
+}
+std::string service_status(const Service& s, std::uint64_t now, const std::string& clock) {
+    if (!s.reply.is_null()) return s.reply.at("status");
+    if (s.observation == "NOT_SENT" || s.observation == "TIMEOUT_UNKNOWN") return s.observation;
+    if (s.request.at("clock_id") != clock) return "CLOCK_UNKNOWN";
+    const auto issued = s.request.at("issued_mono_us").get<std::uint64_t>();
+    if (issued > now) return "FUTURE";
+    if ((now - issued) / 1000 >= s.request.at("deadline_ms").get<std::uint64_t>()) return "TIMEOUT_UNKNOWN";
+    return "WAITING";
+}
 // Treat optional observation errors independently of the control message. Only
 // project bounded, typed fields into /api/state; the original remains in detail.
 Json rs422_snapshot(const Json& input, std::uint64_t now, bool same_clock,
@@ -61,6 +104,9 @@ Json rs422_snapshot(const Json& input, std::uint64_t now, bool same_clock,
                  {"status", status},
                  {"age_ms", same_clock && sample && now >= sample ? Json(age / 1000.0) : Json(nullptr)},
                  {"fresh_for_ms", status == "FRESH" ? std::min(timeout - age, stream_timeout - receive_age) / 1000.0 : 0.0}});
+            if (channel.contains("last_operation"))
+                result["channels"].back()["last_operation"] =
+                    saved_operation(channel.at("last_operation"), now, same_clock);
         }
         return result;
     } catch (const std::exception&) {
@@ -228,9 +274,30 @@ Json State::snapshot(std::uint64_t now, const std::string& clock) {
                 {"error", field(body, "/system/current_error_code")}, {"last_error", field(body, "/system/last_error_code")},
                 {"roll", field(body, "/control/roll")}, {"pitch", field(body, "/control/pitch")},
                 {"vision", field(body, "/vision/status")}, {"confidence", field(body, "/confidence")}}}};
-        if (s.message.topic == aviator::Topic::flight_command && body.contains("rs422"))
+        if (s.message.topic == aviator::Topic::flight_command && body.contains("rs422")) {
             row["rs422"] = rs422_snapshot(body.at("rs422"), now, same_clock,
                                           now - s.received_us, limit);
+            for (auto& channel : row["rs422"]["channels"]) {
+                if (!channel.contains("last_operation")) continue;
+                auto& saved = channel["last_operation"];
+                if (saved.is_null() || saved.contains("error") || saved["request_id"].is_null()) continue;
+                for (const auto& service : services) {
+                    if (service.client != h.publisher_id || service.session != h.session_id ||
+                        service.request_id != saved["request_id"] || service.request.is_null()) continue;
+                    const auto& req = service.request;
+                    if (req["target"] != "aviator_core" || req["clock_id"] != h.clock_id ||
+                        !req["parameters"].contains("operation_code") ||
+                        req["parameters"]["operation_code"] != saved["raw_bytes"][3] ||
+                        (!req["parameters"].contains("source") || req["parameters"]["source"] != "FLIGHT")) continue;
+                    saved["execution"] = {{"status", service_status(service, now, clock)},
+                        {"observation", service.observation},
+                        {"reason", field(service.reply, "/result/reason")},
+                        {"state", field(service.reply, "/result/state")},
+                        {"error_code", field(service.reply, "/error_code")}};
+                    break;
+                }
+            }
+        }
         if (s.message.topic == aviator::Topic::flight_state) {
             for (const auto* group : {"arm", "hand", "camera"}) {
                 const auto base = std::string("/freshness/") + group;
@@ -245,20 +312,7 @@ Json State::snapshot(std::uint64_t now, const std::string& clock) {
     }
     Json transactions = Json::array();
     for (const auto& s : services) {
-        std::string status = "WAITING";
-        if (!s.reply.is_null())
-            status = s.reply.at("status");
-        else if (s.observation == "NOT_SENT" || s.observation == "TIMEOUT_UNKNOWN")
-            status = s.observation;
-        else if (s.request.at("clock_id") != clock)
-            status = "CLOCK_UNKNOWN";
-        else {
-            const auto issued = s.request.at("issued_mono_us").get<std::uint64_t>();
-            if (issued > now)
-                status = "FUTURE";
-            else if ((now - issued) / 1000 >= s.request.at("deadline_ms").get<std::uint64_t>())
-                status = "TIMEOUT_UNKNOWN";
-        }
+        const auto status = service_status(s, now, clock);
         transactions.push_back(
             {{"id", s.id},
              {"request_id", s.request_id},

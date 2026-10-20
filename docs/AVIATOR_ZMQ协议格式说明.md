@@ -900,8 +900,15 @@ Core 的 system 配置 `flight_source` 为 `FLIGHT` 或 `JOYSTICK`，缺省 JOYS
 | `channels[].healthy` | bool | 发布时该通道接收租约是否有效，关闭时为 false。 |
 | `channels[].accepted_frames` | uint53 | 进程内该通道累计接纳帧数，重复／乱序帧不累计。 |
 | `channels[].rejected_bytes` | uint53 | 进程内解析器累计丢弃字节数，不是坏帧数，也不包含已解析但序号被拒绝的帧。 |
+| `channels[].last_operation` | object / null，可选 | 该通道最近接纳的非零操作帧；尚无操作时为 null，旧发布者可省略。空闲帧不清空。 |
+| `last_operation.raw_bytes` | uint8[32] | 最近有效非零操作帧的完整原始字节。 |
+| `last_operation.received_mono_us` | uint53 | 该操作帧的本机接收单调时间，与消息 `clock_id` 同域。 |
+| `last_operation.received_utc_us` | uint53 | 该操作帧的接收 UTC 时间，仅供历史显示，不参与控制时效判断。 |
+| `last_operation.request_id` | string / null | 本次操作通过连续确认后创建的 Core 请求 ID；无关联请求时为 null。 |
 
 有效控制消息中，选用通道的 `received_mono_us` 与头部 `sample_mono_us` 一致，其原始滚转／俯仰除以 1000 对应 `control`。失效后可保留旧报文用于诊断，此时不得把它当作当前控制依据；串口重连时清空该通道的旧报文字节。此扩展随现有 50 Hz 发布取最近样本，不提供全部 80 Hz 串口帧历史或无效帧抓包。Monitor 另按原始接收时间计算年龄、剩余有效期，并区分时钟域未知、等待和过期。
+
+`last_operation` 在每个串口帧被接纳时更新，先于 50 Hz 发布采样，因此同批读取中的后续空闲帧不会覆盖它。同一连续操作保留最新帧和已关联的请求 ID；操作码变化、经过空闲帧或接收超时后开始的新操作清除旧关联。每通道仅占一条内存记录，网关会话重启时清空。同次双路操作仅选用通道关联实际派发的请求，备用通道可保持 null。Monitor 使用发布者、会话和请求 ID 匹配服务记录，同时检查目标、时钟域、来源与操作码；没有匹配记录时明确显示结果未观测到。保留帧及其应答均为历史诊断信息，不代表当前控制目标或机械动作完成；此扩展不改变串口布局或 Core 控制语义。
 
 串口指令通过连续确认后，以 client_id=flight_gateway 调用现有六操作，parameters 恰好为 `{"source":"FLIGHT","operation_code":16}`（此例为 enter_standby）。操作码依次为 0x10/20/30/40/50/60，必须与 operation 名称一致；Core 仅在显式配置 FLIGHT、输入绑定且新鲜时受理。JOYSTICK 的原有 button 参数仍兼容，两个来源不自动切换。
 

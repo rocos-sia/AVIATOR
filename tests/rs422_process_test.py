@@ -69,7 +69,8 @@ def main():
         next_tick = time.monotonic()
         last_request_count = 0
 
-        def cycle(operation=0, a=True, b=True, roll=125, pitch=-250, malformed=False, core=True):
+        def cycle(operation=0, a=True, b=True, roll=125, pitch=-250, malformed=False, core=True,
+                  prefix_operation=0):
             nonlocal tick, sequence, next_tick
             now = time.monotonic()
             if next_tick > now:
@@ -77,6 +78,10 @@ def main():
             next_tick = max(next_tick+.0125, time.monotonic())
             tick += 1
             data = down(tick, operation, roll, pitch)
+            if prefix_operation:
+                data = down(tick, prefix_operation, roll, pitch)
+                tick += 1
+                data += down(tick, operation, roll, pitch)
             if malformed:
                 data = data[:-1] + bytes([data[-1] ^ 1])
             for channel, (enabled, (master, _)) in enumerate(zip((a, b), pairs)):
@@ -151,6 +156,10 @@ def main():
             for _ in range(10): cycle(0x40)
             for _ in range(10): cycle()
             assert len(requests) == 2 and requests[1]['operation'] == 'exit_control'
+            saved = seen_commands[-1]['rs422']['channels'][1]['last_operation']
+            assert saved['raw_bytes'][3] == 0x40 and saved['request_id'] == requests[1]['request_id']
+            assert saved['received_utc_us'] > 0
+            assert seen_commands[-1]['rs422']['channels'][1]['raw_bytes'][3] == 0
             # Invalid CRC frames cannot renew either input lease.
             for _ in range(14): cycle(malformed=True)
             assert not seen_commands[-1]['valid'] and received[0][-1][4] == 3
@@ -167,6 +176,15 @@ def main():
             # New samples recover; no old operation is replayed.
             for _ in range(25): cycle()
             assert seen_commands[-1]['valid'] and len(requests) == 2
+            # One operation followed by idle in the same read must remain visible,
+            # even though it never meets the operation gate and never reaches Core.
+            cycle(prefix_operation=0x40)
+            for _ in range(8): cycle()
+            for channel in seen_commands[-1]['rs422']['channels']:
+                assert channel['raw_bytes'][3] == 0
+                assert channel['last_operation']['raw_bytes'][3] == 0x40
+                assert channel['last_operation']['request_id'] is None
+            assert len(requests) == 2
             print('PASS: real dual-PTY robot, 80 Hz uplinks, FLIGHT input, single execution, failover, CRC loss, stale Core, recovery')
         except Exception:
             log.flush();log.seek(0);print(log.read(), file=sys.stderr)

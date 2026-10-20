@@ -75,7 +75,9 @@ class CoreClient {
         }
     }
     void publish(const DualReceiver& input, const std::array<Bytes, 2>& raw_frames,
-                 const std::array<Parser, 2>& parsers, uint64_t now, bool shutdown = false) {
+                 const std::array<Parser, 2>& parsers,
+                 const std::array<nlohmann::json, 2>& last_operations,
+                 uint64_t now, bool shutdown = false) {
         aviator::Message m;
         m.topic = aviator::Topic::flight_command;
         // Invalid snapshots also carry a fresh revocation time so InputGuard can revoke
@@ -103,13 +105,14 @@ class CoreClient {
                  {"received_mono_us", raw_frames[i].empty() ? 0 : input.channels[i].received},
                  {"healthy", !shutdown && input.healthy(i, now)},
                  {"accepted_frames", input.channels[i].generation},
-                 {"rejected_bytes", parsers[i].rejected}});
+                 {"rejected_bytes", parsers[i].rejected},
+                 {"last_operation", last_operations[i]}});
         std::string raw, error;
         if (!aviator::encode(m, raw, error))
             throw std::runtime_error(error);
         aviator::send(pub_, "flight.command", raw);
     }
-    void operation(uint8_t code) {
+    std::string operation(uint8_t code) {
         const auto req = aviator::make_service_request(
             "flight_gateway", session_, "aviator_core", operationName(code),
             {{"source", "FLIGHT"}, {"operation_code", code}}, config_.service_timeout_ms);
@@ -124,6 +127,7 @@ class CoreClient {
                               sent ? "QUEUED" : "NOT_SENT", req.at("request_id").dump());
         if (sent)
             pending_.emplace(req.at("request_id").get<std::string>(), req);
+        return req.at("request_id").get<std::string>();
     }
     void telemetry(Uplink& up, uint64_t now) const {
         if (!feedback_.expired(now))
@@ -164,6 +168,7 @@ void runRs422(const Config& config, int signals_fd) {
         {SerialPort(config.rs422.channel_a), SerialPort(config.rs422.channel_b)}};
     std::array<Parser, 2> parsers{{Parser(simulator), Parser(simulator)}};
     std::array<Bytes, 2> raw_frames;
+    std::array<nlohmann::json, 2> last_operations;
     std::array<uint64_t, 2> connections{}, received{};
     std::array<uint8_t, 2> observed_operations{};
     std::array<Uplink, 2> replies{};
@@ -235,6 +240,17 @@ void runRs422(const Config& config, int signals_fd) {
                         Downlink down;
                         if (decode(frame, down) && receiver.receive(i, down, now)) {
                             raw_frames[i] = frame;
+                            if (down.operation) {
+                                auto& saved = last_operations[i];
+                                // Retain every accepted nonzero frame before 50 Hz sampling.
+                                // A neutral interval starts a new operation even for the same code.
+                                if (saved.is_null() || down.operation != observed_operations[i] ||
+                                    now - saved.at("received_mono_us").get<uint64_t>() >= timeout)
+                                    saved = {{"request_id", nullptr}};
+                                saved["raw_bytes"] = frame;
+                                saved["received_mono_us"] = now;
+                                saved["received_utc_us"] = aviator::utc_us();
+                            }
                             if (down.operation != observed_operations[i]) {
                                 if (down.operation)
                                     aviator::Logger::info(
@@ -255,13 +271,16 @@ void runRs422(const Config& config, int signals_fd) {
             if (!valid)
                 echo_operation = 0;
             if (now >= next_pub || valid != was_valid) {
-                core->publish(receiver, raw_frames, parsers, now);
+                core->publish(receiver, raw_frames, parsers, last_operations, now);
                 next_pub = now + 20000;
             }
             was_valid = valid;
             if (operation && valid) {
                 echo_operation = operation;
-                core->operation(operation);
+                const auto request_id = core->operation(operation);
+                auto& saved = last_operations[receiver.selected()];
+                if (!saved.is_null() && saved.at("raw_bytes").at(3) == operation)
+                    saved["request_id"] = request_id;
             }
             if (receiver.selected() != last_selected) {
                 last_selected = receiver.selected();
@@ -383,6 +402,6 @@ void runRs422(const Config& config, int signals_fd) {
         }
     }
     if (core)
-        core->publish(receiver, raw_frames, parsers, aviator::monotonic_us(), true);
+        core->publish(receiver, raw_frames, parsers, last_operations, aviator::monotonic_us(), true);
 }
 } // namespace flight_gateway
