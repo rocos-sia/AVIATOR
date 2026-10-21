@@ -323,12 +323,18 @@ start gateway "$AVIATOR_BIN/flight_gateway" --config "$FLIGHT_CONFIG"
 if $TTS; then
     start tts "$AVIATOR_BIN/aviator_tts" --config "$TTS_CONFIG" --system-config "$SYSTEM_CONFIG"
 fi
-start core "$AVIATOR_BIN/aviator_core_managed" --config "$SYSTEM_CONFIG"
 if ! $SIMULATION; then
-    start camera env PATH="$(dirname "$CAMERA_PYTHON"):$PATH" "$CAMERA_PYTHON" \
+    # Use the dedicated warmup below instead of the normal inter-node delay.
+    START_DELAY=0 start camera env PATH="$(dirname "$CAMERA_PYTHON"):$PATH" "$CAMERA_PYTHON" \
         nodes/camera/main.py --config config/camera.yaml "${recording_options[@]}" \
         --camera-id cockpit --session "$SESSION" --show --print-pose
+    echo '等待相机预热 5 秒后启动 Core…'
+    if ! $DRY_RUN; then
+        sleep 5
+        check_nodes
+    fi
 fi
+start core "$AVIATOR_BIN/aviator_core_managed" --config "$SYSTEM_CONFIG"
 if $SIMULATION; then
     if $DRY_RUN; then
         SIM_MONITOR_CONFIG='<日志目录>/monitor-simulation.yaml'

@@ -1,5 +1,7 @@
 # rh56ftp_hand — RH56FTP Modbus TCP ZMQ 调试节点
 
+只测右手且不使用机械臂 SDK 时，见 [右手 RS485 独立测试流程](../../docs/RH56FTP右手RS485独立测试流程.md)：包含 USB 转 RS485 接线、完整十六进制指令、发送顺序、速度/力/保持逻辑和直接串口示例。
+
 整机、相机随动和带宽脚本现由独立 [xCoreSDK_hand](../xCoreSDK_hand/README.md) 提供 SDK RS485 手控制。
 两个节点共用本目录的控制策略与 config/rh56ftp_hand.yaml，仅传输方式不同；不可同时运行。
 

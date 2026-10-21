@@ -17,7 +17,7 @@ wheel_initial:
 # 换算 angle=-theta_rad，displacement=-translation_along_axis_m-0.085，不叠加 wheel_initial。
 # 本次抓握固定使用该位形，并随轨迹同步软件参考；不改变仿真启动时实体轮盘的初值。
 grasp_wheel:
-  source: camera   # wheel_initial | camera
+  source: wheel_initial   # wheel_initial | camera
   camera_id: cockpit
   max_age_ms: 200         # 相机采集时间距当前时间的上限，20..1000 ms
   wait_timeout_ms: 2000   # 等待新有效帧的上限，max_age_ms..10000 ms；失败则终止本次抓握
@@ -30,7 +30,8 @@ rokae:
   joint_stiffness: [500, 500, 500, 500, 50, 50, 50]
   # FOLLOWING 使用下列刚度；即使与默认数值相同，也执行暂停、设置和恢复。
   # 退出时恢复 joint_stiffness，缺省时沿用默认刚度。
-  following_joint_stiffness: [0.01, 500, 0.01, 0.01, 0.01, 0.01, 0.01]
+  # following_joint_stiffness: [0.01, 500, 0.01, 0.01, 0.01, 0.01, 0.01]
+  following_joint_stiffness: [500, 500, 500, 500, 50, 50, 50]
   # joint_stiffness: [0.01, 500, 0.01, 0.01, 0.01, 0.01, 0.01]
   # 每臂分别指定控制器 IP 和上位机本地 IP；本地地址须已配置在对应网卡上。
   # 建议使用有线连接；此处配置不会修改上位机网卡地址。

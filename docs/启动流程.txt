@@ -40,10 +40,13 @@ rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/flight_gateway
 // 无真实手：本步骤加 --fake-hand；或设置 system.yaml 的 xcore_sdk_hand.fake_hand: true。
 // 不要同时启动独立 Modbus/fake 手节点，避免重复发布 hand.state。
 
-//5、启动core
+//5、启动camera，并等待5秒预热后再启动Core；一键脚本已自动执行，仿真不增加此等待。
+rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ~/miniconda3/envs/apriltag_realsense/bin/python nodes/camera/main.py   --config config/camera.yaml --recording-config config/recording.yaml   --camera-id cockpit --session "$(cat /tmp/aviator_session.uuid)"   --show --print-pose
+
+//6、相机预热完成后启动core（另开终端）
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_core_managed --config config/system.yaml 
-// 相机随动测试：用下列独立 Core 替换第5步，不要同时运行其他 Core；无需 flight_gateway。
-// 先启动 bus、manipulator、xCoreSDK_hand及第6步相机，再运行此入口；启动后自动使能、接近把手并锁定。
+// 相机随动测试：用下列独立 Core 替换第6步，不要同时运行其他 Core；无需 flight_gateway。
+// 先启动 bus、manipulator、xCoreSDK_hand及第5步相机，再运行此入口；启动后自动使能、接近把手并锁定。
 // 无真实手时，在第4步 xCoreSDK_hand 加 --fake-hand。
 // 构建：cmake --build build/release --target aviator_core_camera_servo -j2
 // 启动：./build/release/bin/aviator_core_camera_servo --config config/system.yaml --camera-id cockpit
@@ -62,8 +65,6 @@ rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_core_mana
 // 日志及本次独立 session 位于 /tmp/aviator-camera-servo.*，不改写 /tmp/aviator_session.uuid。
 // Ctrl+C 先停止 Core，最多等15秒完成减速/解锁/下使能，再停止其他节点；保持终端打开。
 // 与 start_aviator.sh 共用互斥锁；先停止手动启动的节点，避免端口占用或多个 Core 同时控制。
-//6、启动camera
-rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ~/miniconda3/envs/apriltag_realsense/bin/python nodes/camera/main.py   --config config/camera.yaml --recording-config config/recording.yaml   --camera-id cockpit --session "$(cat /tmp/aviator_session.uuid)"   --show --print-pose
 
 //7、启动monitor,
 rocos@rocos-controller:~/Documents/GitHub/AVIATOR/build/bin$ ./aviator_monitor 
@@ -84,7 +85,7 @@ rocos@rocos-controller:~/Documents/GitHub/AVIATOR$ ./build/bin/aviator_logger --
 // 工具不使能、不切模式、不发运动指令，但 SDK 断连本身会停止机械臂运动，不能与运动/控制程序同时运行。
 // 首次配置：cmake -S . -B build
 // 构建：cmake --build build --target aviator_grasp_tool_state -j2
-// 相机模式只保留第1步 Bus 和第6步 Camera；默认读取 config/robot.yaml 及其 grasp 路径。
+// 相机模式只保留第1步 Bus 和第5步 Camera；默认读取 config/robot.yaml 及其 grasp 路径。
 // 预览（不改 grasp.json；--report 保存采样及计算报告）：
 // ~/miniconda3/envs/apriltag_realsense/bin/python tools/grasp_tool_calibration/calibrate.py --wheel-source camera --camera-id cockpit --report /tmp/grasp-tool-preview.json
 // 确认预览后，保持静止重新采样并备份、写回 grasp.json：
