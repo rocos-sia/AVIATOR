@@ -134,6 +134,50 @@ def write_document(path: Path, document: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
+def build_calibration(args, zero_records, zero_matrix, second_records, second_matrix):
+    """Build the shared CLI/UI calibration payload without writing files."""
+    motion = calibrate_from_poses(zero_matrix, second_matrix)
+    return {
+        "schema_version": 1,
+        "status": "calibrated",
+        "source": {
+            "topic": args.topic,
+            "camera_id": args.camera_id,
+            "tag_id": args.tag_id,
+            "frame_id": args.frame_id,
+            "pose_convention": "T_camera_tag = target_to_camera",
+            "position_unit": "m",
+            "samples_per_pose": args.samples,
+            "sample_interval_ms": args.sample_interval_ms,
+            "average_method": {
+                "translation": "componentwise_arithmetic_mean",
+                "orientation": "markley_quaternion_mean",
+            },
+        },
+        "zero": {
+            "theta_rad": 0.0,
+            "translation_along_axis_m": 0.0,
+            "pose": pose_record(zero_records, zero_matrix),
+        },
+        "second": {"pose": pose_record(second_records, second_matrix)},
+        "motion": {
+            "axis_frame": args.frame_id,
+            "axis_direction": [float(value) for value in motion["axis_direction"]],
+            "axis_point_m": None if motion["axis_point"] is None else
+                [float(value) for value in motion["axis_point"]],
+            "rotation_between_samples_rad": float(motion["rotation_angle_rad"]),
+            "translation_vector_between_samples_m":
+                [float(value) for value in motion["translation_vector"]],
+            "translation_along_axis_between_samples_m":
+                float(motion["translation_along_axis_m"]),
+            "translation_perpendicular_between_samples_m":
+                [float(value) for value in motion["translation_perpendicular_m"]],
+            "translation_perpendicular_norm_m":
+                float(motion["translation_perpendicular_norm_m"]),
+        },
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if (args.timeout_ms <= 0 or args.samples <= 0 or args.sample_interval_ms < 0 or
@@ -159,52 +203,15 @@ def main(argv: list[str] | None = None) -> int:
         zero_records, zero_matrix = receive_poses(sub, zmq, args, "正在等待零位有效位姿")
         input("把方向盘移动到第二个标定位姿，保持稳定后按回车... ")
         second_records, second_matrix = receive_poses(sub, zmq, args, "正在等待第二个有效位姿")
-        motion = calibrate_from_poses(zero_matrix, second_matrix)
         document = load_document(args.output)
-        document["steering_wheel_calibration"] = {
-            "schema_version": 1,
-            "status": "calibrated",
-            "source": {
-                "topic": args.topic,
-                "camera_id": args.camera_id,
-                "tag_id": args.tag_id,
-                "frame_id": args.frame_id,
-                "pose_convention": "T_camera_tag = target_to_camera",
-                "position_unit": "m",
-                "samples_per_pose": args.samples,
-                "sample_interval_ms": args.sample_interval_ms,
-                "average_method": {
-                    "translation": "componentwise_arithmetic_mean",
-                    "orientation": "markley_quaternion_mean",
-                },
-            },
-            "zero": {
-                "theta_rad": 0.0,
-                "translation_along_axis_m": 0.0,
-                "pose": pose_record(zero_records, zero_matrix),
-            },
-            "second": {"pose": pose_record(second_records, second_matrix)},
-            "motion": {
-                "axis_frame": args.frame_id,
-                "axis_direction": [float(value) for value in motion["axis_direction"]],
-                "axis_point_m": None if motion["axis_point"] is None else
-                    [float(value) for value in motion["axis_point"]],
-                "rotation_between_samples_rad": float(motion["rotation_angle_rad"]),
-                "translation_vector_between_samples_m":
-                    [float(value) for value in motion["translation_vector"]],
-                "translation_along_axis_between_samples_m":
-                    float(motion["translation_along_axis_m"]),
-                "translation_perpendicular_between_samples_m":
-                    [float(value) for value in motion["translation_perpendicular_m"]],
-                "translation_perpendicular_norm_m":
-                    float(motion["translation_perpendicular_norm_m"]),
-            },
-        }
+        document["steering_wheel_calibration"] = build_calibration(
+            args, zero_records, zero_matrix, second_records, second_matrix)
         write_document(args.output, document)
         print(f"标定已写入 {args.output}")
-        print("axis_direction=", document["steering_wheel_calibration"]["motion"]["axis_direction"])
-        print("rotation_between_samples_rad=", motion["rotation_angle_rad"])
-        print("translation_along_axis_m=", motion["translation_along_axis_m"])
+        saved_motion = document["steering_wheel_calibration"]["motion"]
+        print("axis_direction=", saved_motion["axis_direction"])
+        print("rotation_between_samples_rad=", saved_motion["rotation_between_samples_rad"])
+        print("translation_along_axis_m=", saved_motion["translation_along_axis_between_samples_m"])
         return 0
     finally:
         sub.close(0)

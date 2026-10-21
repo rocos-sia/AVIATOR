@@ -162,6 +162,20 @@ python3 -m venv .cache/tts-venv
 修改测试程序后需重新构建 `aviator_core_wheel_bandwidth`。
 构建、输出及分析说明见 [wheel_bandwidth README](../tools/wheel_bandwidth/README.md)。
 
+## 方向盘两点标定界面
+
+```bash
+./scripts/start_steering_wheel_calibration_ui.sh --dry-run  # 只预览启动命令
+./scripts/start_steering_wheel_calibration_ui.sh            # 启动 Bus、相机和标定窗口
+```
+
+先停止已有 Bus 和 Camera。保持方向盘零位，点击“采集第一个点（零位）”；转动到第二个
+稳定位置后点击“采集第二个点并保存”。每点默认平均 20 帧，保存前自动备份已有标定。
+界面实时显示相对零位的角度（度）和沿轴纵深（mm），无效或过期数据清空读数。
+关闭窗口 / Ctrl+C 清理本次进程。UI 使用系统 `python3`（Tkinter、NumPy、PyYAML、pyzmq），
+相机使用 `apriltag_realsense` 环境；支持 `UI_PYTHON`、`CAMERA_PYTHON`、`AVIATOR_BIN`。
+完整参数、采样规则和运行日志见 [方向盘标定工具](../tools/steering_wheel_calibration/README.md#一键图形界面)。
+
 ## 静态抓握校准界面
 
 ```bash

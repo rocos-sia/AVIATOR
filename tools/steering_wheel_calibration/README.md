@@ -25,6 +25,58 @@ T_relative = T_current @ inverse(T_zero)
 
 ## 标定
 
+### 一键图形界面
+
+```bash
+./scripts/start_steering_wheel_calibration_ui.sh
+# 仅预览命令，不启动节点、不打开窗口、不写文件
+./scripts/start_steering_wheel_calibration_ui.sh --dry-run
+```
+
+先停止已经运行的 Bus 和 Camera。脚本自动启动 `build/bin/aviator_bus`、相机
+（`--show --print-pose`）和原生标定窗口，不启动机械臂或 Core。操作流程：
+
+1. 等待界面出现 `TRACKING`，方向盘保持零位，点击“采集第一个点（零位）”。
+2. 第一组采集完成后，将方向盘转到明显不同的角度，保持稳定，点击“采集第二个点并保存”。
+3. 第二组采集完成后自动备份已有 YAML（`.bak.时间戳`）并写入
+   `config/steering_wheel_calibration.yaml`；相机约 1 秒自动重载。
+4. 界面实时显示当前已保存标定下的角度（度）和纵深（mm）。纵深是相对零位沿标定轴的
+   有符号位移，不是相机测得的绝对距离，也不包含 Core 的负号和 −0.085 m 偏移。
+5. 点击“停止相机和 Bus”、关闭窗口或在终端按 Ctrl+C，均会清理本次启动的子进程。
+
+每点默认取 20 帧、帧间至少 20 ms，只接收点击后本次相机会话的新鲜检测。
+数据超过 500 ms 或检测失效时清空读数；15 秒未采满则取消本次采样，不写文件。
+可点击“取消采样”重试；重新采集第一点会清除本轮两点进度，已保存标定仍用于实时显示，
+直至第二点采集成功并保存。轴方向偏差超过 5° 时界面给出提示。
+
+UI 默认使用 `python3`，需要 Tkinter、NumPy、PyYAML、pyzmq；相机默认使用
+`~/miniconda3/envs/apriltag_realsense/bin/python`。推荐系统 Python 运行窗口，以使用
+系统中文字体；Ubuntu 缺少依赖时可安装 `python3-tk python3-numpy python3-yaml python3-zmq`。
+`UI_PYTHON`、`CAMERA_PYTHON`、`CONDA_ROOT`、`AVIATOR_BIN` 可覆盖对应路径。
+例如：
+
+```bash
+AVIATOR_BIN="$PWD/build/release/bin" ./scripts/start_steering_wheel_calibration_ui.sh
+./scripts/start_steering_wheel_calibration_ui.sh --samples 30 --capture-timeout-s 20
+./scripts/start_steering_wheel_calibration_ui.sh --no-show  # 只关相机视频，保留标定窗口
+```
+
+`--system-config`、`--camera-config`、`--recording-config`、`--output` 可选择其他配置，
+输出路径也会传给相机的 `--steering-wheel-calibration`，保证使用同一份结果。
+`--camera-id`、`--tag-id` 过滤标定输入；检测器实际使用的标签 ID 仍由相机 YAML 配置。
+脚本可从任意目录调用，显式相对路径以调用目录为准；`--help` 列出所有参数。
+运行日志及独立 session 位于终端 / 窗口显示的 `/tmp/aviator-wheel-calibration-*`，
+不改写 `/tmp/aviator_session.uuid`。相机沿用所给命令的 recording 配置，但此入口不启动
+Logger；如需生成 MCAP，请另行启动 Logger。与主启动脚本共用启动锁，Bus 端口冲突时报错退出。
+
+离线回归（模拟位姿和子进程，不连接真实相机）：
+
+```bash
+python3 -m unittest discover -s tools/steering_wheel_calibration -p 'test_*.py'
+```
+
+### 命令行
+
 先启动 `aviator_bus` 和 AprilTag 相机节点，然后运行：
 
 ```bash
