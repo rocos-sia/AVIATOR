@@ -1,0 +1,13 @@
+# scripts/start_wheel_bandwidth.sh 的测试参数；命令行同名参数优先。
+# 每次只测试一个轴：rotation 转动，translation 推拉。
+axis: translation
+amplitude_deg: 3.0        # 转动单边幅值：±3°，允许 (0,10]°
+amplitude_mm: 20.0        # 推拉单边幅值：±20 mm
+# 转动中心为 0°；推拉中心取 robot.yaml 的 wheel_initial.displacement。
+# 推拉时角度保持 0°，整个推拉范围必须位于 [-170,0] mm。
+frequencies_hz: [ 0.2,0.5, 1.0, 1.5, 1.8, 2.0, 2.1, 2.2,2.3,2.4,2.5,2.6,2.7,2.8,2.9,3.0,3.1,3.4,3.6,3.8,4.0,4.2,4.4]  # 严格递增，0.01..5 Hz
+settle_cycles: 6          # 每频点增幅后等待周期，0..100
+measure_cycles: 10         # 每频点恒幅测量周期，2..100
+ramp_cycles: 2            # 每频点增幅、减幅各自周期，1..100
+fake_hand: true          # true：真实机械臂 + 模拟手；不可与 --simulation 同用
+ignore_geometry: true   # 仅影响分析，保留几何告警；不改变设备保护

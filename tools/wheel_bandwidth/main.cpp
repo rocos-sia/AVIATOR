@@ -30,11 +30,13 @@ int main(int argc, char** argv) {
         auto config = defaultSystemConfig();
         fs::path output;
         Sweep sweep;
+        bool angle_amplitude = false, linear_amplitude = false;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--help") {
                 std::cout << "aviator_core_wheel_bandwidth --config SYSTEM --output DIRECTORY\n"
                     "  [--frequencies 0.1,0.2,0.3,0.5,0.7,1] [--amplitude-deg 10]\n"
+                    "  [--axis rotation|translation] [--amplitude-mm 20 (translation only)]\n"
                     "  [--settle-cycles 2] [--measure-cycles 5] [--ramp-cycles 1]\n"
                     "Requires grasp_wheel.source=wheel_initial; no camera. Use start_wheel_bandwidth.sh.\n";
                 return 0;
@@ -47,15 +49,27 @@ int main(int argc, char** argv) {
                 sweep.frequencies.clear(); std::istringstream stream(value); std::string token;
                 while (std::getline(stream, token, ',')) sweep.frequencies.push_back(number(token));
                 if (value.empty() || value.back() == ',') throw std::runtime_error("Empty frequency");
-            } else if (arg == "--amplitude-deg") sweep.amplitude = number(value)*pi/180;
+            } else if (arg == "--axis") {
+                if (value != "rotation" && value != "translation")
+                    throw std::runtime_error("Axis must be rotation or translation");
+                sweep.translation = value == "translation";
+            } else if (arg == "--amplitude-deg") {
+                sweep.amplitude = number(value)*pi/180;
+                angle_amplitude = true;
+            } else if (arg == "--amplitude-mm") {
+                sweep.amplitude = number(value)/1000;
+                linear_amplitude = true;
+            }
             else if (arg == "--settle-cycles") sweep.settle = cycles(value);
             else if (arg == "--measure-cycles") sweep.measure = cycles(value);
             else if (arg == "--ramp-cycles") sweep.ramp = cycles(value);
             else throw std::runtime_error("Unknown option: " + arg);
         }
-        if (output.empty() || sweep.frequencies.empty() || sweep.amplitude <= 0 ||
-            sweep.amplitude > 10*pi/180 || sweep.measure < 2 || sweep.ramp < 1)
-            throw std::runtime_error("Require output, amplitude (0,10] deg, measure>=2 and ramp>=1");
+        if ((sweep.translation && angle_amplitude) || (!sweep.translation && linear_amplitude))
+            throw std::runtime_error("Amplitude unit does not match the selected axis");
+        if (sweep.translation && !linear_amplitude) sweep.amplitude = .020;
+        if (output.empty() || sweep.frequencies.empty() || sweep.measure < 2 || sweep.ramp < 1)
+            throw std::runtime_error("Require output, frequencies, measure>=2 and ramp>=1");
         const auto settings = loadMotionConfig(config);
         const auto robot_yaml = YAML::LoadFile(settings.robot.string());
         if (robot_yaml["grasp_wheel"]["source"].as<std::string>("") != "wheel_initial")
@@ -79,6 +93,7 @@ int main(int argc, char** argv) {
         auto fk = makePinIkKinematics(resolve("urdf").string(), limits[0]*pi/180, limits[1]*pi/180);
         WheelEstimate estimator(YAML::LoadFile(resolve("grasp").string()));
         const auto initial = loadInitialWheel(settings.robot);
+        sweep.validateMotion(initial.displacement);
         fs::create_directories(output);
         if (fs::exists(output/"samples.csv") || fs::exists(output/"commands.csv"))
             throw std::runtime_error("Output already contains a run");
@@ -88,7 +103,8 @@ int main(int argc, char** argv) {
         samples << std::setprecision(16)
             << "sample_mono_us,left_sample_us,right_sample_us,t_s,segment,frequency_hz,segment_t_s,measure,ideal_rad,command_rad,reference_rad,left_rad,right_rad,estimated_rad,left_displacement_m,right_displacement_m,arm_difference_rad,left_transverse_m,right_transverse_m,left_tilt_rad,right_tilt_rad";
         for (int s=0; s<2; ++s) for (int j=1; j<=7; ++j) samples << ',' << (s ? "right_q" : "left_q") << j;
-        samples << '\n';
+        samples << ",ideal_displacement_m,command_displacement_m,reference_displacement_m,"
+                   "estimated_displacement_m,arm_difference_m\n";
         commands << std::setprecision(16) << "sample_mono_us,t_s,segment,frequency_hz,angle_rad,displacement_m\n";
         auto link = std::make_unique<RemoteLink>(settings);
         auto* connection = link.get();
@@ -130,10 +146,11 @@ int main(int argc, char** argv) {
                 if (t >= sweep.duration()+2) break;
                 if (now >= next) {
                     const auto point = sweep.at(t);
-                    robot.servoWheel(point.angle, initial.displacement, 1.);
-                    history.emplace_back(now, point.angle);
+                    const auto target = sweep.target(point.offset, initial.displacement);
+                    robot.servoWheel(target.angle, target.displacement, 1.);
+                    history.emplace_back(now, point.offset);
                     commands << now << ',' << t << ',' << point.segment << ',' << point.frequency << ','
-                             << point.angle << ',' << initial.displacement << '\n';
+                             << target.angle << ',' << target.displacement << '\n';
                     next = now + uint64_t(period*1e6); // Never replay missed targets.
                     if (point.segment != last_segment) {
                         Logger::info("Bandwidth segment={} frequency={} Hz", point.segment, point.frequency);
@@ -176,16 +193,21 @@ int main(int argc, char** argv) {
                         [](uint64_t ts, const auto& entry) { return ts < entry.first; });
                     if (command == history.begin()) continue;
                     --command;
+                    const auto ideal = sweep.target(at.offset, initial.displacement);
+                    const auto commanded = sweep.target(command->second, initial.displacement);
                     samples << sample << ',' << stamp[0] << ',' << stamp[1] << ',' << double(sample-start)/1e6
                         << ',' << at.segment << ',' << at.frequency << ',' << at.local_time << ',' << at.measure
-                        << ',' << at.angle << ',' << command->second << ',' << m.body.at("wheel_reference").at("angle").get<double>()
+                        << ',' << ideal.angle << ',' << commanded.angle << ',' << m.body.at("wheel_reference").at("angle").get<double>()
                         << ',' << est[0].angle << ',' << est[1].angle << ',' << meanAngle(est[0].angle,est[1].angle)
                         << ',' << est[0].displacement << ',' << est[1].displacement
                         << ',' << difference(est[0].angle,est[1].angle)
                         << ',' << est[0].transverse_error << ',' << est[1].transverse_error
                         << ',' << est[0].tilt_error << ',' << est[1].tilt_error;
                     for (const auto& arm : q) for (double angle : arm) samples << ',' << angle;
-                    samples << '\n';
+                    samples << ',' << ideal.displacement << ',' << commanded.displacement
+                        << ',' << m.body.at("wheel_reference").at("displacement").get<double>()
+                        << ',' << (est[0].displacement+est[1].displacement)/2
+                        << ',' << est[0].displacement-est[1].displacement << '\n';
                     last_valid = received_at; last_seq = m.header.sequence; instance = m.header.session_id;
                     last_sample[0] = stamp[0]; last_sample[1] = stamp[1];
                 }
@@ -210,7 +232,10 @@ int main(int argc, char** argv) {
         catch (const std::exception& e) { Logger::error("Disable failed: {}", e.what()); result = 1; }
         samples.flush(); commands.flush();
         std::ofstream(output/"run.json") << Json{{"completed", result == 0}, {"exit_code", result},
-            {"frequencies_hz", sweep.frequencies}, {"amplitude_deg", sweep.amplitude*180/pi},
+            {"axis", sweep.translation ? "translation" : "rotation"},
+            {"frequencies_hz", sweep.frequencies},
+            {"amplitude_deg", sweep.translation ? 0. : sweep.amplitude*180/pi},
+            {"amplitude_mm", sweep.translation ? sweep.amplitude*1000 : 0.},
             {"settle_cycles", sweep.settle}, {"measure_cycles", sweep.measure}, {"ramp_cycles", sweep.ramp},
             {"measurement", "joint_fk_estimate"}, {"displacement_m", initial.displacement}}.dump(2);
         return result;

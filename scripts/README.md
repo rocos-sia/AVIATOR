@@ -137,6 +137,31 @@ python3 -m venv .cache/tts-venv
 保持终端打开；Ctrl+C 先停止 Core，最多等待 15 秒完成减速、解锁和下使能，再停止
 其他节点；与主启动脚本相同，清理期间重复信号不会中断退出，sudo 内的实际机械臂进程组也会被清理。`--dry-run` 仅预览，不启动节点、不请求 sudo、不写文件；`--help` 查看完整用法。
 
+## 轮盘转动 / 推拉带宽测试
+
+`start_wheel_bandwidth.sh` 从 [`config/wheel_bandwidth.yaml`](../config/wheel_bandwidth.yaml)
+读取测试轴、幅值、扫频频点、等待/测量/过渡周期、`fake_hand` 和分析选项。
+默认转动 ±3°；将 `axis` 改为 `translation` 可测试 ±20 mm 推拉。
+推拉中心取 `robot.yaml` 的 `wheel_initial.displacement`，当前范围为 −105～−65 mm。
+设 `fake_hand: true` 可使用真实机械臂搭配模拟手。
+
+```bash
+./scripts/start_wheel_bandwidth.sh --dry-run  # 检查配置并预览命令
+./scripts/start_wheel_bandwidth.sh --fake-hand
+./scripts/start_wheel_bandwidth.sh --axis translation --fake-hand
+# 临时覆盖配置中的幅值或频点
+./scripts/start_wheel_bandwidth.sh --amplitude-deg 3 --frequencies 0.1,0.2 --fake-hand
+```
+
+命令行参数优先；`--sweep-config` 选择其他测试 YAML，`--config` 选择系统 YAML。
+`--no-fake-hand` 可覆盖配置中的模拟手设置；`--fake-hand` 不可与 `--simulation` 同用。
+测试结束后独立报告 −3 dB 带宽及 −30°、−45°、−90°相位交叉频率；
+任意一项测到交叉即可输出该项，其余标注未观测到，四项均未观测到也保留报告。
+结果见 `summary.json`、`crossings.csv` 和频响图；启用 `ignore_geometry` 时文件名带
+`_geometry_ignored` 后缀。已有数据可重新分析得到新增指标。
+修改测试程序后需重新构建 `aviator_core_wheel_bandwidth`。
+构建、输出及分析说明见 [wheel_bandwidth README](../tools/wheel_bandwidth/README.md)。
+
 ## 静态抓握校准界面
 
 ```bash

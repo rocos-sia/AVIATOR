@@ -42,12 +42,33 @@ int main(int argc, char** argv) {
         Sweep sweep;
         double boundary=0;
         for (double f:sweep.frequencies) {
-            check(std::abs(sweep.at(boundary).angle)<1e-8,"Segment starts at zero");
+            check(std::abs(sweep.at(boundary).offset)<1e-8,"Segment starts at zero");
             boundary+=(2*sweep.ramp+sweep.settle+sweep.measure)/f;
-            check(std::abs(sweep.at(boundary-1e-6).angle)<1e-8,"Segment smoothly ends at zero");
+            check(std::abs(sweep.at(boundary-1e-6).offset)<1e-8,"Segment smoothly ends at zero");
         }
         for(double t=0;t<sweep.duration();t+=.001)
-            check(std::abs(sweep.at(t).angle)<=10*pi/180+1e-12,"Amplitude exceeds 10 degrees");
+            check(std::abs(sweep.at(t).offset)<=10*pi/180+1e-12,"Amplitude exceeds 10 degrees");
+        sweep.amplitude = 3*pi/180;
+        sweep.validateMotion(-.085);
+        auto target = sweep.target(sweep.at(32.5).offset, -.085); // 3.25 cycles at 0.1 Hz
+        check(std::abs(target.angle-3*pi/180)<1e-10 && target.displacement == -.085,
+              "Rotation must hold displacement and reach 3 degrees");
+        sweep.translation = true;
+        sweep.amplitude = .020;
+        sweep.validateMotion(-.085);
+        for (double t : {32.5, 37.5}) {
+            target = sweep.target(sweep.at(t).offset, -.085);
+            check(target.angle == 0, "Translation must hold angle at zero");
+            check(std::abs(target.displacement-(t == 32.5 ? -.065 : -.105))<1e-10,
+                  "Translation must reach +/-20 mm about center");
+        }
+        target = sweep.target(sweep.at(sweep.duration()).offset, -.085);
+        check(target.angle == 0 && target.displacement == -.085, "Sweep must return to center");
+        for (double center : {-.160, -.010}) {
+            bool rejected = false;
+            try { sweep.validateMotion(center); } catch (const std::runtime_error&) { rejected = true; }
+            check(rejected, "Out-of-range translation must be rejected");
+        }
         std::cout<<"Wheel estimator: geometry, real URDF IK/FK, angle fusion and sweep passed\n";
         return 0;
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
