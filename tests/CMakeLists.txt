@@ -218,6 +218,11 @@ if(TARGET aviator_core_servo AND TARGET simulation)
         $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR}
         $<TARGET_FILE:aviator_monitor>)
       set_tests_properties(managed_gateway_process PROPERTIES TIMEOUT 300)
+      add_test(NAME wheel_accuracy_process COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/wheel_accuracy_process_test.py
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed>
+        $<TARGET_FILE:flight_gateway> ${PROJECT_SOURCE_DIR})
+      set_tests_properties(wheel_accuracy_process PROPERTIES TIMEOUT 300)
       add_test(NAME following_hold_process COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/following_process_test.py
         $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})

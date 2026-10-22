@@ -11,6 +11,7 @@ FAKE_HAND=false
 HEADLESS=false
 LOGGER=false
 TTS=false
+WHEEL_TEST=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
@@ -20,13 +21,15 @@ for arg in "$@"; do
         --headless) HEADLESS=true ;;
         --logger) LOGGER=true ;;
         --tts) TTS=true ;;
+        --wheel-test) WHEEL_TEST=true ;;
         -h|--help)
-            echo '用法: ./scripts/start_aviator.sh [--simulation | --fake-hand] [--headless] [--rs422] [--logger] [--tts] [--dry-run]'
+            echo '用法: ./scripts/start_aviator.sh [--simulation | --fake-hand] [--headless] [--rs422 | --wheel-test] [--logger] [--tts] [--dry-run]'
             echo '默认启动 Rokae + RH56FTP，加载 config/system.yaml。'
             echo '真机先启动 Bus 和 X1 光电节点，再启动设备和 Core；Core 收到有效 1 后才允许初始化。'
             echo '--simulation 使用单个仿真进程替代设备节点，加载 config/system-simulation.yaml。'
             echo '--rs422 选择双路串口配置，Core 输入来源为 FLIGHT；先编辑 flight-rs422.yaml。'
             echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂和相机照常启动。'
+            echo '--wheel-test 打开轮盘五点精度测试 UI，独占网关输入；UI_PYTHON 可指定含 tkinter 的 Python。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
             echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, PHOTOELECTRIC_CONFIG, START_DELAY, AVIATOR_RECORDING_DIR, DEVICE_READY_TIMEOUT'
@@ -37,6 +40,7 @@ for arg in "$@"; do
 done
 $FAKE_HAND && $SIMULATION && { echo '--fake-hand 与 --simulation 不能同时使用' >&2; exit 2; }
 $HEADLESS && ! $SIMULATION && { echo '--headless 仅适用于 --simulation' >&2; exit 2; }
+$WHEEL_TEST && $RS422 && { echo '--wheel-test 与 --rs422 不能同时使用' >&2; exit 2; }
 SYSTEM_CONFIG=config/system.yaml
 if $SIMULATION; then
     SYSTEM_CONFIG=config/system-simulation.yaml
@@ -61,6 +65,7 @@ hand_options=()
 $FAKE_HAND && hand_options+=(--fake-hand)
 CONDA_ROOT=${CONDA_ROOT:-$HOME/miniconda3}
 CAMERA_PYTHON=${CAMERA_PYTHON:-$CONDA_ROOT/envs/apriltag_realsense/bin/python}
+UI_PYTHON=${UI_PYTHON:-/usr/bin/python3}
 MONITOR_BIN=${MONITOR_BIN:-$AVIATOR_BIN/aviator_monitor}
 TTS_CONFIG=${TTS_CONFIG:-$ROOT/config/tts.yaml}
 PHOTOELECTRIC_CONFIG=${PHOTOELECTRIC_CONFIG:-$ROOT/config/photoelectric.yaml}
@@ -171,6 +176,10 @@ check_nodes() {
     local i
     for i in "${!PIDS[@]}"; do
         if ! kill -0 "${PIDS[i]}" 2>/dev/null; then
+            if [[ ${NAMES[i]} == wheel_test_ui ]] && wait "${PIDS[i]}"; then
+                echo '测试窗口已关闭，正在有序停止本次启动。'
+                exit 0
+            fi
             if [[ ${NAMES[i]} == tts ]]; then
                 if [[ ${OPTIONAL_EXIT_REPORTED[i]:-false} != true ]]; then
                     echo "TTS 已退出，控制节点继续运行；请查看 $LOG_DIR/tts.log" >&2
@@ -240,10 +249,15 @@ wait_device_ready() {
 
 if ! $DRY_RUN; then
     [[ $EUID != 0 ]] || { echo '请以普通用户执行，脚本仅对 manipulator 使用 sudo。' >&2; exit 1; }
-    commands=(setsid flock ps awk tail google-chrome-stable curl)
+    commands=(setsid flock ps awk tail curl)
+    if ! $WHEEL_TEST; then commands+=(google-chrome-stable); fi
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
         "$AVIATOR_BIN/aviator_core_managed" "$MONITOR_BIN")
     files=("$SYSTEM_CONFIG" "$FLIGHT_CONFIG" config/robot.yaml config/camera.yaml)
+    if $WHEEL_TEST; then
+        executables+=("$UI_PYTHON")
+        files+=(tools/wheel_accuracy/ui.py)
+    fi
     if $TTS; then
         executables+=("$AVIATOR_BIN/aviator_tts")
         files+=("$TTS_CONFIG")
@@ -269,6 +283,14 @@ if ! $DRY_RUN; then
     for file in "${files[@]}"; do
         [[ -r $file ]] || { echo "文件不可读: $file" >&2; exit 1; }
     done
+    if $WHEEL_TEST; then
+        "$AVIATOR_BIN/flight_gateway" --help 2>&1 | awk '/--test-ui-socket/ { found=1 } END { exit !found }' || {
+            echo '请先编译新网关: cmake --build build --target flight_gateway -j4' >&2; exit 1;
+        }
+        "$UI_PYTHON" -c 'import tkinter as tk; w=tk.Tk(); w.withdraw(); w.destroy()' || {
+            echo '测试 UI 需要可用的桌面显示和 tkinter；可设置 UI_PYTHON。' >&2; exit 1;
+        }
+    fi
     # Validate recording storage before starting any node (including hardware).
     if $LOGGER; then
         mkdir -p -- "$AVIATOR_RECORDING_DIR"
@@ -319,7 +341,16 @@ else
     start hand "$AVIATOR_BIN/xCoreSDK_hand" --system-config "$SYSTEM_CONFIG" \
         --sdk-work-dir "$LOG_DIR/hand-sdk" "${hand_options[@]}"
 fi
-start gateway "$AVIATOR_BIN/flight_gateway" --config "$FLIGHT_CONFIG"
+gateway_options=()
+if $WHEEL_TEST; then gateway_options+=(--test-ui-socket "$LOG_DIR/wheel-test.sock"); fi
+start gateway "$AVIATOR_BIN/flight_gateway" --config "$FLIGHT_CONFIG" "${gateway_options[@]}"
+if $WHEEL_TEST; then
+    wheel_test_mode='真机 + 真实双手'
+    if $FAKE_HAND; then wheel_test_mode='真机 + fake-hand（模拟双手）'; fi
+    if $SIMULATION; then wheel_test_mode='MuJoCo 仿真'; fi
+    start wheel_test_ui "$UI_PYTHON" "$ROOT/tools/wheel_accuracy/ui.py" \
+        --socket "$LOG_DIR/wheel-test.sock" --mode "$wheel_test_mode"
+fi
 if $TTS; then
     start tts "$AVIATOR_BIN/aviator_tts" --config "$TTS_CONFIG" --system-config "$SYSTEM_CONFIG"
 fi
@@ -360,10 +391,12 @@ if ! $DRY_RUN; then
     done
     $ready || { echo 'Monitor 在 30 次检查后仍未就绪。' >&2; exit 1; }
 fi
-printf '启动 Chrome: google-chrome-stable --start-fullscreen http://127.0.0.1:8081\n'
-# Chrome 可能复用已打开的浏览器，不将其纳入节点退出监控。
-if ! $DRY_RUN; then
-    google-chrome-stable --start-fullscreen http://127.0.0.1:8081 >"$LOG_DIR/chrome.log" 2>&1 < /dev/null 9>&- &
+if ! $WHEEL_TEST; then
+    printf '启动 Chrome: google-chrome-stable --start-fullscreen http://127.0.0.1:8081\n'
+    # Chrome 可能复用已打开的浏览器，不将其纳入节点退出监控。
+    if ! $DRY_RUN; then
+        google-chrome-stable --start-fullscreen http://127.0.0.1:8081 >"$LOG_DIR/chrome.log" 2>&1 < /dev/null 9>&- &
+    fi
 fi
 if $LOGGER; then
     RECORDING_FILE="$AVIATOR_RECORDING_DIR/recording_$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S_%N).mcap"

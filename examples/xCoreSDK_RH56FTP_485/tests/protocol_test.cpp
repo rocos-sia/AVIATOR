@@ -56,6 +56,13 @@ int main() {
             auto v=uint16_t(forces[j]); memory[forceAct+2*j]=uint8_t(v); memory[forceAct+2*j+1]=uint8_t(v>>8);
         }
         require(hand.read(forceAct,true)==forces, "Signed force decoding");
+        require(request(1,0x11,currentAct,{12}) == Bytes({0xEB,0x90,1,4,0x11,0x3A,6,12,0x62}),
+                "Six-current read address/frame");
+        const Values currents{-32768,-128,-1,0,2000,32767};
+        for (int j=0;j<6;++j) {
+            const auto v=uint16_t(currents[j]); memory[currentAct+2*j]=uint8_t(v); memory[currentAct+2*j+1]=uint8_t(v>>8);
+        }
+        require(hand.read(currentAct,true)==currents, "Signed current decoding");
         for (int j=0;j<6;++j) memory[errorAct+j]=uint8_t(j);
         require(hand.errors()==Values({0,1,2,3,4,5}), "Byte-wide error registers");
         auto valid = reply(expectedRead,{1,0,2,0,3,0,4,0,5,0,6,0});

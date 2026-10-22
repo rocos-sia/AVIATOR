@@ -100,6 +100,70 @@ class ScriptsTests(unittest.TestCase):
                              'PATH':str(mock)+':'+os.environ['PATH']})
         self.assertFalse(marker.exists(),'recording path failure started a node')
 
+    def test_wheel_accuracy_launch(self):
+        for options in ([], ['--fake-hand'], ['--simulation', '--headless']):
+            text = self.run_script('start_wheel_accuracy_ui.sh', '--dry-run', *options)
+            self.assertIn('--test-ui-socket', text)
+            self.assertIn('启动 wheel_test_ui:', text)
+            self.assertIn('tools/wheel_accuracy/ui.py', text)
+            self.assertNotIn('启动 Chrome:', text)
+            self.assertIn('aviator_core_managed', text)
+            self.assertEqual('启动 manipulator:' in text, '--simulation' not in options)
+            self.assertEqual('启动 photoelectric:' in text, '--simulation' not in options)
+            self.assertEqual('--fake-hand' in text, '--fake-hand' in options)
+        self.run_script('start_wheel_accuracy_ui.sh', '--rs422', '--dry-run', ok=False)
+        self.run_script('start_aviator.sh', '--wheel-test', '--rs422', '--dry-run', ok=False)
+        self.assertEqual(list(self.directory.iterdir()), [], 'dry-run wrote files')
+
+    def test_wheel_accuracy_window_close_stops_owned_nodes(self):
+        mock = self.directory / 'bin'
+        mock.mkdir()
+        events = self.directory / 'events'
+        node = mock / 'node'
+        node.write_text('''#!/usr/bin/python3
+import os, signal, sys, time
+from pathlib import Path
+name = Path(sys.argv[0]).name
+events = Path(os.environ['TEST_EVENTS'])
+if name == 'flight_gateway' and '--help' in sys.argv:
+    print('flight_gateway --test-ui-socket path')
+    sys.exit(0)
+if name == 'ui-python' and '-c' in sys.argv:
+    sys.exit(0)
+def event(value):
+    with events.open('a') as output:
+        output.write(name + ':' + value + '\\n')
+def stop(*args):
+    event('stop')
+    sys.exit(0)
+signal.signal(signal.SIGTERM, stop)
+event('start')
+if name == 'simulation':
+    print('READY simulation session=test service=tcp://127.0.0.1:5558', flush=True)
+if name == 'ui-python':
+    while 'aviator_monitor:start' not in events.read_text():
+        time.sleep(.02)
+    time.sleep(.3)
+    sys.exit(0)
+while True:
+    time.sleep(.02)
+''')
+        node.chmod(0o755)
+        for name in ('aviator_bus', 'simulation', 'flight_gateway', 'aviator_core_managed',
+                     'aviator_monitor', 'ui-python'):
+            (mock / name).symlink_to(node)
+        (mock / 'curl').write_text('#!/bin/bash\nexit 0\n')
+        (mock / 'curl').chmod(0o755)
+        output = self.run_script('start_wheel_accuracy_ui.sh', '--simulation', '--headless',
+            env={'PATH': str(mock) + ':' + os.environ['PATH'], 'AVIATOR_BIN': str(mock),
+                 'MONITOR_BIN': str(mock / 'aviator_monitor'), 'UI_PYTHON': str(mock / 'ui-python'),
+                 'START_DELAY': '0', 'DEVICE_READY_TIMEOUT': '2', 'TEST_EVENTS': str(events),
+                 'XDG_RUNTIME_DIR': str(self.directory), 'TMPDIR': str(self.directory)})
+        self.assertIn('测试窗口已关闭', output)
+        rows = events.read_text().splitlines()
+        self.assertLess(rows.index('aviator_core_managed:stop'), rows.index('simulation:stop'))
+        self.assertLess(rows.index('aviator_core_managed:stop'), rows.index('aviator_bus:stop'))
+
     def test_device_readiness_gate(self):
         mock=self.directory/'bin';mock.mkdir()
         events=self.directory/'events'

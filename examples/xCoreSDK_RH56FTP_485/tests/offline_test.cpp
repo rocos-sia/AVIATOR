@@ -6,6 +6,8 @@
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTemporaryFile>
+#include <QTemporaryDir>
+#include <QDir>
 #include <iostream>
 #include <thread>
 
@@ -25,7 +27,10 @@ template<class T> T* widget(demo::Window& w,const QString& name) {
 }
 int main(int argc,char** argv) {
     QApplication app(argc,argv);
+    QTemporaryDir logs;
+    const auto cwd = QDir::currentPath();
     try {
+        require(logs.isValid() && QDir::setCurrent(logs.path()), "Cannot create offline test logs");
         demo::Config c; c.offline=true; c.pollMs=100;
         demo::Backend backend;
         require(!backend.submit(3,{}),"Commands must be rejected before start");
@@ -80,6 +85,7 @@ int main(int argc,char** argv) {
         start->click(); until([&]{return both->isEnabled();});
         window.close(); until([&]{return !window.isVisible();});
         std::cout << "Offline dual-hand lifecycle, independent commands, legacy config and UI passed\n";
+        QDir::setCurrent(cwd);
         return 0;
-    } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
+    } catch(const std::exception& e) {QDir::setCurrent(cwd);std::cerr<<e.what()<<'\n';return 1;}
 }

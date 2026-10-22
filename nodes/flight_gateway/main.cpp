@@ -2,6 +2,7 @@
 #include "gateway.hpp"
 #include "config.hpp"
 #include "sdl_input.hpp"
+#include "test_ui_input.hpp"
 #include "rs422_runtime.hpp"
 #include "service.hpp"
 #include "startup.hpp"
@@ -29,15 +30,24 @@ int main(int argc, char** argv) {
     int signals_fd = -1, lock_fd = -1, result = 0;
     try {
         if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
-            aviator::Logger::info("Usage: flight_gateway [--config path]\n"
+            aviator::Logger::info("Usage: flight_gateway [--config path] [--test-ui-socket path]\n"
                 "Configuration: config/flight.yaml (installed: share/aviator/config/flight.yaml).\n"
                 "Roles: robot (joystick or rs422), flight_simulator (joystick to dual RS422).\n"
                 "Local Core 50 Hz; RS422 80 Hz. Restart after configuration changes.");
             return 0;
         }
-        require(argc == 1 || (argc == 3 && std::string(argv[1]) == "--config"), "use --config <path>");
-        const auto config_path = argc == 3 ? std::string(argv[2]) : flight_gateway::default_config_path();
+        auto config_path = flight_gateway::default_config_path();
+        std::string test_ui_path;
+        for (int i = 1; i < argc; ++i) {
+            const std::string arg = argv[i];
+            require(i + 1 < argc, "Missing option value");
+            if (arg == "--config") config_path = argv[++i];
+            else if (arg == "--test-ui-socket") test_ui_path = argv[++i];
+            else throw std::runtime_error("Unknown option: " + arg);
+        }
         const auto config = flight_gateway::load_config(config_path);
+        require(test_ui_path.empty() || (config.source == "joystick" && config.role == "robot"),
+                "Test UI requires robot / joystick configuration");
         const auto& path = config.device;
         const auto& core_session = config.core_session;
         const auto& pub_endpoint = config.publish;
@@ -49,6 +59,7 @@ int main(int argc, char** argv) {
         const auto invert_roll = config.invert_roll, invert_pitch = config.invert_pitch;
         flight_gateway::JoystickButtons buttons;
         buttons.operations = config.buttons;
+        if (!test_ui_path.empty()) buttons = flight_gateway::JoystickButtons{};
         aviator::Logger::info("Configuration: {}", config_path);
         sigset_t signals;
         sigemptyset(&signals); sigaddset(&signals, SIGINT); sigaddset(&signals, SIGTERM);
@@ -66,7 +77,10 @@ int main(int argc, char** argv) {
             close(signals_fd); close(lock_fd);
             return 0;
         }
-        flight_gateway::SdlInput input(config);
+        std::unique_ptr<flight_gateway::SdlInput> input;
+        std::unique_ptr<flight_gateway::TestUiInput> test_ui;
+        if (test_ui_path.empty()) input = std::make_unique<flight_gateway::SdlInput>(config);
+        else test_ui = std::make_unique<flight_gateway::TestUiInput>(test_ui_path);
         flight_gateway::JoystickSample sample{
             {roll_axis, -32768, 32767, 0, invert_roll},
             {pitch_axis, -32768, 32767, 0, invert_pitch}};
@@ -118,6 +132,7 @@ int main(int argc, char** argv) {
             // Record the attempted request even when no Core is connected. Optional observation
             // metadata is not part of the service envelope sent to Core.
             const bool sent = feedback.requestsReady(aviator::monotonic_us()) && aviator::send_service(service, request);
+            if (test_ui) test_ui->result(sent ? "QUEUED" : "NOT_SENT", buttons.operations[index]);
             if (feedback.session().empty())
                 aviator::Logger::warn("No valid Core feedback yet; button not sent, press again after service_ready=1");
             else if (!feedback.requestsReady(aviator::monotonic_us()))
@@ -140,6 +155,7 @@ int main(int argc, char** argv) {
         std::string error, payload, last_status = "STALE", system_state;
         std::string feedback_error;
         bool last_service_ready = false;
+        nlohmann::json ui_state = nlohmann::json::object();
         bool running = true;
         const auto publish = [&](std::uint64_t now) {
             require(sequence < aviator::max_json_integer, "sequence exhausted; restart required");
@@ -158,7 +174,9 @@ int main(int argc, char** argv) {
             zmq::poll(items, 3, std::chrono::milliseconds(wait_ms));
             if (items[0].revents) { running = false; break; }
             std::vector<unsigned> pressed;
-            running = input.poll(sample, pressed);
+            if (test_ui) test_ui->poll(sample, pressed, ui_state,
+                feedback.requestsReady(aviator::monotonic_us()), !pending_requests.empty());
+            else running = input->poll(sample, pressed);
             if (!running) break;
             for (const auto index : pressed)
                 if (sample.fresh(aviator::monotonic_us(), timeout_ms * 1000ULL)) request_button(index);
@@ -175,6 +193,7 @@ int main(int argc, char** argv) {
                         aviator::Logger::info("Received aviator_core startup marker={}", feedback.session());
                     }
                     system_state = state.body.at("system").at("state").get<std::string>();
+                    if (test_ui) ui_state = state.body;
                     feedback_error.clear();
                 } else if (received != aviator::ReceiveResult::empty) {
                     feedback_error = error;
@@ -205,6 +224,8 @@ int main(int argc, char** argv) {
                     continue;
                 }
                 aviator::Logger::info("service reply={}", reply.dump());
+                if (test_ui) test_ui->result(reply.at("status").get<std::string>(),
+                    reply.value("result", nlohmann::json::object()).dump());
                 pending_requests.erase(it);
             }
             const auto current = aviator::monotonic_us();
@@ -213,6 +234,7 @@ int main(int argc, char** argv) {
                 if (current - request.at("issued_mono_us").get<std::uint64_t>() >=
                     service_timeout_ms * 1000ULL) {
                     aviator::Logger::warn("service timeout UNKNOWN request_id={}; no automatic retry", it->first);
+                    if (test_ui) test_ui->result("UNKNOWN", "Core service timeout; inspect state before another operation");
                     auto record = request;
                     record["gateway_observation"] = "TIMEOUT_UNKNOWN";
                     aviator::send(pub, aviator::service_request_topic, record.dump());
@@ -237,6 +259,7 @@ int main(int argc, char** argv) {
             }
             if (current >= next_publish) {
                 publish(aviator::monotonic_us());
+                if (test_ui) test_ui->report(ui_state, !feedback.expired(current), service_ready);
                 next_publish += ((current - next_publish) / 20000 + 1) * 20000;
             }
         }

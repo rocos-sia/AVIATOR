@@ -1,10 +1,12 @@
 #include "backend.hpp"
 #include "sdk_robot.hpp"
+#include "telemetry_csv.hpp"
 #include <rokae/robot.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <deque>
+#include <filesystem>
 #include <mutex>
 #include <thread>
 
@@ -50,6 +52,7 @@ struct Backend::Impl {
     std::thread monitor;
     std::atomic<bool> stopping{false}, active{false};
     Config config;
+    unsigned connectionSequence = 0;
 
     void log(int i, const std::string& s) {
         std::lock_guard<std::mutex> lock(mutex);
@@ -105,6 +108,18 @@ struct Backend::Impl {
         };
         try {
             cancelled(i);
+            std::unique_ptr<TelemetryCsv> csv;
+            if (!config.init485) {
+                const auto filename = i == 0 ? "left_hand.csv" : "right_hand.csv";
+                try {
+                    std::filesystem::create_directories(config.csvDirectory);
+                    const auto path = (std::filesystem::path(config.csvDirectory) / filename).string();
+                    csv = std::make_unique<TelemetryCsv>(path, connectionSequence, config.offline);
+                    log(i, std::string("CSV 自动记录：") + path + "（重连追加）");
+                } catch (const std::exception& e) {
+                    log(i, std::string("CSV 记录已禁用：") + e.what());
+                }
+            }
             if (!config.offline) {
                 robot = makeSdkRobot(cfg.robotIp);
                 connected = true;
@@ -165,11 +180,13 @@ struct Backend::Impl {
                 return rx;
             });
             ArmState handState;
+            std::optional<rh56::Values> sentAngles;
             handState.angles.fill(1000); handState.speeds.fill(200); handState.limits.fill(300);
             auto read = [&](bool settings) {
                 if (!config.offline) {
                     handState.angles = hand.read(rh56::angleAct);
                     handState.forces = hand.read(rh56::forceAct, true);
+                    handState.currents = hand.read(rh56::currentAct, true);
                     handState.errors = hand.errors();
                     if (settings) {
                         handState.speeds = hand.read(rh56::speedSet);
@@ -185,6 +202,7 @@ struct Backend::Impl {
                     std::lock_guard<std::mutex> lock(mutex);
                     cancelled(i); // Do not restore readiness after an explicit stop.
                     a.state.angles = handState.angles; a.state.forces = handState.forces;
+                    a.state.currents = handState.currents;
                     a.state.errors = handState.errors; a.state.speeds = handState.speeds; a.state.limits = handState.limits;
                     a.state.feedbackMs = nowMs();
                     a.state.handReady = !fault;
@@ -192,6 +210,15 @@ struct Backend::Impl {
                         recovered = a.state.phase == Phase::Recovering;
                         a.state.phase = Phase::Connected;
                         a.state.error.clear();
+                    }
+                }
+                // Record only a complete, validated feedback cycle, including actuator faults.
+                // CSV errors must not turn into a hand communication fault or retry device writes.
+                if (csv) {
+                    try { csv->append(handState, sentAngles); }
+                    catch (const std::exception& e) {
+                        log(i, std::string("CSV 记录已停止：") + e.what());
+                        csv.reset();
                     }
                 }
                 if (fault)
@@ -222,10 +249,13 @@ struct Backend::Impl {
                             if (!config.offline) {
                                 hand.write(rh56::speedSet, cmd.speeds);
                                 hand.write(rh56::forceSet, cmd.limits);
+                                // A missing angle ACK leaves the applied target uncertain.
+                                sentAngles.reset();
                                 hand.write(rh56::angleSet, cmd.angles);
                             } else {
                                 handState.angles = cmd.angles; handState.speeds = cmd.speeds; handState.limits = cmd.limits;
                             }
+                            sentAngles = cmd.angles;
                             log(i, "速度、力阈值、角度已下发（每类参数各一帧六通道）");
                         }
                         settingsNeeded = !read(settingsNeeded);
@@ -300,6 +330,7 @@ void Backend::start(const Config& config) {
     if (s.active) throw std::runtime_error("Session already active");
     if (s.monitor.joinable()) s.monitor.join();
     s.config = config; s.stopping = false;
+    ++s.connectionSequence;
     {
         std::lock_guard<std::mutex> lock(s.mutex);
         for (auto& a : s.arms) {

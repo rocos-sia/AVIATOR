@@ -12,6 +12,7 @@ struct Arm {
     std::atomic<bool> failRead{false}, stall{false}, enteredStall{false}, failCleanup{false};
     std::atomic<bool> failPowerOn{false}, loseWriteAck{false}, badChecksum{false};
     std::atomic<int> errorCode{0}, attempts{0}, reads{0}, writes{0}, powerOff{0}, disconnects{0};
+    std::atomic<int> failReadAddress{0}, loseAckAddress{0};
 };
 inline Arm arms[2];
 inline void reset() {
@@ -19,6 +20,7 @@ inline void reset() {
         a.failRead = false; a.stall = false; a.enteredStall = false; a.failCleanup = false;
         a.failPowerOn = false; a.loseWriteAck = false; a.badChecksum = false;
         a.errorCode = 0; a.attempts = 0;
+        a.failReadAddress = 0; a.loseAckAddress = 0;
         a.reads = 0; a.writes = 0; a.powerOff = 0; a.disconnects = 0;
     }
 }
@@ -76,6 +78,9 @@ public:
             rx.clear(); ec = std::make_error_code(std::errc::timed_out); return;
         }
         const int address = tx[5] | (int(tx[6]) << 8);
+        if (tx[4] == 0x11 && a.failReadAddress == address) {
+            rx.clear(); ec = std::make_error_code(std::errc::timed_out); return;
+        }
         rh56::Bytes data;
         if (tx[4] == 0x12) {
             if (tx.size() != 20 || receive != 9) throw std::runtime_error("Wrong write lengths");
@@ -84,7 +89,8 @@ public:
             if (!values) throw std::runtime_error("Unexpected write address");
             for (int i = 0; i < 6; ++i) (*values)[i] = tx[7 + 2*i] | (int(tx[8 + 2*i]) << 8);
             ++a.writes;
-            if (a.loseWriteAck.exchange(false)) {
+            if (a.loseWriteAck.exchange(false) || a.loseAckAddress == address) {
+                a.loseAckAddress = 0;
                 rx.clear(); ec = std::make_error_code(std::errc::timed_out); return;
             }
             data = {1};
@@ -93,7 +99,9 @@ public:
             if (address == rh56::errorAct) data.assign(6, uint8_t(a.errorCode.load()));
             else {
                 const rh56::Values values = address == rh56::angleAct ? angles_ :
-                    address == rh56::speedSet ? speeds_ : address == rh56::forceSet ? limits_ : rh56::Values{};
+                    address == rh56::speedSet ? speeds_ : address == rh56::forceSet ? limits_ :
+                    address == rh56::currentAct ? rh56::Values{-128, 0, 1, 255, 256, 2000 + side_} :
+                    address == rh56::forceAct ? rh56::Values{-20, -1, 0, 1, 300, 4000} : rh56::Values{};
                 for (int value : values) { data.push_back(uint8_t(value)); data.push_back(uint8_t(value >> 8)); }
             }
         }

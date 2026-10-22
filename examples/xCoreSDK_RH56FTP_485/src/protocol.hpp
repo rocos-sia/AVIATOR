@@ -12,7 +12,7 @@ namespace rh56 {
 using Bytes = std::vector<uint8_t>;
 using Values = std::array<int, 6>;
 constexpr uint16_t angleSet = 1486, forceSet = 1498, speedSet = 1522;
-constexpr uint16_t angleAct = 1546, forceAct = 1582, errorAct = 1606;
+constexpr uint16_t angleAct = 1546, forceAct = 1582, currentAct = 1594, errorAct = 1606;
 inline uint8_t checksum(const Bytes& b) {
     unsigned sum = 0;
     for (size_t i = 2; i < b.size(); ++i) sum += b[i];

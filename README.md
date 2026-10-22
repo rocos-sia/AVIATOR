@@ -66,6 +66,7 @@ ctest --test-dir build/communication --output-on-failure
 | RealSense 相机 | [ChArUco/AprilTag 选择、实时识别预览、位姿打印与订阅](nodes/camera/README.md) |
 | 联合录制 | [相机与 Logger 启动顺序、共用 session、业务/图像分文件保存](nodes/camera/README.md#检测与-mcap-录制) |
 | 离线语音提醒 | [aviator_tts 构建、音频生成和启动](nodes/aviator_tts/README.md)，[设计方案](docs/AVIATOR语音提醒设计.md)；准备音频后用 `start_aviator.sh --tts` 开启 |
+| 轮盘精度测试 | [五点手动测试 UI、完整 Home/抓握/松手及 fake-hand](docs/轮盘运动精度测试UI.md)；一键启动 `./scripts/start_wheel_accuracy_ui.sh` |
 
 以上操作示例从仓库根目录运行。手和相机可复用同一个 `aviator_bus`：发布者连接 `5555`、
 订阅者连接 `5556`；图像单独发送至 Logger 的 `5557`。视频预览和位姿打印默认关闭，

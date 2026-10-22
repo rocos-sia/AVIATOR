@@ -15,12 +15,13 @@ struct Config {
     int pollMs = 500;
     bool offline = false;
     bool init485 = false; // Configuration-only session; AR requires a subsequent controller restart.
+    std::string csvDirectory = "."; // Application supplies a separate directory for each process run.
 };
 enum class Phase { Idle, Starting, Connected, Recovering, Stopping, Failed };
 struct ArmState {
     Phase phase = Phase::Idle;
     bool handReady = false;
-    rh56::Values angles{}, forces{}, errors{}, speeds{}, limits{};
+    rh56::Values angles{}, forces{}, currents{}, errors{}, speeds{}, limits{};
     long long feedbackMs = 0;
     double transferMs = 0;
     std::string error;

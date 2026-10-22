@@ -25,7 +25,10 @@ int main(int argc, char** argv) {
         auto config = demo::loadConfig(parser.value("config"));
         config.offline = parser.isSet("offline");
         const auto runtime = demo::prepareSdkRuntime();
+        config.csvDirectory = QDir("/home/rocos/Documents/hand_csv")
+            .filePath(QFileInfo(runtime).fileName()).toStdString();
         std::cout << "SDK 运行与日志目录：" << runtime.toStdString() << std::endl;
+        std::cout << "CSV 保存目录：" << config.csvDirectory << std::endl;
         demo::Window window(config);
         std::signal(SIGINT, signalStop); std::signal(SIGTERM, signalStop);
         QTimer signalTimer;

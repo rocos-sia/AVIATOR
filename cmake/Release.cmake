@@ -52,8 +52,11 @@ install(DIRECTORY "${PROJECT_SOURCE_DIR}/config/"
 install(PROGRAMS "${_release_tool}" "${PROJECT_SOURCE_DIR}/scripts/start_flight_simulator.sh" DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/scripts")
 if(TARGET aviator_core_control)
   install(PROGRAMS "${PROJECT_SOURCE_DIR}/scripts/start_aviator.sh"
+    "${PROJECT_SOURCE_DIR}/scripts/start_wheel_accuracy_ui.sh"
     "${PROJECT_SOURCE_DIR}/scripts/start_camera_servo.sh"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/scripts")
+  install(FILES "${PROJECT_SOURCE_DIR}/tools/wheel_accuracy/ui.py"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/tools/wheel_accuracy")
 endif()
 
 # Explicit installation also regenerates metadata, after RPATH/strip operations.

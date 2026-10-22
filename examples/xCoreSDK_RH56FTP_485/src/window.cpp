@@ -139,6 +139,7 @@ Window::Window(Config config, QWidget* parent) : QWidget(parent), initial_(std::
     log_ = new QPlainTextEdit; log_->setReadOnly(true); log_->setMaximumBlockCount(600); log_->setMaximumHeight(90);
     root->addWidget(log_);
     append("SDK 运行与日志目录：" + QDir::currentPath());
+    append("CSV 保存目录：" + QDir(QString::fromStdString(initial_.csvDirectory)).absolutePath());
     connect(start_, &QPushButton::clicked, this, [this] { start(); });
     connect(stop_, &QPushButton::clicked, this, [this] { requestStop(); });
     connect(both_, &QPushButton::clicked, this, [this] {
