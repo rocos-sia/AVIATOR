@@ -78,6 +78,8 @@ UI_PYTHON=~/miniconda3/envs/apriltag_realsense/bin/python \
    **手动模式 → 下电 → 关节空间自由拖动**，使用
    `enableDrag(DragParameter::jointSpace, DragParameter::freely, ec, false)`。
    最后一个参数为 `false`，保留机械臂末端拖动按钮的要求。
+   拖动按所选机械臂的连接和运行状态检查，不要求机械手反馈或指令确认；
+   一侧机械手未连接或正在恢复时，已连接的机械臂仍可拖动。双手校准采样仍要求双手就绪。
 3. 使用张开/握紧按钮调整左手、右手或双手，观察实际抓握状态。目标读取
    `config/system.yaml` 的 `core_hand.open` / `core_hand.close`；当前默认值如下。
 4. 结束双臂拖动，让双臂和轮盘保持静止。启用真机手控制时，结束拖动会请求该侧电机上电，

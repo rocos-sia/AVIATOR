@@ -339,8 +339,9 @@ class CalibrationController:
                 elif action in ("drag_start", "drag_stop"):
                     self._invalidate()
                     self._check_inputs()
-                    if action == "drag_start":
-                        self._require_hand()
+                    # Drag readiness belongs to the selected arms. A missing
+                    # hand must not block manual teaching; sampling still
+                    # requires both hands' feedback and command ACKs.
                     self.native.request(action, side=request["side"])
                     self._refresh_arms()
                     dragging = any(a["dragging"] for a in self.state["arms"].values())
@@ -475,7 +476,7 @@ class CalibrationController:
                 self._invalidate()
                 self.log("手部反馈或指令确认不可用；保留连接，恢复后重新点击对应手的开合按钮")
             self._bad_hand_since = self._bad_hand_since or now
-            self._set(message="等待机械手恢复／重新下发；双手就绪后可采样")
+            self._set(message="机械臂仍可拖动；等待机械手恢复／重新下发，双手就绪后可采样")
         elif self._bad_hand_since is not None:
             self._bad_hand_since = None
             self._set(message="双手机械手反馈和指令确认已恢复")

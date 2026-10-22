@@ -42,7 +42,7 @@
       const side = button.dataset.side;
       const arms = side === "both" ? [s.arms?.left, s.arms?.right] : [s.arms?.[side]];
       if (button.dataset.action === "hand") button.disabled = blocked || !s.prepared || !(side === "both" ? ["left", "right"] : [side]).every((name) => s.hand?.available_sides?.[name] ?? s.hand?.ready) || Boolean(s.hand?.conflict);
-      else if (button.dataset.action === "drag_start") button.disabled = blocked || !s.prepared || !s.hand?.ready || !arms.every((arm) => arm?.connected && !arm.dragging);
+      else if (button.dataset.action === "drag_start") button.disabled = blocked || !s.prepared || !arms.every((arm) => arm?.connected && !arm.dragging);
       else button.disabled = blocked || !s.prepared || !arms.some((arm) => arm?.connected && arm.dragging);
     }
     if (manualChanged) text("save-hint", "手动轮盘值已更改，请重新采样后再写回。下方仍显示上一次采样的结果。");

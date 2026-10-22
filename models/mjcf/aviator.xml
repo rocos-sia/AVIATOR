@@ -46,7 +46,7 @@
     <mesh name="aircraft_0" file="Cessna/mjcf/aircraft_visual_0.STL" scale="1 1 1" />
     <mesh name="aircraft_1" file="Cessna/mjcf/aircraft_visual_1.STL" scale="1 1 1" />
     <mesh name="shell" file="Cessna/shell.STL" scale="1 1 1" />
-    <mesh name="steering_wheel" file="Cessna/steering_wheel_qr.STL" scale="1 1 1" />
+    <mesh name="steering_wheel" file="Cessna/narrow/steering_wheel_qr.STL" scale="1 1 1" />
     <mesh name="steering_wheel_2" file="Cessna/steering_wheel_2.STL" scale="1 1 1" />
     <mesh name="steering_wheel_collision_0" file="Cessna/steering_wheel_collision_0.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_1" file="Cessna/steering_wheel_collision_1.stl" scale="1 1 1" />
@@ -77,7 +77,7 @@
     <mesh name="steering_wheel_collision_26" file="Cessna/steering_wheel_collision_26.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_27" file="Cessna/steering_wheel_collision_27.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_28" file="Cessna/steering_wheel_collision_28.stl" scale="1 1 1" />
-    <mesh name="steering_wheel_collision_29" file="Cessna/steering_wheel_collision_29.stl" scale="1 1 1" />
+    <mesh name="steering_wheel_collision_29" file="Cessna/narrow/steering_wheel_collision_29.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_30" file="Cessna/steering_wheel_collision_30.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_32" file="Cessna/steering_wheel_collision_32.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_38" file="Cessna/steering_wheel_collision_38.stl" scale="1 1 1" />
@@ -85,7 +85,7 @@
     <mesh name="steering_wheel_collision_40" file="Cessna/steering_wheel_collision_40.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_41" file="Cessna/steering_wheel_collision_41.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_42" file="Cessna/steering_wheel_collision_42.stl" scale="1 1 1" />
-    <mesh name="steering_wheel_collision_43" file="Cessna/steering_wheel_collision_43.stl" scale="1 1 1" />
+    <mesh name="steering_wheel_collision_43" file="Cessna/narrow/steering_wheel_collision_43.stl" scale="1 1 1" />
     <mesh name="steering_wheel_collision_44" file="Cessna/steering_wheel_collision_44.stl" scale="1 1 1" />
     <mesh name="AR5-5_07L-W4C4A2_base" file="AR5-5_07L-W4C4A2/AR5-5_07L-W4C4A2_base.stl" scale="0.001 0.001 0.001" />
     <mesh name="AR5-5_07L-W4C4A2_link1" file="AR5-5_07L-W4C4A2/AR5-5_07L-W4C4A2_link1.stl" scale="0.001 0.001 0.001" />
@@ -191,7 +191,10 @@
           </body>
         </body>
       </body>
-      <body name="steering_wheel" pos="0 0 0" quat="0.500048163397 0.49999999768 -0.499951836603 -0.49999999768">
+      <!-- Balance both passive yokes against gravity: the CAD slide axis has a
+           small vertical component. Keep inertia/damping and external-force
+           response, without a position lock or a return-to-center spring. -->
+      <body name="steering_wheel" gravcomp="1" pos="0 0 0" quat="0.500048163397 0.49999999768 -0.499951836603 -0.49999999768">
         <joint name="roll_input_joint" type="hinge" axis="0 0 1" range="-0.87266 0.87266" damping="0.1" />
         <joint name="pitch_input_joint" type="slide" axis="0 0 1" range="-0.170 0" damping="1" />
         <inertial pos="0 0 0" mass="0.5" fullinertia="0.001 0.001 0.001 0.0 0.0 0.0" />
@@ -202,38 +205,38 @@
         <geom name="yoke_apriltag" type="box" pos="0.0004157 0.11779 0.32265" size="0.075 0.075 0.0005" material="yoke_apriltag_material" contype="0" conaffinity="0" group="2" density="0" />
         <site name="yoke_apriltag_center" pos="0.0004157 0.11779 0.32315" size="0.001" rgba="0 0 0 0" group="4" />
         <geom name="steering_wheel_visual_0" class="visual" mesh="steering_wheel" pos="0 0 0" quat="1 0 0 0" material="blue" />
-        <geom name="steering_wheel_collision_0" class="collision" mesh="steering_wheel_collision_0" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_1" class="collision" mesh="steering_wheel_collision_1" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_2" class="collision" mesh="steering_wheel_collision_2" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_3" class="collision" mesh="steering_wheel_collision_3" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_4" class="collision" mesh="steering_wheel_collision_4" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_5" class="collision" mesh="steering_wheel_collision_5" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_6" class="collision" mesh="steering_wheel_collision_6" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_7" class="collision" mesh="steering_wheel_collision_7" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_8" class="collision" mesh="steering_wheel_collision_8" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_9" class="collision" mesh="steering_wheel_collision_9" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_10" class="collision" mesh="steering_wheel_collision_10" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_11" class="collision" mesh="steering_wheel_collision_11" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_12" class="collision" mesh="steering_wheel_collision_12" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_13" class="collision" mesh="steering_wheel_collision_13" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_14" class="collision" mesh="steering_wheel_collision_14" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_15" class="collision" mesh="steering_wheel_collision_15" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_16" class="collision" mesh="steering_wheel_collision_16" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_17" class="collision" mesh="steering_wheel_collision_17" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_18" class="collision" mesh="steering_wheel_collision_18" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_19" class="collision" mesh="steering_wheel_collision_19" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_20" class="collision" mesh="steering_wheel_collision_20" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_21" class="collision" mesh="steering_wheel_collision_21" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_22" class="collision" mesh="steering_wheel_collision_22" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_23" class="collision" mesh="steering_wheel_collision_23" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_24" class="collision" mesh="steering_wheel_collision_24" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_25" class="collision" mesh="steering_wheel_collision_25" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_26" class="collision" mesh="steering_wheel_collision_26" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_27" class="collision" mesh="steering_wheel_collision_27" pos="0 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_0" class="collision" mesh="steering_wheel_collision_0" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_1" class="collision" mesh="steering_wheel_collision_1" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_2" class="collision" mesh="steering_wheel_collision_2" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_3" class="collision" mesh="steering_wheel_collision_3" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_4" class="collision" mesh="steering_wheel_collision_4" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_5" class="collision" mesh="steering_wheel_collision_5" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_6" class="collision" mesh="steering_wheel_collision_6" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_7" class="collision" mesh="steering_wheel_collision_7" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_8" class="collision" mesh="steering_wheel_collision_8" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_9" class="collision" mesh="steering_wheel_collision_9" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_10" class="collision" mesh="steering_wheel_collision_10" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_11" class="collision" mesh="steering_wheel_collision_11" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_12" class="collision" mesh="steering_wheel_collision_12" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_13" class="collision" mesh="steering_wheel_collision_13" pos="-0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_14" class="collision" mesh="steering_wheel_collision_14" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_15" class="collision" mesh="steering_wheel_collision_15" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_16" class="collision" mesh="steering_wheel_collision_16" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_17" class="collision" mesh="steering_wheel_collision_17" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_18" class="collision" mesh="steering_wheel_collision_18" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_19" class="collision" mesh="steering_wheel_collision_19" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_20" class="collision" mesh="steering_wheel_collision_20" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_21" class="collision" mesh="steering_wheel_collision_21" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_22" class="collision" mesh="steering_wheel_collision_22" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_23" class="collision" mesh="steering_wheel_collision_23" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_24" class="collision" mesh="steering_wheel_collision_24" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_25" class="collision" mesh="steering_wheel_collision_25" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_26" class="collision" mesh="steering_wheel_collision_26" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_27" class="collision" mesh="steering_wheel_collision_27" pos="0.025 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_28" class="collision" mesh="steering_wheel_collision_28" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_29" class="collision" mesh="steering_wheel_collision_29" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_30" class="collision" mesh="steering_wheel_collision_30" pos="0 0 0" quat="1 0 0 0" />
-        <geom name="steering_wheel_collision_32" class="collision" mesh="steering_wheel_collision_32" pos="0 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_30" class="collision" mesh="steering_wheel_collision_30" pos="0.025 0 0" quat="1 0 0 0" />
+        <geom name="steering_wheel_collision_32" class="collision" mesh="steering_wheel_collision_32" pos="-0.025 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_38" class="collision" mesh="steering_wheel_collision_38" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_39" class="collision" mesh="steering_wheel_collision_39" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_40" class="collision" mesh="steering_wheel_collision_40" pos="0 0 0" quat="1 0 0 0" />
@@ -241,6 +244,9 @@
         <geom name="steering_wheel_collision_42" class="collision" mesh="steering_wheel_collision_42" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_43" class="collision" mesh="steering_wheel_collision_43" pos="0 0 0" quat="1 0 0 0" />
         <geom name="steering_wheel_collision_44" class="collision" mesh="steering_wheel_collision_44" pos="0 0 0" quat="1 0 0 0" />
+        <!-- Main yoke grips and side fittings inset 25 mm per side along local X.
+             Central bridge meshes are derived by scripts/narrow_steering_wheel.py;
+             shaft, tag plate and secondary yoke remain fixed. -->
         <!-- Replace grip meshes 31/34/35 (left) and 33/36/37 (right): their
              convex hulls obstruct thumb opposition. Keep the original visual mesh
              and all shaft/support collisions. Centers/axes/half-lengths are in the
@@ -249,18 +255,21 @@
              supplies end contact for the opposing thumb (65 mm is too short).
              Radius 12 mm is a grasp proxy, not the tool.radius of 28 mm.
              Hands use site welds; these proxies only collide with other bodies. -->
-        <geom name="steering_wheel_left_grip" class="steering_grip" pos="-0.12608473 -0.00148729 0.44569172" zaxis="0.05261090981972138 0.93179340680708 0.3591561487693014" size="0.012 0.080" />
-        <geom name="steering_wheel_right_grip" class="steering_grip" pos="0.12541949 -0.01257759 0.44539361" zaxis="0.02256000990581838 0.9336399061023193 0.3575018485075316" size="0.012 0.080" />
-        <site name="left_handle" pos="-0.127136948196 -0.0201231581361 0.438508597025" quat="0.566245865199 -0.411390821583 -0.388818103402 -0.599119098786" size="0.008" rgba="0.2 1 0.2 1" />
-        <site name="right_handle" pos="0.124968289802 -0.031250388122 0.43824357303" quat="-0.493604596516 0.350445269072 0.445462893102 0.659625216735" size="0.008" rgba="0.2 1 0.2 1" />
+        <geom name="steering_wheel_left_grip" class="steering_grip" pos="-0.10108473 -0.00148729 0.44569172" zaxis="0.05261090981972138 0.93179340680708 0.3591561487693014" size="0.012 0.080" />
+        <geom name="steering_wheel_right_grip" class="steering_grip" pos="0.10041949 -0.01257759 0.44539361" zaxis="0.02256000990581838 0.9336399061023193 0.3575018485075316" size="0.012 0.080" />
+        <!-- Original XML weld poses, translated inward by 25 mm per handle.
+             config/grasp.json control IK targets are aligned to these sites. -->
+        <site name="left_handle" pos="-0.102136948196 -0.0201231581361 0.438508597025" quat="0.566245865199 -0.411390821583 -0.388818103402 -0.599119098786" size="0.008" rgba="0.2 1 0.2 1" />
+        <site name="right_handle" pos="0.099968289802 -0.031250388122 0.43824357303" quat="-0.493604596516 0.350445269072 0.445462893102 0.659625216735" size="0.008" rgba="0.2 1 0.2 1" />
       </body>
-      <body name="steering_wheel_2" pos="0 0.47 0" quat="0.500048163397 0.49999999768 -0.499951836603 -0.49999999768">
+      <body name="steering_wheel_2" gravcomp="1" pos="0 0.47 0" quat="0.500048163397 0.49999999768 -0.499951836603 -0.49999999768">
         <joint name="roll_input_joint_2" type="hinge" axis="0 0 1" range="-0.87266 0.87266" damping="0.1" />
         <joint name="pitch_input_joint_2" type="slide" axis="0 0 1" range="-0.170 0" damping="1" />
         <inertial pos="0 0 0" mass="0.5" fullinertia="0.001 0.001 0.001 0 0 0" />
         <geom name="steering_wheel_2_visual_0" class="visual" mesh="steering_wheel_2" material="blue" />
       </body>
-      <body name="AR5-5_07L-W4C4A2_base" pos="-0.91333 0.010 0.12156" quat="0.5 -0.5 0.5 0.5">
+      <!-- Both arm mounts: +10 mm aircraft Y (left), +16 mm aircraft Z (up). -->
+      <body name="AR5-5_07L-W4C4A2_base" pos="-0.91333 0.020 0.13756" quat="0.5 -0.5 0.5 0.5">
         <geom name="AR5-5_07L-W4C4A2_base_visual_0" class="visual" mesh="AR5-5_07L-W4C4A2_base" pos="0.0 0.0 0.0" quat="1 0 0 0" material="white" />
         <geom name="AR5-5_07L-W4C4A2_base_collision_0" class="collision" mesh="AR5-5_07L-W4C4A2_base" pos="0.0 0.0 0.0" quat="1 0 0 0" />
         <body name="AR5-5_07L-W4C4A2_link1" pos="0.0 0.0 0.0" quat="1 0 0 0">
@@ -449,7 +458,7 @@
           </body>
         </body>
       </body>
-      <body name="AR5-5_07R-W4C4A2_base" pos="-0.91333 -0.010 0.12156" quat="0.5 0.5 0.5 -0.5">
+      <body name="AR5-5_07R-W4C4A2_base" pos="-0.91333 0.000 0.13756" quat="0.5 0.5 0.5 -0.5">
         <geom name="AR5-5_07R-W4C4A2_base_visual_0" class="visual" mesh="AR5-5_07R-W4C4A2_base" pos="0.0 0.0 0.0" quat="1 0 0 0" material="white" />
         <geom name="AR5-5_07R-W4C4A2_base_collision_0" class="collision" mesh="AR5-5_07R-W4C4A2_base" pos="0.0 0.0 0.0" quat="1 0 0 0" />
         <body name="AR5-5_07R-W4C4A2_link1" pos="0.0 0.0 0.0" quat="1 0 0 0">
@@ -681,6 +690,8 @@
     -->
   </contact>
   <keyframe>
-    <key name="aviator_home" qpos="0 -0.085 0 -0.085 0.4528954876 1.53498217054 -1.645688405 2.21576529858 0.125035387613 -0.109816116535 -0.0336499479785 0 0 0 0 0 0 0 0 0 0 0 0 -0.401390821374 1.49396693312 1.57639883369 2.15232258027 0.05035274892 -0.142959919031 -0.144234009385 0 0 0 0 0 0 0 0 0 0 0 0" />
+    <!-- Matches config/posture.json: both home J2 angles are 102 deg,
+         inside the configured 100..104 deg task limits. -->
+    <key name="aviator_home" qpos="0 -0.085 0 -0.085 0.412904691413689 1.78023583703422 -1.81881755433862 2.21576529857688 0.246532716014428 -0.056955343292378 -0.313994005644835 0 0 0 0 0 0 0 0 0 0 0 0 -0.369799332513875 1.78023583703422 1.78530003549256 2.15232258026689 -0.124879610953531 -0.13055601456795 0.188511739431293 0 0 0 0 0 0 0 0 0 0 0 0" />
   </keyframe>
 </mujoco>

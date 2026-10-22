@@ -189,6 +189,36 @@ class CalibrationControllerTests(unittest.TestCase):
         status = self.action("sample", angle_deg=0, displacement_m=-.085)
         self.assertEqual(status["phase"], "preview", status["error"])
 
+    def test_missing_hand_allows_arm_drag_but_blocks_calibration(self):
+        native = self.prepare()
+        link = self.controller.link
+        original = link.snapshot()
+        for missing in ("left", "right", "both"):
+            with self.subTest(missing=missing):
+                available = {s: missing not in (s, "both") for s in ("left", "right")}
+                unavailable = dict(original, ready=False, fresh=False,
+                                   available_sides=available, ready_sides=available,
+                                   fault=f"{missing} 机械手反馈不可用")
+                with patch.object(link, "snapshot", return_value=unavailable):
+                    for side in ("left", "right", "both"):
+                        with self.subTest(drag=side):
+                            status = self.action("drag_start", side=side)
+                            self.assertTrue(status["prepared"], status["error"])
+                            self.assertFalse(status["error"])
+                            for arm in ("left", "right"):
+                                self.assertEqual(status["arms"][arm]["dragging"],
+                                                 side in (arm, "both"))
+                            status = self.action("drag_stop", side=side)
+                            self.assertTrue(status["prepared"], status["error"])
+                            self.assertFalse(any(a["dragging"] for a in status["arms"].values()))
+                            self.assertFalse(status["can_sample"] or status["can_save"])
+                    status = self.action("sample", angle_deg=0, displacement_m=-.085)
+                    self.assertIn("机械手反馈不可用", status["error"])
+                    self.assertTrue(status["prepared"])
+                    self.assertIsNone(status["result"])
+                    self.assertEqual(native.sample_count, 0)
+                    self.assertFalse(native.closed)
+
     def test_manual_sampling_keeps_core_coordinates_and_recovers_tool(self):
         native = self.prepare()
         native.angle, native.displacement = math.radians(10), -.12
