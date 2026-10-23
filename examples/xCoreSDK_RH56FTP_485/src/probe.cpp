@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
     QCommandLineParser parser;
     parser.setApplicationDescription("AR5 SDK 485 read probe: start idle with motors OFF; optional --power-on tests powered motors without RT or motion commands. Close other robot clients first.");
     parser.addHelpOption();
-    parser.addOption({"config", "Configuration INI", "path", QCoreApplication::applicationDirPath() + "/config.ini"});
+    parser.addOption({"config", "Configuration INI", "path", demo::defaultConfigPath()});
     parser.addOption({"side", "Arm: left, right or both (sequential)", "side", "both"});
     parser.addOption({"dry-run", "Print requests only; no SDK objects or connections"});
     parser.addOption({"power-on", "Temporarily enable motors in the current mode, wait 2 s, read hand, then power OFF"});

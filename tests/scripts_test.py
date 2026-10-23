@@ -36,6 +36,8 @@ class ScriptsTests(unittest.TestCase):
                 if path.suffix == '.sh':
                     subprocess.run(['bash','-n',str(path)], check=True)
                 else: ast.parse(path.read_text())
+                # Shared environment setup is sourced by entry points, not a CLI.
+                if path.name == 'runtime_env.sh': continue
                 self.run_script(path.name,'--help')
                 self.run_script(path.name,'--this-option-does-not-exist',ok=False)
     def test_control_launch_matrix(self):
@@ -345,7 +347,8 @@ while True:
             self.assertNotIn('SIGKILL 后仍未退出', log.read_text())
 
     def test_bandwidth_launch_matrix(self):
-        for options in ([],['--fake-hand'],['--simulation','--headless']):
+        # Select hand behavior explicitly, independent of site configuration defaults.
+        for options in (['--no-fake-hand'],['--fake-hand'],['--simulation','--headless','--no-fake-hand']):
             text=self.run_script('start_wheel_bandwidth.sh','--dry-run',*options)
             self.assertNotIn('rh56ftp_node.py',text);self.assertNotIn('fake_rh56ftp_hand.py',text)
             self.assertEqual('--fake-hand' in text,'--fake-hand' in options)

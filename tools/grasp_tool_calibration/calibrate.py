@@ -214,7 +214,8 @@ def pair_samples(states, camera, max_sync_ms):
 
 
 def helper_path(requested):
-    candidates = [requested] if requested else [ROOT / "build/bin/aviator_grasp_tool_state",
+    candidates = [requested] if requested else [Path(os.environ.get("AVIATOR_BIN", str(ROOT / "../../bin"))) / "aviator_grasp_tool_state",
+                                               ROOT / "build/bin/aviator_grasp_tool_state",
                                                ROOT / "build/release/bin/aviator_grasp_tool_state"]
     for path in candidates:
         if path.is_file() and os.access(path, os.X_OK):

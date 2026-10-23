@@ -19,13 +19,13 @@ int main(int argc, char** argv) {
     parser.setApplicationDescription("Dual RH56FTP hand control through xCoreSDK RS485; motor power on/off only");
     parser.addHelpOption();
     parser.addOption({"offline", "Offline UI/backend demonstration; no robot connections"});
-    parser.addOption({"config", "INI configuration file", "path", QDir(QCoreApplication::applicationDirPath()).filePath("config.ini")});
+    parser.addOption({"config", "INI configuration file", "path", demo::defaultConfigPath()});
     parser.process(app);
     try {
         auto config = demo::loadConfig(parser.value("config"));
         config.offline = parser.isSet("offline");
         const auto runtime = demo::prepareSdkRuntime();
-        config.csvDirectory = QDir("/home/rocos/Documents/hand_csv")
+        config.csvDirectory = QDir(QDir::homePath() + "/Documents/hand_csv")
             .filePath(QFileInfo(runtime).fileName()).toStdString();
         std::cout << "SDK 运行与日志目录：" << runtime.toStdString() << std::endl;
         std::cout << "CSV 保存目录：" << config.csvDirectory << std::endl;

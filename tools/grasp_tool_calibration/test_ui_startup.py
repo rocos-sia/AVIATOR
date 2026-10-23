@@ -4,6 +4,7 @@ from io import StringIO
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,27 @@ from unittest.mock import patch
 from calibration import CalibrationError
 import ui
 import ui_backend
+
+
+class InterpreterTests(unittest.TestCase):
+    def test_virtualenv_survives_defaults_cli_and_executable_validation(self):
+        with tempfile.TemporaryDirectory(prefix="grasp-ui-python-") as directory:
+            environment = Path(directory) / "venv"
+            subprocess.run([sys.executable, "-m", "venv", "--without-pip", "--symlinks", str(environment)], check=True)
+            python = environment / "bin/python"
+            self.assertTrue(python.is_symlink())
+            for arguments, variables in (
+                ([], {"CAMERA_PYTHON": str(python), "HAND_PYTHON": str(python)}),
+                (["--camera-python", str(python), "--hand-python", str(python)], {}),
+            ):
+                with self.subTest(arguments=arguments), patch.dict(os.environ, variables, clear=True):
+                    options = ui.parse_args(arguments)
+                    for name in ("camera_python", "hand_python"):
+                        selected = ui_backend.executable(getattr(options, name), name)
+                        result = subprocess.check_output([str(selected), "-c", "import sys; print(sys.prefix)"], text=True).strip()
+                        self.assertEqual(Path(result), environment)
+            with patch.dict(os.environ, {}, clear=True):
+                self.assertEqual(ui.python_default("CAMERA_PYTHON", python), python)
 
 
 class LogDirectoryTests(unittest.TestCase):

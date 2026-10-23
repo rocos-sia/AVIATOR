@@ -1,11 +1,19 @@
 #pragma once
 #include <QDir>
+#include <QCoreApplication>
+#include <QFileInfo>
 #include <QFile>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <stdexcept>
 
 namespace demo {
+inline QString defaultConfigPath() {
+    const auto directory = QCoreApplication::applicationDirPath();
+    const auto installed = directory + "/../share/aviator/examples/xCoreSDK_RH56FTP_485/config.ini";
+    return QFileInfo::exists(installed) ? installed : directory + "/config.ini";
+}
+
 // xCoreSDK writes logs relative to the process working directory. Call once,
 // after loading relative config paths and before creating any SDK objects/threads.
 inline QString prepareSdkRuntime() {

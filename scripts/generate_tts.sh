@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Generate the configured voice pack from local models; never download/install.
 set -Eeuo pipefail
+if [[ -f $(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh ]]; then
+    source "$(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh"
+fi
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 CONFIG="$ROOT/config/tts.yaml"

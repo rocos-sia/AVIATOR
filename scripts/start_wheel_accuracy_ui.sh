@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Reuse production device startup, readiness checks, locks and ordered shutdown.
 set -Eeuo pipefail
+if [[ -f $(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh ]]; then
+    source "$(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh"
+fi
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 for arg in "$@"; do
     case "$arg" in

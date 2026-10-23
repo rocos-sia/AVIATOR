@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Standalone calibration entry point. Existing launch scripts are unaffected.
 set -euo pipefail
+if [[ -f $(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh ]]; then
+    source "$(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh"
+fi
 AVIATOR_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$AVIATOR_ROOT"
 UI_PYTHON="${UI_PYTHON:-python3}"

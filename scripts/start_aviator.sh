@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # 按 docs/启动流程.txt 启动；Ctrl+C 停止本次启动的节点。
 set -Eeuo pipefail
+if [[ -f $(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh ]]; then
+    source "$(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh"
+fi
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
@@ -307,7 +310,9 @@ if ! $DRY_RUN; then
     if ! $SIMULATION; then
         "$AVIATOR_BIN/aviator_photoelectric" --config "$PHOTOELECTRIC_CONFIG" --check-config
     fi
-    if ! $SIMULATION; then sudo -S -p '' -v <<< "$SUDO_PASSWORD"; fi
+    if ! $SIMULATION; then
+        sudo -S -p '' -v <<< "$SUDO_PASSWORD"
+    fi
     LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/aviator-start.XXXXXXXX")
     echo "日志目录: $LOG_DIR"
     trap cleanup EXIT

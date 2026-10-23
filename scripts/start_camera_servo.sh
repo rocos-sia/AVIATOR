@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # 相机方向盘随动测试；独立于 start_aviator.sh。
 set -Eeuo pipefail
+if [[ -f $(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh ]]; then
+    source "$(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh"
+fi
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"

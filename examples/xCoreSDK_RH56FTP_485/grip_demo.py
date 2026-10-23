@@ -11,7 +11,7 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'nodes/xCoreSDK_hand'))
+sys.path.insert(0, str(ROOT / ('xCoreSDK_hand' if (ROOT / 'xCoreSDK_hand').is_dir() else 'nodes/xCoreSDK_hand')))
 from main import SdkHandNode, FakeSdkHandNode, prepare_sdk_directory
 from scheduler import Scheduler
 from transport import HandLink, SdkConnection
@@ -141,7 +141,7 @@ class DemoController:
 def main(argv=None):
     parser = argparse.ArgumentParser(description='RH56FTP 握持测试 UI（仅控制手，不发送机械臂运动指令）')
     parser.add_argument('--system-config', type=Path, default=ROOT / 'config/system.yaml')
-    parser.add_argument('--sdk-library', type=Path, default=ROOT / 'build/lib/libaviator_xcore_hand_sdk.so')
+    parser.add_argument('--sdk-library', type=Path, default=(ROOT / '../../lib/libaviator_xcore_hand_sdk.so' if (ROOT / '../../release-version.json').is_file() else ROOT / 'build/lib/libaviator_xcore_hand_sdk.so'))
     parser.add_argument('--fake-hand', action='store_true', help='离线模拟手，无设备连接')
     parser.add_argument('--log-file', type=Path, help='故障日志路径（默认 logs/hand_grip_demo/时间-faults.log）')
     parser.add_argument('--side', choices=('left', 'right', 'both'), default='left')

@@ -1,0 +1,10 @@
+# Python 3.10 / Ubuntu 22.04 runtime. Build wheels on the development machine.
+numpy==1.26.4
+PyYAML==6.0.2
+pyzmq==26.4.0
+opencv-contrib-python==4.11.0.86
+pyrealsense2==2.58.1.10581
+apriltag==0.0.16
+pymodbus==3.6.9
+matplotlib==3.9.4
+sherpa-onnx==1.13.8

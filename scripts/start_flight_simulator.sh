@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Run on the second IPC. Does not start Bus, Core, or robot devices.
 set -euo pipefail
+if [[ -f $(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh ]]; then
+    source "$(dirname -- "${BASH_SOURCE[0]}")/runtime_env.sh"
+fi
 SIM_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 if [[ ${1:-} == --help || ${1:-} == -h ]]; then
     echo 'Usage: start_flight_simulator.sh [--config path]'

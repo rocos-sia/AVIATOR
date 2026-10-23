@@ -171,7 +171,8 @@ class DemoLink:
 
 
 def executable(path, label):
-    path = Path(path).expanduser().resolve()
+    # Preserve interpreter symlinks so subprocesses retain their virtualenv.
+    path = Path(path).expanduser().absolute()
     if not path.is_file() or not os.access(path, os.X_OK):
         raise CalibrationError(f"找不到 {label}：{path}")
     return path

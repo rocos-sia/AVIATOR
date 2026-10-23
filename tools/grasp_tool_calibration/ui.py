@@ -25,7 +25,8 @@ WEB = Path(__file__).resolve().parent / "web"
 
 
 def python_default(env, candidate):
-    return Path(os.environ.get(env, str(candidate if candidate.is_file() else Path(sys.executable)))).expanduser().resolve()
+    # A venv's Python is commonly a symlink; resolving it loses the environment.
+    return Path(os.environ.get(env, str(candidate if candidate.is_file() else Path(sys.executable)))).expanduser().absolute()
 
 
 def prepare_log_directory(requested):
@@ -76,7 +77,8 @@ def parse_args(argv=None):
         parser.error("port 必须为 0..65535，lease-timeout 必须为 3..60")
     for name, value in vars(options).items():
         if isinstance(value, Path):
-            setattr(options, name, value.expanduser().resolve())
+            path = value.expanduser()
+            setattr(options, name, path.absolute() if name in ("camera_python", "hand_python") else path.resolve())
     return options
 
 

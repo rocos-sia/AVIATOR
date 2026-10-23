@@ -37,7 +37,9 @@ command -v apt-get >/dev/null || { echo "apt-get is required." >&2; exit 1; }
 
 packages=(
   # Build tools, editor language services, formatter, static analysis and debugger.
-  build-essential cmake ninja-build pkg-config python3
+  build-essential cmake ninja-build pkg-config python3 python3-dev python3-pip
+  # Standalone 485 desktop tool included in IPC deployment.
+  qtbase5-dev
   # Optional aviator_tts cached WAV playback and offline cue configuration.
   alsa-utils python3-yaml python3-venv
   clangd clang-format clang-tidy gdb

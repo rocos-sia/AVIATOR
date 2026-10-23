@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(AVIATOR VERSION 10.0.0 LANGUAGES C CXX)
+project(AVIATOR VERSION 10.1.0 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
   message(FATAL_ERROR "Use an out-of-source build: cmake --preset debug")
@@ -70,6 +70,12 @@ if(AVIATOR_BUILD_EXAMPLES AND NOT AVIATOR_COMMUNICATION_ONLY)
     message(STATUS "Building examples...")
     add_subdirectory(examples)
 endif()
+
+option(AVIATOR_BUILD_RH56FTP_485 "Build and install standalone Qt hand tools" OFF)
+if(AVIATOR_BUILD_RH56FTP_485)
+  add_subdirectory(examples/xCoreSDK_RH56FTP_485)
+endif()
+include(cmake/RuntimeTools.cmake)
 
 #------------------------------------------------------------------------------
 # Tests

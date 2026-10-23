@@ -1,5 +1,11 @@
 # 项目配置脚本
 
+## 工控机部署
+
+在开发机执行 `./scripts/deploy_aviator.sh`，本机编译后通过 SSH 部署到
+`rocos@192.168.11.100:/opt/aviator`。全部启动脚本及 485 示例随包安装，
+部署不启动设备。固定目录、程序替换、现场配置保留和失败恢复见 [部署说明](../deploy/README.md)。
+
 ## MuJoCo STL 拆分
 
 [split_stl.py](split_stl.py) 使用 Python 标准库将二进制 STL 按每件最多 200,000 面
@@ -40,7 +46,7 @@ Core 收到新鲜有效的 X1=1 才允许初始化；启动间隔不代替信号
 上述联锁仅接入 Managed Core。`start_camera_servo.sh`、`start_wheel_bandwidth.sh`
 和 `start_grasp_calibration_ui.sh` 使用独立控制入口，没有该 X1 急停联锁，也不启动光电节点。
 
-脚本可从任意目录调用。启动前检查文件，通过标准输入自动提交脚本内配置的 sudo 密码；
+脚本可从任意目录调用。启动前检查文件，沿用脚本内置的 sudo 密码，通过标准输入提交，无需手动输入；
 Manipulator 在 sudo 内另建独立会话，将实际进程组号记录到本次日志目录的 `manipulator.pid`；停止时同时清理实际节点组和 sudo 包装组，不依赖 sudo 缓存，
 各节点日志写入输出的
 `/tmp/aviator-start.*` 目录；保持终端打开，Ctrl+C 停止本次启动的所有节点。

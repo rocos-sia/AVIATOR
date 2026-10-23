@@ -79,3 +79,8 @@ if(BUILD_TESTING)
     add_test(NAME sdk_concurrent_startup COMMAND sdk_startup_test)
     set_tests_properties(sdk_concurrent_startup PROPERTIES TIMEOUT 15)
 endif()
+
+include(GNUInstallDirs)
+install(TARGETS xCoreSDK_RH56FTP_485 rh56_485_probe RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(PROGRAMS run.sh run_grip_demo.sh DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/examples/xCoreSDK_RH56FTP_485)
+install(FILES config.ini grip_demo.py fault_journal.py DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/examples/xCoreSDK_RH56FTP_485)

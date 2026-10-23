@@ -70,7 +70,7 @@ class Options:
         }
         for key, value in defaults.items():
             env[ENV_FIELDS[key]] = str(Path(getattr(self, key) or value).expanduser())
-        env['CAMERA_PYTHON'] = str(Path(self.camera_python or Path(env['CONDA_ROOT']) / 'envs/apriltag_realsense/bin/python').expanduser())
+        env['CAMERA_PYTHON'] = str(Path(self.camera_python or (layout.prefix / 'cache/python/bin/python' if (layout.prefix / 'cache/python/bin/python').is_file() else Path(env['CONDA_ROOT']) / 'envs/apriltag_realsense/bin/python')).expanduser())
         env['MONITOR_BIN'] = str(Path(self.monitor_bin or Path(env['AVIATOR_BIN']) / 'aviator_monitor').expanduser())
         env['START_DELAY'] = self.start_delay
         env['PYTHONDONTWRITEBYTECODE'] = '1'

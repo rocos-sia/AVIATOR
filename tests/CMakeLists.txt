@@ -469,3 +469,8 @@ if(TARGET aviator_core_managed AND TARGET simulation AND Python3_Interpreter_FOU
     $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
   set_tests_properties(managed_flight_process PROPERTIES TIMEOUT 300 ENVIRONMENT "AVIATOR_TEST_FLIGHT_SOURCE=FLIGHT")
 endif()
+
+if(Python3_Interpreter_FOUND)
+  add_test(NAME deployment_invariants COMMAND ${Python3_EXECUTABLE}
+    ${PROJECT_SOURCE_DIR}/tests/deploy_test.py)
+endif()
