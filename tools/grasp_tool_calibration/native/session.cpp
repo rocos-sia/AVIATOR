@@ -182,11 +182,11 @@ class Session {
             auto system=fs::path(request.at("system_config").get<std::string>());
             auto cfg=aviator::hand::loadConfig(system, request.value("fake_hand",false)||dry_,
                 fs::path(request.at("hand_config").get<std::string>()));
-            require(cfg.enabled && cfg.sides[0] && cfg.sides[1], "Calibration requires both hands enabled");
+            require(cfg.enabled, "Hand control is disabled");
             std::array<aviator::hand::Transfer,2> transfers;
             for(int s=0;s<2;++s) {
 #ifdef AVIATOR_GRASP_HAVE_ROKAE
-                if(!cfg.fake) {
+                if(cfg.sides[s] && !cfg.fake) {
                     arms_[s]->startHand();
                     transfers[s]=[this,s](const auto& tx,size_t count) {
                         return arms_[s]->handTransfer(tx,count);

@@ -54,9 +54,27 @@ class Tests(unittest.TestCase):
         self.assertFalse(c.closed)
         with self.assertRaisesRegex(RuntimeError,'closed'): h.read_state()
 
-    def test_same_policy_not_a_new_watchdog(self):
-        for method in ('handle_command','supervise','_safe_pose','read_states'):
+    def test_fault_read_is_six_bytes_at_1606(self):
+        c = Connection(); h = HandLink(c, 2); h.connect()
+        self.assertEqual(h.read_errors(), {'err': [0,1,2,3,4,5]})
+        self.assertEqual(c.sent[0][4:8], bytes([0x11, 0x46, 0x06, 6]))
+        c.bad = True
+        with self.assertRaisesRegex(RuntimeError, 'register=1606'):
+            h.read_errors()
+
+    def test_shared_feedback_and_safety_with_event_policy(self):
+        from policy import EventHandNode
+        for method in ('handle_command', 'read_states'):
             self.assertIs(getattr(SdkHandNode,method),getattr(Rh56FtpNode,method))
+        self.assertIs(SdkHandNode.supervise, EventHandNode.supervise)
+
+    def test_pause_is_single_byte_register_1634(self):
+        c = Connection(); h = HandLink(c, 2); h.connect()
+        h.write_pause()
+        self.assertEqual(c.sent, [bytes.fromhex('eb 90 02 04 12 62 06 01 81')])
+        c.bad = True
+        with self.assertRaisesRegex(RuntimeError, 'register=1634'):
+            h.write_pause()
 
     def test_shared_configuration_and_overrides_without_hardware(self):
         with tempfile.TemporaryDirectory() as directory:

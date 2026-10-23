@@ -16,11 +16,14 @@ from rh56ftp_node import CommandGuard, Logger, decode_command, monotonic_us
 
 
 class Scheduler:
-    def __init__(self, node, settings):
+    def __init__(self, node, settings, *, error_observer=None):
         self.node = node
         self.periods = {}
-        for name, default in (("position_write_hz", 20), ("position_read_hz", 10),
-                              ("telemetry_read_hz", 5)):
+        self.error_observer = error_observer
+        rates = [("position_write_hz", 20), ("position_read_hz", 10), ("telemetry_read_hz", 5)]
+        if 'error_read_hz' in settings:
+            rates.append(('error_read_hz', 20))
+        for name, default in rates:
             value = settings.get(name, default)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 < value <= 100:
                 raise ValueError(f"{name} must be in (0,100]")
@@ -29,9 +32,6 @@ class Scheduler:
         self.received_guard = CommandGuard()
         self.pending = self.revocation = None
         self.revoked_stamp = 0
-        self.stream_generation = 0
-        self.applied_generation = -1
-        self.continuous = False
         self.stop = threading.Event()
         self.read_stop = threading.Event()
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hand-write")
@@ -44,7 +44,6 @@ class Scheduler:
         self.feedback_wait_started_us = None
         # Hooks affect only nodes using this runner; Modbus retains its loop.
         node._write_targets = self.write_targets
-        node._command_gap_expired = lambda now, previous: not self.continuous or now < previous
         self.publish_policy()
 
     def write_targets(self, targets):
@@ -75,10 +74,8 @@ class Scheduler:
                 candidate.accept(command, now, self.node.command_timeout_us, self.node.clock_id)
                 if self.node.feedback_only:
                     return False
-                if self.received_guard.expired(now, self.node.command_timeout_us) or not command['valid']:
-                    self.stream_generation += 1
                 self.received_guard = candidate
-                item = (topic, payload, command, self.stream_generation)
+                item = (topic, payload, command)
                 if not command['valid']:
                     # Revocations cannot be coalesced away by a following target.
                     self.revocation = item
@@ -99,7 +96,7 @@ class Scheduler:
         # while the policy owner is blocked in a device write.
         view = copy(self.node)
         for name in ('guard', 'last_targets', 'requested_targets', 'closing_holds',
-                     'fault_channels', '_fault_open_sides', 'write_stats'):
+                     'fault_channels', '_fault_open_sides', 'write_stats', 'paused'):
             setattr(view, name, deepcopy(getattr(self.node, name)))
         self.view = view
 
@@ -110,10 +107,9 @@ class Scheduler:
         view.state_sequence = self.state_sequence - 1
         state = view.make_state()
         with self.condition:
-            # Receipt alone never advances accepted_command. A revocation or
-            # dead command source can invalidate a still-running old write.
-            if (self.received_guard.expired(monotonic_us(), self.node.command_timeout_us)
-                    or view.guard.sample_mono_us < self.revoked_stamp):
+            # Receipt alone never advances accepted_command. A revocation
+            # invalidates a still-running old write; ordinary silence does not.
+            if view.guard.sample_mono_us < self.revoked_stamp:
                 state['command_valid'] = False
         state['scheduler'] = dict(received=self.received, rejected=self.rejected,
                                   coalesced=self.coalesced,
@@ -148,6 +144,8 @@ class Scheduler:
     def read_loop(self, side, link):
         periods = {'position': self.periods['position_read_hz'],
                    'telemetry': self.periods['telemetry_read_hz']}
+        if 'error_read_hz' in self.periods:
+            periods = {'errors': self.periods['error_read_hz'], **periods}
         due = dict.fromkeys(periods, 0)
         data, stamps, errors = {}, {}, {}
         while not self.read_stop.is_set():
@@ -162,7 +160,8 @@ class Scheduler:
                 operation = getattr(link, 'read_' + kind, None)
                 if operation is None:  # In-memory fake HandLink; no SDK traffic.
                     full = link.read_state()
-                    fields = ('angle',) if kind == 'position' else ('force', 'current', 'err', 'status', 'temp')
+                    fields = (('angle',) if kind == 'position' else ('err',) if kind == 'errors'
+                              else ('force', 'current', 'err', 'status', 'temp'))
                     update = {key: full[key] for key in fields}
                 else:
                     update = operation()
@@ -170,10 +169,15 @@ class Scheduler:
                     if not isinstance(values, list) or len(values) != 6 or any(
                             isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in values):
                         raise ValueError('Invalid hand feedback values')
+                if kind == 'errors' and (set(update) != {'err'} or any(
+                        type(v) is not int or not 0 <= v <= 255 for v in update['err'])):
+                    raise ValueError('Invalid six-byte fault register response')
+                if kind == 'telemetry' and 'errors' in periods:
+                    update.pop('err', None)  # Dedicated samples own the fault codes.
                 data.update(update)
                 stamps[kind] = started
                 errors.pop(kind, None)
-                stamp = min(stamps.values()) if len(stamps) == 2 else None
+                stamp = min(stamps.values()) if len(stamps) == len(periods) else None
                 snapshot = replace(before, data=dict(data) if stamp else None,
                                    sample_mono_us=stamp, reads=before.reads + 1,
                                    error='; '.join(errors.values()),
@@ -185,6 +189,10 @@ class Scheduler:
                 snapshot = replace(before, error='; '.join(errors.values()), errors=before.errors + 1)
                 self.node.diag.emit('feedback_read_failed', key=f'read:{side}:{kind}',
                                     side=side, reason=str(exc), duration_ms=(monotonic_us()-started)/1000)
+            if kind == 'errors' and self.error_observer is not None:
+                # Observe every actual read, including short faults between UI refreshes.
+                self.error_observer(side, None if kind in errors else update['err'],
+                                    errors.get(kind, ''))
             finished = monotonic_us()
             self.node.snapshots[side] = replace(snapshot, read_started_us=started,
                                                 read_finished_us=finished,
@@ -193,19 +201,7 @@ class Scheduler:
             due[kind] = max(started + periods[kind], finished)
 
     def supervise(self):
-        node = self.node
-        node._observe_faults(monotonic_us())
-        with self.condition:
-            expired = self.received_guard.expired(monotonic_us(), node.command_timeout_us)
-        if node.command_valid and expired:
-            node.diag.emit('command_watchdog_expired', reason='command source expired')
-            node._safe_required = True
-        if node._safe_required and not node._safe_applied:
-            try:
-                node._safe_pose()
-            except Exception as exc:
-                node.diag.emit('safe_pose_failed', reason=str(exc))
-                node._safe_applied = False
+        self.node.supervise()
 
     def control_loop(self):
         node = self.node
@@ -216,7 +212,7 @@ class Scheduler:
                 except Exception as exc:
                     node.diag.emit('startup_safe_pose_failed', reason=str(exc))
             self.publish_policy()
-            next_write = 0
+            next_write = next_supervise = 0
             while not self.stop.is_set():
                 item = None
                 with self.condition:
@@ -225,9 +221,8 @@ class Scheduler:
                     elif self.pending is not None and monotonic_us() >= next_write:
                         item, self.pending = self.pending, None
                 if item is not None:
-                    topic, payload, command, generation = item
+                    topic, payload, command = item
                     now = monotonic_us()
-                    self.continuous = generation == self.applied_generation
                     try:
                         # Never replay an expired queued motion. A queued revoke
                         # still needs its safe action even if its ACK is too old.
@@ -235,15 +230,15 @@ class Scheduler:
                             node._safe_pose()
                         else:
                             node.handle_command(topic, payload, now)
-                        self.applied_generation = generation
                     except Exception as exc:
                         # handle_command logs its own failures. The direct safe
                         # action for an expired revoke needs the same visibility.
                         if not command['valid']:
                             node.diag.emit('safe_pose_failed', reason=str(exc))
                     next_write = max(now + self.periods['position_write_hz'], monotonic_us())
-                if not node.feedback_only:
+                if not node.feedback_only and monotonic_us() >= next_supervise:
                     self.supervise()
+                    next_supervise = monotonic_us() + self.periods['position_write_hz']
                 self.publish_policy()
                 with self.condition:
                     if not self.stop.is_set():

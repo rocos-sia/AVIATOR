@@ -3,7 +3,8 @@
 right_host: 192.168.21.210
 left_host: 192.168.11.210
 
-# 各通道运动时使用 grasp，停止保持时使用 hold；模式固定为 0（按角度运动，带设备力阈值保护）。
+# 运动使用 grasp，模式 0（按角度运动，带设备力阈值保护）。
+# hold 仅旧 Modbus 通道停止使用；SDK 整手暂停不写 hold 参数。
 speed:
   grasp: 800
   hold: 0
@@ -12,7 +13,8 @@ force:
   hold: 0
 
 # 六个通道独立判定：位置偏差绝对值连续 10 秒大于 threshold，
-# 或完整 10 秒窗口内位置最大值 - 最小值小于 threshold，发送 -1 停止。
+# 或完整 10 秒窗口内位置最大值 - 最小值小于 threshold。
+# SDK：本手六路全部满足后向 1634 写一次 1 暂停；旧 Modbus：各通道 -1 停止。
 # 寄存器整数刻度，范围 0..999；默认 10。
 threshold: 10
 
@@ -28,6 +30,7 @@ state_period_ms: 60
 position_write_hz: 20
 position_read_hz: 10
 telemetry_read_hz: 5
+# SDK 仅校验新消息年龄，不要求持续发送已接受目标。
 command_timeout_ms: 100
 feedback_timeout_ms: 500
 closing_hold_ms: 10000

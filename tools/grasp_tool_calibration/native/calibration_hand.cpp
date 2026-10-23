@@ -61,11 +61,13 @@ class CalibrationHands::Impl {
         : cfg(std::move(config)), transfers(std::move(io)), open(opened) {
         cfg.feedback_us = std::max(cfg.feedback_us, 3000000u);
         for (int s = 0; s < 2; ++s) {
+            if (!cfg.enabled || !cfg.sides[s]) continue;
             require(cfg.fake || bool(transfers[s]), "Missing hand transport");
             rh56::validate(rh56::angleSet, open[s]);
         }
         try {
-            for (int s = 0; s < 2; ++s) workers[s] = std::thread([this, s] { run(s); });
+            for (int s = 0; s < 2; ++s)
+                if (cfg.enabled && cfg.sides[s]) workers[s] = std::thread([this, s] { run(s); });
         } catch (...) {
             stop = true;
             wake.notify_all();
@@ -255,7 +257,7 @@ class CalibrationHands::Impl {
                            d.applied == latest->revision[s] && d.applied > d.blocked;
             valid &= healthy; accepted &= applied;
             body["hands"][sides[s]] = {{"valid", healthy}, {"feedback_available", available},
-                {"status", !healthy ? "RECOVERING" : applied ? "ACTIVE" : "READY"},
+                {"status", !cfg.enabled || !cfg.sides[s] ? "DISABLED" : !healthy ? "RECOVERING" : applied ? "ACTIVE" : "READY"},
                 {"sample_mono_us", d.stamp}, {"sample_time_basis", cfg.fake ? "host_simulation" : "host_rs485_read"},
                 {"drive_position_normalized", available ? normalized(d.position) : Json::array()},
                 {"force", available ? Json(d.force) : Json::array()}, {"error_codes", d.errors},

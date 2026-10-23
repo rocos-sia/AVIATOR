@@ -13,11 +13,18 @@ from rh56ftp_node import Logger, Rh56FtpNode, main as hand_main
 from transport import HandLink, SdkConnection
 from scheduler import run_scheduled
 
-class SdkHandNode(Rh56FtpNode):
+from policy import EventHandNode
+
+class SdkHandNode(EventHandNode):
+    pass
+
+class FakeSdkHandNode(EventHandNode):
     def make_state(self, now=None):
         state = super().make_state(now)
+        state['simulated'] = True
         for hand in state['hands'].values():
-            hand['sample_time_basis'] = 'host_rs485_read'
+            hand['position_source'] = 'simulated'
+            hand['sample_time_basis'] = 'host_simulation'
         return state
 
 def prepare_sdk_directory(parent=None):
@@ -61,8 +68,14 @@ def main(argv=None):
         default('--publisher-id', root.get('core_hand', {}).get('publisher_id', 'rh56ftp_hand'))
     fake = known.fake_hand or section.get('fake_hand', False)
     if fake:
-        # Exactly the same simulator and policy as the old standalone fake node.
-        return hand_main(rest, simulated=True, node_runner=run_scheduled)
+        from fake_rh56ftp_hand import FakeHandLink
+        def fake_transport(args, settings):
+            links = {side: FakeHandLink('simulated-' + side,
+                        motion_rate=args.motion_rate if args.motion_rate is not None else settings.get('motion_rate', 2.0))
+                     if settings.get(side + '_enabled', True) else None
+                     for side in ('left', 'right')}
+            return links, links, FakeSdkHandNode
+        return hand_main(rest, simulated=True, transport_factory=fake_transport, node_runner=run_scheduled)
     def transport(args, settings):
         if not known.system_config:
             raise ValueError('Real SDK hands require --system-config (robot.yaml connection addresses)')

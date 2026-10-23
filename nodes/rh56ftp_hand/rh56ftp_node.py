@@ -215,13 +215,15 @@ class DiagnosticLog:
     def _text(event: str, reason: str, fields: dict[str, Any]) -> str:
         titles = {
             "configuration": "启动配置", "feedback_status_changed": "反馈异常",
+            "hand_paused": "整手暂停已执行（寄存器 1634 写入 1）",
+            "hold_write_failed": "保持写入失败，等待重试",
             "feedback_recovered": "反馈已恢复",
             "modbus_connect_failed": "设备连接失败", "feedback_read_failed": "读取反馈失败",
             "modbus_write_failed": "写入设备失败", "feedback_reader_failed": "反馈线程退出",
             "hold_control_failed": "握持保护触发，按各手故障范围执行保护",
             "hold_control_recovered": "握持故障已恢复，后续有效指令恢复控制",
             "fault_safe_pose_applied": "已确认本手同轮六路故障，已发送安全张开目标（拇指侧摆 500，其余五路 1000）",
-            "fault_hold_applied": "故障保护保持，未满足本手同轮六路故障条件，已请求六路停止（-1）",
+            "fault_hold_applied": "故障保护保持，未满足本手同轮六路故障条件，已请求整手停止",
             "device_error": "设备故障", "reject command": "指令被拒绝",
             "command_ignored": "仅反馈模式，忽略运动指令",
             "command_watchdog_expired": "指令超时，准备执行安全姿态",
@@ -235,7 +237,7 @@ class DiagnosticLog:
             "invalid_wire_message": "收到无效总线消息",
         }
         phases = {"tracking": "执行运动指令", "holding": "满足抓握完成判据，切换到保持状态",
-            "failed": "故障"}
+            "ready": "本通道判据满足，等待整手六通道就绪", "failed": "故障"}
         sides = {"left": "左手", "right": "右手"}
         channels = dict(zip(CHANNEL_NAMES, ("拇指侧摆", "拇指弯曲", "食指", "中指", "无名指", "小指")))
         title = phases.get(fields.get("phase"), "握持阶段变化") if event == "hold_phase_changed" else titles.get(event, event)
@@ -376,7 +378,7 @@ class DiagnosticLog:
             emit = (Logger.error if event.endswith("_failed") or event == "device_error" or
                     (event == "hold_phase_changed" and fields.get("phase") == "failed") else
                     Logger.info if event in ("health", "configuration", "configuration_loaded", "setting_write",
-                                             "feedback_recovered", "hold_control_recovered", "hold_phase_changed")
+                                             "feedback_recovered", "hold_control_recovered", "hold_phase_changed", "hand_paused")
                     else Logger.warn)
             message = (json.dumps(record, ensure_ascii=False, allow_nan=False) if self.log_format == "json"
                        else self._text(event, reason, record))
@@ -1016,6 +1018,16 @@ class Rh56FtpNode:
     def _apply_command(self, command: dict[str, Any], now: int) -> None:
         candidate = CommandGuard(**self.guard.__dict__)
         candidate.accept(command, now, self.command_timeout_us, self.clock_id)
+        self._apply_motion(command, now)
+        self.guard = candidate
+        self.last_command = command
+
+    def _hold_settings(self, channel: ClosingHold) -> dict[str, Any]:
+        return dict(hold_speed_raw=self.hold_speed if channel.phase == "holding" else None,
+                    hold_force_raw=self.hold_force if channel.phase == "holding" else None)
+
+    def _apply_motion(self, command: dict[str, Any], now: int) -> None:
+        """Apply/observe an accepted target without inventing a new command ACK."""
         raw_by_side: dict[str, list[int]] = {}
         if command["valid"]:
             mode = command["mode"]
@@ -1042,8 +1054,7 @@ class Rh56FtpNode:
                     if channel.phase != self.closing_holds[side][index].phase:
                         self.diag.emit("hold_phase_changed", key=f"hold_phase:{side}:{index}", throttle_us=0,
                                        previous_phase=self.closing_holds[side][index].phase,
-                                       hold_speed_raw=self.hold_speed if channel.phase == "holding" else None,
-                                       hold_force_raw=self.hold_force if channel.phase == "holding" else None,
+                                       **self._hold_settings(channel),
                                        **self._hold_context(side, index, channel, now, requested[side][index]))
             self.closing_holds = pending_holds
             if self.hold_control_error:
@@ -1063,8 +1074,6 @@ class Rh56FtpNode:
             self._safe_pose(now=now)
             self.last_targets = {side: [] for side in SIDES}
             self.requested_targets = {side: [] for side in SIDES}
-        self.guard = candidate
-        self.last_command = command
 
     def supervise(self, now: int | None = None) -> None:
         now = monotonic_us() if now is None else now

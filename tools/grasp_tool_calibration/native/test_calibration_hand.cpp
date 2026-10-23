@@ -142,6 +142,31 @@ int main() {
             check(side.writes.back().first==angle_set && side.writes.back().second==Values{1000,1000,1000,1000,1000,500},
                   "shutdown did not request open");
         }
+        // Disabled sides need no transport and must never read, write or release.
+        for (int active = 0; active < 2; ++active) {
+            Config partial = cfg;
+            partial.sides = {active == 0, active == 1};
+            std::array<Transfer, 2> selected{};
+            selected[active] = transfers[active];
+            const auto disabled_writes = io[1-active].count();
+            {
+                calibration::CalibrationHands hands(partial, selected, {open_pose, open_pose});
+                const auto until = monotonic_us() + 2000000;
+                Json state;
+                do {
+                    hands.receive(command());
+                    state = hands.state().body;
+                    if (state["hands"][active ? "right" : "left"]["command_valid"] == true) break;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                } while (monotonic_us() < until);
+                check(state["hands"][active ? "right" : "left"]["command_valid"] == true,
+                      "enabled hand did not accept command with other side disabled");
+                const auto& disabled = state["hands"][active ? "left" : "right"];
+                check(disabled["status"] == "DISABLED" && disabled["feedback_samples"] == 0 &&
+                      disabled["command_valid"] == false, "disabled hand received work");
+            }
+            check(io[1-active].count() == disabled_writes, "disabled hand received shutdown writes");
+        }
         std::cout << "Calibration hand protocol, isolation, recovery and cleanup passed\n";
         return 0;
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }

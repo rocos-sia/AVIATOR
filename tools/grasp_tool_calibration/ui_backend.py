@@ -258,7 +258,8 @@ class CalibrationController:
         camera = self._camera(hand)
         data.update(hand=hand, camera=camera, nodes=self.nodes.snapshot())
         still = self._arms_still(data["arms"])
-        data["can_sample"] = bool(data["prepared"] and not data["busy"] and still and hand.get("ready")
+        link_ok = hand.get("running") and not hand.get("conflict") and not hand.get("error")
+        data["can_sample"] = bool(data["prepared"] and not data["busy"] and still and link_ok
                                   and (data["wheel_source"] == "manual" or camera["valid"]))
         data["can_save"] = bool(data["can_sample"] and self._updated is not None and not data["dry_run"])
         return data
@@ -340,8 +341,7 @@ class CalibrationController:
                     self._invalidate()
                     self._check_inputs()
                     # Drag readiness belongs to the selected arms. A missing
-                    # hand must not block manual teaching; sampling still
-                    # requires both hands' feedback and command ACKs.
+                    # hand must not block manual teaching or static sampling.
                     self.native.request(action, side=request["side"])
                     self._refresh_arms()
                     dragging = any(a["dragging"] for a in self.state["arms"].values())
@@ -375,7 +375,7 @@ class CalibrationController:
 
     def _prepare(self, source):
         self._invalidate()
-        self._set(phase="preparing", wheel_source=source, message="准备环境：启动手节点会张开双手")
+        self._set(phase="preparing", wheel_source=source, message="准备环境：启用且在线的机械手会收到张开请求")
         self._lease_expired = False
         self._bad_hand_since = None
         self.args.wheel_source = source
@@ -399,8 +399,6 @@ class CalibrationController:
             conflicts = self.conflict_check()
             if conflicts:
                 raise CalibrationError("请先退出现有控制节点：" + "；".join(conflicts))
-            if not all(hand_config.get(side + "_enabled", True) for side in ("left", "right")):
-                raise CalibrationError("rh56ftp_hand.yaml 必须启用左右两只手")
             bus = executable(self.options.bus_helper, "aviator_bus")
             if source == "camera":
                 camera_python = executable(self.options.camera_python, "相机 Python")
@@ -427,20 +425,17 @@ class CalibrationController:
         self.native = self.native_factory(helper, self.options.robot_config, self.options.dry_run,
                                           self.options.log_dir, self.log)
         self.native.request("connect")
-        if not self.options.dry_run:
+        hands_enabled = system.get("xcore_sdk_hand", {}).get("enabled", True) and any(
+            hand_config.get(side + "_enabled", True) for side in ("left", "right"))
+        if not self.options.dry_run and hands_enabled:
             self.native.request("hand_start", system_config=str(self.options.system_config),
                                 hand_config=str(self.options.hand_config),
                                 fake_hand=getattr(self.options, "fake_hand", False))
-            try:
-                self.link.wait_ready(timeout=15)
-            except RuntimeError as exc:
-                status = self.link.snapshot()
-                if status.get("conflict") or status.get("error") or not status.get("running"):
-                    raise
-                self.log(f"手部尚未就绪，保留连接等待恢复；恢复后重新点击开合：{exc}")
+        elif not self.options.dry_run:
+            self.log("机械手控制已禁用；仍可拖动机械臂并进行静态标定")
         self._check_cancel()
         self._refresh_arms()
-        self._set(prepared=True, phase="ready", message="校准环境已就绪；可拖动、握紧，停稳后采样")
+        self._set(prepared=True, phase="ready", message="校准环境已就绪；请现场确认双臂标定位置，结束拖动并停稳后采样，机械手在线状态不影响标定")
 
     def _refresh_arms(self):
         status = self.native.request("status")
@@ -451,10 +446,10 @@ class CalibrationController:
         return all(a.get("connected") and not a.get("dragging") and not a.get("drag_owned")
                    and a.get("operation_state") in ("idle", "jog") for a in arms.values())
 
-    def _require_hand(self):
+    def _require_link(self):
         status = self.link.snapshot()
-        if not status.get("ready"):
-            raise CalibrationError(status.get("fault") or status.get("error") or "机械手反馈或本会话 ACK 不新鲜")
+        if status.get("conflict") or status.get("error") or not status.get("running"):
+            raise CalibrationError(status.get("conflict") or status.get("error") or "手部／相机通信线程已退出")
 
     def _check_inputs(self):
         for path, original in (self._input_snapshots or {}).items():
@@ -473,13 +468,11 @@ class CalibrationController:
             raise CalibrationError(hand.get("conflict") or hand.get("error") or "手部通信线程已退出")
         if not hand.get("ready"):
             if self._bad_hand_since is None:
-                self._invalidate()
-                self.log("手部反馈或指令确认不可用；保留连接，恢复后重新点击对应手的开合按钮")
+                self.log("手部反馈或指令确认不可用，不影响静态标定；请现场确认双臂位置，手部恢复后可重新点击开合")
             self._bad_hand_since = self._bad_hand_since or now
-            self._set(message="机械臂仍可拖动；等待机械手恢复／重新下发，双手就绪后可采样")
         elif self._bad_hand_since is not None:
             self._bad_hand_since = None
-            self._set(message="双手机械手反馈和指令确认已恢复")
+            self.log("双手机械手反馈和指令确认已恢复")
         if now >= self._monitor_at:
             self._monitor_at = now + 1
             self._refresh_arms()
@@ -489,7 +482,7 @@ class CalibrationController:
     def _sample(self, request):
         self._invalidate()
         self._check_inputs()
-        self._require_hand()
+        self._require_link()
         self._refresh_arms()
         if not self._arms_still(self.state["arms"]):
             raise CalibrationError("请先结束双臂拖动，保持静止后再采样")
@@ -510,7 +503,7 @@ class CalibrationController:
 
         def observe():
             self._check_cancel()
-            self._require_hand()
+            self._require_link()
             if time.monotonic() > deadline:
                 reasons = dict(tracker.rejected) if tracker else {}
                 raise CalibrationError(f"采样超时：{reasons}")
@@ -560,7 +553,7 @@ class CalibrationController:
     def _save(self):
         if self.options.dry_run or self._updated is None:
             raise CalibrationError("没有可写回的实测校准结果")
-        self._require_hand()
+        self._require_link()
         self._check_cancel()
         self._check_inputs()
         self._refresh_arms()

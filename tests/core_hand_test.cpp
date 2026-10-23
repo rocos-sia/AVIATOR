@@ -555,6 +555,41 @@ int main(int argc, char** argv) {
                 check(rejected, "invalid recovery timeout accepted");
             }
         }
+        // SDK delivery is an acknowledged event, with stable retry identity.
+        std::ofstream(path) << "xcore_sdk_hand: {enabled: true}\ncore_hand:\n  enabled: true\n"
+            "  close: {left: [0.5,0,0,0,0,0], right: [0.5,0,0,0,0,0]}\n";
+        {
+            auto event = create(); event.request(true, now);
+            auto first = event.command(now, now, session).value();
+            auto retry = event.command(now + 20000, now + 20000, session).value();
+            check(first.body["action_id"] == retry.body["action_id"], "retry changed action identity");
+            auto ack = feedback(first, now + 200000, 1); // ACK may be older than 100 ms.
+            ack.body["accepted_command"]["action_id"] = first.body["action_id"];
+            ack.body["accepted_command"]["control_epoch"] = first.body["control_epoch"];
+            event.receive(ack, now + 200000, session);
+            check(event.complete(now + 200000), "event ACK did not complete close");
+            check(!event.command(now + 220000, now + 220000, session), "acknowledged event streamed");
+            ack.header.sequence = 2; ack.header.sample_mono_us = now + 2000000;
+            for (const char* side : {"left", "right"}) ack.body["hands"][side]["sample_mono_us"] = now + 2000000;
+            event.receive(ack, now + 2000000, session);
+            check(event.complete(now + 2000000), "silent accepted action expired despite fresh feedback");
+            check(event.fault(now + 2000000).empty(), "silent accepted action reported an ACK timeout");
+            event.request(true, now + 2020000);
+            auto again = event.command(now + 2020000, now + 2020000, session).value();
+            check(first.body["action_id"] != again.body["action_id"], "new equal target reused action identity");
+            event.revoke();
+            auto revoke = event.command(now + 2040000, now + 2040000, session).value();
+            check(!revoke.header.valid, "event revocation did not send invalidation");
+            auto revoked = feedback(revoke, now + 2040001, 3);
+            revoked.body["command_valid"] = false;
+            revoked.body["accepted_command"]["action_id"] = revoke.body["action_id"];
+            revoked.body["accepted_command"]["control_epoch"] = revoke.body["control_epoch"];
+            event.receive(revoked, now + 2040001, session);
+            check(!event.command(now + 2060000, now + 2060000, session), "acknowledged revoke kept publishing");
+            auto missing_ack = create(); missing_ack.request(true, now);
+            check(missing_ack.command(now, now, session).has_value(), "event missing first command");
+            check(!missing_ack.command(now + 6000000, now + 6000000, session), "event retries unbounded");
+        }
         std::ofstream(path) << "core_hand: {enabled: true, close: null}\n";
         auto missing = create(); bool rejected = false;
         try { missing.request(true, now); } catch (...) { rejected = true; }

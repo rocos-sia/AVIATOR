@@ -142,6 +142,25 @@ class ProtocolTests(unittest.TestCase):
         self.assertGreater(following["sample_index"], sample["sample_index"])
         self.assertGreaterEqual(following["sample_start_mono_us"], sample["sample_end_mono_us"])
 
+    def test_single_enabled_hand_does_not_block_native_sampling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            system = Path(directory) / "system.yaml"
+            # IPC endpoints are private to this test, with no external devices.
+            system.write_text(json.dumps(dict(bus=dict(
+                publish=f"ipc://{directory}/state", subscribe=f"ipc://{directory}/command"))))
+            config = Path(directory) / "hand.yaml"
+            for side in ("left", "right"):
+                with self.subTest(enabled=side):
+                    config.write_text(json.dumps(dict(left_enabled=side == "left",
+                                                      right_enabled=side == "right")))
+                    self.request("connect")
+                    started = self.request("hand_start", system_config=str(system), hand_config=str(config))
+                    self.assertTrue(started["started"])
+                    self.request("drag_start", side="both")
+                    self.request("drag_stop", side="both")
+                    self.assertIn("left", self.request("sample"))
+                    self.request("disconnect")
+
     def test_one_arm_still_dragging_blocks_dual_arm_sample(self):
         self.request("drag_start", ok=False, side="both")
         self.request("connect")

@@ -19,6 +19,7 @@ def port():
 
 
 def run(driver, bus, mode, fake_node=None):
+    event_hand = fake_node is not None and Path(fake_node).name == 'xCoreSDK_hand'
     with tempfile.TemporaryDirectory(prefix='core-hand-process-') as directory:
         root = Path(directory)
         endpoints = [f'tcp://127.0.0.1:{port()}' for _ in range(3)]
@@ -42,6 +43,8 @@ core_hand:
         if fake_node:
             config.write_text(config.read_text().replace(
                 '  enabled: true', '  enabled: true\n  publisher_id: rh56ftp_hand'))
+        if event_hand:
+            config.write_text(config.read_text() + '\nxcore_sdk_hand: {enabled: true}\n')
         if mode == 'no_close':
             config.write_text(config.read_text().split('  close:')[0])
         if mode == 'bad_config':
@@ -146,6 +149,9 @@ core_hand:
                             assert message['hands']['left']['position_source'] == ('simulated' if fake_node else 'angle_act_register')
                             aggregate_seen = True
                         continue
+                    if event_hand and not message['valid']:
+                        assert message['action_id']  # Explicit revocation, not another motion.
+                        continue
                     captured.append(message)
                     stamp = time.monotonic_ns()//1000
                     assert message['mode'] == 'NORMALIZED_POSITION' and message['valid']
@@ -239,14 +245,20 @@ core_hand:
                 assert 'Core hand warning' not in output, output
             if mode == 'synchronized':
                 assert partial_seen and close_seen and unlock_seen and aggregate_seen
-                assert cursor == 1000 and len(stalled_targets) >= 5
+                assert cursor == 1000
+                if not event_hand: assert len(stalled_targets) >= 5
                 assert all(v == stalled_targets[0] for v in stalled_targets), 'hand advanced while arm cursor was frozen'
                 assert operations == ['describe','authorize','enable','lock','unlock','disable'], operations
             elif mode in ('normal', 'isolation', 'invalid_recovery'):
                 assert first_open and close_seen and unlock_seen and aggregate_seen
                 assert operations == ['describe','authorize','enable','lock','stop','unlock','disable'], operations
                 max_gap = max(b-a for a,b in zip(command_times,command_times[1:]))
-                assert len(command_times) >= 40 and max_gap < .1
+                if event_hand:
+                    assert max_gap > .2, 'acknowledged target was continuously streamed'
+                    assert len(command_times) < 35, command_times
+                    assert len({m['action_id'] for m in captured}) == 3, 'open/close/open need distinct IDs'
+                else:
+                    assert len(command_times) >= 40 and max_gap < .1
                 print(f'{mode}: maximum observed hand command gap {max_gap * 1000:.1f} ms', flush=True)
                 assert len({m['control_epoch'] for m in captured}) == 1
                 if mode == 'invalid_recovery':
@@ -258,7 +270,7 @@ core_hand:
                 if mode == 'dropped':
                     assert time.monotonic() - command_times[-1] < .15, 'missing hand feedback stopped target publication'
                     assert max(b-a for a,b in zip(command_times,command_times[1:])) < .1
-                    assert 'continuing latest hand.command publication' in output, output
+                    assert 'waiting for hand feedback / bounded command delivery' in output, output
                 else:
                     assert time.monotonic() - command_times[-1] > .25, 'hand target kept alive after fault/revocation'
                 if mode in ('dropped', 'heartbeat'):
@@ -281,7 +293,7 @@ core_hand:
                     assert first_open and close_seen and unlock_seen
                     assert len(command_times) >= 40, 'timeout stopped latest target publication'
                     assert max(b-a for a,b in zip(command_times,command_times[1:])) < .1
-                    assert 'continuing latest hand.command publication' in output, output
+                    assert 'waiting for hand feedback / bounded command delivery' in output, output
                 if mode == 'invalid':
                     assert first_open and close_seen and unlock_seen
                     assert len(command_times) >= 80, 'invalid feedback stopped command publication'

@@ -189,17 +189,19 @@ class CalibrationControllerTests(unittest.TestCase):
         status = self.action("sample", angle_deg=0, displacement_m=-.085)
         self.assertEqual(status["phase"], "preview", status["error"])
 
-    def test_missing_hand_allows_arm_drag_but_blocks_calibration(self):
-        native = self.prepare()
+    def test_missing_hands_allow_drag_camera_sampling_and_save(self):
+        native = self.prepare("camera")
+        self.controller.args.interval_ms = 50
         link = self.controller.link
-        original = link.snapshot()
+        original_snapshot = link.snapshot
         for missing in ("left", "right", "both"):
             with self.subTest(missing=missing):
                 available = {s: missing not in (s, "both") for s in ("left", "right")}
-                unavailable = dict(original, ready=False, fresh=False,
-                                   available_sides=available, ready_sides=available,
-                                   fault=f"{missing} 机械手反馈不可用")
-                with patch.object(link, "snapshot", return_value=unavailable):
+                def unavailable():
+                    return dict(original_snapshot(), ready=False, fresh=False,
+                                available_sides=available, ready_sides=available,
+                                fault=f"{missing} 机械手反馈不可用")
+                with patch.object(link, "snapshot", side_effect=unavailable):
                     for side in ("left", "right", "both"):
                         with self.subTest(drag=side):
                             status = self.action("drag_start", side=side)
@@ -211,13 +213,76 @@ class CalibrationControllerTests(unittest.TestCase):
                             status = self.action("drag_stop", side=side)
                             self.assertTrue(status["prepared"], status["error"])
                             self.assertFalse(any(a["dragging"] for a in status["arms"].values()))
-                            self.assertFalse(status["can_sample"] or status["can_save"])
-                    status = self.action("sample", angle_deg=0, displacement_m=-.085)
-                    self.assertIn("机械手反馈不可用", status["error"])
+                            self.assertTrue(status["can_sample"])
+                    status = self.action("sample")
+                    self.assertFalse(status["error"])
                     self.assertTrue(status["prepared"])
-                    self.assertIsNone(status["result"])
-                    self.assertEqual(native.sample_count, 0)
+                    self.assertIsNotNone(status["result"])
+                    for side in ("left", "right"):
+                        np.testing.assert_allclose(pose_matrix(self.controller._updated["tool"][side]),
+                                                   pose_matrix(self.grasp["tool"][side]), atol=1e-9)
                     self.assertFalse(native.closed)
+                    # Use the real save path only against this test's temporary
+                    # grasp file; all devices remain injected offline fakes.
+                    before = self.grasp_path.read_bytes()
+                    with patch.object(self.options, "dry_run", False), \
+                            patch.dict(self.controller.state, dry_run=False):
+                        self.assertTrue(self.controller.snapshot()["can_save"])
+                        status = self.action("save")
+                    self.assertFalse(status["error"])
+                    self.assertEqual(Path(status["backup"]).read_bytes(), before)
+
+    def test_missing_hands_do_not_bypass_camera_or_link_validation(self):
+        native = self.prepare("camera")
+        self.controller.args.timeout_s = .1
+        original = self.controller.link.snapshot()
+        invalid_camera = copy.deepcopy(original["camera"])
+        invalid_camera["raw"]["valid"] = False
+        for failure in (dict(camera=invalid_camera), dict(camera={}),
+                        dict(conflict="命令来源冲突"), dict(error="通信失败"), dict(running=False)):
+            with self.subTest(failure=failure), patch.object(self.controller, "_monitor"), \
+                    patch.object(self.controller.link, "snapshot",
+                    return_value=dict(original, ready=False, fresh=False, **failure)):
+                self.assertFalse(self.controller.snapshot()["can_sample"])
+                # Call directly to isolate validation from monitor cleanup.
+                with self.assertRaises(CalibrationError):
+                    self.controller._sample({})
+                self.assertEqual(native.sample_count, 0)
+                self.assertIsNone(self.controller._updated)
+
+    def test_prepare_accepts_disabled_hands_without_waiting_for_hand_ack(self):
+        self.options.bus_helper = self.options.camera_python = self.options.session_helper
+        for left, right, enabled in ((False, True, True), (True, False, True),
+                                     (False, False, True), (True, True, False)):
+            with self.subTest(left=left, right=right, enabled=enabled):
+                hand = yaml.safe_load(self.options.hand_config.read_bytes())
+                hand.update(left_enabled=left, right_enabled=right)
+                self.options.hand_config.write_text(yaml.safe_dump(hand))
+                system = yaml.safe_load(self.options.system_config.read_bytes())
+                system.setdefault("xcore_sdk_hand", {})["enabled"] = enabled
+                self.options.system_config.write_text(yaml.safe_dump(system))
+                native = FakeNative(self.grasp, self.events)
+                original_request = native.request
+                def request(op, **fields):
+                    if op == "hand_start":
+                        return {"started": True}
+                    return original_request(op, **fields)
+                def link_factory(publish, subscribe, opened, closed, log, **kwargs):
+                    link = app.DemoLink(opened, closed, kwargs["camera_id"])
+                    link.wait_ready = Mock(side_effect=AssertionError("must not wait for hands"))
+                    return link
+                with patch.object(self.options, "dry_run", False), \
+                        patch.object(self.controller.nodes, "start"), \
+                        patch.object(self.controller, "native_factory", return_value=native), \
+                        patch.object(self.controller, "link_factory", side_effect=link_factory), \
+                        patch.object(native, "request", side_effect=request) as calls:
+                    status = self.action("prepare", wheel_source="camera")
+                    self.assertTrue(status["prepared"], status["error"])
+                    self.assertTrue(status["can_sample"])
+                    starts = [c for c in calls.call_args_list if c.args[0] == "hand_start"]
+                    self.assertEqual(len(starts), int(enabled and (left or right)))
+                    self.controller.link.wait_ready.assert_not_called()
+                    self.action("stop")
 
     def test_manual_sampling_keeps_core_coordinates_and_recovers_tool(self):
         native = self.prepare()
@@ -367,7 +432,7 @@ class CalibrationControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.grasp_path, new_grasp)
         self.assertEqual(len(self.instances), 2)
 
-    def test_hand_fault_keeps_session_and_invalidates_preview(self):
+    def test_hand_fault_keeps_session_and_preview(self):
         native = self.prepare()
         self.action("sample", angle_deg=0, displacement_m=-.085)
         self.assertIsNotNone(self.controller.snapshot()["result"])
@@ -375,9 +440,11 @@ class CalibrationControllerTests(unittest.TestCase):
         original = link.snapshot()
         faulty = dict(original, ready=False, fresh=False, fault="left 机械手故障")
         with patch.object(link, "snapshot", return_value=faulty):
-            status = self.wait_for(lambda s: s["result"] is None)
+            self.controller._monitor()
+            status = self.controller.snapshot()
             self.assertTrue(status["prepared"])
-            self.assertFalse(status["can_sample"])
+            self.assertTrue(status["can_sample"])
+            self.assertIsNotNone(status["result"])
             self.assertFalse(native.closed)
         self.wait_for(lambda s: s["can_sample"])
 

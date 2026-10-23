@@ -6,6 +6,53 @@
 
 通信路径：`Qt UI → 每侧工作线程 → XPRS485SendData → 机械臂末端 RS485 → RH56FTP`。不使用 PC 串口或机械手网口。
 
+## 正式握持逻辑测试 UI（新增）
+
+`run_grip_demo.sh` 是独立的 Python/Tk 握持测试入口，复用正式 `xCoreSDK_hand` 的传输、
+调度和整手暂停策略。它与下文原有 Qt 寄存器调试程序分开启动。
+
+```bash
+# 在仓库根目录构建共享 SDK 适配库（已有 build 配置）
+cmake --build build --target aviator_xcore_hand_sdk -j4
+
+# 真机：界面选择仅左手、仅右手或双手，再点击“连接”
+./examples/xCoreSDK_RH56FTP_485/run_grip_demo.sh
+# 默认选择右手
+./examples/xCoreSDK_RH56FTP_485/run_grip_demo.sh --side right
+# 离线模拟，无 SDK/机器人连接
+./examples/xCoreSDK_RH56FTP_485/run_grip_demo.sh --fake-hand --side both
+```
+
+依赖 Python 3、tkinter、PyYAML；`UI_PYTHON` 可指定解释器。默认读取
+`config/system.yaml` 中的 `core_hand.open/close`、手配置路径，以及 `robot.yaml` 的 SDK 地址。
+可用 `--system-config` 和 `--sdk-library` 覆盖。未选中手不会连接、读取、写入或参与故障判断。
+双手模式各自使用独立策略实例，单侧连接失败、设备故障不会阻断另一侧的按钮动作。
+
+连接时张开所选手；点击“闭合”只提交一次闭合动作，由手节点自主读取反馈。
+每只手六通道都满足配置的持续偏差或位置稳定判据后，向寄存器 1634 写一次 1 暂停。
+不发 -1，不需要不断续发动作。界面显示实际位置、六通道判据和整手暂停状态；
+点击“张开”恢复运动，再次点击“闭合”也会发起新动作。退出/断开会等待手安全张开写入完成。
+故障码独立按 **50 ms / 20 Hz** 周期读取寄存器 1606 起的六个字节，正常读取不生成故障记录。
+每次非零采样均写入故障日志（持续故障每次采样记录），界面显示最近 1000 条，恢复后历史仍保留。
+记录包含北京时间（毫秒、UTC+08:00）、左右手、通道、十进制/十六进制故障码及中文说明：
+堵转、过温、过流、电机异常、通信故障；组合位逐项展开，未知位保留原始十六进制值。
+故障码读取失败单独记录为通信读取异常，不当作无故障。读取由设备线程执行，不依赖 UI 刷新，
+短于界面刷新周期的已采样故障也会保留。故障码新采样不会被较慢的普通遥测覆盖。
+
+故障日志默认保存到仓库 `logs/hand_grip_demo/<时间>-faults.log`，仅发生故障时创建。
+界面底部显示路径；可用 `--log-file /absolute/path/faults.log` 指定。正常动作诊断仍显示在终端。
+50 ms 是轮询调度周期，同一 RS485 端口串行；设备响应、SDK 超时或磁盘阻塞会使实际间隔延长，
+不会补发积压查询。此频率覆盖仅左手、仅右手或双手中的所选手，不改变正式启动节点的默认频率。
+
+切换测试范围前先断开。断开停止所选手读写；SDK 连接按正式节点的进程生命周期保留，
+重新连接复用已成功建立的 SDK 连接，进程退出后回收。控制器 RS485 参数须已配置，末端须已有供电。
+此入口只连接并收发手部 RS485，不上/下电、不切换机械臂模式、不发机械臂运动指令。
+使用独立连接测试，勿与正式手节点或原 Qt 调试器同时写同一只手。
+
+```bash
+python3 examples/xCoreSDK_RH56FTP_485/test_grip_demo.py
+```
+
 ## 独立构建与启动
 
 需要 Linux x86_64、CMake ≥ 3.16、C++17 编译器、Qt5 Widgets（Ubuntu 的 `qtbase5-dev`），以及仓库内 SDK 的 `libxCoreSDK.a`、`libxMateModel.a`。不依赖 AVIATOR 主工程、ROS 或 Python。

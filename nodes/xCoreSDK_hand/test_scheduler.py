@@ -25,6 +25,8 @@ class DelayedLink:
         self.release = threading.Event()
         self.release.set()
         self.fail = False
+        self.pauses = 0
+        self.pause_fail = False
 
     def connect(self): pass
     def close(self): pass
@@ -43,6 +45,12 @@ class DelayedLink:
             self.writes.append((monotonic_us(), list(values)))
             self.angle = [old if value is None or value == -1 else value
                           for old, value in zip(self.angle, values)]
+
+    def write_pause(self):
+        self.entered.set()
+        if not self.release.wait(3) or self.pause_fail:
+            raise RuntimeError('pause failed')
+        self.pauses += 1
 
     def read_position(self):
         with self.lock:
@@ -81,7 +89,7 @@ class Tests(unittest.TestCase):
             link.entered.clear()
         return scheduler, links
 
-    def send(self, scheduler, target=.2, valid=True, stamp=None):
+    def send(self, scheduler, target=.2, valid=True, stamp=None, action_id=None):
         self.seq += 1
         now = stamp or monotonic_us()
         command = dict(msg_type='HandCommand', version='1.0', sequence=self.seq,
@@ -92,6 +100,7 @@ class Tests(unittest.TestCase):
                        origin=dict(publisher_id='test', session_id='11111111-1111-4111-8111-111111111111',
                                    sequence=self.seq, sample_mono_us=now, clock_id=scheduler.node.clock_id),
                        hands={side: dict(drive_position_normalized=[target]*6) for side in ('left','right')})
+        if action_id is not None: command['action_id'] = action_id
         return scheduler.receive('hand.command', json.dumps(command))
 
     def until(self, predicate, timeout=2):
@@ -132,9 +141,10 @@ class Tests(unittest.TestCase):
         self.assertFalse(any(call.args[0] == 'command_watchdog_expired'
                              for call in scheduler.node.diag.emit.call_args_list))
         self.assertFalse(any(300 in values for _, values in links['left'].writes))
-        # The same watchdog still reacts to an actually missing source.
-        self.until(lambda: scheduler.view._safe_applied)
-        self.assertFalse(scheduler.make_state()['command_valid'])
+        # Silence after acceptance is normal; no periodic source is required.
+        time.sleep(.25)
+        self.assertFalse(scheduler.view._safe_applied)
+        self.assertTrue(scheduler.make_state()['command_valid'])
 
     def test_failed_write_never_acknowledges_then_recovers(self):
         scheduler, links = self.create()
@@ -195,6 +205,36 @@ class Tests(unittest.TestCase):
         self.feed(scheduler, .2, .3)
         self.assertTrue(all(c.held_raw is not None for c in scheduler.view.closing_holds['left']))
         self.assertTrue(scheduler.make_state()['command_valid'])
+
+    def test_single_command_pauses_once_and_new_same_target_resumes(self):
+        scheduler, links = self.create(closing_hold_ms=150)
+        self.assertTrue(self.send(scheduler, .3, action_id='one'))
+        self.until(lambda: all(link.pauses == 1 for link in links.values()))
+        state = scheduler.make_state()
+        self.assertTrue(state['command_valid'])
+        seq = state['accepted_command']['sequence']
+        time.sleep(.3)
+        self.assertEqual(scheduler.make_state()['accepted_command']['sequence'], seq)
+        self.assertTrue(all(link.pauses == 1 for link in links.values()))
+        self.send(scheduler, .3, action_id='one')  # delivery retry cannot unpause
+        time.sleep(.1)
+        self.assertTrue(all(link.pauses == 1 for link in links.values()))
+        counts = {s: len(l.writes) for s,l in links.items()}
+        self.send(scheduler, .3, action_id='two')
+        self.until(lambda: all(len(l.writes) > counts[s] for s,l in links.items()))
+        self.until(lambda: all(link.pauses == 2 for link in links.values()))
+        for link in links.values():
+            self.assertFalse(any(-1 in values for _,values in link.writes))
+
+    def test_pause_failure_retries_without_claiming_paused(self):
+        scheduler, links = self.create(closing_hold_ms=150)
+        links['left'].pause_fail = True
+        self.send(scheduler, .3, action_id='one')
+        self.until(lambda: links['right'].pauses == 1)
+        self.assertFalse(scheduler.make_state()['hands']['left']['paused'])
+        links['left'].pause_fail = False
+        self.until(lambda: links['left'].pauses == 1)
+        self.assertEqual(links['right'].pauses, 1)
 
     def test_invalid_frequency_rejected(self):
         for value in (0, -1, float('nan'), True, 101):

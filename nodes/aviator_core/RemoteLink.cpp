@@ -16,7 +16,7 @@ RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), sess
         throw std::runtime_error("Photoelectric interlock requires a manipulator with emergency_disable support");
     hand_.configure(c.system);
     aviator::Logger::info("Core hand control: {}",
-        (hand_.enabled() ? "dedicated ZMQ worker (50 Hz)" : "disabled by configuration"));
+        (hand_.enabled() ? "dedicated ZMQ worker (up to 50 Hz; SDK targets stop repeating after ACK)" : "disabled by configuration"));
     state_.q = info.at("q").get<Joints>();
     state_.target = info.at("target").get<Joints>();
     speed_ = info.at("speed").get<Joints>();

@@ -100,6 +100,9 @@ class HandLink:
         return {'angle': [int.from_bytes(angles[i:i+2], 'little', signed=True)
                           for i in range(0, 12, 2)]}
 
+    def read_errors(self):
+        return {'err': list(self.exchange(0x11, 1606, [6], 6))}
+
     def read_telemetry(self):
         telemetry = self.exchange(0x11, 1582, [42], 42)
         def words(data, signed=False):
@@ -125,6 +128,9 @@ class HandLink:
                 end += 1
             self.write_words(1486 + start * 2, values[start:end])
             start = end
+
+    def write_pause(self):
+        self.exchange(0x12, 1634, [1], 1)
 
     def write_mode_set(self, values):
         if len(values) != 6 or any(type(v) is not int or v not in (0,1,2) for v in values):

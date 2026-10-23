@@ -73,6 +73,11 @@ class FakeHandLink:
                 if value is not None:
                     self._target[i] = self._position[i] if value == -1 else value
 
+    def write_pause(self):
+        with self._lock:
+            self._advance()
+            self._target = list(self._position)
+
     def _write_setting(self, values, target, maximum):
         self._validate(values, maximum)
         with self._lock:

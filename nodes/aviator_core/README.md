@@ -666,3 +666,12 @@ Core 的运动学与碰撞检查均读取 `robot.yaml` 的 `urdf`（默认 `mode
 ### 双路 RS422 输入
 
 Managed Core 现在可通过 system YAML 的 `flight_source: FLIGHT` 接受串口网关；缺省仍为 JOYSTICK。使用 `scripts/start_aviator.sh --rs422` 会同时选中 `system-rs422.yaml` 和 `flight-rs422.yaml`，`--simulation --rs422` 使用专用仿真配置。六操作仍由原状态机执行；串口服务参数为 source=FLIGHT、operation_code，并校验二者与配置和操作名称一致。连续输入必须新鲜，恢复后不自动退出 ERROR。设备明确提供的 wheel_measurement 带采样时刻透传，上行网关不会把 wheel_reference 当作实测。详见 [Gateway 双机步骤](../flight_gateway/README.md)。
+
+### SDK 手节点的事件式动作
+
+当 `xcore_sdk_hand.enabled=true` 时，Core 为每次张开/闭合请求生成 `action_id`。
+目标变化时发送，未确认时有界重试；收到对应 ACK 后静默，保持 `hand.state` 的反馈监测。
+同一请求重试沿用 ID，新请求（即使目标相同）更换 ID。同步接近的目标插值仍保留。
+ACK 的原命令时间不再要求持续刷新，但每帧反馈仍必须新鲜。
+显式撤销发送 `valid=false`，手节点自主保持不再依赖 100 ms 动作续发。
+完整行为及诊断字段见 [SDK 手节点](../xCoreSDK_hand/README.md)。

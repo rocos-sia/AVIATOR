@@ -6,7 +6,9 @@
 
 namespace aviator {
 void HandControl::configure(const std::filesystem::path& path) {
-    const auto node = YAML::LoadFile(path.string())["core_hand"];
+    const auto root = YAML::LoadFile(path.string());
+    const auto node = root["core_hand"];
+    event_delivery_ = root["xcore_sdk_hand"] && root["xcore_sdk_hand"]["enabled"].as<bool>(true);
     enabled_ = node && node["enabled"].as<bool>(false);
     if (!enabled_) return;
     publisher_ = node["publisher_id"].as<std::string>("inspire_hand");
@@ -44,6 +46,10 @@ void HandControl::request(bool close, uint64_t now) {
     if (close && !has_close_)
         throw std::runtime_error("Missing core_hand.close: configure calibrated left/right normalized targets in system.yaml");
     active_ = true;
+    revoking_ = delivery_ack_ = false;
+    action_id_ = new_session_id();
+    delivery_first_ = command_sequence_ + 1;
+    delivery_started_ = now;
     synchronized_ = endpoint_ = endpoint_acknowledged_ = false;
     closing_ = close;
     target_ = close ? close_ : open_;
@@ -68,12 +74,18 @@ void HandControl::approachProgress(const std::array<double, 2>& progress, uint64
     for (auto u : progress)
         if (!std::isfinite(u) || u < 0 || u > 1)
             throw std::runtime_error("Invalid hand trajectory progress");
+    const auto previous_target = target_;
     for (int side = 0; side < 2; ++side)
         for (int j = 0; j < 6; ++j)
             // Zero progress also denotes the approach segment outside the closing range.
             // Only enter the configured starting pose once this hand begins closing.
             target_[side][j] = progress[side] == 0 ? open_[side][j] :
                 closing_start_[side][j] + progress[side] * (close_[side][j] - closing_start_[side][j]);
+    if (target_ != previous_target) {
+        delivery_ack_ = false;
+        delivery_first_ = command_sequence_ + 1;
+        delivery_started_ = now;
+    }
     if (!endpoint_ && progress[0] == 1 && progress[1] == 1) {
         endpoint_ = true;
         requested_ = now;
@@ -83,10 +95,17 @@ void HandControl::approachProgress(const std::array<double, 2>& progress, uint64
     }
 }
 void HandControl::revoke() {
+    if (event_delivery_ && active_) {
+        revoking_ = true;
+        delivery_ack_ = false;
+        delivery_first_ = command_sequence_ + 1;
+        delivery_started_ = 0;
+        next_ = 0;
+    }
     active_ = false; // Protective revocation is not itself a new device fault.
 }
 void HandControl::fail(const std::string& reason) {
-    active_ = false;
+    revoke();
     error_ = reason;
 }
 bool HandControl::fresh(uint64_t now) const {
@@ -123,7 +142,7 @@ std::string HandControl::blockingFault(uint64_t now) const {
     }
     return {};
 }
-void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
+void HandControl::receive(const Message& m, uint64_t now, const std::string& core_session) {
     if (m.topic != Topic::hand_state || m.header.publisher_id != publisher_ ||
         m.header.clock_id != local_clock_id() || m.header.sample_mono_us > now ||
         now - m.header.sample_mono_us >= feedback_timeout_) return;
@@ -209,6 +228,14 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
         valid_ = valid;
         feedback_timely_ = timely;
         body_ = m.body;
+        const bool event_ack_match = event_delivery_ && !ack.is_null() && publisher == "aviator_core" &&
+            ack.value("session_id", "") == core_session && ack.value("control_epoch", "") == epoch_ &&
+            ack.value("action_id", "") == action_id_ && seq >= delivery_first_ &&
+            seq <= command_sequence_;
+        if (event_ack_match && (revoking_ ? !accepted : accepted)) {
+            delivery_ack_ = true;
+            if (revoking_) revoking_ = false;
+        }
         if (!active_) return;
         if (readonly) { fail("aviator_hand is feedback-only; restart it in control mode"); return; }
         if (accepted && publisher != "aviator_core") {
@@ -227,7 +254,7 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string&) {
         }
         if (accepted && publisher == "aviator_core" &&
             seq >= first_sequence_ && seq <= command_sequence_ && stamp >= requested_ &&
-            stamp <= now && now - stamp < 100000) {
+            stamp <= now && (event_delivery_ ? event_ack_match : now - stamp < 100000)) {
             accepted_at_ = now;
             acknowledged_ = true;
             if (synchronized_ && endpoint_) endpoint_acknowledged_ = true;
@@ -250,7 +277,8 @@ bool HandControl::complete(uint64_t now) const {
 std::string HandControl::fault(uint64_t now) const {
     if (!error_.empty()) return error_;
     if (!active_) return {};
-    if (progress_at_ && (!feedbackFresh(now) || now - progress_at_ >= feedback_timeout_))
+    const auto acknowledgement_at = event_delivery_ && delivery_ack_ ? accepted_at_ : progress_at_;
+    if (progress_at_ && (!feedbackFresh(now) || now - acknowledgement_at >= feedback_timeout_))
         return "hand.state feedback/command acknowledgement expired";
     // Missing ACKs and a valid-but-unreached target remain failures. Invalid
     // measurements only prevent completion; they must not revoke publication.
@@ -263,26 +291,30 @@ bool HandControl::waitExpired(uint64_t now) const {
            now >= completion_started_ && now - completion_started_ >= timeout_;
 }
 std::optional<Message> HandControl::command(uint64_t now, uint64_t heartbeat, const std::string& session) {
-    if (!enabled_ || !active_) return {};
-    // Stream the latest authorized target independently of device ACK latency
-    // and completion. A slow/missing ACK must not cut off the command source
-    // and consequently trigger the hand node's own source watchdog.
-    if (!heartbeat) { fail("Core heartbeat missing"); return {}; }
-    if (now < heartbeat) {
-        fail("Core heartbeat clock order invalid: ahead_us=" + std::to_string(heartbeat - now)); return {};
+    if (!enabled_ || (!active_ && !revoking_)) return {};
+    if (!revoking_) {
+        if (!heartbeat) fail("Core heartbeat missing");
+        else if (now < heartbeat)
+            fail("Core heartbeat clock order invalid: ahead_us=" + std::to_string(heartbeat - now));
+        else if (now - heartbeat >= 100000)
+            fail("Core heartbeat expired: age_us=" + std::to_string(now - heartbeat) + " limit_us=100000");
+        if (!active_ && !revoking_) return {};
     }
-    if (now - heartbeat >= 100000) {
-        fail("Core heartbeat expired: age_us=" + std::to_string(now - heartbeat) +
-             " limit_us=100000; hand watchdog applies safe_pose"); return {};
+    if (event_delivery_) {
+        if (delivery_ack_) return {};
+        if (!delivery_started_) delivery_started_ = now;
+        if (now - delivery_started_ >= timeout_) return {}; // bounded delivery retries
     }
     if (now < next_) return {};
-    next_ = now + 20000; // 50 Hz, including arm planning/wait/ordinary Stop.
+    next_ = now + 20000; // Rate ceiling for changed targets and unacknowledged retries.
     auto m = motionMessage(Topic::hand_command, "aviator_core", session, ++command_sequence_);
     m.header.sample_mono_us = now;
+    m.header.valid = !revoking_;
     m.body = {{"control_epoch", epoch_}, {"mode", "NORMALIZED_POSITION"},
               {"origin", {{"publisher_id", "aviator_core"}, {"session_id", session},
-                          {"sequence", command_sequence_}, {"sample_mono_us", heartbeat},
+                          {"sequence", command_sequence_}, {"sample_mono_us", revoking_ ? now : heartbeat},
                           {"clock_id", local_clock_id()}}}};
+    if (event_delivery_) m.body["action_id"] = action_id_;
     for (int side = 0; side < 2; ++side)
         m.body["hands"][side ? "right" : "left"]["drive_position_normalized"] = target_[side];
     return m;

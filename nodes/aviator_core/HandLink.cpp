@@ -8,7 +8,7 @@ void HandLink::warnLocked(const std::string& reason, bool continuing) {
     const auto now = monotonic_us();
     if (reason != last_warning_ || now - warning_at_ >= 10000000) {
         if (continuing)
-            Logger::warn("Core hand warning: {}; hand completion unconfirmed; continuing latest hand.command publication", reason);
+            Logger::warn("Core hand warning: {}; hand completion unconfirmed; waiting for hand feedback / bounded command delivery", reason);
         else
             Logger::warn("Core hand warning: {}; hand action unavailable, Core continues without hand confirmation", reason);
         last_warning_ = reason;
@@ -150,17 +150,25 @@ void HandLink::io(zmq::context_t& context, const MotionConfig& config, const std
                 Message m;
                 if (received != ReceiveResult::received || !decode(wire.topic, wire.payload, m, error)) continue;
                 std::lock_guard<std::mutex> lock(mutex_);
-                if (stopping_) return;
+                if (stopping_) {
+                    const auto now = monotonic_us();
+                    if (auto command = control_.command(now, now, session)) publishMessage(pub, *command);
+                    return;
+                }
                 control_.receive(m, monotonic_us(), session);
                 changed_.notify_all();
             }
             std::unique_lock<std::mutex> lock(mutex_);
-            if (stopping_) return;
+            if (stopping_) {
+                const auto now = monotonic_us();
+                if (auto command = control_.command(now, now, session)) publishMessage(pub, *command);
+                return;
+            }
             // Load the heartbeat FIRST, then time. A concurrent newer heartbeat must not
             // be compared against an older timestamp captured before waiting on a lock.
             const auto origin = heartbeat.load();
             const auto now = monotonic_us();
-            if (allowed_ && !failed_) {
+            if (!failed_) {
                 if (auto command = control_.command(now, origin, session))
                     publishMessage(pub, *command);
                 warnLocked(control_.fault(now), !control_.failed());

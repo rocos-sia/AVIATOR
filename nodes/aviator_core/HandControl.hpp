@@ -29,6 +29,9 @@ public:
     uint64_t sequence() const { return state_sequence_; }
 private:
     bool feedbackFresh(uint64_t now) const;
+    bool event_delivery_ = false, delivery_ack_ = false, revoking_ = false;
+    uint64_t delivery_first_ = 0, delivery_started_ = 0;
+    std::string action_id_;
     using Pose = std::array<std::array<double, 6>, 2>; // left, right
     bool enabled_ = false, has_close_ = false, active_ = false, closing_ = false;
     bool valid_ = false, acknowledged_ = false, synchronized_ = false, endpoint_ = false;

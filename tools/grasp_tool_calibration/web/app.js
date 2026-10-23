@@ -102,14 +102,14 @@
       pill.title = node.log_path || ""; $("nodes").append(pill);
     }
     const hand = s.hand || {};
-    badge("hand-ready", hand.conflict ? "命令来源冲突" : hand.ready ? "指令已确认" : hand.fresh ? "等待指令确认" : "等待有效反馈", hand.conflict || hand.error ? "bad" : hand.ready ? "good" : "");
-    $("hand-ready").title = hand.error || "指令确认不等于实际抓握成功";
+    badge("hand-ready", hand.conflict ? "命令来源冲突" : hand.ready ? "指令已确认" : hand.fresh ? "等待指令确认" : "手反馈不可用 · 不影响标定", hand.conflict || hand.error ? "bad" : hand.ready ? "good" : "");
+    $("hand-ready").title = hand.error || "机械手反馈和指令确认不作为标定条件；请现场确认双臂位置";
     for (const side of ["left", "right"]) {
       const arm = s.arms?.[side] || {};
       badge(`${side}-arm-state`, !arm.connected ? "未连接" : arm.dragging ? "拖动已开启" : "已连接", arm.dragging ? "active" : arm.connected ? "good" : "");
       text(`${side}-arm-detail`, arm.connected ? `状态：${arm.operation_state || "未知"} · ${arm.powered === true ? "已上电" : arm.powered === false ? "已下电" : "电源状态未知"}` : "等待连接机械臂");
       const pose = hand.poses?.[side];
-      text(`${side}-hand-state`, `${hand.hands?.[side]?.retry_required ? "恢复后请重新点击开合 · " : hand.hands?.[side]?.status === "RECOVERING" ? "等待通信／故障恢复 · " : ""}机械手目标：${pose === "open" ? "张开" : pose === "close" ? "握紧" : "—"}${(hand.available_sides?.[side] ?? hand.fresh) ? " · 反馈有效" : " · 等待反馈"}`);
+      text(`${side}-hand-state`, `${hand.hands?.[side]?.status === "DISABLED" ? "已禁用 · " : hand.hands?.[side]?.retry_required ? "恢复后请重新点击开合 · " : hand.hands?.[side]?.status === "RECOVERING" ? "等待通信／故障恢复 · " : ""}机械手目标：${pose === "open" ? "张开" : pose === "close" ? "握紧" : "—"}${(hand.available_sides?.[side] ?? hand.fresh) ? " · 反馈有效" : " · 等待反馈"}`);
       text(`${side}-hand-detail`, JSON.stringify({target: hand.targets?.[side] || null, feedback: hand.hands?.[side] || null}, null, 2));
     }
     const camera = s.camera || {};
