@@ -92,9 +92,14 @@ class EventHandNode(Rh56FtpNode):
         if self.feedback_only:
             return
         self._observe_faults(now)
+        # A failed poll does not erase the last successful measurement. Allow
+        # retries within its existing freshness budget; the scheduler retains
+        # each failed read group's timestamp, so other successful reads cannot
+        # extend this deadline. Failed feedback remains invalid in make_state
+        # and cannot accumulate closing criteria. Device faults above still
+        # require immediate protection.
         unavailable = self.command_valid and any(
-            link is not None and (self.snapshots[side].error or
-                                  not self.snapshots[side].fresh(now, self.feedback_timeout_us))
+            link is not None and not self.snapshots[side].fresh(now, self.feedback_timeout_us)
             for side, link in self.links.items())
         if unavailable:
             self._safe_required = True

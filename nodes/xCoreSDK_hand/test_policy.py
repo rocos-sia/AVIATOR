@@ -1,5 +1,6 @@
 """Deterministic whole-hand criteria and protection tests; no hardware."""
 import json
+from dataclasses import replace
 from pathlib import Path
 import sys
 import unittest
@@ -89,6 +90,59 @@ class Tests(unittest.TestCase):
             self.command('one')
         self.command('two')
         self.assertFalse(any(self.node.paused.values()))
+
+    def test_transient_read_error_preserves_action_and_accepts_endpoint(self):
+        for side in ('left', 'right'):
+            with self.subTest(side=side):
+                self.setUp()
+                self.command(target=.3)
+                self.now += 20000
+                self.node.snapshots[side] = replace(
+                    self.node.snapshots[side], error='RS485 read timeout', errors=1)
+                self.node.supervise(self.now)
+                self.assertTrue(self.node.command_valid)
+                self.assertFalse(any(self.node.paused.values()))
+                self.assertIsNone(self.node.retired_action)
+                # A failed read remains invalid feedback, not fabricated health.
+                self.assertFalse(self.node.make_state(self.now)['valid'])
+                self.assertFalse(self.node.closing_holds[side][0].stability_samples)
+                # Core may send the final interpolated target before reads recover.
+                self.command(target=0)
+                self.now += 20000
+                self.sample()
+                self.node.supervise(self.now)
+                state = self.node.make_state(self.now)
+                self.assertTrue(state['valid'] and state['command_valid'])
+                self.assertEqual(state['accepted_command']['action_id'], 'one')
+                self.assertTrue(all(link.angle == [0]*6 for link in self.links.values()))
+                self.assertTrue(all(link.pauses == 0 for link in self.links.values()))
+
+    def test_read_errors_do_not_extend_last_sample_deadline(self):
+        for side in ('left', 'right'):
+            with self.subTest(side=side):
+                self.setUp()
+                self.node.closing_hold_us = 10000000
+                self.command(target=.3)
+                last_good = self.node.snapshots[side]
+                began = self.now
+                # Fresh feedback on the other hand and repeated failures/targets
+                # must not renew this hand's last successful sample timestamp.
+                for elapsed in (20000, 200000, 400000, 499999, 500000):
+                    self.now = began + elapsed
+                    self.sample()
+                    self.node.snapshots[side] = replace(
+                        last_good, error='RS485 read timeout', errors=elapsed // 20000)
+                    self.command(target=.2)
+                    self.node.supervise(self.now)
+                    self.assertEqual(any(self.node.paused.values()), elapsed >= 500000)
+                self.assertFalse(self.node.command_valid)
+                self.now += 20000
+                self.sample()
+                self.node.supervise(self.now)
+                with self.assertRaisesRegex(ValueError, 'new action_id'):
+                    self.command(target=0)
+                self.command('two', target=0)
+                self.assertFalse(any(self.node.paused.values()))
 
     def test_device_fault_pause_never_writes_minus_one(self):
         self.command()

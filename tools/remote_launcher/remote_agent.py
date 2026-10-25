@@ -15,6 +15,43 @@ import time
 
 ALLOWED = {"--rs422", "--fake-hand", "--tts", "--logger"}
 
+# Exercise the same SDL surface path as the gateway, without joystick/device I/O.
+# Keep it in a subprocess: an Xlib fatal error must become a preflight failure.
+DISPLAY_PROBE = r'''
+import ctypes as C
+s = C.CDLL("libSDL2-2.0.so.0")
+s.SDL_Init.argtypes = [C.c_uint]
+s.SDL_GetError.restype = C.c_char_p
+s.SDL_CreateWindow.argtypes = [C.c_char_p, C.c_int, C.c_int, C.c_int, C.c_int, C.c_uint]
+s.SDL_CreateWindow.restype = C.c_void_p
+s.SDL_GetWindowSurface.argtypes = [C.c_void_p]
+s.SDL_GetWindowSurface.restype = C.c_void_p
+s.SDL_FillRect.argtypes = [C.c_void_p, C.c_void_p, C.c_uint]
+s.SDL_UpdateWindowSurface.argtypes = [C.c_void_p]
+s.SDL_DestroyWindow.argtypes = [C.c_void_p]
+def check(ok):
+    if not ok:
+        raise RuntimeError(s.SDL_GetError().decode(errors="replace"))
+check(s.SDL_Init(0x20) == 0)  # SDL_INIT_VIDEO only
+window = None
+try:
+    window = s.SDL_CreateWindow(b"AVIATOR display preflight", 0, 0, 64, 64, 0x8)
+    check(window)  # SDL_WINDOW_HIDDEN: no focus changes
+    surface = s.SDL_GetWindowSurface(window)
+    check(surface)
+    check(s.SDL_FillRect(surface, None, 0) == 0)
+    check(s.SDL_UpdateWindowSurface(window) == 0)
+finally:
+    if window:
+        s.SDL_DestroyWindow(window)
+    s.SDL_Quit()
+'''
+
+
+def keyboard_environment():
+    return {**os.environ, "SDL_VIDEODRIVER": "x11", "SDL_FRAMEBUFFER_ACCELERATION": "0",
+            "SDL_VIDEO_X11_NET_WM_PING": "0"}
+
 
 class NodeDiagnostics:
     """Read this launch's warnings without touching nodes or their log files."""
@@ -75,6 +112,14 @@ def check_keyboard(script):
         x11.XCloseDisplay(display)
     except OSError as exc:
         raise RuntimeError("工控机缺少 X11 显示库。未启动设备。") from exc
+    try:
+        result = subprocess.run([sys.executable, "-c", DISPLAY_PROBE],
+                                env=keyboard_environment(), capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("远程键盘窗口绘图检查失败或超时，未启动设备。") from exc
+    if result.returncode:
+        raise RuntimeError("远程键盘窗口绘图检查失败，未启动设备：\n" +
+                           (result.stderr or result.stdout)[-3000:])
 
 
 def identity(pid):
@@ -182,6 +227,8 @@ def main():
     threading.Thread(target=commands, daemon=True).start()
     env = {**os.environ, "AVIATOR_REMOTE_UI": "1", "PYTHONUNBUFFERED": "1",
            "AVIATOR_REMOTE_KEYBOARD": "1" if args.keyboard else "0"}
+    if args.keyboard:
+        env.update({key: value for key, value in keyboard_environment().items() if key.startswith("SDL_")})
     if "--logger" in args.flags:
         env["AVIATOR_RECORDING_DIR"] = str(recording)
     child = None

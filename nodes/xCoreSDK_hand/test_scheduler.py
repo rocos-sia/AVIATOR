@@ -21,6 +21,7 @@ class DelayedLink:
         self.angle = [1000] * 6
         self.writes = []
         self.reads = {'position': [], 'telemetry': []}
+        self.failed_read_kinds = set()
         self.entered = threading.Event()
         self.release = threading.Event()
         self.release.set()
@@ -55,11 +56,15 @@ class DelayedLink:
     def read_position(self):
         with self.lock:
             self.reads['position'].append(monotonic_us())
+            if 'position' in self.failed_read_kinds:
+                raise RuntimeError('injected position read failure')
             return {'angle': list(self.angle)}
 
     def read_telemetry(self):
         with self.lock:
             self.reads['telemetry'].append(monotonic_us())
+            if 'telemetry' in self.failed_read_kinds:
+                raise RuntimeError('injected telemetry read failure')
             return {key: [0]*6 for key in ('force', 'current', 'err', 'status', 'temp')}
 
 
@@ -158,6 +163,49 @@ class Tests(unittest.TestCase):
         previous = scheduler.received_guard.last_sequence
         self.assertFalse(self.send(scheduler, stamp=monotonic_us()-200_000))
         self.assertEqual(scheduler.received_guard.last_sequence, previous)
+
+    def test_transient_read_failures_keep_interpolated_action_alive(self):
+        for side, kind in (('left', 'position'), ('right', 'telemetry')):
+            with self.subTest(side=side, kind=kind):
+                scheduler, links = self.create(command_timeout_ms=200)
+                self.send(scheduler, .4, action_id='approach')
+                self.until(lambda: scheduler.make_state()['command_valid'])
+                links[side].failed_read_kinds.add(kind)
+                self.until(lambda: bool(scheduler.node.snapshots[side].error))
+                self.assertFalse(scheduler.make_state()['valid'])
+                # The real scheduler must accept a later target under the same
+                # action while the failed read group is still being retried.
+                self.send(scheduler, .2, action_id='approach')
+                seq = self.seq
+                self.until(lambda: scheduler.make_state()['accepted_command']['sequence'] == seq)
+                self.assertTrue(scheduler.make_state()['command_valid'])
+                self.assertTrue(all(link.pauses == 0 for link in links.values()))
+                links[side].failed_read_kinds.clear()
+                self.until(lambda: scheduler.make_state()['valid'])
+                self.send(scheduler, 0, action_id='approach')
+                seq = self.seq
+                self.until(lambda: scheduler.make_state()['accepted_command']['sequence'] == seq)
+                state = scheduler.make_state()
+                self.assertTrue(state['command_valid'])
+                self.assertEqual(state['accepted_command']['action_id'], 'approach')
+                self.assertTrue(all(link.angle == [0]*6 and link.pauses == 0 for link in links.values()))
+
+    def test_failed_read_group_expires_despite_other_successful_reads(self):
+        for side, kind in (('left', 'position'), ('right', 'telemetry')):
+            with self.subTest(side=side, kind=kind):
+                scheduler, links = self.create(command_timeout_ms=200)
+                self.send(scheduler, .4, action_id='approach')
+                self.until(lambda: scheduler.make_state()['command_valid'])
+                links[side].failed_read_kinds.add(kind)
+                self.until(lambda: bool(scheduler.node.snapshots[side].error))
+                last_sample = scheduler.node.snapshots[side].sample_mono_us
+                self.until(lambda: not scheduler.make_state()['command_valid'])
+                self.assertGreaterEqual(monotonic_us() - last_sample, 500000)
+                self.assertTrue(all(link.pauses == 1 for link in links.values()))
+                links[side].failed_read_kinds.clear()
+                self.until(lambda: scheduler.make_state()['valid'])
+                self.assertFalse(scheduler.make_state()['command_valid'])
+                self.assertTrue(all(link.pauses == 1 for link in links.values()))
 
     def test_rates_are_applied_independently_without_catchup_bursts(self):
         scheduler, links = self.create({'position_write_hz': 10, 'position_read_hz': 8,

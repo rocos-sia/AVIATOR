@@ -130,10 +130,9 @@ class Transport:
         return result.stdout
 
     def x11_options(self):
-        # SDL's WM ping replies are lost with untrusted forwarding on the
-        # supported desktop setup, causing false "application not responding".
-        # The fixed controller is trusted; scope this to keyboard sessions.
-        return ["-Y", "-o", "ForwardX11Trusted=yes"] if self.keyboard else ["-x"]
+        # Untrusted forwarding hides MIT-SHM, which cannot work across hosts.
+        # remote_agent disables SDL's incompatible WM ping for these sessions.
+        return ["-X", "-o", "ForwardX11Trusted=no"] if self.keyboard else ["-x"]
 
     def ssh(self):
         return ["ssh", *self.options, *self.x11_options(), "-o", "BatchMode=yes", "-T"]

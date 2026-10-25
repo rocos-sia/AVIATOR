@@ -18,7 +18,7 @@ SOURCE = Path(__file__).resolve().parents[1]
 ROOT = SOURCE.parents[1]
 sys.path.insert(0, str(SOURCE))
 from backend import Controller, Options, Transport
-from remote_agent import identity, NodeDiagnostics
+from remote_agent import identity, NodeDiagnostics, check_keyboard
 
 
 class RemoteTests(unittest.TestCase):
@@ -111,14 +111,14 @@ while true; do sleep .1; done
             check.return_value.returncode = 0
             transport.connect("unused-test-password", keyboard=True)
             master = spawn.call_args.args[0]
-            self.assertIn("-Y", master)
-            self.assertIn("ForwardX11Trusted=yes", master)
-            self.assertNotIn("-X", master)
+            self.assertIn("-X", master)
+            self.assertIn("ForwardX11Trusted=no", master)
+            self.assertNotIn("-Y", master)
             self.assertNotIn("-Nf", master)
             self.assertIn("ForkAfterAuthentication=no", master)
         transport.master = None  # The mocked process never existed.
         command = transport.agent("run", Options(keyboard=True), self.run_id)
-        self.assertIn("-Y", command)
+        self.assertIn("-X", command)
         self.assertIn("--keyboard", shlex.split(command[-1]))
         self.assertNotIn("--keyboard", shlex.split(transport.agent("stop", Options(keyboard=True), self.run_id)[-1]))
         with patch.dict(os.environ, {"DISPLAY": ""}):
@@ -217,6 +217,20 @@ while true; do sleep .1; done
             self.assertIn("X11", result.stderr)
             self.assertFalse((self.home / "flags").exists())
             self.assertFalse((self.home / ".local/state/aviator-remote" / self.run_id).exists())
+
+    def test_keyboard_surface_failure_is_reported_before_device_launch(self):
+        self.script.write_text(self.script.read_text() + '\n# AVIATOR_REMOTE_KEYBOARD\n')
+        with patch.dict(os.environ, {"DISPLAY": ":99"}), patch("remote_agent.ctypes.CDLL") as lib, patch("remote_agent.subprocess.run") as run:
+            lib.return_value.XOpenDisplay.return_value = 1
+            run.return_value.returncode = 1
+            run.return_value.stderr = 'BadRequest (MIT-SHM) X_ShmAttach'
+            with self.assertRaisesRegex(RuntimeError, '绘图检查失败，未启动设备'):
+                check_keyboard(self.script)
+            self.assertEqual(run.call_args.kwargs['env']['SDL_VIDEO_X11_NET_WM_PING'], '0')
+            self.assertEqual(run.call_args.kwargs['env']['SDL_FRAMEBUFFER_ACCELERATION'], '0')
+            self.assertFalse((self.home / 'flags').exists())
+            run.return_value.returncode = 0
+            check_keyboard(self.script)
 
     def test_graceful_stop_preserves_flags_and_finalizes(self):
         p, events = self.launch(["--rs422", "--logger", "--tts"])

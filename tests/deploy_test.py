@@ -52,6 +52,55 @@ class DeploymentTest(unittest.TestCase):
                     tar.addfile(entry)
         return path
 
+    def process(self, pid, exe, argv):
+        proc = self.root / str(pid)
+        proc.mkdir()
+        (proc / 'exe').symlink_to(exe)
+        (proc / 'cmdline').write_bytes(b'\0'.join(str(arg).encode() for arg in argv) + b'\0')
+        return proc
+
+    def test_editor_workspace_does_not_block_but_its_runtime_child_does(self):
+        workspace = self.prefix / 'share/aviator'
+        workspace.mkdir(parents=True)
+        editor = self.process(999991, '/usr/share/code/code', ['code', workspace])
+        with mock.patch.object(Path, 'iterdir', return_value=iter([editor])):
+            remote.ensure_idle()
+        binary = str(self.prefix / 'bin/manipulator')
+        child = self.process(999992, binary, [binary])
+        with mock.patch.object(Path, 'iterdir', return_value=iter([editor, child])):
+            with self.assertRaisesRegex(RuntimeError, '999992'):
+                remote.ensure_idle()
+
+    def test_scripts_and_python_directory_entrypoints_still_block(self):
+        workspace = self.prefix / 'share/aviator'
+        workspace.mkdir(parents=True)
+        for index, args in enumerate([
+            ['python3', workspace],
+            ['bash', workspace / 'scripts/start_aviator.sh'],
+            ['python3', workspace / 'nodes/camera/main.py'],
+        ]):
+            proc = self.process(999993 + index, '/usr/bin/' + args[0], args)
+            with mock.patch.object(Path, 'iterdir', return_value=iter([proc])):
+                with self.assertRaisesRegex(RuntimeError, 'still running'):
+                    remote.ensure_idle()
+
+    def test_electron_merged_process_title_with_workspace_spaces(self):
+        workspace = self.prefix / 'share/aviator workspace'
+        workspace.mkdir(parents=True)
+        exe = '/usr/share/code/code'
+        proc = self.process(999997, exe, [exe + ' ' + str(workspace)])
+        with mock.patch.object(Path, 'iterdir', return_value=iter([proc])):
+            remote.ensure_idle()
+
+    def test_deployed_binary_named_code_is_not_exempt(self):
+        workspace = self.prefix / 'share/aviator'
+        workspace.mkdir(parents=True)
+        binary = str(self.prefix / 'bin/code')
+        proc = self.process(999996, binary, [binary, workspace])
+        with mock.patch.object(Path, 'iterdir', return_value=iter([proc])):
+            with self.assertRaisesRegex(RuntimeError, 'still running'):
+                remote.ensure_idle()
+
     def test_archive_traversal_and_link_parent_rejected(self):
         for entries in [
             [('aviator/../../escape', tarfile.REGTYPE, b'bad')],

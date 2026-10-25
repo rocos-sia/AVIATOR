@@ -238,12 +238,27 @@ def ensure_idle():
             continue
         try:
             exe = os.readlink(proc / 'exe')
-            args = (proc / 'cmdline').read_bytes().replace(b'\0', b' ').decode(errors='replace')
+            argv = [part.decode(errors='replace') for part in (proc / 'cmdline').read_bytes().split(b'\0') if part]
+            editor = exe in ('/usr/share/code/code', '/usr/share/code-insiders/code-insiders',
+                             '/usr/share/codium/codium')
+            # Electron can rewrite argv into one process-title string. Only
+            # recognize the exact editor + directory form, not arbitrary commands.
+            if editor and len(argv) == 1 and argv[0].startswith(exe + ' '):
+                argv = [exe, argv[0][len(exe) + 1:]]
+            args = ' '.join(argv)
             # Ignore this installer and its sudo/ssh wrappers only.
             if 'remote.py' in args:
                 continue
-            if any(marker in exe or marker in args for marker in (str(PREFIX) + '/', str(RELEASES) + '/')):
-                raise RuntimeError(f'Deployed process {proc.name} is still running; stop it before deployment')
+            markers = (str(PREFIX) + '/', str(RELEASES) + '/')
+            runtime_executable = any(marker in exe for marker in markers)
+            referenced = [arg for arg in argv if any(marker in arg for marker in markers)]
+            # VS Code's workspace directory is an editor argument, not an
+            # executing runtime. Keep checking every child process separately;
+            # a node launched from its terminal/debugger must still block install.
+            editor_directory = (editor and referenced and
+                                all(Path(arg).is_absolute() and Path(arg).is_dir() for arg in referenced))
+            if runtime_executable or (referenced and not editor_directory):
+                raise RuntimeError(f'Deployed process {proc.name} ({exe}) is still running; stop it before deployment')
         except (FileNotFoundError, PermissionError, ProcessLookupError):
             continue
 
