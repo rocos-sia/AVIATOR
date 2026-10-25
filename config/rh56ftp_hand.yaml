@@ -27,11 +27,12 @@ rs485_timeout_ms: 50
 state_period_ms: 60
 # xCoreSDK_hand 与标定工具的 native 手模块使用以下读写频率上限。
 # state_period_ms 控制独立 SDK 节点的状态发布；Modbus 节点仍按它轮询。
-position_write_hz: 20
+position_write_hz: 10
 position_read_hz: 10
 telemetry_read_hz: 5
 # SDK 仅校验新消息年龄，不要求持续发送已接受目标。
-command_timeout_ms: 100
+# 10 Hz 写入周期为 100 ms；指令有效期须大于写入周期。
+command_timeout_ms: 200
 feedback_timeout_ms: 500
 closing_hold_ms: 10000
 motion_rate: 2.0  # fake_hand normalized units/s at speed=500

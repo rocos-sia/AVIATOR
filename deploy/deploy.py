@@ -75,7 +75,7 @@ def system_packages(stage):
     packages = {'python3.10-venv', 'python3-tk', 'python3-gi', 'gir1.2-gtk-3.0',
                 'gir1.2-ayatanaappindicator3-0.1', 'zenity', 'curl', 'alsa-utils',
                 'libgl1', 'libegl1', 'libglfw3', 'libusb-1.0-0', 'libqt5widgets5',
-                'libxcb-xinerama0', 'libxcb-cursor0', 'fonts-noto-cjk', 'rsync'}
+                'libxcb-xinerama0', 'libxcb-cursor0', 'fonts-noto-cjk', 'rsync', 'xauth'}
     libraries = set()
     owners = {}
     for binary in elf_files(stage):

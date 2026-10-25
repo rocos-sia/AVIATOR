@@ -40,6 +40,8 @@ make
 
 应用程序输出到 `build/bin`，测试可执行文件（包括手动查看器测试）统一输出到 `build/tests`；通过 `ctest --test-dir build --output-on-failure` 运行自动测试。
 
+通过本机界面启动已部署工控机、选择 RS422 / 模拟手 / TTS、回传录制数据及打包独立 Ubuntu 控制端，见 [远程启动界面](tools/remote_launcher/README.md)。入口：`./scripts/start_remote_aviator.sh`。
+
 完整构建成功后自动安装到 `${CMAKE_BINARY_DIR}/dist`（例如 `build/release/dist/`），生成 `release-version.json`、`SHA256SUMS` 和 `release-checksum.json`（需要 Python 3.9+）。版本维护、校验命令及显式台架测试码见 [版本与校验码实现方案](docs/AVIATOR版本与校验码实现方案.md)。单独构建某个 target 后，可运行 `cmake --build build --target aviator_release` 更新完整安装包。
 
 默认使用 Release；首次构建会自动编译第三方库并安装到 `build/third_party/install`，无需预先安装 Pinocchio 或手动设置其头文件路径。系统开发包仍需按构建说明安装。第三方库默认使用 2 个编译任务，可通过 `-DAVIATOR_DEPENDENCY_JOBS=N` 调整。

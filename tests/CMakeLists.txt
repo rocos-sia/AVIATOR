@@ -473,4 +473,7 @@ endif()
 if(Python3_Interpreter_FOUND)
   add_test(NAME deployment_invariants COMMAND ${Python3_EXECUTABLE}
     ${PROJECT_SOURCE_DIR}/tests/deploy_test.py)
+  add_test(NAME remote_launcher COMMAND ${Python3_EXECUTABLE} -m unittest discover
+    -s ${PROJECT_SOURCE_DIR}/tools/remote_launcher/tests -v)
+  set_tests_properties(remote_launcher PROPERTIES TIMEOUT 90)
 endif()

@@ -270,10 +270,13 @@ RokaeArm::RokaeArm(const std::string &ip, const std::string &local_ip,
     s.stiffness = stiffness;
     s.robot.connectToRobot(ip, local_ip);
     std::error_code ec;
+    s.robot.setMotionControlMode(rokae::MotionControlMode::NrtCommand, ec);
+    check(ec, "setMotionControlMode(NrtCommand)");
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
     s.robot.setRtNetworkTolerance(20, ec);
     check(ec, "setRtNetworkTolerance");
     s.robot.setMotionControlMode(rokae::MotionControlMode::RtCommand, ec);
-    check(ec, "setMotionControlMode");
+    check(ec, "setMotionControlMode(RtCommand)");
     s.robot.setOperateMode(rokae::OperateMode::automatic, ec);
     check(ec, "setOperateMode");
     // s.robot.setRtNetworkTolerance(20, ec);

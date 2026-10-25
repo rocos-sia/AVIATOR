@@ -77,6 +77,36 @@ class ScriptsTests(unittest.TestCase):
         self.run_script('start_aviator.sh','--dry-run','--headless',ok=False)
         self.assertEqual(list(self.directory.iterdir()),[],'dry-run wrote files')
 
+    def test_remote_mode_preserves_control_order_and_real_hands(self):
+        normal = self.run_script('start_aviator.sh', '--dry-run', '--logger', '--tts')
+        remote = self.run_script('start_aviator.sh', '--dry-run', '--logger', '--tts',
+                                 env={'AVIATOR_REMOTE_UI': '1'})
+        order = lambda text: [name for name in re.findall(r'^启动 ([^:]+):', text, re.M)
+                              if name != 'Chrome']
+        self.assertEqual(order(normal), order(remote))
+        self.assertIn('--show', normal)
+        self.assertIn('启动 Chrome:', normal)
+        self.assertNotIn('--image-output', normal)
+        self.assertNotIn('SDL_VIDEODRIVER', normal)
+        self.assertIn('--no-show', remote)
+        self.assertIn('SDL_VIDEODRIVER=dummy', remote)
+        self.assertIn('--image-output', remote)
+        self.assertNotIn('启动 Chrome:', remote)
+        self.assertNotIn('--fake-hand', remote)
+        self.run_script('start_aviator.sh', '--dry-run', ok=False, env={'AVIATOR_REMOTE_UI': 'bad'})
+        keyboard_env = {'AVIATOR_REMOTE_UI': '1', 'AVIATOR_REMOTE_KEYBOARD': '1'}
+        keyboard = self.run_script('start_aviator.sh', '--dry-run', '--logger', '--tts', env=keyboard_env)
+        self.assertEqual(order(normal), order(keyboard))
+        self.assertIn('SDL_VIDEODRIVER=x11', keyboard)
+        self.assertNotIn('SDL_VIDEODRIVER=dummy', keyboard)
+        self.assertIn('--no-show', keyboard)
+        self.assertNotIn('--fake-hand', keyboard)
+        for flag in ('--rs422', '--wheel-test'):
+            self.run_script('start_aviator.sh', '--dry-run', flag, env=keyboard_env, ok=False)
+        result = self.run_script('start_aviator.sh', env={**keyboard_env, 'DISPLAY': ''}, ok=False)
+        self.assertIn('未启动设备', result)
+        self.run_script('start_aviator.sh', '--dry-run', env={'AVIATOR_REMOTE_KEYBOARD': 'bad'}, ok=False)
+
     def test_recording_directory_override_and_early_failure(self):
         output = self.directory/'recordings 空格'
         text = self.run_script('start_aviator.sh','--simulation','--logger','--dry-run',

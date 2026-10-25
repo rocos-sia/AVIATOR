@@ -15,6 +15,10 @@ HEADLESS=false
 LOGGER=false
 TTS=false
 WHEEL_TEST=false
+REMOTE_UI=${AVIATOR_REMOTE_UI:-0}
+REMOTE_KEYBOARD=${AVIATOR_REMOTE_KEYBOARD:-0}
+[[ $REMOTE_UI == 0 || $REMOTE_UI == 1 ]] || { echo 'AVIATOR_REMOTE_UI 必须为 0 或 1' >&2; exit 2; }
+[[ $REMOTE_KEYBOARD == 0 || $REMOTE_KEYBOARD == 1 ]] || { echo 'AVIATOR_REMOTE_KEYBOARD 必须为 0 或 1' >&2; exit 2; }
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
@@ -37,6 +41,8 @@ for arg in "$@"; do
             echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
             echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, PHOTOELECTRIC_CONFIG, START_DELAY, AVIATOR_RECORDING_DIR, DEVICE_READY_TIMEOUT'
             echo 'DEVICE_READY_TIMEOUT: 等待设备服务 READY 的秒数（默认60，范围1..3600）。'
+            echo 'AVIATOR_REMOTE_UI=1：远程界面模式，不打开工控机相机窗口和浏览器。'
+            echo 'AVIATOR_REMOTE_KEYBOARD=1：远程模式下将原网关键盘窗口通过 SSH X11 显示到本机，与 --rs422 互斥。'
             exit 0 ;;
         *) echo "未知参数: $arg" >&2; exit 2 ;;
     esac
@@ -44,6 +50,12 @@ done
 $FAKE_HAND && $SIMULATION && { echo '--fake-hand 与 --simulation 不能同时使用' >&2; exit 2; }
 $HEADLESS && ! $SIMULATION && { echo '--headless 仅适用于 --simulation' >&2; exit 2; }
 $WHEEL_TEST && $RS422 && { echo '--wheel-test 与 --rs422 不能同时使用' >&2; exit 2; }
+if [[ $REMOTE_KEYBOARD == 1 ]]; then
+    [[ $REMOTE_UI == 1 ]] || { echo '本机键盘控制需要 AVIATOR_REMOTE_UI=1' >&2; exit 2; }
+    ! $RS422 || { echo '本机键盘控制与 --rs422 不能同时使用' >&2; exit 2; }
+    ! $WHEEL_TEST || { echo '本机键盘控制与 --wheel-test 不能同时使用' >&2; exit 2; }
+    $DRY_RUN || [[ -n ${DISPLAY:-} ]] || { echo '本机键盘控制缺少 SSH X11 DISPLAY，未启动设备。' >&2; exit 2; }
+fi
 SYSTEM_CONFIG=config/system.yaml
 if $SIMULATION; then
     SYSTEM_CONFIG=config/system-simulation.yaml
@@ -253,7 +265,7 @@ wait_device_ready() {
 if ! $DRY_RUN; then
     [[ $EUID != 0 ]] || { echo '请以普通用户执行，脚本仅对 manipulator 使用 sudo。' >&2; exit 1; }
     commands=(setsid flock ps awk tail curl)
-    if ! $WHEEL_TEST; then commands+=(google-chrome-stable); fi
+    if ! $WHEEL_TEST && [[ $REMOTE_UI == 0 ]]; then commands+=(google-chrome-stable); fi
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
         "$AVIATOR_BIN/aviator_core_managed" "$MONITOR_BIN")
     files=("$SYSTEM_CONFIG" "$FLIGHT_CONFIG" config/robot.yaml config/camera.yaml)
@@ -348,7 +360,13 @@ else
 fi
 gateway_options=()
 if $WHEEL_TEST; then gateway_options+=(--test-ui-socket "$LOG_DIR/wheel-test.sock"); fi
-start gateway "$AVIATOR_BIN/flight_gateway" --config "$FLIGHT_CONFIG" "${gateway_options[@]}"
+gateway_command=("$AVIATOR_BIN/flight_gateway")
+if [[ $REMOTE_UI == 1 ]]; then
+    gateway_video_driver=dummy
+    [[ $REMOTE_KEYBOARD == 1 ]] && gateway_video_driver=x11
+    gateway_command=(env SDL_VIDEODRIVER="$gateway_video_driver" "${gateway_command[@]}")
+fi
+start gateway "${gateway_command[@]}" --config "$FLIGHT_CONFIG" "${gateway_options[@]}"
 if $WHEEL_TEST; then
     wheel_test_mode='真机 + 真实双手'
     if $FAKE_HAND; then wheel_test_mode='真机 + fake-hand（模拟双手）'; fi
@@ -360,10 +378,12 @@ if $TTS; then
     start tts "$AVIATOR_BIN/aviator_tts" --config "$TTS_CONFIG" --system-config "$SYSTEM_CONFIG"
 fi
 if ! $SIMULATION; then
+    camera_view_options=(--show --print-pose)
+    if [[ $REMOTE_UI == 1 ]]; then camera_view_options=(--no-show --print-pose); fi
     # Use the dedicated warmup below instead of the normal inter-node delay.
     START_DELAY=0 start camera env PATH="$(dirname "$CAMERA_PYTHON"):$PATH" "$CAMERA_PYTHON" \
         nodes/camera/main.py --config config/camera.yaml "${recording_options[@]}" \
-        --camera-id cockpit --session "$SESSION" --show --print-pose
+        --camera-id cockpit --session "$SESSION" "${camera_view_options[@]}"
     echo '等待相机预热 5 秒后启动 Core…'
     if ! $DRY_RUN; then
         sleep 5
@@ -396,7 +416,7 @@ if ! $DRY_RUN; then
     done
     $ready || { echo 'Monitor 在 30 次检查后仍未就绪。' >&2; exit 1; }
 fi
-if ! $WHEEL_TEST; then
+if ! $WHEEL_TEST && [[ $REMOTE_UI == 0 ]]; then
     printf '启动 Chrome: google-chrome-stable --start-fullscreen http://127.0.0.1:8081\n'
     # Chrome 可能复用已打开的浏览器，不将其纳入节点退出监控。
     if ! $DRY_RUN; then
@@ -405,7 +425,10 @@ if ! $WHEEL_TEST; then
 fi
 if $LOGGER; then
     RECORDING_FILE="$AVIATOR_RECORDING_DIR/recording_$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S_%N).mcap"
-    start logger "$AVIATOR_BIN/aviator_logger" --config config/recording.yaml --output "$RECORDING_FILE"
+    logger_output_options=()
+    # Keep this remote run's data and images together for transfer; leave site config intact.
+    if [[ $REMOTE_UI == 1 ]]; then logger_output_options+=(--image-output "${RECORDING_FILE%.mcap}.images.mcap"); fi
+    start logger "$AVIATOR_BIN/aviator_logger" --config config/recording.yaml --output "$RECORDING_FILE" "${logger_output_options[@]}"
 fi
 $DRY_RUN && exit 0
 echo '所有节点已启动；保持此终端打开，按 Ctrl+C 停止。'

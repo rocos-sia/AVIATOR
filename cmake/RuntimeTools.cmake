@@ -2,12 +2,14 @@
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/scripts/"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/scripts"
   USE_SOURCE_PERMISSIONS FILES_MATCHING PATTERN "*.sh" PATTERN "*.py")
-foreach(tool grasp_tool_calibration steering_wheel_calibration wheel_bandwidth wheel_accuracy)
+foreach(tool grasp_tool_calibration steering_wheel_calibration wheel_bandwidth wheel_accuracy remote_launcher)
   install(DIRECTORY "${PROJECT_SOURCE_DIR}/tools/${tool}/"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/tools/${tool}"
     FILES_MATCHING PATTERN "*.py" PATTERN "*.html" PATTERN "*.css" PATTERN "*.js"
     PATTERN "test*" EXCLUDE PATTERN "native" EXCLUDE PATTERN "__pycache__" EXCLUDE)
 endforeach()
+install(FILES "${PROJECT_SOURCE_DIR}/tools/remote_launcher/connection.json"
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/tools/remote_launcher")
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/models/tts/"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/models/tts"
   PATTERN "__pycache__" EXCLUDE)
