@@ -4,7 +4,7 @@ right_host: 192.168.21.210
 left_host: 192.168.11.210
 
 # 运动使用 grasp，模式 0（按角度运动，带设备力阈值保护）。
-# hold 仅旧 Modbus 通道停止使用；SDK 整手暂停不写 hold 参数。
+# hold 为旧配置兼容保留；Modbus / SDK 整手暂停均不写 hold 参数。
 speed:
   grasp: 800
   hold: 0
@@ -14,23 +14,24 @@ force:
 
 # 六个通道独立判定：位置偏差绝对值连续 10 秒大于 threshold，
 # 或完整 10 秒窗口内位置最大值 - 最小值小于 threshold。
-# SDK：本手六路全部满足后向 1634 写一次 1 暂停；旧 Modbus：各通道 -1 停止。
+# Modbus / SDK 抓握：本手六路全部满足后向 1634 写一次 1 暂停，不下发位置 -1。
+# 松手由命令 hold_after_motion=false 跳过正常保持暂停，故障保护不变。
 # 寄存器整数刻度，范围 0..999；默认 10。
 threshold: 10
 
-# SDK RS485 backend (no xPanelRS485Init on normal startup).
+# 左右手使能由 Modbus 和 SDK 节点共用；id / rs485_timeout_ms 仅供 SDK RS485。
 left_enabled: true
 right_enabled: true
 left_id: 1
 right_id: 1
 rs485_timeout_ms: 50
 state_period_ms: 60
-# xCoreSDK_hand 与标定工具的 native 手模块使用以下读写频率上限。
+# 以下读写频率上限仅供 xCoreSDK_hand；Modbus 按 state_period_ms 轮询。
 # state_period_ms 控制独立 SDK 节点的状态发布；Modbus 节点仍按它轮询。
 position_write_hz: 10
 position_read_hz: 10
 telemetry_read_hz: 5
-# SDK 仅校验新消息年龄，不要求持续发送已接受目标。
+# Modbus 要求持续接收目标；SDK 仅校验新消息年龄。
 # 10 Hz 写入周期为 100 ms；指令有效期须大于写入周期。
 command_timeout_ms: 200
 feedback_timeout_ms: 500

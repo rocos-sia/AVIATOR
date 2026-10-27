@@ -526,7 +526,9 @@ status
 Servo 入口会自动张开、使能、接近、闭合，然后接收摇杆输入。两个 Core 入口只能运行一个。
 `aviator_core_sml` 仅测试状态转换，不执行上述开合，也不提供摇杆/RS422 接入。
 
-Core 的独立手部通信线程 `HandLink` 以 50 Hz 发布 `hand.command`，并独立接收 `hand.state`。
+Core 的独立手部通信线程 `HandLink` 在持续指令模式下以 50 Hz 发布 `hand.command`，并独立接收 `hand.state`。
+持续指令也携带 `action_id`：同一请求的重复消息保持 ID，新的请求生成新 ID，以便从整手暂停恢复相同位置目标。
+松手设置 `hold_after_motion=false`，节点每手发送十帧完整张开位置；Core 等待 `release_writes_remaining=0` 且实际张开到位后确认完成。其他相同目标仍去重写入。
 兼容 RH56FTP 精简协议：实际位置使用 `drive_position_normalized`，不依赖每侧 `enabled`、
 关节量占位或旧测量别名。启动时 `accepted_command=null` 且 `command_valid=false` 的状态
 正常更新反馈与消息在线检查，不作为动作 ACK。`hold_control_error` 是设备锁存的历史诊断，
@@ -561,6 +563,11 @@ origin 保留主线程的真实监督心跳。发送线程在取得手部锁后�
 持续到达的无效手部反馈仍属于消息在线，但不能刷新物理设备恢复窗口。
 消息恢复后，需手动 `RESET_ERROR`；消息未恢复时不能复位。`core_hand.enabled: false` 不监测。
 重复序号、其他发布者、错误时钟、过期或无法解析的消息不刷新计时。
+
+手节点对非零设备错误码先执行最多三次自动清错，清错阶段发布 `RECOVERING`，
+Core 暂不确认动作完成。收到合法的 `error_recovery.phase=failed` 且 `attempts=3` 后，
+立即进入系统 ERROR，不再等待设备恢复窗口。原始错误码、测量有效性及时间戳仍参与健康监督；
+缺失或格式错误的清错结果不能绕过原有超时保护。
 
 `core_hand.recovery_timeout_ms` 默认 **3000 ms**（可配范围 1000..60000 ms），独立于消息超时和动作完成等待。
 任一手持续无有效反馈（包括断电后节点仍发布 OFFLINE/STALE、反馈不可用或实测时间戳过期），

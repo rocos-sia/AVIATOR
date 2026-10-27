@@ -245,10 +245,10 @@ def main():
         root.after(100, poll)
 
     def close():
+        controller.close()
         if controller.busy:
             closing[0] = True
-            controller.stop()
-            update_status("正在停止并收尾，完成后关闭界面")
+            update_status("等待设备停止并写盘后关闭；数据回传可稍后继续")
         else:
             root.destroy()
 

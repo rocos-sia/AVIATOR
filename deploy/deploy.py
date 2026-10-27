@@ -220,7 +220,7 @@ def prepare_package(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--target', default='rocos@192.168.11.100', help='SSH user@host')
+    parser.add_argument('--target', default='rocos@192.168.31.100', help='SSH user@host')
     parser.add_argument('--build-dir', default=str(ROOT / 'build'))
     parser.add_argument('--jobs', type=int, default=2)
     parser.add_argument('--package-only', action='store_true', help='Build/package locally, no SSH')

@@ -26,15 +26,32 @@ class Tests(unittest.TestCase):
             if errors and side in errors: data['err'] = errors[side]
             self.node.snapshots[side] = Snapshot(data, self.now)
 
-    def command(self, action='one', valid=True, target=.4):
+    def command(self, action='one', valid=True, target=.4, hold=True):
         n = self.node.guard.last_sequence + 1
         cmd = dict(msg_type='HandCommand', version='1.0', sequence=n, timestamp=1,
             sample_mono_us=self.now, clock_id='test', publisher_id='test', session_id='test',
-            control_epoch='22222222-2222-4222-8222-222222222222', valid=valid, mode='NORMALIZED_POSITION', action_id=action,
+            control_epoch='22222222-2222-4222-8222-222222222222', valid=valid, mode='NORMALIZED_POSITION', action_id=action, hold_after_motion=hold,
             origin=dict(publisher_id='test', session_id='test', sequence=n,
                         sample_mono_us=self.now, clock_id='test'),
             hands={s: dict(drive_position_normalized=[target]*6) for s in ('left','right')})
         self.node.handle_command('hand.command', json.dumps(cmd), self.now)
+
+    def test_release_does_not_auto_pause_under_event_supervision(self):
+        for target in (.4, .9):
+            with self.subTest(target=target):
+                self.setUp()
+                self.command('release', target=target, hold=False)
+                writes = {side: len(link.writes) for side, link in self.links.items()}
+                for _ in range(30):
+                    self.now += 20000; self.sample(); self.node.supervise(self.now)
+                self.assertFalse(any(self.node.paused.values()))
+                for side, link in self.links.items():
+                    self.assertEqual(link.pauses, 0)
+                    self.assertEqual(len(link.writes), writes[side] + 9)
+                    self.assertEqual(self.node.release_writes_remaining[side], 0)
+                self.now += 20000; self.sample(errors={'left': [4, 0, 0, 0, 0, 0]})
+                self.node.supervise(self.now)
+                self.assertTrue(all(self.node.paused.values()))
 
     def test_all_six_required_and_hands_pause_independently(self):
         self.command()
@@ -149,10 +166,24 @@ class Tests(unittest.TestCase):
         self.now += 20000
         self.sample(errors={'left': [4,0,0,0,0,0]})
         self.node.supervise(self.now)
-        self.assertFalse(self.node.command_valid)
+        self.assertFalse(self.node.make_state(self.now)['command_valid'])
         self.assertTrue(all(self.node.paused.values()))
         for link in self.links.values():
             self.assertFalse(any(-1 in values for _,values in link.writes))
+
+    def test_clear_success_resumes_accepted_action_but_never_revoked_action(self):
+        for revoked in (False, True):
+            with self.subTest(revoked=revoked):
+                self.setUp(); self.command(target=0)
+                self.now += 20000; self.sample(errors={'left': [4]*6}); self.node.supervise(self.now)
+                counts = {side: len(link.writes) for side, link in self.links.items()}
+                if revoked:
+                    self.now += 20000; self.command(valid=False)
+                self.now += 20000; self.sample(); self.node.supervise(self.now)
+                self.assertEqual(self.node.error_recovery['left']['phase'], 'recovered')
+                self.assertEqual(self.node.command_valid, not revoked)
+                for side, link in self.links.items():
+                    self.assertEqual(len(link.writes), counts[side] + (0 if revoked else 1))
 
 
 if __name__ == '__main__': unittest.main()

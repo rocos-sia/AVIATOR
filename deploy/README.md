@@ -1,6 +1,6 @@
 # 工控机一键部署
 
-在开发机编译并运行以下命令，把运行包安装到 `rocos@192.168.11.100:/opt/aviator`：
+在开发机编译并运行以下命令，把运行包安装到 `rocos@192.168.31.100:/opt/aviator`：
 
 ```bash
 cd /home/sia/Documents/GitHub/AVIATOR
@@ -12,7 +12,7 @@ cd /home/sia/Documents/GitHub/AVIATOR
 ## 前提
 
 - 开发机与目标机均为 Ubuntu 22.04 x86_64；目标使用 Python 3.10。实时内核无需修改。
-- 已能执行 `ssh rocos@192.168.11.100`，该账号能使用 sudo。
+- 已能执行 `ssh rocos@192.168.31.100`，该账号能使用 sudo。
 - 开发机已有主工程构建依赖，以及 `qtbase5-dev python3-pip python3-dev python3-venv`；首次可以在开发机执行 `scripts/install_dependencies.sh` 准备主工程依赖。
 - 开发机能访问 PyPI 和 Google 的 Chrome 下载地址。目标机首次安装系统运行库时能访问 Ubuntu 软件源。网线直连本身不提供互联网；必要时另外接入网络。
 - RealSense udev 规则随仓库提供并打包，无需从开发机系统复制；规则与部署用 SDK 配套，包含 D436（`8086:1156`）。
@@ -60,6 +60,11 @@ RealSense 固定为 `pyrealsense2==2.58.1.10581`，支持 D436。`deploy/99-avia
 
 不会继续积累历史版本，也不提供部署后的 `--rollback` 命令。运行日志不属于部署文件，继续保留在固定的 `/opt/aviator-data/logs`。
 
+xCoreSDK 还会按进程工作目录生成 `_rokae_log_`。发布校验明确排除安装根目录的
+`_rokae_log_/` 和 `share/aviator/_rokae_log_/`，这些目录内新增或追加 SDK 日志不会改变发布身份。
+配置、程序及其他位置的文件仍参与 SHA256 校验；现场修改配置后，需要核对变更并重新生成
+`SHA256SUMS` 与 `release-checksum.json`，重新记录发布摘要及 RS422 校验值。部署安装器在保留现场配置后自动完成此步骤。
+
 安装器先在固定的隐藏暂存目录 `/opt/.aviator-install` 解包和检查，临时备份旧安装，再将新目录放到 `/opt/aviator`。Python 环境在最终路径重新创建，确保 pip 等入口不含暂存路径；最终检查通过后删除临时备份和暂存目录。最终检查失败会自动恢复原安装。中途中断后再次运行部署脚本，会根据事务记录恢复或完成清理。系统包、设备组和 udev 规则等系统级变更不自动撤销。
 
 此前使用日期目录部署过的机器会自动迁移：把 `/opt/aviator` 改为实体目录，成功后删除 `/opt/aviator-releases` 内能确认属于旧部署的版本目录，目录为空时一并移除它。无法识别的其他文件不会删除。如果 `/opt/aviator` 是与本工具无关的目录或链接，仍拒绝覆盖。
@@ -73,7 +78,7 @@ RealSense 固定为 `pyrealsense2==2.58.1.10581`，支持 D436。`deploy/99-avia
 ./scripts/deploy_aviator.sh
 
 # 指定目标与本机编译并发数
-./scripts/deploy_aviator.sh --target rocos@192.168.11.100 --jobs 2
+./scripts/deploy_aviator.sh --target rocos@192.168.31.100 --jobs 2
 
 # 只在本机准备运行包，不连接目标机
 ./scripts/deploy_aviator.sh --package-only
@@ -103,7 +108,7 @@ RealSense 固定为 `pyrealsense2==2.58.1.10581`，支持 D436。`deploy/99-avia
 标定工具可能修改配置，TTS 生成器也会修改音频及清单（更新部署会重新安装包内音频）。确认这些修改后，可从开发机重新生成当前安装的校验清单：
 
 ```bash
-ssh -t rocos@192.168.11.100 \
+ssh -t rocos@192.168.31.100 \
   'sudo python3 /opt/aviator/share/aviator/deploy/remote.py --refresh-checksums'
 ```
 

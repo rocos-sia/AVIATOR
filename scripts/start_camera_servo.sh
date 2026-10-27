@@ -22,7 +22,7 @@ for arg in "$@"; do
             echo '--fake-hand 使用模拟双手；--logger 开启 MCAP 与相机图像记录。'
             echo '默认二进制目录：源码运行 build/release/bin，安装运行使用安装目录 bin。'
             echo 'Ctrl+C 先停止 Core，再停止其他节点。'
-            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN,'
+            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, HAND_PYTHON, MONITOR_BIN,'
             echo '          CAMERA_TIMEOUT_MS (默认200), START_DELAY (默认2秒)'
             exit 0 ;;
         *) echo "未知参数: $arg" >&2; exit 2 ;;
@@ -34,9 +34,12 @@ if [[ -f $ROOT/../../release-version.json ]]; then
 else
     AVIATOR_BIN=${AVIATOR_BIN:-$ROOT/build/release/bin}
 fi
+CONDA_ROOT=${CONDA_ROOT:-$HOME/miniconda3}
+HAND_PYTHON=${HAND_PYTHON:-$CONDA_ROOT/envs/rh56-pendant/bin/python}
+HAND_LAUNCHER="$ROOT/nodes/rh56ftp_hand/launch.py"
+[[ ! -d $ROOT/rh56ftp_hand ]] || HAND_LAUNCHER="$ROOT/rh56ftp_hand/launch.py"
 hand_options=()
 $FAKE_HAND && hand_options+=(--fake-hand)
-CONDA_ROOT=${CONDA_ROOT:-$HOME/miniconda3}
 CAMERA_PYTHON=${CAMERA_PYTHON:-$CONDA_ROOT/envs/apriltag_realsense/bin/python}
 MONITOR_BIN=${MONITOR_BIN:-$AVIATOR_BIN/aviator_monitor}
 START_DELAY=${START_DELAY:-2}
@@ -188,10 +191,10 @@ if ! $DRY_RUN; then
     for command in setsid flock ps awk sudo google-chrome-stable curl; do
         command -v "$command" >/dev/null || { echo "缺少命令: $command" >&2; exit 1; }
     done
-    executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/manipulator" "$AVIATOR_BIN/xCoreSDK_hand"
+    executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/manipulator" "$HAND_PYTHON"
         "$AVIATOR_BIN/aviator_core_camera_servo" "$CAMERA_PYTHON" "$MONITOR_BIN")
     files=("$SYSTEM_CONFIG" config/robot.yaml config/camera.yaml config/monitor.yaml
-        config/rh56ftp_hand.yaml nodes/camera/main.py)
+        config/rh56ftp_hand.yaml "$HAND_LAUNCHER" nodes/camera/main.py)
     if $LOGGER; then
         executables+=("$AVIATOR_BIN/aviator_logger")
         files+=(config/recording.yaml)
@@ -202,6 +205,7 @@ if ! $DRY_RUN; then
     for file in "${files[@]}"; do
         [[ -r $file ]] || { echo "文件不可读: $file" >&2; exit 1; }
     done
+    "$HAND_PYTHON" "$HAND_LAUNCHER" --system-config "$SYSTEM_CONFIG" "${hand_options[@]}" --check-config
     # Share the normal launcher's lock to exclude concurrent Core owners.
     exec 9>"${XDG_RUNTIME_DIR:-/tmp}/aviator-start-${UID}.lock"
     flock -n 9 || { echo "启动脚本或上次残留节点仍持有启动锁，请先停止。锁文件: ${XDG_RUNTIME_DIR:-/tmp}/aviator-start-${UID}.lock（不要删除锁文件绕过检查）" >&2; exit 1; }
@@ -222,8 +226,7 @@ fi
 
 start bus "$AVIATOR_BIN/aviator_bus" --config "$SYSTEM_CONFIG"
 start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config "$SYSTEM_CONFIG"
-start hand "$AVIATOR_BIN/xCoreSDK_hand" --system-config "$SYSTEM_CONFIG" \
-        --sdk-work-dir "$LOG_DIR/hand-sdk" "${hand_options[@]}"
+start hand "$HAND_PYTHON" "$HAND_LAUNCHER" --system-config "$SYSTEM_CONFIG" "${hand_options[@]}"
 if $LOGGER; then
     if $DRY_RUN; then
         RECORDING_FILE="$ROOT/logs/camera_servo_<北京时间>.mcap"

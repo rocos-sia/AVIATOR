@@ -54,6 +54,14 @@ class Tests(unittest.TestCase):
         self.assertFalse(c.closed)
         with self.assertRaisesRegex(RuntimeError,'closed'): h.read_state()
 
+    def test_clear_error_register_and_ack(self):
+        c = Connection(); h = HandLink(c, 2); h.connect()
+        h.clear_error()
+        self.assertEqual(c.sent[-1][4:8], bytes([0x12, 0xec, 0x03, 1]))
+        c.bad = True
+        with self.assertRaisesRegex(RuntimeError, 'register=1004'):
+            h.clear_error()
+
     def test_fault_read_is_six_bytes_at_1606(self):
         c = Connection(); h = HandLink(c, 2); h.connect()
         self.assertEqual(h.read_errors(), {'err': [0,1,2,3,4,5]})

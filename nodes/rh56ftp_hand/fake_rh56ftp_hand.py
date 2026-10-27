@@ -7,7 +7,7 @@ import threading
 import time
 
 from rh56ftp_node import (
-    DEFAULT_SAFE_POSE, DEFAULT_SPEED, Logger, Rh56FtpNode,
+    DEFAULT_SAFE_POSE, DEFAULT_SPEED, Logger, WholeHandPauseNode,
     canonical_to_rh, main as node_main, normalized_to_raw,
 )
 
@@ -17,7 +17,7 @@ class FakeHandLink:
 
     Positions follow targets at a bounded rate proportional to the speed setting.
     Force is a stored limit, not a contact model. None leaves a channel unchanged;
-    -1 stops it at its current position, matching the adapter's hold writes.
+    write_pause stops the whole hand; -1 remains a low-level compatibility input.
     """
 
     def __init__(self, host="simulated", port=6000, timeout=0.2, *,
@@ -78,6 +78,10 @@ class FakeHandLink:
             self._advance()
             self._target = list(self._position)
 
+    def clear_error(self):
+        with self._lock:
+            self._advance()  # Simulator has no latched drive errors.
+
     def _write_setting(self, values, target, maximum):
         self._validate(values, maximum)
         with self._lock:
@@ -104,7 +108,7 @@ class FakeHandLink:
                     "status": [0] * 6, "temp": [30] * 6}
 
 
-class FakeRh56FtpNode(Rh56FtpNode):
+class FakeRh56FtpNode(WholeHandPauseNode):
     def make_state(self, now=None):
         state = super().make_state(now)
         state["simulated"] = True

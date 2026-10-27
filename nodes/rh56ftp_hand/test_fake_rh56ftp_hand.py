@@ -16,6 +16,40 @@ from fake_rh56ftp_hand import FakeHandLink, main
 
 
 class FakeDeviceTest(unittest.TestCase):
+    def test_system_launcher_configures_bus_identity_and_disabled_side(self):
+        import yaml
+        from launch import node_options
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'hand.yaml').write_text('left_enabled: false\nright_host: 192.168.21.210\n')
+            system = dict(bus=dict(subscribe='ipc:///tmp/test-hand-command', publish='ipc:///tmp/test-hand-state'),
+                          core_hand=dict(enabled=True, publisher_id='test-hand', feedback_timeout_ms=500),
+                          xcore_sdk_hand=dict(enabled=False),
+                          rh56ftp_hand=dict(config='hand.yaml', fake_hand=True))
+            config = root / 'system.yaml'
+            config.write_text(yaml.safe_dump(system))
+            options, fake = node_options(config)
+            self.assertTrue(fake)
+            self.assertFalse(node_options(config, fake=False)[1])
+            with patch.object(real, 'load_handlink', side_effect=AssertionError('hardware imported')), \
+                    patch.object(real, 'run_node', return_value=0) as run, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                main(options)
+            node, commands, states, _ = run.call_args.args
+            self.assertEqual((commands, states), (system['bus']['subscribe'], system['bus']['publish']))
+            self.assertEqual(node.publisher_id, 'test-hand')
+            self.assertIsNone(node.links['left'])
+            self.assertIsInstance(node.links['right'], FakeHandLink)
+            system['xcore_sdk_hand']['enabled'] = True
+            config.write_text(yaml.safe_dump(system))
+            with self.assertRaisesRegex(ValueError, '持续发送'):
+                node_options(config)
+            system['xcore_sdk_hand']['enabled'] = False
+            system['core_hand']['feedback_timeout_ms'] = 2000
+            config.write_text(yaml.safe_dump(system))
+            with self.assertRaisesRegex(ValueError, '200..1000'):
+                node_options(config)
+
     def test_motion_partial_stop_and_speed(self):
         now = [0.0]
         link = FakeHandLink(clock=lambda: now[0])

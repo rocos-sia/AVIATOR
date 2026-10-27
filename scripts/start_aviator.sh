@@ -39,7 +39,7 @@ for arg in "$@"; do
             echo '--wheel-test 打开轮盘五点精度测试 UI，独占网关输入；UI_PYTHON 可指定含 tkinter 的 Python。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
-            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, MONITOR_BIN, TTS_CONFIG, PHOTOELECTRIC_CONFIG, START_DELAY, AVIATOR_RECORDING_DIR, DEVICE_READY_TIMEOUT'
+            echo '环境变量: AVIATOR_BIN, CONDA_ROOT, CAMERA_PYTHON, HAND_PYTHON, MONITOR_BIN, TTS_CONFIG, PHOTOELECTRIC_CONFIG, START_DELAY, AVIATOR_RECORDING_DIR, DEVICE_READY_TIMEOUT'
             echo 'DEVICE_READY_TIMEOUT: 等待设备服务 READY 的秒数（默认60，范围1..3600）。'
             echo 'AVIATOR_REMOTE_UI=1：远程界面模式，不打开工控机相机窗口和浏览器。'
             echo 'AVIATOR_REMOTE_KEYBOARD=1：远程模式下将原网关键盘窗口通过 SSH X11 显示到本机，与 --rs422 互斥。'
@@ -76,9 +76,12 @@ if $LOGGER; then
     recording_options+=(--recording-config config/recording.yaml)
 fi
 
+CONDA_ROOT=${CONDA_ROOT:-$HOME/miniconda3}
+HAND_PYTHON=${HAND_PYTHON:-$CONDA_ROOT/envs/rh56-pendant/bin/python}
+HAND_LAUNCHER="$ROOT/nodes/rh56ftp_hand/launch.py"
+[[ ! -d $ROOT/rh56ftp_hand ]] || HAND_LAUNCHER="$ROOT/rh56ftp_hand/launch.py"
 hand_options=()
 $FAKE_HAND && hand_options+=(--fake-hand)
-CONDA_ROOT=${CONDA_ROOT:-$HOME/miniconda3}
 CAMERA_PYTHON=${CAMERA_PYTHON:-$CONDA_ROOT/envs/apriltag_realsense/bin/python}
 UI_PYTHON=${UI_PYTHON:-/usr/bin/python3}
 MONITOR_BIN=${MONITOR_BIN:-$AVIATOR_BIN/aviator_monitor}
@@ -286,8 +289,8 @@ if ! $DRY_RUN; then
         executables+=("$AVIATOR_BIN/simulation")
     else
         commands+=(sudo)
-        executables+=("$AVIATOR_BIN/aviator_photoelectric" "$AVIATOR_BIN/manipulator" "$AVIATOR_BIN/xCoreSDK_hand" "$CAMERA_PYTHON")
-        files+=("$PHOTOELECTRIC_CONFIG" config/camera.yaml config/rh56ftp_hand.yaml nodes/camera/main.py)
+        executables+=("$AVIATOR_BIN/aviator_photoelectric" "$AVIATOR_BIN/manipulator" "$HAND_PYTHON" "$CAMERA_PYTHON")
+        files+=("$PHOTOELECTRIC_CONFIG" config/camera.yaml config/rh56ftp_hand.yaml "$HAND_LAUNCHER" nodes/camera/main.py)
     fi
     for command in "${commands[@]}"; do
         command -v "$command" >/dev/null || { echo "缺少命令: $command" >&2; exit 1; }
@@ -298,6 +301,9 @@ if ! $DRY_RUN; then
     for file in "${files[@]}"; do
         [[ -r $file ]] || { echo "文件不可读: $file" >&2; exit 1; }
     done
+    if ! $SIMULATION; then
+        "$HAND_PYTHON" "$HAND_LAUNCHER" --system-config "$SYSTEM_CONFIG" "${hand_options[@]}" --check-config
+    fi
     if $WHEEL_TEST; then
         "$AVIATOR_BIN/flight_gateway" --help 2>&1 | awk '/--test-ui-socket/ { found=1 } END { exit !found }' || {
             echo '请先编译新网关: cmake --build build --target flight_gateway -j4' >&2; exit 1;
@@ -355,8 +361,7 @@ if $SIMULATION; then
 else
     start manipulator sudo -S -p '' "$AVIATOR_BIN/manipulator" --config "$SYSTEM_CONFIG"
     wait_device_ready manipulator
-    start hand "$AVIATOR_BIN/xCoreSDK_hand" --system-config "$SYSTEM_CONFIG" \
-        --sdk-work-dir "$LOG_DIR/hand-sdk" "${hand_options[@]}"
+    start hand "$HAND_PYTHON" "$HAND_LAUNCHER" --system-config "$SYSTEM_CONFIG" "${hand_options[@]}"
 fi
 gateway_options=()
 if $WHEEL_TEST; then gateway_options+=(--test-ui-socket "$LOG_DIR/wheel-test.sock"); fi

@@ -31,7 +31,7 @@
 以架构第 15 章的最终目录与进程划分为准：
 
 - `flight_gateway` 根据配置接入 RS422 或 USB 摇杆；`source` 区分输入来源，不另设 `joystick_gateway` 进程。
-- `manipulator` 消费 `arm.command`、发布 `arm.state`，只负责双臂；独立 `xCoreSDK_hand` 消费 `hand.command`、发布 `hand.state`，复用 rh56ftp_hand 控制策略，使用独立 SDK RS485 连接。手部保留 `publisher_id=rh56ftp_hand`，--fake-hand 在独立手进程中运行。消息类型与字段保持不变。
+- `manipulator` 消费 `arm.command`、发布 `arm.state`，只负责双臂；独立 `rh56ftp_hand` 消费 `hand.command`、发布 `hand.state`，通过 Modbus TCP 连接机械手；Core 持续发送目标（`xcore_sdk_hand.enabled=false`）。手部保留 `publisher_id=rh56ftp_hand`，--fake-hand 在独立手进程中运行。消息类型与字段保持不变。
 - `aviator_hand` 消费 `hand.command`、发布 `hand.state`，通过 SocketCAN 独立接入双手；默认 `publisher_id=inspire_hand`。
 - `camera` 负责图像采集与检测。
 - `aviator_core` 是连续设备目标的唯一业务生产者和控制源仲裁者。
@@ -358,6 +358,8 @@ Frame0：`arm.state`。
 | `mode` | enum string | 当前为 `NORMALIZED_POSITION / GRASP_SETPOINT`。 |
 | `origin` | object | 第 4.4 节；其时钟域必须与手节点一致。 |
 | `control_epoch` | UUID string | 当前授权代次。 |
+| `action_id` | string，可选 | RH56FTP / SDK 动作身份，1..128 字符。Core 同一次请求保持 ID，新请求生成新 ID（包括相同目标）。 |
+| `hold_after_motion` | boolean，可选 | RH56FTP / SDK 正常保持开关，缺省 true。Core 抓握为 true、松手为 false；false 触发每手十帧完整张开目标发送，不触发位置稳定/偏差后的暂停，故障保护不受影响。 |
 | `hands.left`、`hands.right` | object | `valid=true` 时双手完整目标必填，任一侧非法时整条拒绝。 |
 | `hands.{side}.drive_position_normalized` | number[6] | NORMALIZED_POSITION 必填，每项 `[0,1]`；`raw[i]=round(value×1000)`。 |
 | `hands.{side}.grasp.closure` | number | GRASP_SETPOINT 必填，`[0,1]`；`raw[i]=round((1-closure)×1000)`。 |
@@ -365,6 +367,8 @@ Frame0：`arm.state`。
 两种目标互斥且均无插值。当前 GRASP_SETPOINT 不携带 `profile_id`，同一 closure 映射到该侧全部六路。有效命令必须先完整校验双手，再进行任何 CAN 写入；CAN 写入不是双手原子事务。首条成功下发的命令绑定 publisher、session、epoch 及 origin 身份，后续身份变化、非递增序号、时钟不匹配或超过默认 100 ms 的消息/origin 均拒绝。
 
 新鲜且身份匹配的 `valid=false` 命令用于立即请求 `safe_pose`，仍须带公共头、`control_epoch`、`mode` 和 `origin`，但允许省略 `hands`。停止发布时同一 100 ms watchdog 触发安全姿态；安全写入成功只表示已提交到 SocketCAN，不证明实体手已到位。
+
+RH56FTP Modbus 模式继续以持续总线命令进行超时看护；重复动作不会重复写设备寄存器。抓握时每手六通道判据满足后向 1634 写 1 整手暂停，成功后仅继续读取设备反馈。新 `action_id` 或暂停后的目标变化通过位置写入恢复运动。`hand.state` 回显 `accepted_command.action_id`，每手发布 `paused` 和 `stop_criteria_met[6]`；`release_writes_remaining` 为本次松手剩余成功写入帧数（0..10，取消时清零），Core 等待该值归零且实际张开到位后确认松手完成；`closing_hold_active[6]` 表示实际暂停写入成功状态。
 
 ### 8.2 完整有效 Frame1 示例
 
@@ -436,8 +440,14 @@ Frame0：`hand.command`。
 `valid` 的逻辑与：反馈新鲜、最近读取无 I/O 错误且六路位置在 `[0,1000]` 内。
 未配置侧仍发布 `valid=false`，但不参与顶层汇总；反馈恢复后顶层自动恢复 true。
 `hold_control_error` 为独立的故障锁存字符串（无故障时为空），不再影响测量 `valid`；
-Core 单独检查该字段，非空时禁止以该反馈确认动作完成。锁存保护仍需重连/重启解除，
-有效反馈不表示运动保护已解除。设备故障码非零时每侧 `status=ERROR`。
+所有已配置手反馈新鲜、位置合法且实时错误清零后自动解除，无需重连。
+控制模式下，非零设备错误码触发保护暂停及自动清错（1004 写 1，每手最多三次）；
+每次最多等待 200 ms，以写入后的新鲜零错误反馈确认成功。
+每侧 `error_recovery` 为 `{phase, attempts, max_attempts: 3, last_error}`，
+`phase` 取 `idle / clearing / recovered / failed`，次数为 0..3。
+清错阶段 `status=RECOVERING`、顶层 `command_valid=false`；三次失败后 `status=ERROR`，
+Core 立即进入 ERROR。原始错误码始终保留，测量有效不代表故障已解除；
+只读模式不自动清错，设备错误仍直接发布 ERROR。
 
 每侧仅发布 `drive_position_raw`、`drive_position_normalized`、`force`、`current`、
 `current_register_raw`、`error_codes`、`status_codes`、`temperature` 这些测量数组，

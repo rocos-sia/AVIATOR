@@ -111,7 +111,7 @@ class CalibrationControllerTests(unittest.TestCase):
                                        system_config=self.directory / "system.yaml",
                                        camera_config=self.directory / "camera.yaml",
                                        hand_config=self.directory / "rh56ftp_hand.yaml",
-                                       session_helper=helper, log_dir=self.directory / "logs",
+                                       session_helper=helper, hand_python=helper, log_dir=self.directory / "logs",
                                        camera_id="cockpit", lease_timeout=10)
         self.events = []
         self.instances = []
@@ -259,28 +259,32 @@ class CalibrationControllerTests(unittest.TestCase):
                 hand.update(left_enabled=left, right_enabled=right)
                 self.options.hand_config.write_text(yaml.safe_dump(hand))
                 system = yaml.safe_load(self.options.system_config.read_bytes())
-                system.setdefault("xcore_sdk_hand", {})["enabled"] = enabled
+                system.setdefault("rh56ftp_hand", {})["enabled"] = enabled
                 self.options.system_config.write_text(yaml.safe_dump(system))
                 native = FakeNative(self.grasp, self.events)
-                original_request = native.request
-                def request(op, **fields):
-                    if op == "hand_start":
-                        return {"started": True}
-                    return original_request(op, **fields)
                 def link_factory(publish, subscribe, opened, closed, log, **kwargs):
                     link = app.DemoLink(opened, closed, kwargs["camera_id"])
                     link.wait_ready = Mock(side_effect=AssertionError("must not wait for hands"))
                     return link
                 with patch.object(self.options, "dry_run", False), \
-                        patch.object(self.controller.nodes, "start"), \
+                        patch.object(self.controller.nodes, "start") as nodes, \
+                        patch.object(app.subprocess, "run") as preflight, \
                         patch.object(self.controller, "native_factory", return_value=native), \
                         patch.object(self.controller, "link_factory", side_effect=link_factory), \
-                        patch.object(native, "request", side_effect=request) as calls:
+                        patch.object(native, "request", wraps=native.request) as calls:
                     status = self.action("prepare", wheel_source="camera")
                     self.assertTrue(status["prepared"], status["error"])
                     self.assertTrue(status["can_sample"])
                     starts = [c for c in calls.call_args_list if c.args[0] == "hand_start"]
-                    self.assertEqual(len(starts), int(enabled and (left or right)))
+                    self.assertEqual(starts, [])
+                    hand_starts = [c for c in nodes.call_args_list if c.args[0] == "hand"]
+                    self.assertEqual(len(hand_starts), int(enabled and (left or right)))
+                    self.assertEqual(preflight.call_count, len(hand_starts))
+                    if hand_starts:
+                        command = hand_starts[0].args[1]
+                        self.assertTrue(command[2].endswith("rh56ftp_hand/launch.py"))
+                        self.assertIn(str(self.options.hand_config), command)
+                        preflight.assert_called_once_with([*command, "--check-config"], check=True)
                     self.controller.link.wait_ready.assert_not_called()
                     self.action("stop")
 

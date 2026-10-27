@@ -396,10 +396,22 @@ class CalibrationController:
         presets = system.get("core_hand", {})
         opened, closed = (HandCameraLink._targets(presets.get(p)) for p in ("open", "close"))
         helper = executable(self.options.session_helper, "aviator_grasp_tool_session（请先编译）")
+        hands_enabled = system.get("rh56ftp_hand", {}).get("enabled", True) and any(
+            hand_config.get(side + "_enabled", True) for side in ("left", "right"))
+        hand_command = None
         if not self.options.dry_run:
             conflicts = self.conflict_check()
             if conflicts:
                 raise CalibrationError("请先退出现有控制节点：" + "；".join(conflicts))
+            if hands_enabled:
+                hand_python = executable(self.options.hand_python, "手节点 Python")
+                hand_dir = ROOT / ("rh56ftp_hand" if (ROOT / "rh56ftp_hand").is_dir() else "nodes/rh56ftp_hand")
+                hand_command = [str(hand_python), "-u", str(hand_dir / "launch.py"),
+                                "--system-config", str(self.options.system_config),
+                                "--config", str(self.options.hand_config)]
+                if getattr(self.options, "fake_hand", False):
+                    hand_command.append("--fake-hand")
+                subprocess.run([*hand_command, "--check-config"], check=True)
             bus = executable(self.options.bus_helper, "aviator_bus")
             if source == "camera":
                 camera_python = executable(self.options.camera_python, "相机 Python")
@@ -426,12 +438,8 @@ class CalibrationController:
         self.native = self.native_factory(helper, self.options.robot_config, self.options.dry_run,
                                           self.options.log_dir, self.log)
         self.native.request("connect")
-        hands_enabled = system.get("xcore_sdk_hand", {}).get("enabled", True) and any(
-            hand_config.get(side + "_enabled", True) for side in ("left", "right"))
-        if not self.options.dry_run and hands_enabled:
-            self.native.request("hand_start", system_config=str(self.options.system_config),
-                                hand_config=str(self.options.hand_config),
-                                fake_hand=getattr(self.options, "fake_hand", False))
+        if hand_command:
+            self.nodes.start("hand", hand_command)
         elif not self.options.dry_run:
             self.log("机械手控制已禁用；仍可拖动机械臂并进行静态标定")
         self._check_cancel()

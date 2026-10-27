@@ -351,6 +351,8 @@ class AnalysisTest(unittest.TestCase):
             self.assertEqual(robot["wheel_initial"], expected["wheel_initial"])
             self.assertEqual(robot["grasp_wheel"]["source"], "wheel_initial")
             self.assertTrue(Path(system["robot"]).is_absolute())
+            self.assertFalse(system["xcore_sdk_hand"]["enabled"])
+            self.assertEqual(Path(system["rh56ftp_hand"]["config"]), ROOT / "config/rh56ftp_hand.yaml")
             for key in ("model", "urdf", "grasp", "posture"):
                 self.assertTrue(Path(robot[key]).is_absolute())
                 robot[key] = expected[key]

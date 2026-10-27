@@ -39,8 +39,11 @@ core_hand:
     left: [0.5, 0, 0, 0, 0, 0]
     right: [0.5, 0, 0, 0, 0, 0]
 
-# Independent SDK hand process; paths are relative to this file.
+# Core uses streaming commands for the Modbus TCP hand node.
 xcore_sdk_hand:
+  enabled: false
+
+rh56ftp_hand:
   enabled: true
   fake_hand: false
   config: rh56ftp_hand.yaml

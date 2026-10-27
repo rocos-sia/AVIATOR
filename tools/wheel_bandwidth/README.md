@@ -7,7 +7,7 @@
 ## 构建与一键启动
 
 ```bash
-cmake --build build --target aviator_core_wheel_bandwidth aviator_bus manipulator xCoreSDK_hand aviator_monitor -j2
+cmake --build build --target aviator_core_wheel_bandwidth aviator_bus manipulator aviator_monitor -j2
 
 # 预览所有命令，不启动节点、不生成文件
 ./scripts/start_wheel_bandwidth.sh --dry-run
@@ -40,7 +40,7 @@ cmake --build build --target simulation -j2
 脚本默认用
 `/usr/bin/python3 -s`，依赖 PyYAML、NumPy、Matplotlib；`-s` 避免用户 site-packages
 影响系统科学计算库。其他 Python 环境可通过 `BANDWIDTH_PYTHON` 指定。
-真实手由独立 xCoreSDK_hand 的 SDK RS485 连接提供，Monitor 可用 `MONITOR_BIN` 指定。
+真实手由独立 `rh56ftp_hand` 节点通过 Modbus TCP 连接，Python 环境可用 `HAND_PYTHON` 指定（源码默认 rh56-pendant），需要 PyYAML、pyzmq、pymodbus==3.11.4。Monitor 可用 `MONITOR_BIN` 指定。
 脚本在启动设备前检查分析依赖。`--no-monitor` 关闭 Monitor 和浏览器。
 
 先退出其他控制节点。脚本与现有一键启动共用互斥锁，并检查控制端口占用。
@@ -227,4 +227,4 @@ ctest --test-dir build -R 'wheel_bandwidth_(estimate|help)' --output-on-failure
 推拉单位及绘图、中断运行、无效数据处理、-3 dB 区间插值、相位展开与首次交叉、
 四项指标独立报告、几何豁免策略及原配置不变。
 
-手控制由独立 xCoreSDK_hand 提供；`--fake-hand` 传给该节点。生成运行配置时会将手配置路径一并转为绝对路径。
+手控制由独立 `rh56ftp_hand` 提供；`--fake-hand` / `--no-fake-hand` 明确选择模拟手或网口真实手。生成运行配置时会关闭 `xcore_sdk_hand.enabled`，并将 `rh56ftp_hand.config` 转为绝对路径。

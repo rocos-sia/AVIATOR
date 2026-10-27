@@ -3,7 +3,7 @@
 ## 工控机部署
 
 在开发机执行 `./scripts/deploy_aviator.sh`，本机编译后通过 SSH 部署到
-`rocos@192.168.11.100:/opt/aviator`。全部启动脚本及 485 示例随包安装，
+`rocos@192.168.31.100:/opt/aviator`。全部启动脚本及 485 示例随包安装，
 部署不启动设备。固定目录、程序替换、现场配置保留和失败恢复见 [部署说明](../deploy/README.md)。
 
 ## MuJoCo STL 拆分
@@ -77,10 +77,13 @@ Manipulator（或 Simulation）启动后额外等待本次日志中的服务 `RE
 
 相机默认 Python 环境为 `~/miniconda3/envs/apriltag_realsense/bin/python`，Monitor 使用
 `build/bin/aviator_monitor`。可通过 `CONDA_ROOT`、`CAMERA_PYTHON`、`MONITOR_BIN`、
-`START_DELAY` 环境变量覆盖。手控制由独立 xCoreSDK_hand 节点提供，单独写入 hand.log；使用构建时选择的 Python，需要 PyYAML、pyzmq，不需要 pymodbus。
-`--fake-hand` 传给 xCoreSDK_hand，在独立进程内模拟双手，其余机械臂和相机流程照常执行；
-也可在 system.yaml 的 `xcore_sdk_hand.fake_hand` 中设置。不能与 `--simulation` 同时使用，
-因为整机仿真已经提供手反馈。
+`START_DELAY` 环境变量覆盖。手控制由独立 `rh56ftp_hand` 节点通过 Modbus TCP 提供，日志写入 hand.log。
+源码运行默认使用 `~/miniconda3/envs/rh56-pendant/bin/python`，可用 `HAND_PYTHON` 覆盖；
+安装包使用自带 Python。环境需要 `PyYAML`、`pyzmq`、`pymodbus==3.11.4`。
+`--fake-hand` 在同一节点入口内模拟双手，其余机械臂和相机流程照常执行；
+也可在 system.yaml 的 `rh56ftp_hand.fake_hand` 中设置。不能与 `--simulation` 同时使用，
+因为整机仿真已经提供手反馈。`xcore_sdk_hand.enabled` 必须保持 `false`，让 Core 持续发送手指令。
+地址和手参数来自 `config/rh56ftp_hand.yaml`，默认端口 6000。
 `/tmp/aviator_session.uuid` 不存在或为空时生成 UUID，否则沿用现有值。
 `--dry-run` 只打印启动命令，不启动节点、不请求 sudo、不写文件。
 

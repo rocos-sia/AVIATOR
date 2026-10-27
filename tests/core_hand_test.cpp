@@ -43,6 +43,41 @@ int main(int argc, char** argv) {
             return m;
         };
         auto state = feedback(command, now + 1, 1);
+        {
+            auto monitored = create();
+            monitored.startMonitoring(now);
+            uint64_t seq = 0;
+            for (int attempt = 1; attempt <= 3; ++attempt) {
+                const auto t = now + attempt * 200000;
+                auto m = feedback(command, t, ++seq);
+                m.body["command_valid"] = false;
+                auto& hand = m.body["hands"]["left"];
+                hand["status"] = "RECOVERING";
+                hand["error_codes"] = {4, 0, 0, 0, 0, 0};
+                hand["error_recovery"] = {{"phase", "clearing"}, {"attempts", attempt}, {"max_attempts", 3}};
+                monitored.receive(m, t, session);
+                check(monitored.blockingFault(t).empty(), "entered ERROR before clear attempts finished");
+            }
+            const auto t = now + 800000;
+            auto failed = feedback(command, t, ++seq);
+            failed.body["command_valid"] = false;
+            failed.body["hands"]["left"]["error_recovery"] =
+                {{"phase", "failed"}, {"attempts", 3}, {"max_attempts", 3}};
+            monitored.receive(failed, t, session);
+            check(monitored.blockingFault(t).find("3 attempts") != std::string::npos,
+                  "three failed clears must block immediately, even without raw error feedback");
+            auto malformed = feedback(command, t + 1, ++seq);
+            malformed.body["hands"]["right"]["error_recovery"] =
+                {{"phase", "failed"}, {"attempts", 2}, {"max_attempts", 3}};
+            monitored.receive(malformed, t + 1, session);
+            check(!monitored.blockingFault(t + 1).empty(), "invalid result erased clear failure");
+            auto unhealthy = feedback(command, t + 2, ++seq);
+            unhealthy.body["hands"]["left"]["error_code"] = 4;
+            monitored.receive(unhealthy, t + 2, session);
+            check(!monitored.blockingFault(t + 2).empty(), "unhealthy legacy report erased clear failure");
+            monitored.receive(feedback(command, t + 3, ++seq), t + 3, session);
+            check(monitored.blockingFault(t + 3).empty(), "fresh recovery did not clear terminal error");
+        }
         // A live publisher is not proof that the physical hand is available.
         // Monitor each hand through idle/revocation/target changes and recovery.
         for (int side = 0; side < 2; ++side) for (int failure = 0; failure < 5; ++failure) {
@@ -554,6 +589,47 @@ int main(int argc, char** argv) {
                 try { create(); } catch (...) { rejected = true; }
                 check(rejected, "invalid recovery timeout accepted");
             }
+        }
+        // Streaming commands also identify actions without disabling the watchdog.
+        std::ofstream(path) << "xcore_sdk_hand: {enabled: false}\ncore_hand:\n  enabled: true\n"
+            "  close: {left: [0.5,0,0,0,0,0], right: [0.5,0,0,0,0,0]}\n";
+        {
+            auto stream = create(); stream.request(true, now);
+            auto first = stream.command(now, now, session).value();
+            check(first.body["action_id"].is_string(), "streaming action identity missing");
+            auto ack = feedback(first, now + 1, 1);
+            stream.receive(ack, now + 1, session);
+            auto repeat = stream.command(now + 20000, now + 20000, session).value();
+            check(first.body["action_id"] == repeat.body["action_id"], "streaming retry changed action");
+            stream.request(true, now + 40000);
+            auto again = stream.command(now + 40000, now + 40000, session).value();
+            check(first.body["action_id"] != again.body["action_id"], "equal new request reused streaming action");
+            check(!stream.command(now + 200000, now, session), "streaming heartbeat timeout disabled");
+        }
+        // Release intent is explicit even for non-default calibrated open poses.
+        for (bool events : {false, true}) {
+            std::ofstream(path) << "xcore_sdk_hand: {enabled: " << (events ? "true" : "false") << "}\ncore_hand:\n  enabled: true\n"
+                "  open: {left: [0.4,0.4,0.4,0.4,0.4,0.4], right: [0.4,0.4,0.4,0.4,0.4,0.4]}\n"
+                "  close: {left: [0.5,0,0,0,0,0], right: [0.5,0,0,0,0,0]}\n";
+            auto hand = create(); hand.request(true, now);
+            check(hand.command(now, now, session)->body["hold_after_motion"] == true,
+                  "grasp did not enable automatic pause");
+            hand.request(false, now + 20000);
+            auto release = hand.command(now + 20000, now + 20000, session).value();
+            check(release.body["hold_after_motion"] == false, "release enabled automatic pause");
+            check(release.body["hands"]["left"]["drive_position_normalized"][0] == .4,
+                  "release ignored calibrated open target");
+            auto partial = feedback(release, now + 20001, 1);
+            partial.body["accepted_command"]["action_id"] = release.body["action_id"];
+            partial.body["accepted_command"]["control_epoch"] = release.body["control_epoch"];
+            partial.body["hands"]["left"]["release_writes_remaining"] = 1;
+            partial.body["hands"]["right"]["release_writes_remaining"] = 0;
+            hand.receive(partial, now + 20001, session);
+            check(!hand.complete(now + 20001), "release completed before ten writes");
+            partial.header.sequence = 2; partial.header.sample_mono_us = now + 20002;
+            partial.body["hands"]["left"]["release_writes_remaining"] = 0;
+            hand.receive(partial, now + 20002, session);
+            check(hand.complete(now + 20002), "release did not finish after writes and open feedback");
         }
         // SDK delivery is an acknowledged event, with stable retry identity.
         std::ofstream(path) << "xcore_sdk_hand: {enabled: true}\ncore_hand:\n  enabled: true\n"

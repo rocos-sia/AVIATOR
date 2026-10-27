@@ -171,8 +171,9 @@ def _conflicting_command(argv):
                 break
         if script is None:
             return False
-        if script.name in ("rh56ftp_node.py", "fake_rh56ftp_hand.py", "hand_command.py"):
-            return "--feedback-only" not in argv and "--dry-run" not in argv
+        if (script.name in ("rh56ftp_node.py", "fake_rh56ftp_hand.py", "hand_command.py") or
+                (script.parent.name == "rh56ftp_hand" and script.name == "launch.py")):
+            return "--feedback-only" not in argv and "--dry-run" not in argv and "--check-config" not in argv
         return (script.parent.name == "grasp_tool_calibration"
                 and script.name in ("ui.py", "ui_server.py", "calibration_ui.py", "calibrate.py")
                 and "--dry-run" not in argv)

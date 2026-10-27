@@ -142,6 +142,8 @@ def decode_command(topic: str, payload: bytes | str) -> dict[str, Any]:
     if not isinstance(message.get("valid"), bool):
         raise ValueError("valid must be boolean")
     _identifier(message.get("mode"), "mode")
+    if "hold_after_motion" in message and not isinstance(message["hold_after_motion"], bool):
+        raise ValueError("hold_after_motion must be boolean")
 
     origin = message.get("origin")
     if not isinstance(origin, dict):
@@ -861,9 +863,13 @@ class Rh56FtpNode:
     def _command_gap_expired(self, now: int, previous: int) -> bool:
         return now < previous or now - previous >= self.command_timeout_us
 
-    def _closing_targets(self, requested: dict[str, list[int]], now: int
+    def _closing_targets(self, requested: dict[str, list[int]], now: int, *, hold_after_motion: bool = True
                          ) -> tuple[dict[str, list[int]], dict[str, list[ClosingHold]]]:
         effective = {side: list(values) for side, values in requested.items()}
+        if not hold_after_motion:
+            # Release is explicit, including calibrated open poses: neither
+            # stable feedback nor a blocked finger may turn it into a grip hold.
+            return effective, {side: [ClosingHold() for _ in range(6)] for side in SIDES}
         pending = {}
         for side in SIDES:
             snapshot = self.snapshots[side]
@@ -1038,10 +1044,12 @@ class Rh56FtpNode:
                     values = [1.0 - command["hands"][side]["grasp"]["closure"]] * 6
                 raw_by_side[side] = normalized_to_raw(values)
             requested = raw_by_side
-            raw_by_side, pending_holds = self._closing_targets(requested, now)
+            raw_by_side, pending_holds = self._closing_targets(requested, now,
+                hold_after_motion=command.get("hold_after_motion", True))
             if self._observe_faults(now, pending_holds):
                 # Recovery reset old holds; don't commit the pre-recovery copies.
-                raw_by_side, pending_holds = self._closing_targets(requested, now)
+                raw_by_side, pending_holds = self._closing_targets(requested, now,
+                    hold_after_motion=command.get("hold_after_motion", True))
             if self.hold_control_error:
                 raw_by_side = self._fault_targets()
                 for channels in pending_holds.values():
@@ -1324,6 +1332,266 @@ class Rh56FtpNode:
                            reader=self.reader_diagnostics(now), hands=details, **self.command_context(now))
 
 
+class WholeHandPauseNode(Rh56FtpNode):
+    """Shared device pause policy; -1 is only an internal marker, never an angle write.
+
+    Modbus retains the streaming command watchdog. SDK overrides delivery and
+    supervision only; both transports use the same six-channel pause criteria.
+    """
+
+    CLEAR_ATTEMPTS = 3
+    CLEAR_VERIFY_US = 200_000
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.paused = dict.fromkeys(SIDES, False)
+        self.action_id = None
+        self._release_keys = dict.fromkeys(SIDES)
+        self.release_writes_remaining = dict.fromkeys(SIDES, 0)
+        self._release_active = False
+        self.error_recovery = {side: dict(phase='idle', attempts=0, verify_after_us=0,
+                                         deadline_us=0, last_error='') for side in SIDES}
+
+    def _cancel_release(self):
+        self._release_active = False
+        self._release_keys = dict.fromkeys(SIDES)
+        self.release_writes_remaining = dict.fromkeys(SIDES, 0)
+
+    def connect(self):
+        super().connect()
+        self.paused = dict.fromkeys(SIDES, False)
+        self.action_id = None
+        self._cancel_release()
+        self.error_recovery = {side: dict(phase='idle', attempts=0, verify_after_us=0,
+                                         deadline_us=0, last_error='') for side in SIDES}
+
+    def _recovering(self):
+        return any(r['phase'] == 'clearing' for r in self.error_recovery.values())
+
+    def _observe_faults(self, now, pending=None):
+        observation_started = monotonic_us()
+        if self.feedback_only:
+            return super()._observe_faults(now, pending)
+        for side, link in self.links.items():
+            if link is None:
+                continue
+            snapshot = self.snapshots[side]
+            measured = (self._canonical_state(snapshot.data)
+                        if snapshot.fresh(now, self.feedback_timeout_us) and not snapshot.error else None)
+            fault = measured and any(measured['error_codes'])
+            self.fault_channels[side] = ({
+                index: f'device error {code}' if code else 'invalid position feedback'
+                for index, (code, position) in enumerate(zip(measured['error_codes'], measured['drive_position_raw']))
+                if code or not 0 <= position <= 1000
+            } if measured else {})
+            recovery = self.error_recovery[side]
+            if recovery['phase'] in ('clearing', 'failed'):
+                # An ACK or cached pre-write sample cannot prove recovery.
+                if (measured and not fault and measured['drive_position_normalized'] and
+                        snapshot.sample_mono_us > recovery['verify_after_us']):
+                    recovery['phase'] = 'recovered'
+                    recovery['last_error'] = ''
+                    self.diag.emit('hand_error_cleared', side=side, attempts=recovery['attempts'])
+                elif recovery['phase'] == 'failed':
+                    continue
+            elif fault:
+                recovery.update(phase='clearing', attempts=0, deadline_us=now, last_error='')
+                self._cancel_release()
+            if recovery['phase'] != 'clearing' or now < recovery['deadline_us']:
+                continue
+            if recovery['attempts'] == self.CLEAR_ATTEMPTS:
+                recovery['phase'] = 'failed'
+                recovery['last_error'] = recovery['last_error'] or 'device error persists or no fresh confirmation'
+                self._safe_applied = False
+                self.diag.emit('hand_error_clear_failed', side=side, attempts=recovery['attempts'],
+                               reason=recovery['last_error'])
+                continue
+            # Pause both hands before clearing any drive fault. A failed pause
+            # stays protected and is handled by the existing health timeout.
+            self.hold_control_error = f'{side}: clearing device error'
+            self._fault_open_sides.clear()
+            try:
+                self._write_targets({s: [-1] * 6 for s in SIDES})
+            except Exception:
+                self._safe_required, self._safe_applied = True, False
+                return False
+            recovery['attempts'] += 1
+            try:
+                self._write_call(side, 'clear_error', link.clear_error, [1])
+                recovery['last_error'] = ''
+            except Exception as exc:
+                recovery['last_error'] = str(exc)
+            # Translate write duration into the caller's monotonic time domain.
+            finished = now + max(0, monotonic_us() - observation_started)
+            recovery['verify_after_us'] = finished
+            recovery['deadline_us'] = finished + self.CLEAR_VERIFY_US
+            self.diag.emit('hand_error_clear_attempt', side=side, attempt=recovery['attempts'],
+                           register=1004, reason=recovery['last_error'])
+        if self._recovering():
+            self.hold_control_error = 'device error clearing in progress'
+            self._fault_open_sides.clear()
+            # Keep the accepted action internally; public command_valid remains
+            # false until new feedback confirms recovery. No motion is sent.
+            self._safe_required = False
+            return False
+        recovered = super()._observe_faults(now, pending)
+        failed = any(r['phase'] == 'failed' for r in self.error_recovery.values())
+        if failed:
+            self.hold_control_error = 'device error clear failed after 3 attempts'
+            self._safe_required = True
+            return False
+        if recovered:
+            self._safe_required, self._safe_applied = False, False
+        return recovered
+
+    def _safe_pose(self, *, force_open=False, now=None):
+        self._cancel_release()
+        super()._safe_pose(force_open=force_open, now=now)
+
+    def _apply_motion(self, command, now):
+        if command['valid'] and not command.get('hold_after_motion', True):
+            self._release_active = True
+            for side in SIDES:
+                hand = command['hands'][side]
+                values = (hand['drive_position_normalized'] if command['mode'] == 'NORMALIZED_POSITION'
+                          else [1.0 - hand['grasp']['closure']] * 6)
+                key = (command['session_id'], command['control_epoch'], command.get('action_id'),
+                       command['mode'], tuple(normalized_to_raw(values)))
+                if key != self._release_keys[side]:
+                    self._release_keys[side] = key
+                    self.release_writes_remaining[side] = 10 if self.links[side] is not None else 0
+        else:
+            self._cancel_release()
+        super()._apply_motion(command, now)
+
+    def _apply_command(self, command, now):
+        # Validate before changing any motion or hold state.
+        candidate = CommandGuard(**self.guard.__dict__)
+        candidate.accept(command, now, self.command_timeout_us, self.clock_id)
+        action = command.get('action_id')
+        if action is not None and (not isinstance(action, str) or not 0 < len(action) <= 128):
+            raise ValueError('action_id must be a nonempty string of at most 128 characters')
+        identity = (command['session_id'], action)
+        new_action = action is not None and identity != self.action_id
+        motion_changed = False
+        if command['valid']:
+            for side in SIDES:
+                before = self.last_command
+                changed = (before is None or before['mode'] != command['mode'] or
+                           before.get('hold_after_motion', True) != command.get('hold_after_motion', True) or
+                           before.get('hands', {}).get(side) != command['hands'][side])
+                motion_changed |= changed
+                if new_action or not self.command_valid or (changed and self.paused[side]):
+                    self.closing_holds[side] = [ClosingHold() for _ in range(6)]
+                    # A new request must resume even an identical paused target.
+                    self._angle_applied.pop(side, None)
+        try:
+            super()._apply_command(command, now)
+        except Exception:
+            # A partially written new request must not replay the old action.
+            self._motion_write_failed(new_action, motion_changed)
+            raise
+        self.action_id = identity
+
+    def _motion_write_failed(self, new_action, motion_changed):
+        # An unchanged action's failed pause keeps its criteria for the next
+        # streaming retry. Do not restart the entire observation window.
+        if new_action or motion_changed or not self.command_valid:
+            self.command_valid = False
+            self._safe_required, self._safe_applied = True, False
+
+    def _closing_targets(self, requested, now, *, hold_after_motion=True):
+        _, pending = super()._closing_targets(requested, now, hold_after_motion=hold_after_motion)
+        effective = {}
+        for side, channels in pending.items():
+            ready = all(c.held_raw is not None for c in channels)
+            effective[side] = [-1] * 6 if ready else list(requested[side])
+            for c in channels:
+                c.phase = 'holding' if ready else 'ready' if c.held_raw is not None else 'tracking'
+        return effective, pending
+
+    def _write_targets(self, raw_by_side):
+        if self.feedback_only:
+            return
+        # Keep the settings barrier, but attempt both hands in each phase so a
+        # failed pause on one side cannot prevent the other side from pausing.
+        for operation in (self._write_settings, self._write_angles):
+            errors = []
+            for side, link in self.links.items():
+                if link is not None:
+                    try:
+                        operation(side, raw_by_side[side])
+                    except Exception as exc:
+                        errors.append(exc)
+            if errors:
+                raise errors[0]
+        self.last_write_error = ""
+
+    def _hold_settings(self, channel):
+        return {}  # No hold speed/force writes in the pause-register policy.
+
+    def _write_settings(self, side, targets):
+        # Pause is self-contained; never set speed/force to zero before it.
+        if -1 not in targets:
+            super()._write_settings(side, targets)
+
+    def _write_angles(self, side, targets):
+        link = self.links[side]
+        if link is None:
+            return
+        if self.hold_control_error:
+            self._release_keys[side] = None
+            self.release_writes_remaining[side] = 0
+        release_key = self._release_keys[side]
+        if (self._release_active and release_key is not None and
+                tuple(targets) == release_key[-1]):
+            if self.release_writes_remaining[side]:
+                # One full device frame per application, not a blocking loop.
+                # Count only successful writes; streamed duplicates never restart it.
+                self._angle_applied.pop(side, None)
+                super()._write_angles(side, targets)
+                self.release_writes_remaining[side] -= 1
+                self.paused[side] = False
+            return
+        # A protective target supersedes any unfinished release burst.
+        self._release_keys[side] = None
+        self.release_writes_remaining[side] = 0
+        if -1 in targets:
+            if targets != [-1] * 6:
+                raise ValueError('Whole-hand pause requires six stop markers')
+            if not self.paused[side]:
+                self._write_call(side, 'pause', link.write_pause, [1])
+                self.paused[side] = True
+                self._angle_applied.pop(side, None)
+                self.last_ack_write_us = monotonic_us()
+                self.diag.emit('hand_paused', side=side, register=1634, value=1)
+        else:
+            if self.paused[side]:
+                self._angle_applied.pop(side, None)
+            super()._write_angles(side, targets)
+            self.paused[side] = False
+
+    def make_state(self, now=None):
+        state = super().make_state(now)
+        if state['accepted_command'] is not None and self.last_command:
+            state['accepted_command']['action_id'] = self.last_command.get('action_id')
+        for side, hand in state['hands'].items():
+            recovery = self.error_recovery[side]
+            hand['error_recovery'] = {key: recovery[key] for key in ('phase', 'attempts', 'last_error')}
+            hand['error_recovery']['max_attempts'] = self.CLEAR_ATTEMPTS
+            if recovery['phase'] in ('clearing', 'failed'):
+                hand['status'] = 'RECOVERING' if recovery['phase'] == 'clearing' else 'ERROR'
+                state['command_valid'] = False
+            elif hand['status'] == 'ERROR' and not self.feedback_only:
+                hand['status'] = 'RECOVERING'  # control loop has not observed this sample yet
+                state['command_valid'] = False
+            hand['paused'] = self.paused[side]
+            hand['release_writes_remaining'] = self.release_writes_remaining[side]
+            hand['stop_criteria_met'] = [c.held_raw is not None for c in self.closing_holds[side]]
+            hand['closing_hold_active'] = [self.paused[side]] * 6
+        return state
+
+
 def monotonic_us() -> int:
     return time.monotonic_ns() // 1000
 
@@ -1574,7 +1842,7 @@ def main(argv: list[str] | None = None, *, simulated: bool = False, transport_fa
             node_type = FakeRh56FtpNode
         else:
             hand_ip, hand_port, hand_link = load_handlink()
-            node_type = Rh56FtpNode
+            node_type = WholeHandPauseNode
         right_host = hand_ip if args.right_host is None else args.right_host
         right_port = hand_port if args.right_port is None else args.right_port
         if args.left_host and args.left_port is None:

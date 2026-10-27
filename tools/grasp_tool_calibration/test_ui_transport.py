@@ -90,6 +90,8 @@ class ManagedNodesTests(unittest.TestCase):
             (["/a/change_stiffness_simple"], True),
             (["/a/aviator_grasp_tool_session"], True),
             (["/a/python3", "/a/rh56ftp_hand/rh56ftp_node.py"], True),
+            (["python", "-u", "nodes/rh56ftp_hand/launch.py"], True),
+            (["python", "nodes/rh56ftp_hand/launch.py", "--check-config"], False),
             (["python", "-u", "nodes/rh56ftp_hand/fake_rh56ftp_hand.py"], True),
             (["python", "-W", "ignore", "tools/grasp_tool_calibration/ui.py"], True),
             (["python", "tools/grasp_tool_calibration/ui.py", "--dry-run"], False),

@@ -128,6 +128,9 @@ std::string HandControl::blockingFault(uint64_t now) const {
     if (auto error = messageFault(now); !error.empty()) return error;
     if (!enabled_ || !monitor_started_) return {};
     for (int side = 0; side < 2; ++side) {
+        if (clear_failed_[side])
+            return std::string("Hand unavailable: ") + (side ? "right" : "left") +
+                " device error clear failed after 3 attempts";
         auto since = unhealthy_since_[side];
         // A fresh envelope must not keep old physical measurements alive.
         if (!since) {
@@ -168,9 +171,27 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string& cor
         bool timely = true;
         std::array<uint64_t, 2> healthy_samples{};
         std::array<std::string, 2> reasons{};
+        std::array<bool, 2> clear_failed{};
         int index = 0;
         for (const char* side : {"left", "right"}) {
             const auto& hand = m.body.at("hands").at(side);
+            bool clearing = false;
+            if (hand.contains("error_recovery")) {
+                const auto& recovery = hand.at("error_recovery");
+                const auto phase = recovery.at("phase").get<std::string>();
+                const auto& attempts = recovery.at("attempts");
+                if (!attempts.is_number_integer() || attempts < 0 || attempts > 3 ||
+                    recovery.at("max_attempts") != 3 ||
+                    (phase != "idle" && phase != "clearing" && phase != "recovered" && phase != "failed") ||
+                    (phase == "failed" && attempts != 3)) return;
+                clear_failed[index] = phase == "failed";
+                clearing = phase == "clearing";
+                if (clearing || clear_failed[index]) valid = false;
+            }
+            if (hand.contains("release_writes_remaining")) {
+                const auto& remaining = hand.at("release_writes_remaining");
+                if (!remaining.is_number_integer() || remaining < 0 || remaining > 10) return;
+            }
             const bool side_valid = hand.at("valid").get<bool>();
             uint64_t sample = 0;
             if (!side_valid) valid = false;
@@ -194,6 +215,8 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string& cor
                 if (std::any_of(codes.begin(), codes.end(), [](int code) { return code != 0; }))
                     reason = "device error_codes=" + hand.at("error_codes").dump();
             }
+            if (clearing) reason = "device error clearing in progress";
+            if (clear_failed[index]) reason = "device error clear failed after 3 attempts";
             if (reason.empty() && unhealthy_since_[index] && sample <= healthy_sample_[index])
                 reason = "no newer healthy feedback";
             if (reason.empty()) healthy_samples[index] = sample;
@@ -209,6 +232,9 @@ void HandControl::receive(const Message& m, uint64_t now, const std::string& cor
         // commands, revocation, error-code changes and publisher restarts cannot
         // renew the recovery window; only fresh healthy measurements can.
         for (int side = 0; side < 2; ++side) {
+            // Do not let a malformed/older or still-unhealthy report erase a
+            // terminal result; require new healthy measurements to recover.
+            clear_failed_[side] = clear_failed[side] || (clear_failed_[side] && !healthy_samples[side]);
             if (healthy_samples[side]) {
                 healthy_sample_[side] = healthy_samples[side];
                 unhealthy_since_[side] = 0;
@@ -268,6 +294,8 @@ bool HandControl::complete(uint64_t now) const {
     if (closing_) return true; // CAN write acknowledgement, never a claim of physical grasp.
     for (int side = 0; side < 2; ++side) {
         const auto& hand = body_.at("hands").at(side ? "right" : "left");
+        // A reached pose cannot finish/revoke the ten-frame release early.
+        if (hand.value("release_writes_remaining", 0) != 0) return false;
         if (hand.at("sample_mono_us").get<uint64_t>() < requested_) return false;
         const auto actual = hand.at("drive_position_normalized").get<std::array<double, 6>>();
         for (int j = 0; j < 6; ++j) if (std::abs(actual[j] - target_[side][j]) > tolerance_) return false;
@@ -314,7 +342,9 @@ std::optional<Message> HandControl::command(uint64_t now, uint64_t heartbeat, co
               {"origin", {{"publisher_id", "aviator_core"}, {"session_id", session},
                           {"sequence", command_sequence_}, {"sample_mono_us", revoking_ ? now : heartbeat},
                           {"clock_id", local_clock_id()}}}};
-    if (event_delivery_) m.body["action_id"] = action_id_;
+    // Streaming retries retain the ID; a new request can resume an equal paused target.
+    m.body["action_id"] = action_id_;
+    m.body["hold_after_motion"] = closing_; // Release keeps its position target; no automatic pause.
     for (int side = 0; side < 2; ++side)
         m.body["hands"][side ? "right" : "left"]["drive_position_normalized"] = target_[side];
     return m;

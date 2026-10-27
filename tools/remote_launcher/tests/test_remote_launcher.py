@@ -17,7 +17,7 @@ from unittest.mock import patch
 SOURCE = Path(__file__).resolve().parents[1]
 ROOT = SOURCE.parents[1]
 sys.path.insert(0, str(SOURCE))
-from backend import Controller, Options, Transport
+from backend import Controller, Options, Transport, TransferCancelled
 from remote_agent import identity, NodeDiagnostics, check_keyboard
 
 
@@ -103,7 +103,7 @@ while true; do sleep .1; done
         self.assertFalse((self.home / "flags").exists())
 
     def test_keyboard_forwarding_and_recovery_without_display(self):
-        transport = Transport("rocos@192.168.11.100")
+        transport = Transport("rocos@192.168.31.100")
         self.addCleanup(transport.close)
         Path(transport.control).touch()
         with patch.dict(os.environ, {"DISPLAY": ":99"}), patch("backend.shutil.which", return_value="/usr/bin/xauth"), patch("backend.subprocess.Popen") as spawn, patch("backend.subprocess.run") as check:
@@ -308,20 +308,22 @@ while true; do sleep .1; done
         self.assertIsNotNone(identity(os.getpid()))
 
     def test_transport_quotes_paths_and_final_sync(self):
-        transport = Transport("rocos@192.168.11.100")
+        transport = Transport("rocos@192.168.31.100")
         self.addCleanup(transport.temp.cleanup)
-        with patch.object(transport, "checked", return_value="") as run:
+        with patch("backend.subprocess.Popen") as run:
+            run.return_value.communicate.return_value = ("", "")
+            run.return_value.returncode = 0
             transport.sync("/tmp/remote path", self.root, final=True)
             command = run.call_args.args[0]
             self.assertIn("--checksum", command)
             self.assertNotIn("--append-verify", command)
             self.assertNotIn("--delete", command)
-            self.assertIn("rocos@192.168.11.100:/tmp/remote path/", command)
+            self.assertIn("rocos@192.168.31.100:/tmp/remote path/", command)
         remote = shlex.split(transport.agent("run", Options(prefix=str(self.prefix)), self.run_id)[-1])
         self.assertEqual(remote[remote.index("--prefix")+1], str(self.prefix))
 
     def test_busy_port_rejected(self):
-        transport = Transport("rocos@192.168.11.100")
+        transport = Transport("rocos@192.168.31.100")
         self.addCleanup(transport.temp.cleanup)
         with socket.socket() as server:
             try:
@@ -331,9 +333,8 @@ while true; do sleep .1; done
             with self.assertRaisesRegex(RuntimeError, "8081"):
                 transport.forward()
 
-    def test_controller_final_sync_failure_and_recovery(self):
+    def local_transport(self, sync):
         testcase = self
-        fail_final = [True]
         class LocalTransport:
             def __init__(self, target): pass
             def connect(self, password, keyboard=False): pass
@@ -343,36 +344,145 @@ while true; do sleep .1; done
                 return ["env", "HOME=" + str(testcase.home), *testcase.command(action, opts.flags(), run_id)]
             def query(self, action, opts, run_id):
                 return json.loads(subprocess.check_output(self.agent(action, opts, run_id), text=True))
-            def sync(self, remote, local, final=False):
-                if final and fail_final[0]:
-                    raise OSError("test transfer disconnected")
-                subprocess.run(["rsync", "-rt", "--checksum", remote + "/", str(local) + "/"], check=True)
+            def sync(self, remote, local, final=False, cancel=None):
+                return sync(remote, local, final, cancel)
+        return LocalTransport
+
+    def test_controller_final_sync_failure_and_recovery(self):
+        fail_final = [True]
+        def sync(remote, local, final, cancel):
+            if final and fail_final[0]:
+                raise OSError("test transfer disconnected")
+            subprocess.run(["rsync", "-rt", "--checksum", remote + "/", str(local) + "/"], check=True)
         controller = Controller(self.root / "local-state")
         opts = Options(prefix=str(self.prefix), logger=True, transfer=True, destination=str(self.root / "data"))
-        with patch("backend.Transport", LocalTransport), patch("backend.urllib.request.build_opener"):
+        with patch("backend.Transport", self.local_transport(sync)), patch("backend.urllib.request.build_opener"):
             controller.start(opts)
-            deadline = time.monotonic()+8
-            while time.monotonic() < deadline:
-                event = controller.events.get(timeout=5)
-                if event == {"event": "state", "text": "运行中"}:
-                    break
-            else:
-                self.fail("controller did not start")
+            self.wait_running(controller)
             controller.stop()
             controller.worker.join(timeout=8)
             self.assertFalse(controller.busy)
-            self.assertTrue(controller.session_file.exists())
-            session = json.loads(controller.session_file.read_text())
+            self.join_transfers(controller)
+            self.assertFalse(controller.session_file.exists())
+            pending = next(controller.transfer_dir.glob("*.json"))
+            session = json.loads(pending.read_text())
             self.assertTrue(Path(session["local"], ".in-progress").exists())
-            with self.assertRaises(RuntimeError): controller.start(opts)
             fail_final[0] = False
             controller.start(opts, recover=True)
             controller.worker.join(timeout=8)
+            self.join_transfers(controller)
             self.assertFalse(controller.busy)
             self.assertFalse(controller.session_file.exists())
+            self.assertFalse(pending.exists())
             self.assertFalse(Path(session["local"], ".in-progress").exists())
             self.assertEqual(Path(session["local"], "data.mcap").read_text(), "FINALIZED")
             self.assertTrue(Path(session["remote"], "data.mcap").exists())
+
+    def test_stale_session_is_archived_without_requiring_recovery(self):
+        controller = Controller(self.root / "local-state")
+        controller.state_dir.mkdir()
+        previous = json.dumps({"run_id": "b" * 32, "options": {"target": "old@unreachable"},
+                               "local": str(self.root / "old-data")})
+        controller.session_file.write_text(previous)
+        data = self.root / "old-data"
+        data.mkdir()
+        (data / ".in-progress").touch()
+        (data / "data.mcap").write_bytes(b"preserve previous recording")
+        calls = []
+        base = self.local_transport(lambda *args: None)
+        class CheckedTransport(base):
+            def query(self, action, opts, run_id):
+                calls.append((action, run_id))
+                return super().query(action, opts, run_id)
+        with patch("backend.Transport", CheckedTransport), patch("backend.urllib.request.build_opener"):
+            controller.start(Options(prefix=str(self.prefix)))
+            try:
+                self.wait_running(controller)
+                archives = list((controller.state_dir / "archived-sessions").glob("*.json"))
+                self.assertEqual(len(archives), 1)
+                self.assertEqual(archives[0].read_text(), previous)
+                self.assertNotEqual(json.loads(controller.session_file.read_text())["run_id"], "b" * 32)
+                self.assertEqual([action for action, _ in calls], ["probe"])
+                self.assertTrue((data / ".in-progress").exists())
+                self.assertEqual((data / "data.mcap").read_bytes(), b"preserve previous recording")
+            finally:
+                controller.stop()
+                controller.worker.join(timeout=5)
+            self.assertFalse(controller.busy)
+
+    def wait_running(self, controller):
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            event = controller.events.get(timeout=5)
+            if event == {"event": "state", "text": "运行中"}:
+                return
+        self.fail("controller did not start")
+
+    def join_transfers(self, controller):
+        for worker, _ in controller.transfers.values():
+            worker.join(timeout=5)
+            self.assertFalse(worker.is_alive())
+
+    def test_slow_transfer_allows_restart_and_close_then_resume(self):
+        uploading = threading.Event()
+        cancelled = threading.Event()
+        block = [True]
+        def sync(remote, local, final, cancel):
+            if final and block[0]:
+                uploading.set()
+                if not cancel.wait(10):
+                    raise AssertionError("close did not cancel transfer")
+                cancelled.set()
+                raise TransferCancelled()
+            subprocess.run(["rsync", "-rt", "--checksum", remote + "/", str(local) + "/"], check=True)
+        controller = Controller(self.root / "local-state")
+        opts = Options(prefix=str(self.prefix), logger=True, transfer=True, destination=str(self.root / "data"))
+        with patch("backend.Transport", self.local_transport(sync)), patch("backend.urllib.request.build_opener"):
+            controller.start(opts)
+            self.wait_running(controller)
+            controller.stop()
+            controller.worker.join(timeout=5)
+            self.assertFalse(controller.busy)
+            self.assertTrue(uploading.wait(2))
+            pending = next(controller.transfer_dir.glob("*.json"))
+            first = json.loads(pending.read_text())
+            controller.start(Options(prefix=str(self.prefix), logger=True))
+            self.wait_running(controller)
+            second = json.loads(controller.session_file.read_text())
+            self.assertNotEqual(first["run_id"], second["run_id"])
+            self.assertTrue(pending.exists())
+            controller.close()
+            self.assertTrue(cancelled.wait(1))
+            controller.worker.join(timeout=5)
+            self.assertFalse(controller.busy)
+            self.join_transfers(controller)
+            self.assertTrue(pending.exists())
+            self.assertTrue(Path(first["local"], ".in-progress").exists())
+            # A newly opened UI can resume data without starting/stopping any device.
+            block[0] = False
+            reopened = Controller(controller.state_dir)
+            reopened.start(opts, recover=True)
+            reopened.worker.join(timeout=5)
+            self.join_transfers(reopened)
+            self.assertFalse(pending.exists())
+            self.assertEqual(Path(first["local"], "data.mcap").read_text(), "FINALIZED")
+
+    def test_cancel_active_rsync_process(self):
+        transport = Transport("unused@localhost")
+        self.addCleanup(transport.close)
+        cancel = threading.Event()
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        self.processes.append(process)
+        timer = threading.Timer(.1, cancel.set)
+        timer.start()
+        started = time.monotonic()
+        with patch("backend.subprocess.Popen", return_value=process):
+            with self.assertRaises(TransferCancelled):
+                transport.sync("/unused", self.root, final=True, cancel=cancel)
+        timer.join()
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertIsNotNone(process.poll())
 
     def test_package_is_independent(self):
         archive = self.root / "ui.tar.gz"

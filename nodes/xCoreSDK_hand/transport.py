@@ -132,6 +132,9 @@ class HandLink:
     def write_pause(self):
         self.exchange(0x12, 1634, [1], 1)
 
+    def clear_error(self):
+        self.exchange(0x12, 1004, [1], 1)
+
     def write_mode_set(self, values):
         if len(values) != 6 or any(type(v) is not int or v not in (0,1,2) for v in values):
             raise ValueError('Six mode bytes required')

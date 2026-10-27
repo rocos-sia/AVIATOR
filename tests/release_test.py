@@ -11,6 +11,7 @@ import struct
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location("release", Path(__file__).resolve().parents[1] / "scripts/aviator_release.py")
 release = importlib.util.module_from_spec(SPEC)
@@ -142,6 +143,26 @@ class ReleaseTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             release.verify(self.root)
 
+    def test_sdk_logs_do_not_change_release_identity(self):
+        original = release.verify(self.root)
+        for directory in ('_rokae_log_', 'share/aviator/_rokae_log_'):
+            log = self.root / directory / 'robot-session/xCoreSDK.log'
+            log.parent.mkdir(parents=True)
+            log.write_text('robot connected\n')
+            self.assertEqual(release.verify(self.root), original)
+            log.write_text('robot connected\nrobot stopped\n')
+            self.assertEqual(release.verify(self.root), original)
+        # Limit exclusions to the two known runtime locations.
+        for name in ('share/aviator/config/system-rs422.yaml', 'bin/_rokae_log_/payload',
+                     'share/aviator/_rokae_log_extra/payload'):
+            with self.subTest(name=name):
+                path = self.root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('changed')
+                with self.assertRaisesRegex(ValueError, 'differ from SHA256SUMS'):
+                    release.verify(self.root)
+                path.unlink()
+
     def test_paths_and_case_collision(self):
         for invalid in ["/abs", "../escape", "x/../y", "x\\y", "x\ny", "x\ry", "x//y"]:
             with self.assertRaises(ValueError):
@@ -226,6 +247,62 @@ class ReleaseTest(unittest.TestCase):
             "checksum_u16": release.checksum_u16(digest), "version": version,
             "release_profile": record["release_profile"]})
 
+    def make_legacy_scope_package(self, root):
+        # Seal with the exact scope used before SDK logs became runtime data.
+        with patch.object(release, "EXCLUDED_DIRS", release.LEGACY_EXCLUDED_DIRS):
+            self.make_package(root)
+            for directory in ("_rokae_log_", "share/aviator/_rokae_log_"):
+                log = root / directory / "session/sdk.log"
+                log.parent.mkdir(parents=True)
+                log.write_text("packaged log")
+            release.seal(root)
+
+    def test_publish_upgrades_legacy_scope_and_preserves_sdk_logs(self):
+        destination = self.root.parent / "legacy-scope"
+        destination.mkdir()
+        self.make_legacy_scope_package(destination)
+        for check in (release.verify, release.identity, release.seal):
+            with self.assertRaises(ValueError):
+                check(destination)
+        with self.assertRaises(ValueError):
+            release.publish(destination, self.root)
+        for directory in ("_rokae_log_", "share/aviator/_rokae_log_"):
+            (destination / directory / "session/sdk.log").write_text("updated log")
+            (destination / directory / "new.log").write_text("new log")
+        (self.root / "bin/app").rename(self.root / "bin/new")
+        expected = release.seal(self.root)
+        self.assertEqual(release.publish(self.root, destination), expected)
+        self.assertFalse((destination / "bin/app").exists())
+        for directory in ("_rokae_log_", "share/aviator/_rokae_log_"):
+            self.assertEqual((destination / directory / "session/sdk.log").read_text(), "updated log")
+            self.assertEqual((destination / directory / "new.log").read_text(), "new log")
+        self.assertEqual(release.read_version(destination)["checksum_scope"], release.scope())
+        self.assertEqual(release.verify(destination), expected)
+
+    def test_publish_legacy_scope_keeps_unmanaged_file_protection(self):
+        destination = self.root.parent / "legacy-scope"
+        destination.mkdir()
+        self.make_legacy_scope_package(destination)
+        (destination / "unknown").write_text("preserve")
+        before = release.manifest(destination)
+        with self.assertRaisesRegex(ValueError, "unmanaged files"):
+            release.publish(self.root, destination)
+        self.assertEqual(release.manifest(destination), before)
+        self.assertTrue((destination / "release-checksum.json").exists())
+
+    def test_publish_rejects_unknown_checksum_scope(self):
+        destination = self.root.parent / "unknown-scope"
+        destination.mkdir()
+        self.make_package(destination)
+        record = release.read_version(destination)
+        record["checksum_scope"]["exclude_directories"].append("config")
+        release.write_json(destination / "release-version.json", record)
+        before = release.manifest(destination)
+        with self.assertRaisesRegex(ValueError, "unsupported checksum scope"):
+            release.publish(self.root, destination)
+        self.assertEqual(release.manifest(destination), before)
+        self.assertTrue((destination / "release-checksum.json").exists())
+
     def test_publish_upgrades_legacy_version_encoding(self):
         destination = self.root.parent / "legacy"
         destination.mkdir()
@@ -288,6 +365,8 @@ class ReleaseTest(unittest.TestCase):
                     command = shlex.split(bus.split(":", 1)[1])
                     self.assertEqual(Path(command[0]).resolve(), Path(override or self.root / "bin") / "aviator_bus")
                     self.assertIn("--fake-hand", output)
+                    self.assertIn(str(runtime / "rh56ftp_hand/launch.py"), output)
+                    self.assertNotIn("xCoreSDK_hand", output)
                     self.assertNotIn("fake_rh56ftp_hand.py", output)
                     self.assertNotIn("nodes/rh56ftp_hand/", output)
                     self.assertIn("nodes/camera/main.py", output)

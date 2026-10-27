@@ -96,7 +96,8 @@ class Scheduler:
         # while the policy owner is blocked in a device write.
         view = copy(self.node)
         for name in ('guard', 'last_targets', 'requested_targets', 'closing_holds',
-                     'fault_channels', '_fault_open_sides', 'write_stats', 'paused'):
+                     'fault_channels', '_fault_open_sides', 'write_stats', 'paused', 'release_writes_remaining',
+                     'error_recovery'):
             setattr(view, name, deepcopy(getattr(self.node, name)))
         self.view = view
 

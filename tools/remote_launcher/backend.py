@@ -7,6 +7,7 @@ import queue
 import re
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -39,7 +40,7 @@ def owned_command(command):
 
 @dataclass
 class Options:
-    target: str = "rocos@192.168.11.100"
+    target: str = "rocos@192.168.31.100"
     prefix: str = "/opt/aviator"
     rs422: bool = False
     fake_hand: bool = False
@@ -73,6 +74,10 @@ def write_json(path, data):
     temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2))
     temporary.chmod(0o600)
     temporary.replace(path)
+
+
+class TransferCancelled(RuntimeError):
+    pass
 
 
 class Transport:
@@ -161,11 +166,36 @@ class Transport:
                       "-L", "127.0.0.1:8081:127.0.0.1:8081", self.target], timeout=15)
         self.forwarded = True
 
-    def sync(self, remote, local, final=False):
+    def sync(self, remote, local, final=False, cancel=None):
         command = ["rsync", "-rt", "--partial", "--protect-args", "--timeout=15",
                    "--bwlimit=8192", "--checksum" if final else "--append-verify",
                    "-e", shlex.join(self.ssh()), "--", f"{self.target}:{remote}/", str(local) + "/"]
-        self.checked(command, timeout=300 if final else 30)
+        if cancel and cancel.is_set():
+            raise TransferCancelled("回传已暂停")
+        process = subprocess.Popen(owned_command(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, start_new_session=True)
+        deadline = time.monotonic() + (300 if final else 30)
+        try:
+            while True:
+                if cancel and cancel.is_set():
+                    raise TransferCancelled("回传已暂停")
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("回传超时")
+                try:
+                    output, error = process.communicate(timeout=.2)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+            if process.returncode:
+                raise RuntimeError(error.strip() or output.strip() or f"回传失败，退出码 {process.returncode}")
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.communicate(timeout=2)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.communicate()
 
     def close(self):
         try:
@@ -209,6 +239,10 @@ class Controller:
         self.events = queue.Queue()
         self.worker = None
         self.stop_requested = threading.Event()
+        self.transfer_dir = self.state_dir / "pending-transfers"
+        self.transfers = {}
+        self.transfer_lock = threading.Lock()
+        self.closing = threading.Event()
 
     @property
     def busy(self):
@@ -228,16 +262,66 @@ class Controller:
             if not shutil.which(program):
                 raise RuntimeError(f"本机缺少 {program}。")
         if self.session_file.exists() and not recover:
-            raise RuntimeError("存在尚未收尾的会话，请先点击“重连并收尾 / 补传”。")
-        if recover and not self.session_file.exists():
+            self._archive_session()
+        if recover and not self.session_file.exists() and not any(self.transfer_dir.glob("*.json")):
             raise RuntimeError("没有待收尾的会话。")
         self.stop_requested.clear()
         self.worker = threading.Thread(target=self._work, args=(options, password, recover), daemon=True)
         self.worker.start()
 
+    def _archive_session(self):
+        archive = self.state_dir / "archived-sessions" / f"{time.time_ns()}.json"
+        archive.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.session_file.replace(archive)
+        self.log(f"已跳过旧会话收尾，记录保存在 {archive}；继续启动新会话。\n")
+
     def stop(self):
         self.stop_requested.set()
         self.log("已请求停止；等待工控机按原脚本顺序退出并完成写盘。\n")
+
+    def close(self):
+        self.closing.set()
+        if self.busy:
+            self.stop()
+        with self.transfer_lock:
+            for _, cancel in self.transfers.values():
+                cancel.set()
+
+    def _queue_transfer(self, path, password):
+        with self.transfer_lock:
+            previous = self.transfers.get(path)
+            if self.closing.is_set() or (previous and previous[0].is_alive()):
+                return
+            cancel = threading.Event()
+            worker = threading.Thread(target=self._transfer, args=(path, password, cancel), daemon=True)
+            self.transfers[path] = (worker, cancel)
+            worker.start()
+
+    def _transfer(self, path, password, cancel):
+        transport = None
+        label = path.stem[:8]
+        try:
+            session = json.loads(path.read_text())
+            if cancel.is_set():
+                raise TransferCancelled("回传已暂停")
+            transport = Transport(session["options"]["target"])
+            # Data transfer has its own SSH connection, without Monitor/X11 forwarding.
+            transport.connect(password)
+            password = ""
+            self.emit("transfer", text=f"{label}：后台补传中，可启动下一次运行")
+            transport.sync(session["result"]["recording"], session["local"], final=True, cancel=cancel)
+            write_json(Path(session["local"], "session.json"), session)
+            Path(session["local"], ".in-progress").unlink(missing_ok=True)
+            path.unlink(missing_ok=True)
+            self.emit("transfer", text=f"{label}：数据已回传并完成文件校验")
+        except TransferCancelled:
+            self.log(f"{label}：回传已暂停，记录已保留，可稍后补传。\n")
+        except Exception as exc:
+            self.log(f"{label}：后台回传未完成，可稍后补传：{exc}\n")
+            self.emit("transfer", text=f"{label}：待补传（不影响启动）")
+        finally:
+            if transport:
+                transport.close()
 
     def _work(self, options, password, recover):
         transport = None
@@ -247,6 +331,11 @@ class Controller:
         heartbeat_stop = threading.Event()
         heartbeat_worker = None
         try:
+            if recover and not self.session_file.exists():
+                for path in self.transfer_dir.glob("*.json"):
+                    self._queue_transfer(path, password)
+                self.emit("state", text="后台补传已安排，可启动新会话")
+                return
             self.emit("state", text="连接中")
             if recover:
                 session = json.loads(self.session_file.read_text())
@@ -257,7 +346,6 @@ class Controller:
             run_id = session["run_id"]
             transport = Transport(options.target)
             transport.connect(password, keyboard=options.keyboard and not recover)
-            password = ""
             if recover:
                 state = transport.query("stop", options, run_id)
                 self.emit("state", text="等待远端收尾")
@@ -331,8 +419,10 @@ class Controller:
                             def sync_live():
                                 while not sync_stop.wait(5):
                                     try:
-                                        transport.sync(session["remote"], session["local"])
+                                        transport.sync(session["remote"], session["local"], cancel=sync_stop)
                                         self.emit("transfer", text="回传中（录制尚未结束）")
+                                    except TransferCancelled:
+                                        return
                                     except Exception as exc:
                                         self.log("本轮回传未完成，稍后重试：" + str(exc) + "\n")
 
@@ -358,11 +448,9 @@ class Controller:
             if sync_worker:
                 sync_worker.join()
             if options.transfer:
-                self.emit("state", text="设备已退出，正在核对并补齐数据")
-                transport.sync(state["recording"], session["local"], final=True)
-                Path(session["local"], ".in-progress").unlink(missing_ok=True)
-                write_json(Path(session["local"], "session.json"), {**session, "result": state})
-                self.emit("transfer", text="数据已回传并完成文件校验")
+                pending = self.transfer_dir / (run_id + ".json")
+                write_json(pending, {**session, "result": state})
+                self._queue_transfer(pending, password)
             self.session_file.unlink(missing_ok=True)
             code = state.get("returncode", 1)
             normal = code == 0 or (code in (130, 143) and (self.stop_requested.is_set() or recover))

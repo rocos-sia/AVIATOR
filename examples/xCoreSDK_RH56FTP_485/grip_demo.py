@@ -106,7 +106,7 @@ class DemoController:
                     timestamp=time.time_ns() // 1000, sample_mono_us=now,
                     clock_id=scheduler.node.clock_id, publisher_id='hand_grip_demo',
                     session_id=self.session, control_epoch=self.epoch, valid=True,
-                    mode='NORMALIZED_POSITION', action_id=action_id,
+                    mode='NORMALIZED_POSITION', action_id=action_id, hold_after_motion=name == 'close',
                     origin=dict(publisher_id='hand_grip_demo', session_id=self.session,
                                 sequence=self.sequence, sample_mono_us=now, clock_id=scheduler.node.clock_id),
                     hands={s: dict(drive_position_normalized=target if s == side else list(DEFAULT_SAFE_POSE))

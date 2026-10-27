@@ -10,7 +10,7 @@ Rokae 双臂硬件执行节点。仿真由独立 `simulation` 节点提供，二
 ./build/bin/manipulator --config config/system.yaml
 ```
 
-`config/robot.yaml` 的 `rokae` 段配置 left_ip、right_ip、left_local_ip、right_local_ip、joint_stiffness、following_joint_stiffness；没有 backend 选择，也没有窗口或 --headless 参数。机械臂连接真实设备，需要设备和实时调度权限；手由独立 xCoreSDK_hand 进程提供。
+`config/robot.yaml` 的 `rokae` 段配置 left_ip、right_ip、left_local_ip、right_local_ip、joint_stiffness、following_joint_stiffness；没有 backend 选择，也没有窗口或 --headless 参数。机械臂连接真实设备，需要设备和实时调度权限；手由独立 rh56ftp_hand 网口节点提供。
 
 启动保持未使能。Core 先通过可靠服务读取本次 server_session 和关节保持目标，再显式授权/使能。启动标记使用普通文本，不校验会话匹配；重启后仍需重新 authorize，重连不自动使能。初次使能后的当前位置保持允许最多 1 s 的命令接入窗口，进入目标流后使用配置的 50 ms watchdog。没有指令时不会自动向 Home 运动。
 
@@ -31,7 +31,7 @@ SDK 运动停止后先请求下电并读回电源状态，再由后续正常清�
 
 SDK 回调有独立命令截止时间，通信或执行线程停顿不能无限维持授权。执行线程在正常取消时从最后下发指令减速；命令失效、反馈失效或执行异常锁存错误并停止双臂。停止路径检查关节限位；设备故障不能完成减速时转为停止 SDK 控制。现场仍需验证实际时序和物理停止效果。
 
-订阅 `arm.command`，发布 `arm.state`（100 Hz）。RH56FTP 手控制由独立 xCoreSDK_hand 进程提供。ArmState 包含每侧原始采样时间、实际关节角/速度、TCP、已接纳命令和执行游标。TCP 使用各自 left_base/right_base；四元数均为 qx/qy/qz/qw。SDK 适配分别设置工具的 trans/rpy 与实时齐次矩阵。双臂在 RT 初始化时、上电与启动运动前调用 `setLoad`，统一设置质量 `0.71 kg`、质心 `(0.02134, -0.02368, 0.11188) m`（工具设置截图中的 `(21.34, -23.68, 111.88) mm`），转动惯量按确认值设为 `(0, 0, 0) kg·m²`。参数定义在 `rokae_sdk.cpp` 的 `RokaeArm` 构造函数中；设置失败中止初始化，成功后输出每臂 `RT load` 日志。一键启动的 `--fake-hand` 仍使用真实双臂，因此同样设置负载。SDK 头文件未明确质心坐标系，本次仅换算单位；真机质心坐标系、TCP/安装标定一致性需要现场验证。
+订阅 `arm.command`，发布 `arm.state`（100 Hz）。RH56FTP 手控制由独立 rh56ftp_hand 网口节点提供。ArmState 包含每侧原始采样时间、实际关节角/速度、TCP、已接纳命令和执行游标。TCP 使用各自 left_base/right_base；四元数均为 qx/qy/qz/qw。SDK 适配分别设置工具的 trans/rpy 与实时齐次矩阵。双臂在 RT 初始化时、上电与启动运动前调用 `setLoad`，统一设置质量 `0.71 kg`、质心 `(0.02134, -0.02368, 0.11188) m`（工具设置截图中的 `(21.34, -23.68, 111.88) mm`），转动惯量按确认值设为 `(0, 0, 0) kg·m²`。参数定义在 `rokae_sdk.cpp` 的 `RokaeArm` 构造函数中；设置失败中止初始化，成功后输出每臂 `RT load` 日志。一键启动的 `--fake-hand` 仍使用真实双臂，因此同样设置负载。SDK 头文件未明确质心坐标系，本次仅换算单位；真机质心坐标系、TCP/安装标定一致性需要现场验证。
 
 lock/unlock 是软件阶段，不做 TCP 对齐判断。wheel_reference 为指令参考，不能冒充真机传感器。
 

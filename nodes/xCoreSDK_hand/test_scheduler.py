@@ -53,6 +53,9 @@ class DelayedLink:
             raise RuntimeError('pause failed')
         self.pauses += 1
 
+    def clear_error(self):
+        pass
+
     def read_position(self):
         with self.lock:
             self.reads['position'].append(monotonic_us())
@@ -94,14 +97,14 @@ class Tests(unittest.TestCase):
             link.entered.clear()
         return scheduler, links
 
-    def send(self, scheduler, target=.2, valid=True, stamp=None, action_id=None):
+    def send(self, scheduler, target=.2, valid=True, stamp=None, action_id=None, hold=True):
         self.seq += 1
         now = stamp or monotonic_us()
         command = dict(msg_type='HandCommand', version='1.0', sequence=self.seq,
                        timestamp=1, sample_mono_us=now, clock_id=scheduler.node.clock_id,
                        publisher_id='test', session_id='11111111-1111-4111-8111-111111111111',
                        control_epoch='22222222-2222-4222-8222-222222222222', valid=valid,
-                       mode='NORMALIZED_POSITION',
+                       mode='NORMALIZED_POSITION', hold_after_motion=hold,
                        origin=dict(publisher_id='test', session_id='11111111-1111-4111-8111-111111111111',
                                    sequence=self.seq, sample_mono_us=now, clock_id=scheduler.node.clock_id),
                        hands={side: dict(drive_position_normalized=[target]*6) for side in ('left','right')})
@@ -253,6 +256,25 @@ class Tests(unittest.TestCase):
         self.feed(scheduler, .2, .3)
         self.assertTrue(all(c.held_raw is not None for c in scheduler.view.closing_holds['left']))
         self.assertTrue(scheduler.make_state()['command_valid'])
+
+    def test_release_sends_ten_frames_from_single_event_and_retries_do_not_restart(self):
+        scheduler, links = self.create(closing_hold_ms=150)
+        self.send(scheduler, .9, action_id='release', hold=False)
+        self.until(lambda: all(len(link.writes) == 10 for link in links.values()))
+        self.until(lambda: all(hand['release_writes_remaining'] == 0
+                               for hand in scheduler.make_state()['hands'].values()))
+        for link in links.values():
+            self.assertEqual([values for _, values in link.writes], [[900]*6]*10)
+            self.assertEqual(link.pauses, 0)
+        self.send(scheduler, .9, action_id='release', hold=False)
+        sequence = self.seq
+        self.until(lambda: scheduler.view.guard.last_sequence == sequence)
+        for link in links.values():
+            self.assertEqual(len(link.writes), 10)
+        self.send(scheduler, .9, action_id='another-release', hold=False)
+        self.until(lambda: all(len(link.writes) == 20 for link in links.values()))
+        for link in links.values():
+            self.assertEqual(link.pauses, 0)
 
     def test_single_command_pauses_once_and_new_same_target_resumes(self):
         scheduler, links = self.create(closing_hold_ms=150)

@@ -78,7 +78,7 @@ class Options:
 
     def required_binaries(self):
         names = ['aviator_bus', 'flight_gateway', 'aviator_core_managed']
-        names += ['simulation'] if self.mode == 'simulation' else ['manipulator', 'xCoreSDK_hand']
+        names += ['simulation'] if self.mode == 'simulation' else ['manipulator']
         if self.logger:
             names.append('aviator_logger')
         if self.tts:

@@ -17,7 +17,10 @@ ALGORITHM = "SHA256SUMS-v1"
 METADATA = {"SHA256SUMS", "release-checksum.json"}
 IDENTITY_FILES = METADATA | {"release-version.json"}
 # Only these runtime locations are excluded, never arbitrary config/file extensions.
-EXCLUDED_DIRS = {"logs", "cache", "tmp", "run", "test-output", "share/aviator/logs"}
+# xCoreSDK creates _rokae_log_ relative to the process working directory.
+# Cover the release root and the installed launchers' working directory only.
+LEGACY_EXCLUDED_DIRS = {"logs", "cache", "tmp", "run", "test-output", "share/aviator/logs"}
+EXCLUDED_DIRS = LEGACY_EXCLUDED_DIRS | {"_rokae_log_", "share/aviator/_rokae_log_"}
 TEST_INPUT = b"AVIATOR-RS422-BENCH-TEST-v1\n"
 
 
@@ -51,8 +54,10 @@ def validate_path(name):
     return name
 
 
-def excluded(name):
-    return "__pycache__" in name.split("/") or any(name == d or name.startswith(d + "/") for d in EXCLUDED_DIRS)
+def excluded(name, *, directories=None):
+    if directories is None:
+        directories = EXCLUDED_DIRS
+    return "__pycache__" in name.split("/") or any(name == d or name.startswith(d + "/") for d in directories)
 
 
 def inventory(root):
@@ -97,7 +102,7 @@ def manifest(root):
     return "".join(f"{digest_file(path)}  {name}\n" for name, path in inventory(root).items()).encode("utf-8")
 
 
-def manifest_paths(raw):
+def manifest_paths(raw, *, excluded_directories=None):
     paths = []
     if not raw.endswith(b"\n"):
         raise ValueError("SHA256SUMS must end with LF")
@@ -106,7 +111,7 @@ def manifest_paths(raw):
         if not match:
             raise ValueError("noncanonical SHA256SUMS")
         name = validate_path(match[1])
-        if name in METADATA or excluded(name):
+        if name in METADATA or excluded(name, directories=excluded_directories):
             raise ValueError("excluded file in SHA256SUMS")
         paths.append(name)
     if not paths or paths != sorted(paths, key=lambda p: p.encode("utf-8")) or len({p.casefold() for p in paths}) != len(paths):
@@ -149,14 +154,20 @@ def read_version(root, *, allow_legacy=False):
         raise ValueError("invalid release version record")
     if not isinstance(value.get("release_profile"), str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]*", value["release_profile"]):
         raise ValueError("invalid release profile")
-    if value.get("checksum_scope") != scope():
+    accepted_scopes = [scope()]
+    if allow_legacy:
+        # Only publication accepts the scope used before SDK log exclusions.
+        accepted_scopes.append(scope(directories=LEGACY_EXCLUDED_DIRS))
+    if value.get("checksum_scope") not in accepted_scopes:
         raise ValueError("unsupported checksum scope")
     return value
 
 
-def scope():
+def scope(*, directories=None):
+    if directories is None:
+        directories = EXCLUDED_DIRS
     return {"include": ["**"], "exclude_files": sorted(METADATA),
-            "exclude_directories": sorted(EXCLUDED_DIRS), "exclude_directory_names": ["__pycache__"]}
+            "exclude_directories": sorted(directories), "exclude_directory_names": ["__pycache__"]}
 
 
 def seal(root):
@@ -252,8 +263,12 @@ def publish(stage, root):
     current = inventory(root)
     if current or any(os.path.lexists(root / p) for p in METADATA):
         # Require a complete old record, but permit replacing locally modified bytes.
-        read_version(root, allow_legacy=True)
-        old = manifest_paths((root / "SHA256SUMS").read_bytes())
+        previous = read_version(root, allow_legacy=True)
+        old = manifest_paths((root / "SHA256SUMS").read_bytes(),
+                             excluded_directories=previous["checksum_scope"]["exclude_directories"])
+        # Former packages could own SDK logs. They are runtime data now and must
+        # survive publication even when present in the old manifest.
+        old = {name for name in old if not excluded(name)}
         json.loads((root / "release-checksum.json").read_bytes())
         if set(current) - old:
             raise ValueError("unmanaged files in installation; choose a clean prefix")

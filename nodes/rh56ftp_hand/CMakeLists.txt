@@ -1,7 +1,7 @@
 # Python-only Modbus TCP adapter.  It is independent from the SocketCAN hand node.
 find_package(Python3 QUIET COMPONENTS Interpreter)
 
-install(PROGRAMS rh56ftp_node.py fake_rh56ftp_hand.py
+install(PROGRAMS rh56ftp_node.py fake_rh56ftp_hand.py launch.py
   DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/rh56ftp_hand)
 install(FILES README.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/aviator/rh56ftp_hand)
@@ -16,6 +16,9 @@ if(BUILD_TESTING AND Python3_Interpreter_FOUND)
   add_test(NAME rh56ftp_node_unit
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_rh56ftp_node.py)
   set_tests_properties(rh56ftp_node_unit PROPERTIES TIMEOUT 15)
+  add_test(NAME rh56ftp_pause_policy
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_pause_policy.py)
+  set_tests_properties(rh56ftp_pause_policy PROPERTIES TIMEOUT 15)
   add_test(NAME fake_rh56ftp_hand
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_fake_rh56ftp_hand.py)
   set_tests_properties(fake_rh56ftp_hand PROPERTIES TIMEOUT 20)

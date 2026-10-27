@@ -52,6 +52,7 @@ REG = {
     "statusCode": 1612,  # 6 byte
     "temp":       1618,  # 6 byte
     "mode":       1625,  # 6 byte
+    "pause":      1634,  # low byte: 1 = whole-hand pause
 }
 
 
@@ -174,6 +175,10 @@ class HandLink:
             # Manual addresses are byte offsets; each angle occupies two bytes.
             self._write(REG["angleSet"] + 2 * start, values[start:end])
             start = end
+
+    def write_pause(self) -> None:
+        """整手暂停：1634 低字节写 1，Modbus 按一个 16 位寄存器写入。"""
+        self._write(REG["pause"], [1])
 
     def write_mode_set(self, values: list[int]) -> None:
         """六路模式字节：0 速度力保护，1 力控，2 负载保持。"""

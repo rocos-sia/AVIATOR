@@ -69,7 +69,8 @@ def prepare_config(source, destination):
             math.isfinite(displacement) and -.170 <= displacement <= 0):
         raise ValueError("wheel_initial 超出轮盘范围")
     robot.setdefault("grasp_wheel", {})["source"] = "wheel_initial"
-    hand = system.setdefault("xcore_sdk_hand", {})
+    system.setdefault("xcore_sdk_hand", {})["enabled"] = False
+    hand = system.setdefault("rh56ftp_hand", {})
     hand["config"] = str((source.parent / hand.get("config", "rh56ftp_hand.yaml")).resolve())
     system["robot"] = str(Path(destination).resolve() / "robot.yaml")
     return system, robot, robot_path
@@ -187,10 +188,11 @@ def main():
     else:
         command = ["sudo", "-n", str(bin_dir / "manipulator"), "--config", config]
         plan.append(("manipulator", command, True))
-        hand = [str(bin_dir / "xCoreSDK_hand"), "--system-config", config,
-                "--sdk-work-dir", str(output / "hand-sdk")]
-        if args.fake_hand:
-            hand.append("--fake-hand")
+        hand_script = ROOT / ("rh56ftp_hand" if (ROOT / "rh56ftp_hand").is_dir() else "nodes/rh56ftp_hand") / "launch.py"
+        hand_python = os.environ.get("HAND_PYTHON", str(Path(os.environ.get("CONDA_ROOT", Path.home() / "miniconda3"))
+                                                       / "envs/rh56-pendant/bin/python"))
+        hand = [hand_python, str(hand_script), "--system-config", config]
+        hand.append("--fake-hand" if args.fake_hand else "--no-fake-hand")
         plan.append(("hand", hand, False))
     if args.logger:
         plan.append(("logger", [str(bin_dir / "aviator_logger"), "--config", str(ROOT / "config/recording.yaml"),
@@ -259,6 +261,7 @@ def main():
             "source_system": str(source), "source_robot": str(source_robot),
             "simulation": args.simulation, "options": vars(args)}, default=str, indent=2))
         if not args.simulation:
+            subprocess.run([*hand, "--check-config"], check=True)
             subprocess.run(["sudo", "-v"], check=True)
         children = []
         stopping = False

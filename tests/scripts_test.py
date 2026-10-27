@@ -46,7 +46,8 @@ class ScriptsTests(unittest.TestCase):
                 text=self.run_script(name,'--dry-run',*options,
                                      env={'AVIATOR_BIN':str(self.directory/'binary dir'),'HAND_PYTHON':'/missing/python'})
                 self.assertIn('manipulator',text)
-                self.assertIn('xCoreSDK_hand',text)
+                self.assertIn('rh56ftp_hand/launch.py',text)
+                self.assertNotIn('xCoreSDK_hand',text)
                 arm=next(line for line in text.splitlines() if line.startswith('启动 manipulator:'))
                 self.assertNotIn('--fake-hand',arm)
                 self.assertNotIn('rh56ftp_node.py',text)
@@ -270,7 +271,7 @@ while True:
             "    name+='-worker'\n    signal.signal(signal.SIGTERM,signal.SIG_IGN)\n    event('start')\n" +
             "while True: time.sleep(.02)\n")
         node.chmod(0o755)
-        for name in ('aviator_bus','aviator_photoelectric','manipulator','xCoreSDK_hand','flight_gateway','aviator_core_managed',
+        for name in ('aviator_bus','aviator_photoelectric','manipulator','hand-python','flight_gateway','aviator_core_managed',
                      'aviator_core_camera_servo','camera-python','aviator_monitor'):
             (mock/name).symlink_to(node)
         for name in ('google-chrome-stable','curl'):
@@ -291,7 +292,7 @@ while True:
             'sys.exit(child.wait())\n')
         (mock/'sudo').chmod(0o755)
         env = {**os.environ, 'PATH':str(mock)+':'+os.environ['PATH'], 'AVIATOR_BIN':str(mock),
-               'CAMERA_PYTHON':str(mock/'camera-python'), 'START_DELAY':'.1',
+               'CAMERA_PYTHON':str(mock/'camera-python'), 'HAND_PYTHON':str(mock/'hand-python'), 'START_DELAY':'.1',
                'TEST_EVENTS':str(events), 'TMPDIR':str(self.directory), 'XDG_RUNTIME_DIR':str(self.directory)}
         # START_DELAY deliberately uses the accepted decimal spelling.
         env['START_DELAY']='0.1'
@@ -348,11 +349,11 @@ while True:
             rows=events.read_text().splitlines()
             if script == 'start_aviator.sh':
                 arm_ready=next(i for i,row in enumerate(rows) if row.startswith('ready manipulator '))
-                hand_start=next(i for i,row in enumerate(rows) if row.startswith('start xCoreSDK_hand '))
+                hand_start=next(i for i,row in enumerate(rows) if row.startswith('start hand-python '))
                 self.assertLess(arm_ready,hand_start,rows)
             core_stop=next(i for i,row in enumerate(rows) if row.startswith('stop '+core+' '))
             arm_stop=next(i for i,row in enumerate(rows) if row.startswith('stop manipulator '))
-            hand_stop=next(i for i,row in enumerate(rows) if row.startswith("stop xCoreSDK_hand "))
+            hand_stop=next(i for i,row in enumerate(rows) if row.startswith("stop hand-python "))
             self.assertLess(core_stop,hand_stop,rows)
             self.assertLess(hand_stop,arm_stop,rows)
             if script == 'start_aviator.sh':
@@ -380,7 +381,8 @@ while True:
         # Select hand behavior explicitly, independent of site configuration defaults.
         for options in (['--no-fake-hand'],['--fake-hand'],['--simulation','--headless','--no-fake-hand']):
             text=self.run_script('start_wheel_bandwidth.sh','--dry-run',*options)
-            self.assertNotIn('rh56ftp_node.py',text);self.assertNotIn('fake_rh56ftp_hand.py',text)
+            self.assertNotIn('xCoreSDK_hand',text)
+            self.assertEqual('rh56ftp_hand/launch.py' in text, '--simulation' not in options)
             self.assertEqual('--fake-hand' in text,'--fake-hand' in options)
         self.run_script('start_wheel_bandwidth.sh','--dry-run','--simulation','--fake-hand',ok=False)
         self.assertEqual(list(self.directory.iterdir()),[])

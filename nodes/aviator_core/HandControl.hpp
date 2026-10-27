@@ -49,6 +49,7 @@ private:
     uint64_t recovery_timeout_ = 3000000;
     std::array<uint64_t, 2> unhealthy_since_{}, healthy_sample_{};
     std::array<std::string, 2> health_reason_{};
+    std::array<bool, 2> clear_failed_{};
     double tolerance_ = .03;
     Json body_ = Json::object();
 };

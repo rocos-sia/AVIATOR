@@ -51,6 +51,7 @@ class Tests(unittest.TestCase):
             self.until(lambda: self.demo.status()['hands'][side]['paused'])
             self.demo.action('open')
             self.until(lambda: self.demo.status()['hands'][side]['drive_position_normalized'] == [.5,1,1,1,1,1])
+            self.assertIs(node.last_command['hold_after_motion'], False)
             self.demo.close()
 
     def test_50ms_fault_samples_capture_transient_without_ui_polling(self):
