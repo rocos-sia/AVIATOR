@@ -128,12 +128,14 @@ class DeploymentTest(unittest.TestCase):
                     'apt_packages': [package, 'python3-tk']}))
                 # Stop before environment setup or any system mutation.
                 with mock.patch.object(remote, 'run') as run, \
-                        mock.patch.object(remote.shutil, 'which', return_value='/usr/bin/google-chrome-stable'), \
+                        mock.patch.object(remote.shutil, 'which', return_value=None), \
                         mock.patch.object(remote, 'prepare_python', side_effect=RuntimeError('stop after apt')):
                     with self.assertRaisesRegex(RuntimeError, 'stop after apt'):
                         remote.setup_dependencies(self.root, SimpleNamespace())
-                run.assert_any_call(['apt-get', 'install', '-y', '--no-remove',
+                run.assert_any_call(['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '-y', '--no-remove',
                                      '--no-install-recommends', 'python3-tk', 'python3.10-venv'])
+                run.assert_any_call(['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '-y', '--no-remove',
+                                     resource / 'google-chrome-stable_current_amd64.deb'])
 
     def test_venv_uses_python_310_and_offline_wheels(self):
         with mock.patch.object(remote.os, 'chown'), mock.patch.object(remote, 'user_run') as run:

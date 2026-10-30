@@ -464,33 +464,37 @@ class Aviator::Impl {
         try {
             auto seed = planningStart();
             auto wheel = grasp();
-            phase = "forward kinematics";
-            std::array<pinocchio::SE3, 2> from;
-            for (int side = 0; side < 2; ++side) {
-                std::array<double, 7> q{};
-                std::copy_n(seed.begin() + side * 7, 7, q.begin());
-                require(kinematics_->solveFk(static_cast<Side>(side), q, from[side]), "Release FK failed");
-            }
             Path path;
-            phase = "retreat inverse kinematics";
-            const auto steps = static_cast<size_t>(std::ceil(final_approach_duration_ / planning_period_));
-            for (size_t k = 0; k <= steps; ++k) {
-                require(!cancel_, "Release cancelled");
-                std::array<pinocchio::SE3, 2> targets;
-                for (int side = 0; side < 2; ++side)
-                    targets[side] = interpolatePose(from[side], target(side, wheel.angle, wheel.displacement,
-                                                                            approach_distance_), smooth(double(k) / steps));
-                if (k) seed = solve(targets, seed);
-                path.push_back({seed, wheel.angle, wheel.displacement});
+            if (approach_distance_ != 0) {
+                phase = "forward kinematics";
+                std::array<pinocchio::SE3, 2> from, to;
+                for (int side = 0; side < 2; ++side) {
+                    std::array<double, 7> q{};
+                    std::copy_n(seed.begin() + side * 7, 7, q.begin());
+                    require(kinematics_->solveFk(static_cast<Side>(side), q, from[side]), "Release FK failed");
+                    // Retreat from the synchronized hold, not a stale wheel reference.
+                    to[side] = from[side];
+                    to[side].translation() -= from[side].rotation() * Eigen::Vector3d(0, 0, approach_distance_);
+                }
+                phase = "retreat inverse kinematics";
+                const auto steps = static_cast<size_t>(std::ceil(final_approach_duration_ / planning_period_));
+                for (size_t k = 0; k <= steps; ++k) {
+                    require(!cancel_, "Release cancelled");
+                    std::array<pinocchio::SE3, 2> targets;
+                    for (int side = 0; side < 2; ++side)
+                        targets[side] = interpolatePose(from[side], to[side], smooth(double(k) / steps));
+                    if (k) seed = solve(targets, seed);
+                    path.push_back({seed, wheel.angle, wheel.displacement});
+                }
+                phase = "retreat validation";
+                validate(path, final_approach_duration_);
             }
-            phase = "retreat validation";
-            validate(path, final_approach_duration_);
             require(!cancel_, "Release cancelled");
             phase = "open hands";
             recovery_pose_known_ = false;
             command(GraspCommand::Unlock);
             phase = "retreat execution";
-            execute(path, final_approach_duration_, false);
+            if (!path.empty()) execute(path, final_approach_duration_, false);
             recovery_pose_known_ = true;
             setState("ENABLED");
         } catch (const std::exception& e) {

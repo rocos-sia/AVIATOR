@@ -45,6 +45,13 @@ struct Device : DataLink {
     std::vector<std::vector<JointFrame>> trajectories;
     std::vector<GraspCommand> commands;
     std::atomic<bool> fail_trajectory{false};
+    void initializeHome(const YAML::Node& config) {
+        const auto posture = YAML::LoadFile(config["posture"].as<std::string>());
+        for (int side = 0; side < 2; ++side) {
+            const auto home = posture[side ? "right_home_deg" : "left_home_deg"].as<std::vector<double>>();
+            for (int j = 0; j < 7; ++j) q[side * 7 + j] = home[j] * M_PI / 180;
+        }
+    }
     double getJointPosition(Side s, int j) const override { return q[int(s)*7+j]; }
     double getJointVelocity(Side, int) const override { return 0; }
     void setJointPositions(const std::array<double, 14> &v) override { q = v; }
@@ -108,7 +115,7 @@ void cameraGrasp(const fs::path& dir, const YAML::Node& original, const YAML::No
         std::ofstream(dir / "camera-robot.yaml") << config;
         auto device = std::make_unique<CameraDevice>();
         auto* observed = device.get();
-        observed->q[1] = observed->q[8] = M_PI / 2;
+        observed->initializeHome(config);
         observed->displacement = -.085;
         observed->fail_camera = mode == "failure";
         auto ik = std::make_unique<RecordingIk>();
@@ -164,6 +171,61 @@ void cameraGrasp(const fs::path& dir, const YAML::Node& original, const YAML::No
         }
     }
 }
+void releaseFromCurrentPose(const fs::path& dir, const YAML::Node& original, const YAML::Node& geometry) {
+    struct ReleaseDevice : Device {
+        bool releasing = false;
+        void runTrajectory(const std::vector<JointFrame>& frames, const std::atomic<bool>& cancel) override {
+            if (releasing) {
+                check(locked == 0, "Retreat started before opening hands");
+                check(frames.front().q == q, "Retreat did not start at the held joints");
+            }
+            Device::runTrajectory(frames, cancel);
+        }
+    };
+    for (double distance : {0., .02}) {
+        auto grasp = YAML::Clone(geometry);
+        grasp["approach_distance"] = distance;
+        std::ofstream(dir / "release-grasp.yaml") << grasp;
+        auto config = YAML::Clone(original);
+        config["grasp"] = (dir / "release-grasp.yaml").string();
+        std::ofstream(dir / "release-robot.yaml") << config;
+        auto device = std::make_unique<ReleaseDevice>();
+        auto* observed = device.get();
+        device->initializeHome(config);
+        auto ik = std::make_unique<RecordingIk>();
+        auto* solver = ik.get();
+        Aviator core(std::move(device), std::move(ik), nullptr, (dir / "release-robot.yaml").string());
+        core.init(); core.enable(); core.approachHandles(); core.lockHandles();
+        // Model a changed held FK pose while leaving the wheel reference at grasp time.
+        std::array<pinocchio::SE3, 2> current;
+        std::array<size_t, 2> before_ik;
+        for (int side = 0; side < 2; ++side) {
+            current[side] = solver->targets[side].back();
+            current[side].translation() += Eigen::Vector3d(.04, side ? -.03 : .03, -.02);
+            current[side].rotation() *= Eigen::AngleAxisd(side ? -.2 : .3, Eigen::Vector3d::UnitY()).toRotationMatrix();
+            solver->targets[side].back() = current[side];
+            before_ik[side] = solver->targets[side].size();
+        }
+        const auto before_trajectories = observed->trajectories.size();
+        observed->releasing = true;
+        core.releaseHandles();
+        check(core.GetState() == "ENABLED" && observed->locked == 0, "Release did not open hands");
+        check(observed->trajectories.size() == before_trajectories + (distance != 0),
+              "Zero retreat moved arms or positive retreat was skipped");
+        for (int side = 0; side < 2; ++side) {
+            if (distance == 0) {
+                check(solver->targets[side].size() == before_ik[side], "Zero retreat still planned IK");
+            } else {
+                const auto& end = solver->targets[side].back();
+                check(rotationError(end, current[side]) < 1e-10, "Retreat changed the held orientation");
+                const Eigen::Vector3d local_delta = current[side].rotation().transpose() *
+                    (end.translation() - current[side].translation());
+                check((local_delta - Eigen::Vector3d(0, 0, -distance)).norm() < 1e-10,
+                      "Retreat returned to the old grasp reference");
+            }
+        }
+    }
+}
 // Let the executor enter FAULT before the owner consumes the failed future. This
 // reproduces the release exception being masked by a secondary readiness failure.
 void managedReleaseFailure(const fs::path& config, bool camera = false, bool during_retreat = false) {
@@ -172,7 +234,7 @@ void managedReleaseFailure(const fs::path& config, bool camera = false, bool dur
     else device = std::make_unique<Device>();
     auto* raw_device = device.get();
     auto* observed = camera ? static_cast<CameraDevice*>(device.get()) : nullptr;
-    device->q[1] = device->q[8] = M_PI / 2;
+    device->initializeHome(YAML::LoadFile(config.string()));
     auto ik = std::make_unique<RecordingIk>();
     auto* solver = ik.get();
     bool allowed = false;
@@ -247,7 +309,7 @@ struct ProfileDevice : Device {
 void managedControlEntry(const fs::path& config, const std::string& outcome) {
     auto device = std::make_unique<ProfileDevice>();
     auto* observed = device.get();
-    device->q[1] = device->q[8] = M_PI / 2;
+    device->initializeHome(YAML::LoadFile(config.string()));
     device->fail_default = outcome == "failure";
     bool allowed = false, input_ready = true;
     int heartbeats = 0;
@@ -422,7 +484,7 @@ int main(int argc, char **argv) try {
         std::ofstream(dir / "grasp.yaml") << g;
         std::ofstream(dir / "robot.yaml") << config;
         auto device = std::make_unique<Device>();
-        device->q[1] = device->q[8] = M_PI / 2;
+        device->initializeHome(config);
         auto *executed = device.get();
         auto ik = std::make_unique<RecordingIk>();
         auto *record = ik.get();
@@ -471,6 +533,7 @@ int main(int argc, char **argv) try {
     }
     runCore(split); runCore(legacy);
     cameraGrasp(dir, config, legacy);
+    releaseFromCurrentPose(dir, config, legacy);
     managedReleaseFailure(dir / "robot.yaml");
     managedReleaseFailure(dir / "robot.yaml", false, true);
     auto camera_config = YAML::Clone(config);

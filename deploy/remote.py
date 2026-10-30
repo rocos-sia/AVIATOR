@@ -297,9 +297,11 @@ def setup_dependencies(root, account, skip_apt=False):
                        for p in packages})
     if not skip_apt:
         run(['apt-get', 'update'])
-        run(['apt-get', 'install', '-y', '--no-remove', '--no-install-recommends', *packages])
+        # PackageKit/automatic updates may temporarily own the dpkg frontend lock.
+        apt_install = ['apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '-y', '--no-remove']
+        run([*apt_install, '--no-install-recommends', *packages])
         if not shutil.which('google-chrome-stable'):
-            run(['apt-get', 'install', '-y', '--no-remove',
+            run([*apt_install,
                  resource / 'deploy/google-chrome-stable_current_amd64.deb'])
     prepare_python(root, account)
     # Startup helpers are called both through shell launchers and directly by desktop tools.
