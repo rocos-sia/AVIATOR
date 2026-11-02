@@ -232,32 +232,53 @@ int main() try {
     };
     Downlink f;
     f.operation = 0x20;
-    for (int i = 0; i < 20; ++i)
-        check(!gate_tick(f, true), "startup cannot execute held command");
-    f.operation = 0;
-    for (int i = 0; i < 10; ++i)
-        gate_tick(f, true);
-    f.operation = 0x20;
     for (int i = 0; i < 4; ++i)
-        check(!gate_tick(f, true), "before fifth frame");
-    check(gate_tick(f, true) == 0x20, "fifth frame dispatches");
+        check(!gate_tick(f, true), "startup operation waits for five frames");
+    check(gate_tick(f, true) == 0x20, "startup needs no neutral sequence");
     for (int i = 0; i < 40; ++i)
         check(!gate_tick(f, true), "remaining copies never repeat");
-    f.operation = 0;
+    check(!gate_tick(f, false), "counter gap does not replay dispatched command");
+    gate.interrupt();
     for (int i = 0; i < 10; ++i)
-        gate_tick(f, true);
+        check(!gate_tick(f, true), "interruption preserves dispatched command latch");
+    f.operation = 0x10;
+    for (int i = 0; i < 4; ++i)
+        check(!gate_tick(f, true), "different code starts a fresh confirmation");
+    check(gate_tick(f, true) == 0x10, "different operation needs no intervening zero");
+    f.operation = 0;
+    check(!gate_tick(f, true), "one zero separates repeated operations");
+    f.operation = 0x10;
+    for (int i = 0; i < 4; ++i)
+        check(!gate_tick(f, true), "repeat still needs five confirmed frames");
+    check(gate_tick(f, true) == 0x10, "repeat after one zero dispatches once");
     f.operation = 0x20;
     for (int i = 0; i < 4; ++i)
-        gate_tick(f, true);
-    check(!gate_tick(f, false), "gap revokes operation arm");
-    CommandSender sender;
-    check(!sender.request(0x10), "sender startup neutral");
+        check(!gate_tick(f, true), "pending different operation");
+    check(!gate_tick(f, false), "gap restarts confirmation");
+    for (int i = 0; i < 3; ++i)
+        check(!gate_tick(f, true), "confirmation after gap starts from first fresh frame");
+    check(gate_tick(f, true) == 0x20, "five fresh frames after gap dispatch without zero");
+    f.operation = 0x30;
     for (int i = 0; i < 10; ++i)
-        check(sender.next() == 0, "neutral train");
-    check(sender.request(0x10), "accept operation");
+        check(!gate.update(f, true, gate_time), "instantaneous frames cannot confirm");
+    check(gate.update(f, true, gate_time + 4 * period_us) == 0x30,
+          "confirmation requires real elapsed time");
+    CommandSender sender;
+    check(sender.request(0x10), "sender accepts operation at startup");
+    check(!sender.request(0x20), "active ten-frame train cannot be interrupted");
     for (int i = 0; i < 10; ++i)
         check(sender.next() == 0x10, "exactly ten command frames");
-    check(sender.next() == 0 && !sender.request(0x10), "neutral between operations");
+    check(sender.request(0x20), "different command starts immediately");
+    for (int i = 0; i < 10; ++i)
+        check(sender.next() == 0x20, "no forced zero between different commands");
+    check(sender.request(0x20), "adjacent same-code click accepted");
+    check(sender.next() == 0, "one zero separates adjacent same-code clicks");
+    for (int i = 0; i < 10; ++i)
+        check(sender.next() == 0x20, "same-code click still emits ten command frames");
+    check(sender.next() == 0 && sender.request(0x20), "idle has no cooldown");
+    check(sender.next() == 0x20, "already emitted idle needs no extra separator");
+    sender.reset();
+    check(sender.next() == 0 && sender.request(0x10), "reset cancels train without cooldown");
     DualReceiver dual(50000, 2, 100);
     uint64_t t = 1000000;
     uint8_t seq = 250;
@@ -277,6 +298,10 @@ int main() try {
     for (int i = 0; i < 10; ++i)
         events += tick(0x30) != 0;
     check(events == 1, "dual copies are one operation");
+    for (int i = 0; i < 10; ++i) {
+        check(!tick(0x30, true, true, i), "held operation does not repeat as position changes");
+        check(dual.target().roll == i, "position updates independently of operation latch");
+    }
     const auto sample = dual.sampleTime();
     dual.receive(0, dual.channels[0].frame, t + 1000);
     dual.update(t + 1000);
@@ -289,6 +314,14 @@ int main() try {
     check(dual.selected() == 1, "recovered primary does not preempt");
     dual.update(t + 100000);
     check(!dual.valid(t + 100000), "both stale revoke input");
+    DualReceiver startup(50000, 10, 100);
+    int startup_events = 0;
+    for (unsigned i = 0; i < 40; ++i) {
+        const auto clock = 1000000 + i * period_us;
+        startup.receive(0, {uint8_t(i), 0x10, 0, 0}, clock);
+        startup_events += startup.update(clock) == 0x10;
+    }
+    check(startup_events == 1, "startup confirms held operation after channel recovery without neutral");
     DualReceiver burst(50000, 1, 100);
     t = 2000000;
     for (int i = 0; i < 20; ++i) {
@@ -299,6 +332,22 @@ int main() try {
     for (int i = 20; i < 25; ++i)
         burst.receive(0, {uint8_t(i), 0x20, 0, 0}, t);
     check(!burst.update(t), "buffered five-frame burst cannot execute");
+    DualReceiver interrupted_batch(50000, 1, 100);
+    t = 4000000;
+    for (unsigned i = 0; i < 4; ++i) {
+        interrupted_batch.receive(0, {uint8_t(i), 0x10, 0, 0}, t);
+        check(!interrupted_batch.update(t), "partial confirmation before mixed batch");
+        t += period_us;
+    }
+    interrupted_batch.receive(0, {4, 0x10, 0, 0}, t);
+    interrupted_batch.receive(0, {6, 0x10, 0, 0}, t);
+    check(!interrupted_batch.update(t), "later counter gap cancels confirmation within batch");
+    for (unsigned i = 7; i <= 10; ++i) {
+        t += period_us;
+        interrupted_batch.receive(0, {uint8_t(i), 0x10, 0, 0}, t);
+        check(interrupted_batch.update(t) == (i == 10 ? 0x10 : 0),
+              "cancelled confirmation can complete after five fresh frames without idle");
+    }
     for (unsigned batch_size : {2u, 3u, 4u}) {
         for (unsigned phase = 0; phase < batch_size; ++phase) {
             DualReceiver batched(batch_size == 4 ? 60000 : 50000, 10, 100);
@@ -325,8 +374,6 @@ int main() try {
             for (uint8_t op : {0x10, 0x20, 0x30, 0x40, 0x50, 0x60}) {
                 for (unsigned i = 0; i < 10; ++i)
                     send(op);
-                for (unsigned i = 0; i < 10; ++i)
-                    send(0);
             }
             for (unsigned i = 0; i < 12; ++i)
                 send(0);

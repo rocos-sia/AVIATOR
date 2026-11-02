@@ -350,6 +350,9 @@ class ReleaseTest(unittest.TestCase):
         runtime = self.root / "share/aviator"
         (runtime / "scripts").mkdir(parents=True)
         (runtime / "rh56ftp_hand").mkdir()
+        (runtime / "config").mkdir()
+        (runtime / "config/system.yaml").write_text("robot: robot.yaml\n")
+        (runtime / "config/robot.yaml").write_text("grasp_wheel: {source: camera}\n")
         for name in ("start_aviator.sh", "start_camera_servo.sh"):
             launcher = runtime / "scripts" / name
             shutil.copy2(repo / "scripts" / name, launcher)

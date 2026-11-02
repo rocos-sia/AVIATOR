@@ -177,20 +177,23 @@ std::vector<Bytes> Parser::feed(const uint8_t* data, size_t n) {
     return out;
 }
 bool CommandSender::request(uint8_t op) {
-    if (!*operationName(op) || remaining_ || neutral_)
+    if (!*operationName(op) || remaining_)
         return false;
+    // Separate adjacent clicks of the same code with one idle frame.
+    separator_ = last_emitted_ == op;
     operation_ = op;
     remaining_ = 10;
     return true;
 }
 uint8_t CommandSender::next() {
-    if (remaining_) {
-        if (!--remaining_)
-            neutral_ = 10;
-        return operation_;
+    if (separator_) {
+        separator_ = false;
+        return last_emitted_ = 0;
     }
-    if (neutral_)
-        --neutral_;
-    return 0;
+    if (remaining_) {
+        --remaining_;
+        return last_emitted_ = operation_;
+    }
+    return last_emitted_ = 0;
 }
 } // namespace flight_simulator::rs422

@@ -151,7 +151,10 @@ def main():
             assert observation['selected_channel'] == 'B'
             assert not observation['channels'][0]['healthy'] and observation['channels'][1]['healthy']
             assert observation['channels'][1]['received_mono_us'] == seen_commands[-1]['sample_mono_us']
-            for _ in range(24): cycle()
+            # Keep the old code held across failover; then change directly to a
+            # different operation, without any neutral frame in between.
+            for _ in range(24): cycle(0x20)
+            assert len(requests) == 1, 'held command replayed after failover/timeout'
             assert received[0][-1][3] == 1, 'primary recovery must not preempt'
             for _ in range(10): cycle(0x40)
             for _ in range(10): cycle()
@@ -178,14 +181,24 @@ def main():
             assert seen_commands[-1]['valid'] and len(requests) == 2
             # One operation followed by idle in the same read must remain visible,
             # even though it never meets the operation gate and never reaches Core.
+            operation_started = time.time_ns() // 1000
             cycle(prefix_operation=0x40)
-            for _ in range(8): cycle()
+            # Wait for both channels' fresh 50 Hz observations rather than
+            # assuming the last publication already includes the serial read.
+            for _ in range(40):
+                cycle()
+                observed = seen_commands[-1]['rs422']['channels']
+                if all(channel['raw_bytes'][3] == 0 and
+                       channel['last_operation']['received_utc_us'] >= operation_started
+                       for channel in observed):
+                    break
             for channel in seen_commands[-1]['rs422']['channels']:
                 assert channel['raw_bytes'][3] == 0
                 assert channel['last_operation']['raw_bytes'][3] == 0x40
-                assert channel['last_operation']['request_id'] is None
+                assert channel['last_operation']['received_utc_us'] >= operation_started, channel
+                assert channel['last_operation']['request_id'] is None, channel
             assert len(requests) == 2
-            print('PASS: real dual-PTY robot, 80 Hz uplinks, FLIGHT input, single execution, failover, CRC loss, stale Core, recovery')
+            print('PASS: real dual-PTY robot, 80 Hz uplinks, FLIGHT input, direct operation change without neutral, single execution, failover, CRC loss, stale Core, recovery')
         except Exception:
             log.flush();log.seek(0);print(log.read(), file=sys.stderr)
             raise

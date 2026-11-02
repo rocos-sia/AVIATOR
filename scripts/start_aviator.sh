@@ -12,6 +12,7 @@ SIMULATION=false
 RS422=false
 FAKE_HAND=false
 HEADLESS=false
+NO_BROWSER=false
 LOGGER=false
 TTS=false
 WHEEL_TEST=false
@@ -26,16 +27,19 @@ for arg in "$@"; do
         --rs422) RS422=true ;;
         --fake-hand) FAKE_HAND=true ;;
         --headless) HEADLESS=true ;;
+        --no-browser) NO_BROWSER=true ;;
         --logger) LOGGER=true ;;
         --tts) TTS=true ;;
         --wheel-test) WHEEL_TEST=true ;;
         -h|--help)
-            echo '用法: ./scripts/start_aviator.sh [--simulation | --fake-hand] [--headless] [--rs422 | --wheel-test] [--logger] [--tts] [--dry-run]'
+            echo '用法: ./scripts/start_aviator.sh [--simulation | --fake-hand] [--headless] [--no-browser] [--rs422 | --wheel-test] [--logger] [--tts] [--dry-run]'
             echo '默认启动 Rokae + RH56FTP，加载 config/system.yaml。'
             echo '真机先启动 Bus 和 X1 光电节点，再启动设备和 Core；Core 收到有效 1 后才允许初始化。'
             echo '--simulation 使用单个仿真进程替代设备节点，加载 config/system-simulation.yaml。'
+            echo '--no-browser 不自动打开浏览器；Monitor 仍可通过 http://127.0.0.1:8081 访问。'
             echo '--rs422 选择双路串口配置，Core 输入来源为 FLIGHT；先编辑 flight-rs422.yaml。'
-            echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂和相机照常启动。'
+            echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂照常启动。'
+            echo '真机仅在 grasp_wheel.source=camera 时启动相机；wheel_initial 或省略时跳过相机。'
             echo '--wheel-test 打开轮盘五点精度测试 UI，独占网关输入；UI_PYTHON 可指定含 tkinter 的 Python。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
@@ -87,6 +91,42 @@ UI_PYTHON=${UI_PYTHON:-/usr/bin/python3}
 MONITOR_BIN=${MONITOR_BIN:-$AVIATOR_BIN/aviator_monitor}
 TTS_CONFIG=${TTS_CONFIG:-$ROOT/config/tts.yaml}
 PHOTOELECTRIC_CONFIG=${PHOTOELECTRIC_CONFIG:-$ROOT/config/photoelectric.yaml}
+# Resolve the same robot file as Core. Parse YAML before starting any devices;
+# malformed settings must not silently disable camera acquisition.
+START_CAMERA=false
+ROBOT_CONFIG=config/robot.yaml
+if ! $SIMULATION; then
+    camera_settings=$(/usr/bin/python3 - "$SYSTEM_CONFIG" <<'PY'
+import pathlib
+import sys
+try:
+    import yaml
+    system_path = pathlib.Path(sys.argv[1])
+    system = yaml.safe_load(system_path.read_text())
+    robot_path = pathlib.Path(system['robot'])
+    if not robot_path.is_absolute():
+        robot_path = system_path.parent / robot_path
+    robot = yaml.safe_load(robot_path.read_text())
+    grasp = robot.get('grasp_wheel', {})
+    if not isinstance(grasp, dict):
+        raise ValueError('grasp_wheel must be a map')
+    source = grasp.get('source', 'wheel_initial')
+    if source not in ('wheel_initial', 'camera'):
+        raise ValueError('grasp_wheel.source must be wheel_initial or camera')
+    print(source)
+    print(robot_path)
+except Exception as error:
+    sys.exit(f'无法读取抓握相机配置，未启动设备: {error}')
+PY
+    ) || exit 2
+    GRASP_WHEEL_SOURCE=${camera_settings%%$'\n'*}
+    ROBOT_CONFIG=${camera_settings#*$'\n'}
+    if [[ $GRASP_WHEEL_SOURCE == camera ]]; then
+        START_CAMERA=true
+    else
+        echo "grasp_wheel.source=$GRASP_WHEEL_SOURCE：跳过真实相机节点及预热。"
+    fi
+fi
 START_DELAY=${START_DELAY:-2}
 AVIATOR_RECORDING_DIR=${AVIATOR_RECORDING_DIR:-$ROOT/logs}
 [[ $AVIATOR_RECORDING_DIR == /* ]] || { echo 'AVIATOR_RECORDING_DIR 必须为绝对目录' >&2; exit 2; }
@@ -265,13 +305,31 @@ wait_device_ready() {
     done
 }
 
+# The monitor browser is optional and is not a control-node dependency.
+browser_command=()
+if ! $NO_BROWSER && ! $WHEEL_TEST && [[ $REMOTE_UI == 0 ]]; then
+    for browser in google-chrome-stable google-chrome chromium chromium-browser firefox xdg-open; do
+        if command -v "$browser" >/dev/null; then
+            browser_command=("$browser")
+            case "$browser" in
+                google-chrome*|chromium*) browser_command+=(--start-fullscreen) ;;
+                firefox) browser_command+=(--new-window) ;;
+            esac
+            browser_command+=(http://127.0.0.1:8081)
+            break
+        fi
+    done
+    if ((${#browser_command[@]} == 0)); then
+        echo '未找到可用浏览器，继续启动；请手动访问 Monitor: http://127.0.0.1:8081' >&2
+    fi
+fi
+
 if ! $DRY_RUN; then
     [[ $EUID != 0 ]] || { echo '请以普通用户执行，脚本仅对 manipulator 使用 sudo。' >&2; exit 1; }
     commands=(setsid flock ps awk tail curl)
-    if ! $WHEEL_TEST && [[ $REMOTE_UI == 0 ]]; then commands+=(google-chrome-stable); fi
     executables=("$AVIATOR_BIN/aviator_bus" "$AVIATOR_BIN/flight_gateway"
         "$AVIATOR_BIN/aviator_core_managed" "$MONITOR_BIN")
-    files=("$SYSTEM_CONFIG" "$FLIGHT_CONFIG" config/robot.yaml config/camera.yaml)
+    files=("$SYSTEM_CONFIG" "$FLIGHT_CONFIG" "$ROBOT_CONFIG")
     if $WHEEL_TEST; then
         executables+=("$UI_PYTHON")
         files+=(tools/wheel_accuracy/ui.py)
@@ -287,10 +345,15 @@ if ! $DRY_RUN; then
     fi
     if $SIMULATION; then
         executables+=("$AVIATOR_BIN/simulation")
+        files+=(config/camera.yaml)
     else
         commands+=(sudo)
-        executables+=("$AVIATOR_BIN/aviator_photoelectric" "$AVIATOR_BIN/manipulator" "$HAND_PYTHON" "$CAMERA_PYTHON")
-        files+=("$PHOTOELECTRIC_CONFIG" config/camera.yaml config/rh56ftp_hand.yaml "$HAND_LAUNCHER" nodes/camera/main.py)
+        executables+=("$AVIATOR_BIN/aviator_photoelectric" "$AVIATOR_BIN/manipulator" "$HAND_PYTHON")
+        files+=("$PHOTOELECTRIC_CONFIG" config/rh56ftp_hand.yaml "$HAND_LAUNCHER")
+    fi
+    if $START_CAMERA; then
+        executables+=("$CAMERA_PYTHON")
+        files+=(config/camera.yaml nodes/camera/main.py)
     fi
     for command in "${commands[@]}"; do
         command -v "$command" >/dev/null || { echo "缺少命令: $command" >&2; exit 1; }
@@ -382,7 +445,7 @@ fi
 if $TTS; then
     start tts "$AVIATOR_BIN/aviator_tts" --config "$TTS_CONFIG" --system-config "$SYSTEM_CONFIG"
 fi
-if ! $SIMULATION; then
+if $START_CAMERA; then
     camera_view_options=(--show --print-pose)
     if [[ $REMOTE_UI == 1 ]]; then camera_view_options=(--no-show --print-pose); fi
     # Use the dedicated warmup below instead of the normal inter-node delay.
@@ -421,11 +484,15 @@ if ! $DRY_RUN; then
     done
     $ready || { echo 'Monitor 在 30 次检查后仍未就绪。' >&2; exit 1; }
 fi
-if ! $WHEEL_TEST && [[ $REMOTE_UI == 0 ]]; then
-    printf '启动 Chrome: google-chrome-stable --start-fullscreen http://127.0.0.1:8081\n'
-    # Chrome 可能复用已打开的浏览器，不将其纳入节点退出监控。
+if ((${#browser_command[@]} > 0)); then
+    printf '启动浏览器:'
+    printf ' %q' "${browser_command[@]}"
+    printf '\n'
+    # 浏览器可能复用已有进程，不将其纳入节点退出监控，也不持有启动锁。
     if ! $DRY_RUN; then
-        google-chrome-stable --start-fullscreen http://127.0.0.1:8081 >"$LOG_DIR/chrome.log" 2>&1 < /dev/null 9>&- &
+        (
+            "${browser_command[@]}" || echo '浏览器启动失败，请手动访问 Monitor: http://127.0.0.1:8081' >&2
+        ) >"$LOG_DIR/browser.log" 2>&1 < /dev/null 9>&- &
     fi
 fi
 if $LOGGER; then

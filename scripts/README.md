@@ -22,15 +22,22 @@ python scripts\split_stl.py models\meshes\Cessna\aircraft_visual.STL models\mesh
 ## 一键启动
 
 按 [启动流程](../docs/启动流程.txt) 依次启动 Bus、光电节点、Manipulator（sudo）、
-独立手节点、Gateway、Managed Core、Camera、Monitor，打开全屏 Chrome；指定 `--logger` 时最后启动 Logger：
+独立手节点、Gateway、Camera（按抓握来源启用）、Managed Core、Monitor，打开浏览器；指定 `--logger` 时最后启动 Logger：
 
 ```bash
 ./scripts/start_aviator.sh --dry-run
 ./scripts/start_aviator.sh
 ./scripts/start_aviator.sh --logger  # 开启日志记录
-./scripts/start_aviator.sh --fake-hand  # 真实机械臂和相机 + 模拟 RH56FTP 双手
+./scripts/start_aviator.sh --fake-hand  # 真实机械臂 + 模拟 RH56FTP 双手
 ./scripts/start_aviator.sh --tts  # 已准备音频包时开启离线语音提醒
 ```
+
+真机模式根据所选 system 配置指向的 robot 文件读取 `grasp_wheel.source`。
+设为 `camera` 时启动真实相机并等待预热；设为 `wheel_initial` 或省略该项时，
+跳过相机节点、相机 Python/文件依赖检查及 5 秒预热。此时没有真实相机预览、
+视觉测量和图像记录；抓握使用软件轮盘参考，实际轮盘位形应与参考匹配。
+配置无法读取或来源值非法时，在启动设备前退出。解析依赖系统 `/usr/bin/python3`
+和 `python3-yaml`（依赖安装脚本已包含）。整机仿真的虚拟相机保持启用。
 
 真机模式（含 `--fake-hand`、`--rs422`）自动启动 `aviator_photoelectric`，默认读取
 `config/photoelectric.yaml`（`/dev/ttyUSB0`，38400，X1）。首次使用先构建
@@ -55,11 +62,15 @@ Manipulator 在 sudo 内另建独立会话，将实际进程组号记录到本�
 关闭终端（SIGHUP）也会触发节点清理。清理期间重复 Ctrl+C、TERM 或 HUP 不会打断清理：先等待 Core（最多 15 秒），再等待手节点（最多 8 秒），最后停止其余节点；超时执行 SIGKILL，并回收已退出的直接子进程。清理后若仍有活动进程，会列出本次进程的 PID、进程组和状态，不无限等待。如果提示启动锁被占用，可能是启动脚本或上次异常退出后
 残留的节点仍在运行；先停止这些进程，不要删除锁文件绕过检查。进程退出后锁自动释放。
 启动顺序之间默认等待 2 秒（不代表设备已就绪），Monitor HTTP 就绪后打开浏览器。
+依次检测 `google-chrome-stable`、`google-chrome`、`chromium`、`chromium-browser`、
+`firefox`、`xdg-open`；Chrome/Chromium 使用全屏，Firefox 打开新窗口，`xdg-open` 使用系统默认浏览器。
+未找到浏览器时继续启动，可手动访问 `http://127.0.0.1:8081`；浏览器输出写入 `browser.log`。
+添加 `--no-browser` 可跳过自动打开浏览器，例如 `./scripts/start_aviator.sh --simulation --no-browser`。
 Manipulator（或 Simulation）启动后额外等待本次日志中的服务 `READY` 标记，之后才启动后续节点；
 真机手节点也在 Manipulator 就绪后启动。默认最多等待 60 秒，可通过 `DEVICE_READY_TIMEOUT`
 设为 1..3600 的整数秒数。超时会显示设备日志末尾并清理本次进程，不启动 Core。
 若设备一直未就绪，应检查对应日志及控制器 SDK 通信；ping 通只代表 IP 可达。
-相机仍使用 `--show`，因此需要桌面显示环境。
+启用真实相机时默认使用 `--show`，因此需要桌面显示环境。
 默认不开启 Logger，也不启用相机图像录制通道；各节点的运行诊断日志仍写入临时日志目录。
 真机或 `--simulation` 模式均可添加 `--logger` 开启记录。
 启用时 Logger 使用 `config/recording.yaml`，录制输出为仓库根目录的
@@ -80,7 +91,7 @@ Manipulator（或 Simulation）启动后额外等待本次日志中的服务 `RE
 `START_DELAY` 环境变量覆盖。手控制由独立 `rh56ftp_hand` 节点通过 Modbus TCP 提供，日志写入 hand.log。
 源码运行默认使用 `~/miniconda3/envs/rh56-pendant/bin/python`，可用 `HAND_PYTHON` 覆盖；
 安装包使用自带 Python。环境需要 `PyYAML`、`pyzmq`、`pymodbus==3.11.4`。
-`--fake-hand` 在同一节点入口内模拟双手，其余机械臂和相机流程照常执行；
+`--fake-hand` 在同一节点入口内模拟双手，机械臂照常执行，相机按上述抓握来源决定是否启动；
 也可在 system.yaml 的 `rh56ftp_hand.fake_hand` 中设置。不能与 `--simulation` 同时使用，
 因为整机仿真已经提供手反馈。`xcore_sdk_hand.enabled` 必须保持 `false`，让 Core 持续发送手指令。
 地址和手参数来自 `config/rh56ftp_hand.yaml`，默认端口 6000。

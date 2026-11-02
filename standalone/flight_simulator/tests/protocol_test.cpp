@@ -217,19 +217,23 @@ int main() try {
     up[63] ^= 1;
     check(!decode(up, reply));
     CommandSender sender;
-    check(!sender.request(0x10));
-    for (int i = 0; i < 10; ++i)
-        check(sender.next() == 0);
     check(sender.request(0x10));
     check(!sender.request(0x20));
     for (int i = 0; i < 10; ++i)
         check(sender.next() == 0x10);
-    check(!sender.request(0x20));
-    for (int i = 0; i < 10; ++i)
-        check(sender.next() == 0);
     check(sender.request(0x20));
+    for (int i = 0; i < 10; ++i)
+        check(sender.next() == 0x20);
+    check(sender.request(0x20));
+    check(sender.next() == 0);
+    for (int i = 0; i < 10; ++i)
+        check(sender.next() == 0x20);
+    check(sender.next() == 0);
+    check(sender.request(0x20));
+    check(sender.next() == 0x20);
     sender.reset();
     check(sender.next() == 0);
+    check(sender.request(0x10));
     check(quantize(.5) == 500 && quantize(-1) == -1000);
     std::cout << "PASS: independent wire vectors, validation, resync, command timing\n";
     return 0;

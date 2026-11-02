@@ -310,7 +310,7 @@ void runRs422(const Config& config, int signals_fd) {
                     if (code)
                         aviator::Logger::info(
                             "Simulator operation={} {}", operationName(code),
-                            sender.request(code) ? "10_FRAMES" : "BUSY_OR_NEUTRAL; press again");
+                            sender.request(code) ? "10_FRAMES" : "BUSY; press again");
                 }
         }
         now = aviator::monotonic_us();

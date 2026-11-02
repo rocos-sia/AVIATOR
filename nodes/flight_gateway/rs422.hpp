@@ -60,18 +60,17 @@ class Parser {
         count_ -= n;
     }
 };
-// Startup, discontinuity and failover require ten neutral frames before any operation.
+// Confirm each run of one operation once. Interruptions reset confirmation, not deduplication.
 class CommandGate {
   public:
     uint8_t update(const Downlink&, bool consecutive, uint64_t now);
-    void reset();
-    bool armed() const { return armed_; }
+    void interrupt();
 
   private:
-    unsigned neutral_ = 0, count_ = 0;
+    unsigned count_ = 0;
     uint8_t candidate_ = 0;
-    bool armed_ = false;
-    uint64_t neutral_since_ = 0, candidate_since_ = 0;
+    bool dispatched_ = false;
+    uint64_t candidate_since_ = 0;
 };
 class CommandSender {
   public:
@@ -80,12 +79,14 @@ class CommandSender {
     void reset() {
         operation_ = 0;
         remaining_ = 0;
-        neutral_ = 10;
+        last_emitted_ = 0;
+        separator_ = false;
     }
 
   private:
-    uint8_t operation_ = 0;
-    unsigned remaining_ = 0, neutral_ = 10;
+    uint8_t operation_ = 0, last_emitted_ = 0;
+    unsigned remaining_ = 0;
+    bool separator_ = false;
 };
 struct Channel {
     Downlink frame;

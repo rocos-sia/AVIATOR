@@ -92,7 +92,7 @@ void run(const Config& config, int stop_fd) {
                 const auto op = operationCode(config.buttons.at(index));
                 if (op)
                     std::clog << "Operation " << operationName(op) << ": "
-                              << (sender.request(op) ? "10_FRAMES" : "BUSY_OR_NEUTRAL; press again")
+                              << (sender.request(op) ? "10_FRAMES" : "BUSY; press again")
                               << "\n";
             }
         now = monotonic_us();

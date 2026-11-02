@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import struct
 import subprocess
 import sys
@@ -82,17 +83,15 @@ class ScriptsTests(unittest.TestCase):
         normal = self.run_script('start_aviator.sh', '--dry-run', '--logger', '--tts')
         remote = self.run_script('start_aviator.sh', '--dry-run', '--logger', '--tts',
                                  env={'AVIATOR_REMOTE_UI': '1'})
-        order = lambda text: [name for name in re.findall(r'^启动 ([^:]+):', text, re.M)
-                              if name != 'Chrome']
+        order = lambda text: re.findall(r'^启动 ([^:]+):', text, re.M)
         self.assertEqual(order(normal), order(remote))
-        self.assertIn('--show', normal)
-        self.assertIn('启动 Chrome:', normal)
+        self.assertNotIn('启动 camera:', normal)
         self.assertNotIn('--image-output', normal)
         self.assertNotIn('SDL_VIDEODRIVER', normal)
-        self.assertIn('--no-show', remote)
+        self.assertNotIn('启动 camera:', remote)
         self.assertIn('SDL_VIDEODRIVER=dummy', remote)
         self.assertIn('--image-output', remote)
-        self.assertNotIn('启动 Chrome:', remote)
+        self.assertNotIn('启动浏览器:', remote)
         self.assertNotIn('--fake-hand', remote)
         self.run_script('start_aviator.sh', '--dry-run', ok=False, env={'AVIATOR_REMOTE_UI': 'bad'})
         keyboard_env = {'AVIATOR_REMOTE_UI': '1', 'AVIATOR_REMOTE_KEYBOARD': '1'}
@@ -100,13 +99,96 @@ class ScriptsTests(unittest.TestCase):
         self.assertEqual(order(normal), order(keyboard))
         self.assertIn('SDL_VIDEODRIVER=x11', keyboard)
         self.assertNotIn('SDL_VIDEODRIVER=dummy', keyboard)
-        self.assertIn('--no-show', keyboard)
+        self.assertNotIn('启动 camera:', keyboard)
         self.assertNotIn('--fake-hand', keyboard)
         for flag in ('--rs422', '--wheel-test'):
             self.run_script('start_aviator.sh', '--dry-run', flag, env=keyboard_env, ok=False)
         result = self.run_script('start_aviator.sh', env={**keyboard_env, 'DISPLAY': ''}, ok=False)
         self.assertIn('未启动设备', result)
         self.run_script('start_aviator.sh', '--dry-run', env={'AVIATOR_REMOTE_KEYBOARD': 'bad'}, ok=False)
+
+    def test_optional_browser_selection(self):
+        mock = self.directory / 'browser bin'
+        mock.mkdir()
+        # Isolate discovery from browsers installed on the test machine.
+        for name in ('dirname', 'setsid', 'flock', 'ps', 'awk', 'tail', 'curl'):
+            (mock / name).symlink_to(shutil.which(name))
+        browsers = ('google-chrome-stable', 'google-chrome', 'chromium',
+                    'chromium-browser', 'firefox', 'xdg-open')
+        for name in browsers:
+            (mock / name).write_text('#!/bin/bash\nexit 99\n')
+            (mock / name).chmod(0o755)
+        env = {**os.environ, 'PATH': str(mock), 'AVIATOR_REMOTE_UI': '0',
+               'AVIATOR_REMOTE_KEYBOARD': '0', 'AVIATOR_BIN': str(self.directory / 'missing-bin')}
+
+        def run(*flags):
+            return subprocess.run(['/bin/bash', str(SCRIPTS / 'start_aviator.sh'),
+                                   '--simulation', *flags], env=env,
+                                  capture_output=True, text=True, timeout=10)
+
+        for name in browsers:
+            with self.subTest(browser=name):
+                result = run('--dry-run')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                line = next(line for line in result.stdout.splitlines()
+                            if line.startswith('启动浏览器:'))
+                flags = ('--new-window ' if name == 'firefox' else
+                         '' if name == 'xdg-open' else '--start-fullscreen ')
+                self.assertEqual(line, f'启动浏览器: {name} {flags}http://127.0.0.1:8081')
+                for skip in ('--no-browser', '--wheel-test'):
+                    skipped = run('--dry-run', skip)
+                    self.assertEqual(skipped.returncode, 0, skipped.stderr)
+                    self.assertNotIn('启动浏览器:', skipped.stdout)
+                (mock / name).unlink()
+        result = run('--dry-run')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('未找到可用浏览器', result.stderr)
+        self.assertIn('http://127.0.0.1:8081', result.stderr)
+        self.assertIn('启动 monitor:', result.stdout)
+        self.assertNotIn('启动浏览器:', result.stdout)
+        if os.geteuid() != 0:
+            # Real preflight must advance past command checks without a browser.
+            result = run()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('可执行文件不存在:', result.stderr)
+            self.assertNotIn('缺少命令:', result.stderr)
+
+    def test_camera_launch_follows_selected_robot_config(self):
+        runtime = self.directory / 'runtime'
+        (runtime / 'scripts').mkdir(parents=True)
+        (runtime / 'config').mkdir()
+        (runtime / 'robot settings').mkdir()
+        launcher = runtime / 'scripts/start_aviator.sh'
+        shutil.copy2(SCRIPTS / launcher.name, launcher)
+        robot = runtime / 'robot settings/robot.yaml'
+        # Follow system.robot, including paths with spaces, not config/robot.yaml.
+        (runtime / 'config/robot.yaml').write_text('grasp_wheel: {source: camera}\n')
+        for name in ('system.yaml', 'system-rs422.yaml'):
+            (runtime / 'config' / name).write_text('robot: ../robot settings/robot.yaml\n')
+        for content, camera in [('grasp_wheel: {source: camera}\n', True),
+                                ('grasp_wheel:\n  source: "wheel_initial" # comment\n', False),
+                                ('{}\n', False), ('grasp_wheel: {}\n', False)]:
+            robot.write_text(content)
+            for flags in ([], ['--rs422'], ['--fake-hand'], ['--simulation']):
+                for remote in ('0', '1'):
+                    result = subprocess.run(['bash', str(launcher), '--dry-run', *flags],
+                        env={**os.environ, 'AVIATOR_REMOTE_UI': remote,
+                             'CAMERA_PYTHON': '/missing/camera-python'},
+                        capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    expected = camera and '--simulation' not in flags
+                    self.assertEqual('启动 camera:' in result.stdout, expected)
+                    self.assertEqual('等待相机预热' in result.stdout, expected)
+                    if expected:
+                        self.assertIn('--no-show' if remote == '1' else '--show', result.stdout)
+                    if '--simulation' in flags:
+                        self.assertIn('启动 simulation:', result.stdout)
+        for content in ('grasp_wheel: {source: typo}', 'grasp_wheel: []', 'grasp_wheel: ['):
+            robot.write_text(content)
+            result = subprocess.run(['bash', str(launcher), '--dry-run'], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('未启动设备', result.stderr)
+            self.assertNotIn('启动 bus:', result.stdout)
 
     def test_recording_directory_override_and_early_failure(self):
         output = self.directory/'recordings 空格'
@@ -139,7 +221,7 @@ class ScriptsTests(unittest.TestCase):
             self.assertIn('--test-ui-socket', text)
             self.assertIn('启动 wheel_test_ui:', text)
             self.assertIn('tools/wheel_accuracy/ui.py', text)
-            self.assertNotIn('启动 Chrome:', text)
+            self.assertNotIn('启动浏览器:', text)
             self.assertIn('aviator_core_managed', text)
             self.assertEqual('启动 manipulator:' in text, '--simulation' not in options)
             self.assertEqual('启动 photoelectric:' in text, '--simulation' not in options)

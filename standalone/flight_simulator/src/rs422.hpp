@@ -67,11 +67,13 @@ class CommandSender {
     void reset() {
         operation_ = 0;
         remaining_ = 0;
-        neutral_ = 10;
+        last_emitted_ = 0;
+        separator_ = false;
     }
 
   private:
-    uint8_t operation_ = 0;
-    unsigned remaining_ = 0, neutral_ = 10;
+    uint8_t operation_ = 0, last_emitted_ = 0;
+    unsigned remaining_ = 0;
+    bool separator_ = false;
 };
 } // namespace flight_simulator::rs422

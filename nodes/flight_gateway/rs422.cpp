@@ -176,61 +176,50 @@ std::vector<Bytes> Parser::feed(const uint8_t* data, size_t n) {
     }
     return out;
 }
-void CommandGate::reset() {
-    neutral_ = count_ = 0;
-    candidate_ = 0;
-    armed_ = false;
-    neutral_since_ = candidate_since_ = 0;
+void CommandGate::interrupt() {
+    // Preserve the last observed code and its dispatched latch across gaps/failover.
+    // A held command must not execute again merely because the link recovered.
+    count_ = 0;
+    candidate_since_ = 0;
 }
 uint8_t CommandGate::update(const Downlink& f, bool consecutive, uint64_t now) {
     if (!consecutive)
-        reset();
-    if (!f.operation) {
-        count_ = 0;
-        candidate_ = 0;
-        if (!neutral_)
-            neutral_since_ = now;
-        neutral_ = std::min(neutral_ + 1, 10u);
-        // Up to four frames may share one USB arrival time. Ten neutral frames
-        // must still span at least six real serial periods.
-        if (neutral_ >= 10 && now - neutral_since_ >= 6 * period_us) {
-            armed_ = true;
-            neutral_ = 10;
-        }
-        return 0;
-    }
-    neutral_ = 0;
-    if (!armed_)
-        return 0;
+        interrupt();
     if (candidate_ != f.operation) {
         candidate_ = f.operation;
-        count_ = 0;
-        candidate_since_ = now;
+        dispatched_ = false;
+        interrupt();
     }
+    if (!f.operation || dispatched_)
+        return 0;
+    if (!count_)
+        candidate_since_ = now;
     count_ = std::min(count_ + 1, 5u);
     if (count_ >= 5 && now - candidate_since_ >= 4 * period_us) {
-        armed_ = false;
-        count_ = 0;
+        dispatched_ = true;
         return f.operation;
     }
     return 0;
 }
 bool CommandSender::request(uint8_t op) {
-    if (!*operationName(op) || remaining_ || neutral_)
+    if (!*operationName(op) || remaining_)
         return false;
+    // Two clicks of the same operation need an observable boundary, not a cooldown.
+    separator_ = last_emitted_ == op;
     operation_ = op;
     remaining_ = 10;
     return true;
 }
 uint8_t CommandSender::next() {
-    if (remaining_) {
-        if (!--remaining_)
-            neutral_ = 10;
-        return operation_;
+    if (separator_) {
+        separator_ = false;
+        return last_emitted_ = 0;
     }
-    if (neutral_)
-        --neutral_;
-    return 0;
+    if (remaining_) {
+        --remaining_;
+        return last_emitted_ = operation_;
+    }
+    return last_emitted_ = 0;
 }
 bool DualReceiver::healthy(unsigned i, uint64_t now) const {
     const auto& c = channels.at(i);
@@ -282,7 +271,7 @@ uint8_t DualReceiver::update(uint64_t now) {
         blocked_at_ = now;
         neutral_ = 0;
         ++conflicts;
-        gate_.reset();
+        gate_.interrupt();
     }
     if (selected_ < 0 || !healthy(selected_, now)) {
         int next = -1;
@@ -303,7 +292,7 @@ uint8_t DualReceiver::update(uint64_t now) {
                 ++switches;
             selected_ = next;
             processed_ = 0;
-            gate_.reset();
+            gate_.interrupt();
             continuous_ = false;
         }
     }
@@ -319,7 +308,7 @@ uint8_t DualReceiver::update(uint64_t now) {
         ++coalesced_batches;
     if (!bounded) {
         ++rejected_batches;
-        gate_.reset();
+        gate_.interrupt();
     }
     bool consecutive = bounded && continuous_ &&
                        c.generation == processed_ + batch.size() &&
@@ -344,16 +333,21 @@ uint8_t DualReceiver::update(uint64_t now) {
             neutral_ = 0;
         if (neutral_ >= 10 && now - blocked_at_ >= 100000) {
             blocked_ = false;
-            gate_.reset();
+            gate_.interrupt();
         }
         return 0;
     }
     if (!bounded)
         return 0;
-    uint8_t operation = 0;
-    for (size_t i = 0; i < batch.size(); ++i) {
+    // A later gap invalidates confirmation in the preceding part of this read.
+    // Skip that prefix before touching the dispatched latch: an operation that
+    // never left this batch must remain eligible for fresh confirmation.
+    size_t first = 0;
+    for (size_t i = 1; i < batch.size(); ++i)
         if (!batch[i].consecutive)
-            operation = 0; // A later discontinuity cancels an earlier confirmation in this read.
+            first = i;
+    uint8_t operation = 0;
+    for (size_t i = first; i < batch.size(); ++i) {
         const auto code = gate_.update(batch[i].frame,
                                       batch[i].consecutive && (i > 0 || was_continuous),
                                       c.received);
