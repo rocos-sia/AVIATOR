@@ -46,6 +46,22 @@ class ModelTests(unittest.TestCase):
                 geoms = bodies[name].findall("geom")
                 geoms = [g for g in geoms if g.get("name", "").startswith(name + "_visual_")]
                 mesh = visual.find("geometry/mesh")
+                if mesh is None:
+                    cylinder = visual.find("geometry/cylinder")
+                    self.assertIsNotNone(cylinder, name)
+                    self.assertEqual(len(geoms), 1, name)
+                    geom = self.model.geom(geoms[0].get("name")).id
+                    self.assertEqual(self.model.geom_type[geom], mj.mjtGeom.mjGEOM_CYLINDER)
+                    np.testing.assert_allclose(self.model.geom_size[geom, :2],
+                                               [float(cylinder.get("radius")),
+                                                float(cylinder.get("length")) / 2])
+                    pose = origin(visual.find("origin"))
+                    np.testing.assert_allclose(self.model.geom_pos[geom], pose[:3, 3])
+                    matrix = np.empty(9)
+                    mj.mju_quat2Mat(matrix, self.model.geom_quat[geom])
+                    np.testing.assert_allclose(matrix.reshape(3, 3), pose[:3, :3])
+                    self.assertEqual(geoms[0].get("material"), visual.find("material").get("name"))
+                    continue
                 source = (ROOT / "models/urdf" / mesh.get("filename")).resolve()
                 expected_scale = np.fromstring(mesh.get("scale", "1 1 1"), sep=" ")
                 paths = []
@@ -76,6 +92,62 @@ class ModelTests(unittest.TestCase):
         self.assertFalse([name for name in assets if name.startswith("realsense_d436_mesh")])
         self.assertEqual(self.model.nu, 0)
         self.assertEqual(self.model.ncam, 2)
+
+    def test_wrist_adapters_seat_both_hands(self):
+        model = self.model
+        data = mj.MjData(model)
+        mj.mj_resetDataKeyframe(model, data, model.key("aviator_home").id)
+        mj.mj_forward(model, data)
+        for side, prefix, label in (("left", "l", "L"), ("right", "r", "R")):
+            flange_name = f"AR5-5_07{label}-W4C4A2_flan_link"
+            flange = model.body(flange_name).id
+            hand = model.body(prefix + "_base_link").id
+            geom = model.geom(flange_name + "_visual_0").id
+            axis = data.xmat[flange].reshape(3, 3)[:, 2]
+            half_thickness = model.geom_size[geom, 1]
+            self.assertAlmostEqual(2 * half_thickness, .012)
+            np.testing.assert_allclose(data.geom_xpos[geom] - half_thickness * axis,
+                                       data.xpos[flange], atol=1e-12)
+            np.testing.assert_allclose(data.geom_xpos[geom] + half_thickness * axis,
+                                       data.xpos[hand], atol=1e-12)
+            self.assertEqual(model.geom_contype[geom], 0)
+            self.assertEqual(model.geom_conaffinity[geom], 0)
+            # Default TCP stays at its legacy flange offset; runtime uses grasp.json.
+            np.testing.assert_allclose(data.site_xpos[model.site(side + "_tcp").id],
+                                       data.xpos[flange] + .1296 * axis, atol=1e-12)
+            link = self.urdf.find(f"link[@name='{flange_name}']")
+            self.assertEqual(link.find("visual/geometry/cylinder").attrib,
+                             link.find("collision/geometry/cylinder").attrib)
+            np.testing.assert_allclose(origin(link.find("visual/origin")),
+                                       origin(link.find("collision/origin")))
+
+    def test_short_wrist_meshes_and_palm_attachments(self):
+        face_type = np.dtype([('normal', '<f4', (3,)), ('vertices', '<f4', (3, 3)),
+                              ('attribute', '<u2')])
+        for side, prefix in (("L", "l"), ("R", "r")):
+            original = ET.parse(ROOT / f"models/urdf/RH56E2_{side}.urdf").getroot()
+            base = prefix + "_base_link"
+            source = ROOT / f"models/meshes/RH56E2_{side}/{base}.STL"
+            shortened = source.parent / "short_wrist" / source.name
+            raw = np.frombuffer(source.read_bytes(), dtype=face_type, offset=84)
+            new = np.frombuffer(shortened.read_bytes(), dtype=face_type, offset=84)
+            self.assertEqual(len(raw) - len(new), 2120)  # Complete old wrist solid.
+            bounds = new['vertices'].reshape(-1, 3)
+            self.assertAlmostEqual(bounds[:, 2].min(), 0, places=7)
+            self.assertAlmostEqual(bounds[:, 2].max(), raw['vertices'][:, :, 2].max() - .0305,
+                                   places=7)
+            for joint in original.findall('joint'):
+                if joint.find('parent').get('link') != base:
+                    continue
+                updated = self.urdf.find(f"joint[@name='{joint.get('name')}']")
+                expected = origin(joint.find('origin'))
+                expected[2, 3] -= .0305
+                np.testing.assert_allclose(origin(updated.find('origin')), expected, atol=1e-12)
+            # Both display and planning use the shortened base, not the old sleeve.
+            link = self.urdf.find(f"link[@name='{base}']")
+            for kind in ('visual', 'collision'):
+                actual = ROOT / 'models/urdf' / link.find(f'{kind}/geometry/mesh').get('filename')
+                self.assertEqual(actual.resolve(), shortened.resolve())
 
     def test_joints_and_mimics(self):
         equalities = {e.get("joint1"): e for e in self.xml.findall("equality/joint")}

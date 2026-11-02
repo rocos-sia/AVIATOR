@@ -103,7 +103,7 @@
     <mesh name="AR5-5_07R-W4C4A2_link5" file="AR5-5_07R-W4C4A2/AR5-5_07R-W4C4A2_link5.stl" scale="0.001 0.001 0.001" />
     <mesh name="AR5-5_07R-W4C4A2_link6" file="AR5-5_07R-W4C4A2/AR5-5_07R-W4C4A2_link6.stl" scale="0.001 0.001 0.001" />
     <mesh name="AR5-5_07R-W4C4A2_link7" file="AR5-5_07R-W4C4A2/AR5-5_07R-W4C4A2_link7.stl" scale="0.001 0.001 0.001" />
-    <mesh file="RH56E2_L/l_base_link.STL" name="l_base_link" scale="1 1 1" />
+    <mesh file="RH56E2_L/short_wrist/l_base_link.STL" name="l_base_link" scale="1 1 1" />
     <mesh file="RH56E2_L/left_thumb_1.STL" name="left_thumb_1" scale="1 1 1" />
     <mesh file="RH56E2_L/left_thumb_2.STL" name="left_thumb_2" scale="1 1 1" />
     <mesh file="RH56E2_L/left_thumb_3.STL" name="left_thumb_3" scale="1 1 1" />
@@ -134,7 +134,7 @@
     <mesh file="RH56E2_L/left_little_force_sensor_1.STL" name="left_little_force_sensor_1" scale="1 1 1" />
     <mesh file="RH56E2_L/left_plam_force_sensor.STL" name="left_plam_force_sensor" scale="1 1 1" />
     <mesh file="RH56E2_L/left_plam_casing.STL" name="left_plam_casing" scale="1 1 1" />
-    <mesh file="RH56E2_R/r_base_link.STL" name="r_base_link" scale="1 1 1" />
+    <mesh file="RH56E2_R/short_wrist/r_base_link.STL" name="r_base_link" scale="1 1 1" />
     <mesh file="RH56E2_R/right_thumb_1.STL" name="right_thumb_1" scale="1 1 1" />
     <mesh file="RH56E2_R/right_thumb_2.STL" name="right_thumb_2" scale="1 1 1" />
     <mesh file="RH56E2_R/right_thumb_3.STL" name="right_thumb_3" scale="1 1 1" />
@@ -308,11 +308,14 @@
                       <geom name="AR5-5_07L-W4C4A2_link7_visual_0" class="visual" mesh="AR5-5_07L-W4C4A2_link7" pos="0.0 0.0 0.0" quat="1 0 0 0" material="white" />
                       <geom name="AR5-5_07L-W4C4A2_link7_collision_0" class="collision" mesh="AR5-5_07L-W4C4A2_link7" pos="0.0 0.0 0.0" quat="1 0 0 0" />
                       <body name="AR5-5_07L-W4C4A2_flan_link" pos="0 0 0.097" quat="1 0 0 0">
-                        <!-- Left Hand -->
-                        <body name="l_base_link" pos="0 0 0.0116" quat="0.707 0 0 0.707">
-                          <inertial fullinertia="0.000598818638734576 0.000469648299351442 0.000281460993349068 -1.87721402728399E-06 -4.35025076731854E-06 -6.72838967541838E-08" mass="0.638115692832655" pos="-0.00162630839186209 0.000562629486704047 0.0782826838990815" />
+                        <!-- 12 mm adapter, 61 mm flange diameter; visual only like the hands.
+                             Holes/chamfers and unmeasured adapter inertia are omitted. -->
+                        <geom name="AR5-5_07L-W4C4A2_flan_link_visual_0" class="visual" type="cylinder" size="0.0305 0.006" pos="0 0 0.006" material="grey" />
+                        <!-- Short-wrist hand: old wrist solid removed; palm and direct children rebased by -30.5 mm. -->
+                        <body name="l_base_link" pos="0 0 0.012" quat="0.707 0 0 0.707">
+                          <inertial fullinertia="0.000598818638734576 0.000469648299351442 0.000281460993349068 -1.87721402728399E-06 -4.35025076731854E-06 -6.72838967541838E-08" mass="0.638115692832655" pos="-0.00162630839186209 0.000562629486704047 0.0477826838990815" />
                           <geom class="visual" mesh="l_base_link" name="l_base_link_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
-                          <body name="left_thumb_1" pos="0.02101 -0.0269 0.0826" quat="1 0 0 0">
+                          <body name="left_thumb_1" pos="0.02101 -0.0269 0.0521" quat="1 0 0 0">
                             <joint axis="0 0 1" name="left_thumb_1_joint" range="0 1.6580627893946132" type="hinge" />
                             <inertial fullinertia="1.81485367853144E-07 1.5342000474839E-07 1.57495480731202E-07 5.10747805618466E-09 -8.71507446859537E-10 4.94256275932537E-09" mass="0.00466740407248544" pos="0.0017330432086026 -0.00982857619928376 -0.00584336388605994" />
                             <geom class="visual" mesh="left_thumb_1" name="left_thumb_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -348,7 +351,7 @@
                               </body>
                             </body>
                           </body>
-                          <body name="left_index_1" pos="0.00056467 -0.038679 0.1564" quat="0.69465941775758688 0.71933878897268599 0 0">
+                          <body name="left_index_1" pos="0.00056467 -0.038679 0.1259" quat="0.69465941775758688 0.71933878897268599 0 0">
                             <joint axis="0 0 -1" name="left_index_1_joint" range="0 1.3700834628155487" type="hinge" />
                             <inertial fullinertia="3.05512988079815E-06 1.48574007368608E-06 3.17180961650614E-06 -1.98266619953812E-07 -1.89430070847582E-11 1.39735224308606E-10" mass="0.0182944233697246" pos="0.00219464981664165 0.0127400599495743 -0.0066496043262512" />
                             <geom class="visual" mesh="left_index_1" name="left_index_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -370,7 +373,7 @@
                               <geom class="visual" mesh="left_index_force_sensor_1" name="left_index_force_sensor_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                             </body>
                           </body>
-                          <body name="left_middle_1" pos="0.00056467 -0.0171 0.157" quat="0.70710548251123628 0.70710807985947355 0 0">
+                          <body name="left_middle_1" pos="0.00056467 -0.0171 0.1265" quat="0.70710548251123628 0.70710807985947355 0 0">
                             <joint axis="0 0 -1" name="left_middle_1_joint" range="0 1.3700834628155487" type="hinge" />
                             <inertial fullinertia="3.05512995032133E-06 1.4857400884278E-06 3.17180970412157E-06 -1.98266616840753E-07 -1.89243197758357E-11 1.39716002217448E-10" mass="0.0182944237783795" pos="0.00219464961598496 0.0127400600036559 -0.00664960428412459" />
                             <geom class="visual" mesh="left_middle_1" name="left_middle_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -392,7 +395,7 @@
                               <geom class="visual" mesh="left_middle_force_sensor_1" name="left_middle_force_sensor_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                             </body>
                           </body>
-                          <body name="left_ring_1" pos="0.00056467 0.0045302 0.15683" quat="0.72538691589069459 0.68834135590896062 0 0">
+                          <body name="left_ring_1" pos="0.00056467 0.0045302 0.12633" quat="0.72538691589069459 0.68834135590896062 0 0">
                             <joint axis="0 0 -1" name="left_ring_1_joint" range="0 1.3700834628155487" type="hinge" />
                             <inertial fullinertia="3.0551291320996E-06 1.48574005110073E-06 3.17180870739628E-06 -1.98266506341903E-07 -1.91654207598195E-11 1.39890240458808E-10" mass="0.018294421561901" pos="0.00219465071036216 0.0127400598729399 -0.00664960488600086" />
                             <geom class="visual" mesh="left_ring_1" name="left_ring_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -414,7 +417,7 @@
                               <geom class="visual" mesh="left_ring_force_sensor_1" name="left_ring_force_sensor_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                             </body>
                           </body>
-                          <body name="left_little_1" pos="0.000564666676608427 0.025916086514562 0.153652298734666" quat="0.7431448254773898 0.66913060635886312 0 0">
+                          <body name="left_little_1" pos="0.000564666676608427 0.025916086514562 0.123152298734666" quat="0.7431448254773898 0.66913060635886312 0 0">
                             <joint axis="0 0 -1" name="left_little_1_joint" range="0 1.3700834628155487" type="hinge" />
                             <inertial fullinertia="3.05512819504631E-06 1.48573998671982E-06 3.1718075619136E-06 -1.98266402388765E-07 -1.943900936914E-11 1.40097636081239E-10" mass="0.0182944186286727" pos="0.00219465215955104 0.0127400596467725 -0.00664960556534566" />
                             <geom class="visual" mesh="left_little_1" name="left_little_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -436,16 +439,16 @@
                               <geom class="visual" mesh="left_little_force_sensor_1" name="left_little_force_sensor_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                             </body>
                           </body>
-                          <body name="left_plam_force_sensor" pos="0.0122962567472441 -0.000368185252603959 0.119601267398173" quat="0.50000000000000078 0.49999999999999739 0.49999999999999922 0.50000000000000255">
+                          <body name="left_plam_force_sensor" pos="0.0122962567472441 -0.000368185252603959 0.089101267398173" quat="0.50000000000000078 0.49999999999999739 0.49999999999999922 0.50000000000000255">
                             <inertial fullinertia="1.79237844391669E-07 5.01887314145828E-07 6.80017224272956E-07 -3.62341727516001E-10 2.06840767979165E-10 -4.2353787799761E-10" mass="0.00240886553361419" pos="-0.000120094006652194 0.000717297696998645 -0.000692889103009742" />
                             <geom class="visual" mesh="left_plam_force_sensor" name="left_plam_force_sensor_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                           </body>
-                          <body name="left_plam_casing" pos="0 0 0.031" quat="1 0 0 0">
+                          <body name="left_plam_casing" pos="0 0 0.0005" quat="1 0 0 0">
                             <inertial fullinertia="2.37671048423346E-05 1.27843040563581E-05 1.20351729261164E-05 -1.29072575162348E-08 -6.43764479926857E-08 9.82907716155012E-08" mass="0.0205046589058927" pos="-0.028227910864842 -0.000242127035993855 0.0835826421996249" />
                             <geom class="visual" mesh="left_plam_casing" name="left_plam_casing_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                           </body>
                           <!--Legacy grasp frame: preserves the previous TCP pose relative to the flange.-->
-                          <body name="left_gripper" pos="0 0 0.118" quat="0.707106781187 0 0.707106781187 0">
+                          <body name="left_gripper" pos="0 0 0.1176" quat="0.707106781187 0 0.707106781187 0">
                             <site name="left_tcp" rgba="1 0.3 0.1 1" size="0.005" />
                           </body>
                         </body>
@@ -497,11 +500,13 @@
                       <geom name="AR5-5_07R-W4C4A2_link7_visual_0" class="visual" mesh="AR5-5_07R-W4C4A2_link7" pos="0.0 0.0 0.0" quat="1 0 0 0" material="white" />
                       <geom name="AR5-5_07R-W4C4A2_link7_collision_0" class="collision" mesh="AR5-5_07R-W4C4A2_link7" pos="0.0 0.0 0.0" quat="1 0 0 0" />
                       <body name="AR5-5_07R-W4C4A2_flan_link" pos="0 0 0.097" quat="1 0 0 0">
-                        <!-- Right Hand -->
-                        <body name="r_base_link" pos="0 0 0.0116" quat="0.707 0 0 -0.707">
-                          <inertial fullinertia="0.000598971964889212 0.000469779024452203 0.000281581133822564 1.86164377832369E-06 -4.15140660547643E-06 9.13428071917767E-08" mass="0.640548028870977" pos="-0.00171664715226715 -7.60146921452102E-05 0.0795784130733925" />
+                        <!-- Same simplified 12 mm wrist adapter as the left side. -->
+                        <geom name="AR5-5_07R-W4C4A2_flan_link_visual_0" class="visual" type="cylinder" size="0.0305 0.006" pos="0 0 0.006" material="grey" />
+                        <!-- Short-wrist hand: old wrist solid removed; palm and direct children rebased by -30.5 mm. -->
+                        <body name="r_base_link" pos="0 0 0.012" quat="0.707 0 0 -0.707">
+                          <inertial fullinertia="0.000598971964889212 0.000469779024452203 0.000281581133822564 1.86164377832369E-06 -4.15140660547643E-06 9.13428071917767E-08" mass="0.640548028870977" pos="-0.00171664715226715 -7.60146921452102E-05 0.0490784130733925" />
                           <geom class="visual" mesh="r_base_link" name="r_base_link_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.866666666666667 0.866666666666667 0.890196078431372 1" />
-                          <body name="right_thumb_1" pos="0.02101 0.0269 0.0826" quat="1 0 0 0">
+                          <body name="right_thumb_1" pos="0.02101 0.0269 0.0521" quat="1 0 0 0">
                             <joint axis="0 0 -1" name="right_thumb_1_joint" range="0 1.6580627893946132" type="hinge" />
                             <inertial fullinertia="1.81485367928845E-07 1.53420004559657E-07 1.57495480691153E-07 -5.10747776064284E-09 -8.71506680949164E-10 -4.94256286858945E-09" mass="0.00466740407055572" pos="0.00173304322915754 0.00982857619697067 -0.00584336388499718" />
                             <geom class="visual" mesh="right_thumb_1" name="right_thumb_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -537,7 +542,7 @@
                               </body>
                             </body>
                           </body>
-                          <body name="right_index_1" pos="0.00056467 0.038679 0.1564" quat="0.71933623734131469 0.69466206003181119 0 0">
+                          <body name="right_index_1" pos="0.00056467 0.038679 0.1259" quat="0.71933623734131469 0.69466206003181119 0 0">
                             <joint axis="0 0 -1" name="right_index_1_joint" range="0 1.3700834628155487" type="hinge" />
                             <inertial fullinertia="3.0553604237672E-06 1.48580451846943E-06 3.17206268978428E-06 -1.98142939617322E-07 2.75732035116215E-11 -6.65791246264007E-11" mass="0.0182957332404882" pos="0.00219417482969624 0.0127409366565625 0.00664941200246508" />
                             <geom class="visual" mesh="right_index_1" name="right_index_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -559,7 +564,7 @@
                               <geom class="visual" mesh="right_index_force_sensor_1" name="right_index_force_sensor_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                             </body>
                           </body>
-                          <body name="right_middle_1" pos="0.00056467 0.0171 0.157" quat="0.70710548251123628 0.70710807985947355 0 0">
+                          <body name="right_middle_1" pos="0.00056467 0.0171 0.1265" quat="0.70710548251123628 0.70710807985947355 0 0">
                             <joint axis="0 0 -1" name="right_middle_1_joint" range="0 1.3700834628155487" type="hinge" />
                             <inertial fullinertia="3.05536038053959E-06 1.48580451806232E-06 3.17206266809936E-06 -1.98142940785918E-07 2.75756484137381E-11 -6.6586063990679E-11" mass="0.0182957332737578" pos="0.00219417478814514 0.0127409366268324 0.00664941207814897" />
                             <geom class="visual" mesh="right_middle_1" name="right_middle_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -581,7 +586,7 @@
                               <geom class="visual" mesh="right_middle_force_sensor_1" name="right_middle_force_sensor_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                             </body>
                           </body>
-                          <body name="right_ring_1" pos="0.00056467 -0.0045302 0.15683" quat="0.68833869140939552 0.72538944430478236 0 0">
+                          <body name="right_ring_1" pos="0.00056467 -0.0045302 0.12633" quat="0.68833869140939552 0.72538944430478236 0 0">
                             <joint axis="0 0 -1" name="right_ring_1_joint" range="0 1.3700834628155487" type="hinge" />
                             <inertial fullinertia="3.0553610682591E-06 1.48580464758665E-06 3.17206316407759E-06 -1.98143003692426E-07 2.76207978458813E-11 -6.65343105981675E-11" mass="0.0182957328723894" pos="0.0021941746524699 0.0127409362160862 0.0066494113506478" />
                             <geom class="visual" mesh="right_ring_1" name="right_ring_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -603,7 +608,7 @@
                               <geom class="visual" mesh="right_ring_force_sensor_1" name="right_ring_force_sensor_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                             </body>
                           </body>
-                          <body name="right_little_1" pos="0.00056467 -0.025916 0.15365" quat="0.66913658193301939 0.74313944500275031 0 0">
+                          <body name="right_little_1" pos="0.00056467 -0.025916 0.12315" quat="0.66913658193301939 0.74313944500275031 0 0">
                             <joint axis="0 0 -1" name="right_little_1_joint" range="0 1.3700834628155487" type="hinge" />
                             <inertial fullinertia="3.05535987574493E-06 1.48580222009522E-06 3.17206283521368E-06 -1.98142686865494E-07 2.61954340935385E-11 -6.68704475705829E-11" mass="0.0182957029959314" pos="0.00219418424084006 0.0127409391731467 0.00664940009923339" />
                             <geom class="visual" mesh="right_little_1" name="right_little_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -625,16 +630,16 @@
                               <geom class="visual" mesh="right_little_force_sensor_1" name="right_little_force_sensor_1_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                             </body>
                           </body>
-                          <body name="right_plam_force_sensor" pos="0.012296 0.00036819 0.1196" quat="0.49999816339744829 0.49999999999662686 0.5000018366025516 0.49999999999662686">
+                          <body name="right_plam_force_sensor" pos="0.012296 0.00036819 0.0891" quat="0.49999816339744829 0.49999999999662686 0.5000018366025516 0.49999999999662686">
                             <inertial fullinertia="1.79240985064997E-07 5.01925281741814E-07 6.80058308651779E-07 3.52978086572651E-10 -2.06008004249277E-10 -4.23310853497109E-10" mass="0.00240887834862943" pos="0.000120426930218354 0.000717269607866696 -0.000692893498385139" />
                             <geom class="visual" mesh="right_plam_force_sensor" name="right_plam_force_sensor_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                           </body>
-                          <body name="right_plam_casing" pos="0 0 0.030747" quat="1 0 0 0">
+                          <body name="right_plam_casing" pos="0 0 0.000247" quat="1 0 0 0">
                             <inertial fullinertia="2.37673054625327E-05 1.27806531066944E-05 1.20388397757724E-05 -1.16564720996025E-08 -5.5459072319844E-08 1.11375428223568E-07" mass="0.0205048839956349" pos="-0.0282100608341151 0.000132226954469678 0.0837245353514299" />
                             <geom class="visual" mesh="right_plam_casing" name="right_plam_casing_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                           </body>
                           <!--Legacy grasp frame: preserves the previous TCP pose relative to the flange.-->
-                          <body name="right_gripper" pos="0 0 0.118" quat="0.707106781187 0 0.707106781187 0">
+                          <body name="right_gripper" pos="0 0 0.1176" quat="0.707106781187 0 0.707106781187 0">
                             <site name="right_tcp" rgba="1 0.3 0.1 1" size="0.005" />
                           </body>
                         </body>

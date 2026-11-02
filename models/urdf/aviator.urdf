@@ -368,6 +368,17 @@
     </collision>
   </link>
   <link name="AR5-5_07L-W4C4A2_flan_link">
+    <!-- 12 mm wrist adapter; diameter follows the existing 61 mm flange.
+         Simplified envelope: holes, chamfers and unmeasured mass are omitted. -->
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.006"/>
+      <geometry><cylinder radius="0.0305" length="0.012"/></geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0.006"/>
+      <geometry><cylinder radius="0.0305" length="0.012"/></geometry>
+    </collision>
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="0"/>
@@ -384,21 +395,21 @@
   <joint name="RH56E2_L_joint" type="fixed">
     <parent link="AR5-5_07L-W4C4A2_flan_link"/>
     <child link="l_base_link"/>
-    <!-- <origin rpy="0 0 1.5708" xyz="0 0 -0.018"/>  -->
-    <origin rpy="0 0 1.5708" xyz="0 0 0.0116"/> <!-- ZSJS-05-WP1 -->
+    <origin rpy="0 0 1.5708" xyz="0 0 0.012"/> <!-- 12 mm wrist adapter -->
   </joint>
 
 <!--RH56E2_L Base-->
+  <!-- Short-wrist mesh and direct child joints use the palm origin, 30.5 mm beyond the original CAD origin. -->
   <link name="l_base_link">
     <inertial>
-      <origin xyz="-0.00162630839186209 0.000562629486704047 0.0782826838990815" rpy="0 0 0" />
+      <origin xyz="-0.00162630839186209 0.000562629486704047 0.0477826838990815" rpy="0 0 0" />
       <mass value="0.638115692832655" />
       <inertia ixx="0.000598818638734576" ixy="-1.87721402728399E-06" ixz="-4.35025076731854E-06" iyy="0.000469648299351442" iyz="-6.72838967541838E-08" izz="0.000281460993349068" />
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="../meshes/RH56E2_L/l_base_link.STL" />
+        <mesh filename="../meshes/RH56E2_L/short_wrist/l_base_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
@@ -407,7 +418,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="../meshes/RH56E2_L/l_base_link.STL" />
+        <mesh filename="../meshes/RH56E2_L/short_wrist/l_base_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -434,7 +445,7 @@
     </collision>
   </link>
   <joint name="left_thumb_1_joint" type="revolute">
-    <origin xyz="0.02101 -0.0269 0.0826" rpy="0 0 0" />
+    <origin xyz="0.02101 -0.0269 0.0521" rpy="0 0 0" />
     <parent link="l_base_link" />
     <child link="left_thumb_1" />
     <axis xyz="0 0 1" />
@@ -696,7 +707,7 @@
     </collision>
   </link>
   <joint name="left_index_1_joint" type="revolute">
-    <origin xyz="0.00056467 -0.038679 0.1564" rpy="1.6057 0 0" />
+    <origin xyz="0.00056467 -0.038679 0.1259" rpy="1.6057 0 0" />
     <parent link="l_base_link" />
     <child link="left_index_1" />
     <axis xyz="0 0 -1" />
@@ -863,7 +874,7 @@
     </collision>
   </link>
   <joint name="left_middle_1_joint" type="revolute">
-    <origin xyz="0.00056467 -0.0171 0.157" rpy="1.5708 0 0" />
+    <origin xyz="0.00056467 -0.0171 0.1265" rpy="1.5708 0 0" />
     <parent link="l_base_link" />
     <child link="left_middle_1" />
     <axis xyz="0 0 -1" />
@@ -1030,7 +1041,7 @@
     </collision>
   </link>
   <joint name="left_ring_1_joint" type="revolute">
-    <origin xyz="0.00056467 0.0045302 0.15683" rpy="1.5184 0 0" />
+    <origin xyz="0.00056467 0.0045302 0.12633" rpy="1.5184 0 0" />
     <parent link="l_base_link" />
     <child link="left_ring_1" />
     <axis xyz="0 0 -1" />
@@ -1189,7 +1200,7 @@
     </collision>
   </link>
   <joint name="left_little_1_joint" type="revolute">
-    <origin xyz="0.000564666676608427 0.025916086514562 0.153652298734666" rpy="1.46607657167525 0 0" />
+    <origin xyz="0.000564666676608427 0.025916086514562 0.123152298734666" rpy="1.46607657167525 0 0" />
     <parent link="l_base_link" />
     <child link="left_little_1" />
     <axis xyz="0 0 -1" />
@@ -1364,7 +1375,7 @@
     </collision>
   </link>
   <joint name="left_plam_force_sensor_joint" type="fixed">
-    <origin xyz="0.0122962567472441 -0.000368185252603959 0.119601267398173" rpy="1.57079632679489 0 1.5707963267949" />
+    <origin xyz="0.0122962567472441 -0.000368185252603959 0.089101267398173" rpy="1.57079632679489 0 1.5707963267949" />
     <parent link="l_base_link" />
     <child link="left_plam_force_sensor" />
     <axis xyz="0 0 0" />
@@ -1392,7 +1403,7 @@
     </collision>
   </link>
   <joint name="left_plam_casing_joint" type="fixed">
-    <origin xyz="0 0 0.031" rpy="0 0 0" />
+    <origin xyz="0 0 0.0005" rpy="0 0 0" />
     <parent link="l_base_link" />
     <child link="left_plam_casing" />
     <axis xyz="0 0 0" />
@@ -1618,6 +1629,16 @@
     </collision>
   </link>
   <link name="AR5-5_07R-W4C4A2_flan_link">
+    <!-- Same 12 mm wrist adapter and simplified envelope as the left side. -->
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.006"/>
+      <geometry><cylinder radius="0.0305" length="0.012"/></geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0.006"/>
+      <geometry><cylinder radius="0.0305" length="0.012"/></geometry>
+    </collision>
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="0"/>
@@ -1634,21 +1655,21 @@
   <joint name="RH56E2_R_joint" type="fixed">
     <parent link="AR5-5_07R-W4C4A2_flan_link"/>
     <child link="r_base_link"/>
-    <!-- <origin rpy="0 0 -1.5708" xyz="0 0 -0.018"/> -->
-    <origin rpy="0 0 -1.5708" xyz="0 0 0.0116"/> <!-- ZSJS-05-WP1 -->
+    <origin rpy="0 0 -1.5708" xyz="0 0 0.012"/> <!-- 12 mm wrist adapter -->
   </joint>
 
 <!--RH56E2_R Base-->
+  <!-- Short-wrist mesh and direct child joints use the palm origin, 30.5 mm beyond the original CAD origin. -->
   <link name="r_base_link">
     <inertial>
-      <origin xyz="-0.00171664715226715 -7.60146921452102E-05 0.0795784130733925" rpy="0 0 0" />
+      <origin xyz="-0.00171664715226715 -7.60146921452102E-05 0.0490784130733925" rpy="0 0 0" />
       <mass value="0.640548028870977" />
       <inertia ixx="0.000598971964889212" ixy="1.86164377832369E-06" ixz="-4.15140660547643E-06" iyy="0.000469779024452203" iyz="9.13428071917767E-08" izz="0.000281581133822564" />
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="../meshes/RH56E2_R/r_base_link.STL" />
+        <mesh filename="../meshes/RH56E2_R/short_wrist/r_base_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.866666666666667 0.866666666666667 0.890196078431372 1" />
@@ -1657,7 +1678,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="../meshes/RH56E2_R/r_base_link.STL" />
+        <mesh filename="../meshes/RH56E2_R/short_wrist/r_base_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -1684,7 +1705,7 @@
     </collision>
   </link>
   <joint name="right_thumb_1_joint" type="revolute">
-    <origin xyz="0.02101 0.0269 0.0826" rpy="0 0 0" />
+    <origin xyz="0.02101 0.0269 0.0521" rpy="0 0 0" />
     <parent link="r_base_link" />
     <child link="right_thumb_1" />
     <axis xyz="0 0 -1" />
@@ -1946,7 +1967,7 @@
     </collision>
   </link>
   <joint name="right_index_1_joint" type="revolute">
-    <origin xyz="0.00056467 0.038679 0.1564" rpy="1.5359 0 0" />
+    <origin xyz="0.00056467 0.038679 0.1259" rpy="1.5359 0 0" />
     <parent link="r_base_link" />
     <child link="right_index_1" />
     <axis xyz="0 0 -1" />
@@ -2113,7 +2134,7 @@
     </collision>
   </link>
   <joint name="right_middle_1_joint" type="revolute">
-    <origin xyz="0.00056467 0.0171 0.157" rpy="1.5708 0 0" />
+    <origin xyz="0.00056467 0.0171 0.1265" rpy="1.5708 0 0" />
     <parent link="r_base_link" />
     <child link="right_middle_1" />
     <axis xyz="0 0 -1" />
@@ -2280,7 +2301,7 @@
     </collision>
   </link>
   <joint name="right_ring_1_joint" type="revolute">
-    <origin xyz="0.00056467 -0.0045302 0.15683" rpy="1.6232 0 0" />
+    <origin xyz="0.00056467 -0.0045302 0.12633" rpy="1.6232 0 0" />
     <parent link="r_base_link" />
     <child link="right_ring_1" />
     <axis xyz="0 0 -1" />
@@ -2447,7 +2468,7 @@
     </collision>
   </link>
   <joint name="right_little_1_joint" type="revolute">
-    <origin xyz="0.00056467 -0.025916 0.15365" rpy="1.6755 0 0" />
+    <origin xyz="0.00056467 -0.025916 0.12315" rpy="1.6755 0 0" />
     <parent link="r_base_link" />
     <child link="right_little_1" />
     <axis xyz="0 0 -1" />
@@ -2622,7 +2643,7 @@
     </collision>
   </link>
   <joint name="right_plam_force_sensor_joint" type="fixed">
-    <origin xyz="0.012296 0.00036819 0.1196" rpy="1.5708 0 1.5708" />
+    <origin xyz="0.012296 0.00036819 0.0891" rpy="1.5708 0 1.5708" />
     <parent link="r_base_link" />
     <child link="right_plam_force_sensor" />
     <axis xyz="0 0 0" />
@@ -2650,7 +2671,7 @@
     </collision>
   </link>
   <joint name="right_plam_casing_joint" type="fixed">
-    <origin xyz="0 0 0.030747" rpy="0 0 0" />
+    <origin xyz="0 0 0.000247" rpy="0 0 0" />
     <parent link="r_base_link" />
     <child link="right_plam_casing" />
     <axis xyz="0 0 0" />
