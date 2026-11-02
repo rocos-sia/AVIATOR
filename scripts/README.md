@@ -6,6 +6,45 @@
 `rocos@192.168.31.100:/opt/aviator`。全部启动脚本及 485 示例随包安装，
 部署不启动设备。固定目录、程序替换、现场配置保留和失败恢复见 [部署说明](../deploy/README.md)。
 
+## 记录当前机械臂归位角
+
+先停止 AVIATOR 控制程序和拖动示教，将双臂停在需要的归位姿态，再执行：
+
+```bash
+./scripts/get_home.sh
+# 桌面界面：连接双臂、开启/停止拖动、点击记录
+./scripts/get_home.sh --ui
+# 离线演示（不连接设备、不写配置）
+./scripts/get_home.sh --ui --dry-run
+# 部署机器（无需源码或编译器）
+/opt/aviator/share/aviator/scripts/get_home.sh
+/opt/aviator/share/aviator/scripts/get_home.sh --ui
+```
+
+脚本读取本目录对应的 `config/robot.yaml` 中左右臂 IP，通过
+`aviator_grasp_tool_state` 获取实际关节角，转换为度后直接更新该配置 `posture`
+指向的 JSON（默认 `config/posture.json`）中的 `left_home_deg`、`right_home_deg`。
+使用最后一组双臂实测值，其他字段保持原值；两臂读取或校验失败时不写入。
+成功前在同目录生成 `posture.json.*.bak` 原文件备份，并原子替换配置。
+修改后重新启动控制程序生效。SDK 断开连接本身会停止机械臂运动，不能与其他控制程序同时使用。
+
+可从任意目录调用；`--robot-config /路径/robot.yaml` 指定其他配置，相对路径以调用目录为准。
+源码运行依次寻找 `build/bin`、`build/release/bin`、`build/debug/bin`，
+`AVIATOR_BIN` 可指定二进制目录，`UI_PYTHON` 可指定带 PyYAML 的 Python。
+首次需构建启用 `AVIATOR_BUILD_XCORE_SDK=ON` 的 `aviator_grasp_tool_state`；
+完整硬件部署包已包含此工具和 Python 依赖，脚本自动使用部署包内的程序和环境。
+读取沿用标定工具的 URDF 关节限位与配置校验。
+
+界面点击“连接双臂”后才建立持续 SDK 会话，设置与现有标定工具相同的末端负载；
+“开启双臂拖动”切换到手动模式并开启关节空间自由拖动，仍需按住各机械臂末端按钮。
+“记录到配置”自动停止两臂拖动，再读取新的一组实测角度并保存，不会写入旧的界面预览值。
+表格显示已保存角度与最近一次静止采样；拖动期间实测列留空。
+断开连接、关闭窗口、Ctrl+C 或 SIGTERM 会清理本次拖动会话；连接和操作失败也会尝试清理。
+界面与一键启动脚本共用互斥锁，需在图形桌面中运行。界面依赖 `tkinter`、PyYAML
+及 `aviator_grasp_tool_session`，均随完整部署包提供，不需要启动相机、手节点或总线。
+离线演示使用原生会话的 `--dry-run`，禁止写入配置。日志保留在界面提示的
+`/tmp/aviator-home-ui-*` 目录，SDK 工作目录可写，不依赖安装目录的写权限。
+
 ## MuJoCo STL 拆分
 
 [split_stl.py](split_stl.py) 使用 Python 标准库将二进制 STL 按每件最多 200,000 面

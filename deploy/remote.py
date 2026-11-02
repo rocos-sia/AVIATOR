@@ -353,7 +353,7 @@ def check_runtime(root, account):
                        resource / 'config/photoelectric.yaml', '--check-config'], env=env)
     user_run(account, [root / 'bin/rh56_485_probe', '--dry-run'], env=env)
     # Help modes parse options/import modules but do not open devices.
-    for script in ('start_grasp_calibration_ui.sh', 'start_steering_wheel_calibration_ui.sh'):
+    for script in ('start_grasp_calibration_ui.sh', 'start_steering_wheel_calibration_ui.sh', 'get_home.sh'):
         user_run(account, ['bash', resource / 'scripts' / script, '--help'], env=env,
                  stdout=subprocess.DEVNULL)
     user_run(account, ['bash', resource / 'examples/xCoreSDK_RH56FTP_485/run_grip_demo.sh', '--help'],
