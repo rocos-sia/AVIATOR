@@ -47,6 +47,9 @@ buttons:
   - none          # 11
 
 rs422:
+  # 上行 13..16 来自 camera.detection；26..29 来自双臂实际关节 FK。
+  camera_id: cockpit
+  camera_publisher: camera # 独立运行仿真时设 simulation；一键 --simulation --rs422 自动选择。
   # Explicit bench profile, including unknown sentinels and RELEASING=0x14.
   profile: aviator-bench-v1
   channel_a: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG042VOR-if00-port0

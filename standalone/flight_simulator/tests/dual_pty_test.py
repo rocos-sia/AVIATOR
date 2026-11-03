@@ -37,6 +37,8 @@ def main():
                     seq+=1
                     up=bytearray(64); up[:2]=b'\xeb\x90';up[2]=seq%256
                     up[10]=7;up[11]=up[12]=255;up[22:26]=bytes.fromhex('01 02 cd ab')
+                    struct.pack_into('<hh', up, 13, 1040, 1059)
+                    struct.pack_into('<hh', up, 26, -1040, -1059)
                     up[63]=sum(up[2:63]) & 255
                     for i,(m,_) in enumerate(pairs):
                         os.write(m,up)
@@ -56,6 +58,8 @@ def main():
                 assert [f for _,f in received[0]] == [f for _,f in received[1]]
                 log.flush();log.seek(0);text=log.read()
                 assert 'FOLLOWING' in text and 'checksum=ABCD' in text, text
+                assert 'camera=(104' in text and 'joint_fk=(-104' in text, text
+                assert '105.9' in text and '-105.9' in text, text
                 print('PASS: production flight simulator, virtual joystick axes/button, dual identical frames, ten-cycle operation, uplink display, disconnect stops TX')
             except Exception:
                 log.flush();log.seek(0);print(log.read(),file=sys.stderr);raise

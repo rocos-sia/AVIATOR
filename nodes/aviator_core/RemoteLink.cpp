@@ -766,6 +766,13 @@ void RemoteLink::io() {
                         m.body["wheel_measurement"]["valid"] = fresh;
                         m.body["wheel_measurement"]["sample_mono_us"] = sample_;
                     }
+                    if (arm_body_.contains("wheel_joint_measurement") && arm_body_["wheel_joint_measurement"].is_object()) {
+                        auto measurement = arm_body_.at("wheel_joint_measurement");
+                        measurement["valid"] = fresh && state_.locked && measurement.contains("valid") &&
+                                               measurement["valid"] == true;
+                        // Keep the actual joint sample timestamp, including invalid samples.
+                        m.body["wheel_joint_measurement"] = std::move(measurement);
+                    }
                     m.body["software_lock"] = state_.locked;
                     m.body["wheel_reference"] = {{"angle", state_.angle},
                                                  {"displacement", state_.displacement}};

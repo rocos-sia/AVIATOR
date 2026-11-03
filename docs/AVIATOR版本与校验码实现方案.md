@@ -123,10 +123,10 @@ python3 scripts/aviator_release.py identity build/release/dist \
 
 测试输出显式带 `mode: bench-test`、`verified: false`、`release_profile: bench-test`、`test_vector_sha256`，不提供伪造的 `release_digest`。版本 `0.2.0` 对应上行字节 22～25 为 `02 00 A1 9C`；`identity` 输出 `rs422_bytes_22_25` 供台架对照。测试身份只用于飞控联调，不作为交付验收通过或进入正式可操控状态的依据。
 
-**软件短码与整帧累加校验必须同时存在。** 对 64 字节上行帧，先填入偏移 22～23 的版本和 24～25 的短码，将偏移 26～62 的备用位填零，再计算偏移 63：
+**软件短码与整帧累加校验必须同时存在。** 对 64 字节上行帧，先填入偏移 22～23 的版本和 24～25 的短码，填入偏移 26～29 的机械臂 FK 位置反馈，再将偏移 30～62 的备用位填零，再计算偏移 63：
 
 ```python
-frame[26:63] = bytes(37)
+frame[30:63] = bytes(33)
 frame[63] = sum(frame[2:63]) & 0xFF
 # 排除帧头，直接累加；无帧尾；短码不能替代 frame[63]。
 ```

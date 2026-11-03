@@ -129,8 +129,9 @@ void run(const Config& config, int stop_fd) {
                      << " seq=" << unsigned(f.counter) << " selected=" << unsigned(f.selected)
                      << " comm=" << unsigned(f.communication) << " state=" << stateName(f.state)
                      << " echo_op=" << unsigned(f.operation) << " echo=(" << position(f.roll_echo)
-                     << ", " << position(f.pitch_echo) << ") measured=(" << position(f.roll) << ", "
-                     << position(f.pitch) << ") rear=" << unsigned(f.rear)
+                     << ", " << position(f.pitch_echo) << ") camera=(" << position(f.roll) << ", "
+                     << position(f.pitch) << ") joint_fk=(" << position(f.joint_roll) << ", "
+                     << position(f.joint_pitch) << ") rear=" << unsigned(f.rear)
                      << " brake=" << unsigned(f.brake) << " fault=" << f.fault
                      << " previous=" << f.last_fault << " severity=" << unsigned(f.severity)
                      << " version=" << std::hex << std::uppercase << std::setfill('0')

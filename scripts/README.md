@@ -72,6 +72,7 @@ python scripts\split_stl.py models\meshes\Cessna\aircraft_visual.STL models\mesh
 ```
 
 真机模式根据所选 system 配置指向的 robot 文件读取 `grasp_wheel.source`。
+`--rs422` 始终启动真实相机，用于上行 13～16 字节视觉位置反馈；以下按抓握来源跳过相机的规则仅适用于非 RS422 模式。
 设为 `camera` 时启动真实相机并等待预热；设为 `wheel_initial` 或省略该项时，
 跳过相机节点、相机 Python/文件依赖检查及 5 秒预热。此时没有真实相机预览、
 视觉测量和图像记录；抓握使用软件轮盘参考，实际轮盘位形应与参考匹配。

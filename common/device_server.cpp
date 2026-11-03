@@ -961,6 +961,9 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                 m.header.sample_mono_us =
                     uint64_t(std::min(feedback.sample_time[0], feedback.sample_time[1]) * 1e6);
             m.body = armState(state, feedback, options);
+            if (options.joint_wheel_measurement)
+                m.body["wheel_joint_measurement"] = options.joint_wheel_measurement(
+                    feedback, state.locked && !state.fault && !state.impedance_switching, monotonic_us());
             // Device status remains available before Rokae's enabled RT callbacks exist.
             // This is NOT a replacement for the original joint/TCP sample timestamp.
             m.body["status_mono_us"] = now;

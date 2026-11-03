@@ -217,6 +217,7 @@ def main():
             assert message["system"]["state"] == "READY" and message["system"]["ready"], message
         drain_control_logs.set()
         print("PASS: blocked stdout does not stall Core/simulation initialization or heartbeat", flush=True)
+        assert initial_state["wheel_joint_measurement"]["valid"] is False, initial_state
         assert abs(initial_state["wheel_reference"]["displacement"] + .085) < 1e-9, initial_state
         assert call(request("enter_standby"), "REJECTED")["result"]["reason"] == "GATEWAY_NOT_BOUND"
         transmitting.set()
@@ -267,6 +268,12 @@ def main():
         assert call(req, "REJECTED")["result"]["reason"] == "REQUEST_ID_CONFLICT"
         call(request("grasp_wheel"), "REJECTED")  # BUSY during the original task.
         grasped = state("FOLLOWING", 120)
+        measured = wait_for(lambda m: m.get("wheel_joint_measurement", {}).get("valid"), 5)
+        wheel = measured["wheel_joint_measurement"]
+        assert measured["software_lock"] and wheel["source"] == "joint_fk", measured
+        assert wheel["sample_mono_us"] == min(measured["arms"][side]["sample_mono_us"]
+                                             for side in ("left", "right")), measured
+        assert math.isfinite(wheel["angle"]) and math.isfinite(wheel["displacement"]), measured
         # FOLLOWING uses the measured hold reference; the next CONTROL command
         # must independently return to the fixed midpoint (verified below).
         assert -.170 <= grasped["wheel_reference"]["displacement"] <= 0, grasped
@@ -290,7 +297,8 @@ def main():
         check_monitor_control()
         # One request leaves CONTROL while Servo is active; no EXIT_CONTROL needed.
         call(request("leave_wheel"), "ACCEPTED")
-        state("STANDBY", 120)
+        released = state("STANDBY", 120)
+        assert released["wheel_joint_measurement"]["valid"] is False, released
         print("PASS: six-operation service, validation/dedup, static input motion, normal release", flush=True)
         call(request("grasp_wheel"), "ACCEPTED")
         state("FOLLOWING", 120)

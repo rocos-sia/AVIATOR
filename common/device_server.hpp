@@ -24,6 +24,7 @@ struct DeviceServerOptions {
     std::string name = "manipulator";
     std::array<std::string, 2> tcp_frames{{"left_base", "right_base"}};
     bool wheel_measurement = false;
+    std::function<Json(const ArmFeedback&, bool locked, uint64_t now)> joint_wheel_measurement;
     std::function<std::unique_ptr<DeviceServo>(const JointFrame&)> servo;
     std::vector<std::string> topics;
     std::function<void(const Message&, uint64_t)> message;

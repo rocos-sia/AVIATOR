@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(AVIATOR VERSION 13.1.1 LANGUAGES C CXX)
+project(AVIATOR VERSION 14.0.0 LANGUAGES C CXX)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
   message(FATAL_ERROR "Use an out-of-source build: cmake --preset debug")

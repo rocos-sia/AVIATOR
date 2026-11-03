@@ -66,7 +66,7 @@ class ScriptsTests(unittest.TestCase):
         for flags, system in ((['--rs422'], 'system-rs422.yaml'),
                               (['--rs422','--simulation','--headless'], 'system-simulation-rs422.yaml')):
             text=self.run_script('start_aviator.sh','--dry-run',*flags)
-            self.assertIn('flight-rs422.yaml',text)
+            self.assertIn('flight-simulation.yaml' if '--simulation' in flags else 'flight-rs422.yaml', text)
             self.assertIn(system,text)
             self.assertEqual('启动 photoelectric:' in text, '--simulation' not in flags)
         custom_config = str(self.directory / 'optical config.yaml')
@@ -176,7 +176,7 @@ class ScriptsTests(unittest.TestCase):
                              'CAMERA_PYTHON': '/missing/camera-python'},
                         capture_output=True, text=True)
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    expected = camera and '--simulation' not in flags
+                    expected = (camera or '--rs422' in flags) and '--simulation' not in flags
                     self.assertEqual('启动 camera:' in result.stdout, expected)
                     self.assertEqual('等待相机预热' in result.stdout, expected)
                     if expected:

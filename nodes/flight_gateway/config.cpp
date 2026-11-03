@@ -145,9 +145,12 @@ Config load_config(const std::string& path) {
                 else if(key == "switch_max_step") c.rs422.switch_max_step = number(item.second,2000,true);
                 else if(key == "release_root") c.rs422.release_root = string(item.second);
                 else if(key == "allow_test_identity") c.rs422.allow_test_identity = boolean(item.second);
+                else if(key == "camera_id") c.rs422.camera_id = string(item.second);
+                else if(key == "camera_publisher") c.rs422.camera_publisher = string(item.second);
                 else require(false, "unknown rs422 key: " + key);
             }
             require(c.rs422.profile == "aviator-bench-v1", "rs422.profile must be aviator-bench-v1");
+            require(!c.rs422.camera_id.empty() && !c.rs422.camera_publisher.empty(), "RS422 camera identity must not be empty");
             require(c.rs422.receive_timeout_ms >= 25, "RS422 timeout must be 25..100 ms");
             require(std::filesystem::path(c.rs422.channel_a).is_absolute() &&
                     std::filesystem::path(c.rs422.channel_b).is_absolute() &&

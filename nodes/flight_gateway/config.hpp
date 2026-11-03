@@ -13,6 +13,7 @@ struct Rs422Config {
     unsigned receive_timeout_ms = 50, recovery_frames = 10, switch_max_step = 100;
     std::string release_root;
     bool allow_test_identity = false;
+    std::string camera_id = "cockpit", camera_publisher = "camera";
 };
 struct SimulatorConfig {
     bool require_joystick = true;

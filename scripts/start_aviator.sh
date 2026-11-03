@@ -39,7 +39,7 @@ for arg in "$@"; do
             echo '--no-browser 不自动打开浏览器；Monitor 仍可通过 http://127.0.0.1:8081 访问。'
             echo '--rs422 选择双路串口配置，Core 输入来源为 FLIGHT；先编辑 flight-rs422.yaml。'
             echo '--fake-hand 仅将 RH56FTP 替换为模拟双手，机械臂照常启动。'
-            echo '真机仅在 grasp_wheel.source=camera 时启动相机；wheel_initial 或省略时跳过相机。'
+            echo '真机在 --rs422 或 grasp_wheel.source=camera 时启动相机；RS422 使用视觉位置反馈。'
             echo '--wheel-test 打开轮盘五点精度测试 UI，独占网关输入；UI_PYTHON 可指定含 tkinter 的 Python。'
             echo '默认不开启 Logger；--logger 开启 MCAP 记录及相机图像录制通道。'
             echo '--tts 开启离线语音提醒；先生成音频包。TTS 退出不停止控制节点。'
@@ -121,7 +121,7 @@ PY
     ) || exit 2
     GRASP_WHEEL_SOURCE=${camera_settings%%$'\n'*}
     ROBOT_CONFIG=${camera_settings#*$'\n'}
-    if [[ $GRASP_WHEEL_SOURCE == camera ]]; then
+    if $RS422 || [[ $GRASP_WHEEL_SOURCE == camera ]]; then
         START_CAMERA=true
     else
         echo "grasp_wheel.source=$GRASP_WHEEL_SOURCE：跳过真实相机节点及预热。"
@@ -433,6 +433,24 @@ if [[ $REMOTE_UI == 1 ]]; then
     gateway_video_driver=dummy
     [[ $REMOTE_KEYBOARD == 1 ]] && gateway_video_driver=x11
     gateway_command=(env SDL_VIDEODRIVER="$gateway_video_driver" "${gateway_command[@]}")
+fi
+if $SIMULATION && $RS422; then
+    # Only the feedback publisher changes; serial/control/checksum settings stay intact.
+    if ! $DRY_RUN; then
+        /usr/bin/python3 - "$FLIGHT_CONFIG" "$LOG_DIR/flight-simulation.yaml" <<'PY'
+import pathlib
+import sys
+import yaml
+source = pathlib.Path(sys.argv[1]).resolve()
+config = yaml.safe_load(source.read_text())
+config['rs422']['camera_publisher'] = 'simulation'
+release = config['rs422'].get('release_root')
+if release and not pathlib.Path(release).is_absolute():
+    config['rs422']['release_root'] = str((source.parent / release).resolve())
+pathlib.Path(sys.argv[2]).write_text(yaml.safe_dump(config))
+PY
+    fi
+    FLIGHT_CONFIG="$LOG_DIR/flight-simulation.yaml"
 fi
 start gateway "${gateway_command[@]}" --config "$FLIGHT_CONFIG" "${gateway_options[@]}"
 if $WHEEL_TEST; then

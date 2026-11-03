@@ -17,7 +17,7 @@ void checkWireBoundaries() {
     for (bool uplink : {false, true}) {
         auto frame = uplink ? encode(Uplink{}) : encode(Downlink{});
         const size_t length = uplink ? 64 : 32;
-        const size_t reserved = uplink ? 26 : 8;
+        const size_t reserved = uplink ? 30 : 8;
         auto valid = [&](const Bytes& b) { return uplink ? decode(b, up) : decode(b, down); };
         require(frame.size() == length);
         require(std::all_of(frame.begin() + reserved, frame.end() - 1,
@@ -83,7 +83,7 @@ void checkRingParser() {
     };
     for (bool uplink : {false, true}) {
         auto frame = uplink ? encode(Uplink{}) : encode(Downlink{});
-        const size_t length = frame.size(), reserved = uplink ? 26 : 8;
+        const size_t length = frame.size(), reserved = uplink ? 30 : 8;
         frame[2] = 17;
         frame.back() = checksum(frame.data() + 2, length - 3);
         // Exercise every physical start offset and every read boundary, including

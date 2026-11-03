@@ -10,6 +10,79 @@ void check(bool b, const char* reason) {
     if (!b)
         throw std::runtime_error(reason);
 }
+void checkDualFeedback() {
+    constexpr uint64_t t = 1000000;
+    constexpr double radians = 3.14159265358979323846 / 180;
+    aviator::Message camera;
+    camera.topic = aviator::Topic::camera_detection;
+    camera.header = {"1.0", 1, t, t, "clock", "camera", "session", true};
+    camera.body = {{"camera_id", "cockpit"}, {"steering_wheel", {
+        {"valid", true}, {"theta_rad", 52 * radians}, {"translation_along_axis_m", -.090}}}};
+    CameraTelemetry vision("clock");
+    check(vision.accept(camera, t), "camera sample accepted");
+    aviator::Message state;
+    state.header.valid = true;
+    state.header.sample_mono_us = t;
+    state.body = {{"system", {{"state", "CONTROL"}, {"current_error_code", 0}, {"last_error_code", 0}}},
+        {"software_lock", true}, {"wheel_joint_measurement", {{"source", "joint_fk"},
+         {"valid", true}, {"sample_mono_us", t}, {"angle", 52 * radians}, {"displacement", -.175}}}};
+    Uplink up;
+    populateTelemetry(up, state, t);
+    vision.populate(up, t);
+    check(up.roll == 1040 && up.pitch == 1059 && up.joint_roll == -1040 && up.joint_pitch == -1059,
+          "independent camera/FK signs and expanded physical ranges");
+    auto bytes = encode(up);
+    check(bytes[13] == 0x10 && bytes[14] == 0x04 && bytes[15] == 0x23 && bytes[16] == 0x04 &&
+          bytes[26] == 0xf0 && bytes[27] == 0xfb && bytes[28] == 0xdd && bytes[29] == 0xfb,
+          "camera and FK feedback exact little-endian offsets");
+    Uplink decoded;
+    check(decode(bytes, decoded) && decoded.joint_roll == -1040 && decoded.joint_pitch == -1059,
+          "expanded FK endpoints decode without saturation");
+    for (size_t offset : {13, 15, 26, 28}) {
+        auto bad = bytes;
+        bad[offset] = 0xff; bad[offset + 1] = 0x7f;
+        bad.back() = checksum(bad.data() + 2, bad.size() - 3);
+        check(!decode(bad, decoded), "out-of-range feedback rejected by both decoders");
+    }
+    vision.populate(up, t + 100000);
+    check(up.roll == invalid_position && up.joint_roll == -1040, "camera expiry does not overwrite FK");
+    camera.header.sequence++; camera.header.sample_mono_us++;
+    camera.body["steering_wheel"]["valid"] = false;
+    check(!vision.accept(camera, t + 1), "target lost revokes visual feedback");
+    vision.populate(up, t + 1);
+    check(up.roll == invalid_position && up.pitch == invalid_position, "no old visual sample after target loss");
+    camera.header.sequence++; camera.header.sample_mono_us++;
+    camera.body["steering_wheel"]["valid"] = true;
+    camera.body["steering_wheel"]["theta_rad"] = -51 * radians;
+    camera.body["steering_wheel"]["translation_along_axis_m"] = .086;
+    check(vision.accept(camera, t + 2), "visual recovery");
+    vision.populate(up, t + 2);
+    state.body["wheel_joint_measurement"]["valid"] = false;
+    populateTelemetry(up, state, t + 2);
+    check(up.roll == -1020 && up.pitch == -1012 && up.joint_roll == invalid_position,
+          "invalid FK leaves fresh expanded camera measurement intact");
+    state.body["wheel_joint_measurement"]["valid"] = true;
+    state.body["software_lock"] = false;
+    populateTelemetry(up, state, t + 2);
+    check(up.joint_roll == invalid_position, "unlocked arms cannot report wheel pose");
+    state.body["software_lock"] = true;
+    state.body["wheel_joint_measurement"]["source"] = "wheel_reference";
+    populateTelemetry(up, state, t + 2);
+    check(up.joint_roll == invalid_position, "reference cannot masquerade as joint FK");
+    camera.header.sequence++; camera.header.sample_mono_us++;
+    camera.body["steering_wheel"]["theta_rad"] = 53 * radians;
+    camera.body["steering_wheel"]["translation_along_axis_m"] = -.091;
+    check(!vision.accept(camera, t + 3), "out-of-physical-range visual measurement invalid");
+    vision.populate(up, t + 3);
+    check(up.roll == invalid_position && up.pitch == invalid_position, "outliers are not clipped");
+    camera.header.sequence++; camera.header.sample_mono_us = t - 1;
+    camera.body["steering_wheel"]["theta_rad"] = 0;
+    camera.body["steering_wheel"]["translation_along_axis_m"] = 0;
+    check(!vision.accept(camera, t + 4), "regressing sample cannot revive feedback");
+    camera.header.sample_mono_us = t + 5;
+    camera.header.clock_id = "foreign";
+    check(!vision.accept(camera, t + 5), "camera clock mismatch rejected");
+}
 void checkWireBoundaries() {
     auto require = [](bool ok) {
         if (!ok)
@@ -20,7 +93,7 @@ void checkWireBoundaries() {
     for (bool uplink : {false, true}) {
         auto frame = uplink ? encode(Uplink{}) : encode(Downlink{});
         const size_t length = uplink ? 64 : 32;
-        const size_t reserved = uplink ? 26 : 8;
+        const size_t reserved = uplink ? 30 : 8;
         auto valid = [&](const Bytes& b) { return uplink ? decode(b, up) : decode(b, down); };
         require(frame.size() == length);
         require(std::all_of(frame.begin() + reserved, frame.end() - 1,
@@ -86,7 +159,7 @@ void checkRingParser() {
     };
     for (bool uplink : {false, true}) {
         auto frame = uplink ? encode(Uplink{}) : encode(Downlink{});
-        const size_t length = frame.size(), reserved = uplink ? 26 : 8;
+        const size_t length = frame.size(), reserved = uplink ? 30 : 8;
         frame[2] = 17;
         frame.back() = checksum(frame.data() + 2, length - 3);
         // Exercise every physical start offset and every read boundary, including
@@ -196,7 +269,7 @@ int main() try {
     up.rear = up.brake = 0;
     up.fault = up.last_fault = 0;
     up.severity = 0;
-    up.roll_echo = up.pitch_echo = up.roll = up.pitch = 0;
+    up.roll_echo = up.pitch_echo = up.roll = up.pitch = up.joint_roll = up.joint_pitch = 0;
     bytes = encode(up);
     check(bytes.size() == 64 && bytes[63] == 0x35 && bytes[22] == 1 && bytes[23] == 2 &&
               bytes[24] == 0x78 && bytes[25] == 0xba,
@@ -414,21 +487,23 @@ int main() try {
     state.body = {
         {"system",
          {{"state", "RELEASING"}, {"current_error_code", 28673}, {"last_error_code", 1203}}},
-        {"wheel_measurement",
-         {{"valid", true}, {"sample_mono_us", t}, {"angle", 0}, {"displacement", -.085}}},
+        {"software_lock", true},
+        {"wheel_joint_measurement",
+         {{"source", "joint_fk"}, {"valid", true}, {"sample_mono_us", t}, {"angle", 0}, {"displacement", -.085}}},
         {"wheel_reference", {{"angle", .8}, {"displacement", 0}}}};
     up = Uplink{};
     populateTelemetry(up, state, t + 1000);
-    check(up.state == 0x14 && up.fault == unknown_fault && up.last_fault == 1203 && up.roll == 0 &&
-              up.pitch == 0 && up.rear == unknown,
+    check(up.state == 0x14 && up.fault == unknown_fault && up.last_fault == 1203 && up.joint_roll == 0 &&
+              up.joint_pitch == 0 && up.roll == invalid_position && up.pitch == invalid_position && up.rear == unknown,
           "real feedback and unknown mapping");
     up = Uplink{};
     populateTelemetry(up, state, t + 100000);
     check(up.state == unknown && up.roll == invalid_position, "stale telemetry never refreshed");
-    state.body.erase("wheel_measurement");
+    state.body.erase("wheel_joint_measurement");
     up = Uplink{};
     populateTelemetry(up, state, t);
-    check(up.roll == invalid_position, "reference is not measurement");
+    check(up.roll == invalid_position && up.joint_roll == invalid_position, "reference is not measurement");
+    checkDualFeedback();
     std::cout << "RS422 codec, gate, redundancy, telemetry and Core parameters passed\n";
     return 0;
 } catch (const std::exception& e) {

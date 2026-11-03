@@ -1,5 +1,6 @@
 #include "WheelEstimate.hpp"
 #include "aviator/backend.hpp"
+#include "JointWheelFeedback.hpp"
 #include <filesystem>
 #include <iostream>
 using namespace wheel_bandwidth;
@@ -14,6 +15,40 @@ int main(int argc, char** argv) {
         const auto lim = posture["joint2_limits_deg"].as<std::vector<double>>();
         auto fk = makePinIkKinematics((root/"models/urdf/aviator.urdf").string(),lim[0]*pi/180,lim[1]*pi/180);
         WheelEstimate estimator(grasp);
+        ArmFeedback measured;
+        measured.valid = measured.enabled = {true, true};
+        measured.sample_time = {1.0, 1.001};
+        for (int side = 0; side < 2; ++side) {
+            std::array<double, 7> seed{}, q{};
+            const auto values = posture[side ? "right_approach_seed_deg" : "left_approach_seed_deg"].as<std::vector<double>>();
+            for (int j = 0; j < 7; ++j) seed[j] = values[j] * pi / 180;
+            const double angle = side ? .12 : .10, displacement = side ? -.09 : -.08;
+            const pinocchio::SE3 wheel(Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitZ()).toRotationMatrix(),
+                                      Eigen::Vector3d(0, 0, displacement));
+            const auto target = frame(grasp["wheel_origin"]) * wheel * frame(grasp[side ? "right" : "left"]) *
+                                frame(toolFrameConfig(grasp, side)).inverse();
+            check(fk->solveIk(Side(side), seed, target, q), "Feedback fixture IK failed");
+            std::copy(q.begin(), q.end(), measured.q.begin() + 7 * side);
+        }
+        JointWheelFeedback feedback(makePinIkKinematics((root/"models/urdf/aviator.urdf").string(),
+                                   lim[0]*pi/180, lim[1]*pi/180), grasp);
+        auto result = feedback.measure(measured, true, 1002000);
+        check(result["valid"] == true && result["source"] == "joint_fk" && result["sample_mono_us"] == 1000000,
+              "Joint FK validity and oldest source timestamp");
+        check(std::abs(result["angle"].get<double>() - .11) < 1e-5 &&
+              std::abs(result["displacement"].get<double>() + .085) < 1e-5, "Dual-arm FK fusion");
+        measured.target.fill(0); // Commands must never enter the measurement path.
+        check(feedback.measure(measured, true, 1003000)["angle"] == result["angle"], "Targets cannot alter feedback");
+        check(feedback.measure(measured, true, 1100001)["valid"] == false, "Republish does not refresh joint time");
+        check(feedback.measure(measured, false, 1002000)["valid"] == false, "Unlocked FK is invalid");
+        check(feedback.measure(measured, true, 999000)["valid"] == false, "Future joint sample is invalid");
+        auto bad = measured;
+        bad.sample_time[1] = 1.010;
+        check(feedback.measure(bad, true, 1011000)["valid"] == false, "Unsynchronized arms invalid");
+        bad = measured; bad.valid[0] = false;
+        check(feedback.measure(bad, true, 1002000)["valid"] == false, "Missing arm invalid");
+        bad = measured; bad.q[7] = std::numeric_limits<double>::quiet_NaN();
+        check(feedback.measure(bad, true, 1002000)["valid"] == false, "Nonfinite joint invalid");
         for (int side=0; side<2; ++side) {
             const auto seed = posture[side ? "right_approach_seed_deg" : "left_approach_seed_deg"].as<std::vector<double>>();
             std::array<double,7> q{}, solution{};

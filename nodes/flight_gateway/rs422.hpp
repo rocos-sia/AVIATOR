@@ -22,10 +22,11 @@ struct Uplink {
     uint8_t counter = 0, selected = unknown, communication = 3, operation = 0;
     int16_t roll_echo = invalid_position, pitch_echo = invalid_position;
     uint8_t state = unknown, rear = unknown, brake = unknown;
-    int16_t roll = invalid_position, pitch = invalid_position;
+    int16_t roll = invalid_position, pitch = invalid_position; // Camera feedback, bytes 13..16.
     uint16_t fault = unknown_fault, last_fault = unknown_fault;
     uint8_t severity = unknown;
     uint16_t version = 0, checksum = 0;
+    int16_t joint_roll = invalid_position, joint_pitch = invalid_position; // Joint FK, bytes 26..29.
 };
 using Bytes = std::vector<uint8_t>;
 // Low eight bits of the supplied bytes; callers exclude header and checksum.

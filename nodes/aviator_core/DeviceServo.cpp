@@ -1,4 +1,5 @@
 #include "DeviceServo.hpp"
+#include "JointWheelFeedback.hpp"
 #include "ServoPlanner.hpp"
 #include "aviator/GraspTools.hpp"
 #include "aviator/backend.hpp"
@@ -24,6 +25,7 @@ pinocchio::SE3 frame(const YAML::Node& n) {
 struct Resources {
     std::unique_ptr<Kinematics> kinematics;
     std::unique_ptr<CollisionChecker> collision;
+    std::shared_ptr<JointWheelFeedback> wheel_feedback;
     pinocchio::SE3 origin, handles[2], tools[2];
     std::array<double, 2> speed, acceleration, jerk;
     double joint_speed_limit;
@@ -38,6 +40,8 @@ struct Resources {
         if (settings.robot["collision_check_enabled"].as<bool>(true))
             collision = makePinocchioCollisionChecker(settings.path("urdf").string());
         auto grasp = YAML::LoadFile(settings.path("grasp").string());
+        wheel_feedback = std::make_shared<JointWheelFeedback>(
+            makePinIkKinematics(settings.path("urdf").string(), lo, hi), grasp);
         origin = frame(grasp["wheel_origin"]);
         for (int side = 0; side < 2; ++side) {
             handles[side] = frame(grasp[side ? "right" : "left"]);
@@ -90,6 +94,10 @@ void configureDeviceServo(DeviceServerOptions& options, const DeviceSettings& se
     auto resources = std::make_shared<Resources>(settings);
     options.servo = [resources](const JointFrame& start) {
         return std::make_unique<OnlineServo>(resources, start);
+    };
+    options.joint_wheel_measurement = [estimator = resources->wheel_feedback](
+        const ArmFeedback& feedback, bool locked, uint64_t now) {
+        return estimator->measure(feedback, locked, now);
     };
 }
 } // namespace aviator

@@ -93,7 +93,7 @@ Bytes encode(const Downlink& f) {
     return b;
 }
 Bytes encode(const Uplink& f) {
-    Bytes b(uplink_size, 0); // Reserved bytes 26..62 are transmitted as zero.
+    Bytes b(uplink_size, 0); // Reserved bytes 30..62 are transmitted as zero.
     b[0] = 0xeb;
     b[1] = 0x90;
     b[2] = f.counter;
@@ -112,6 +112,8 @@ Bytes encode(const Uplink& f) {
     b[21] = f.severity;
     put(b, 22, f.version);
     put(b, 24, f.checksum);
+    put(b, 26, f.joint_roll);
+    put(b, 28, f.joint_pitch);
     b[uplink_checksum_offset] = checksum(b.data() + 2, uplink_checksum_offset - 2);
     return b;
 }
@@ -133,8 +135,8 @@ bool decode(const Bytes& b, Uplink& f) {
         (b[11] > 1 && b[11] != unknown) || (b[12] > 1 && b[12] != unknown) ||
         (b[21] != unknown && (b[21] > 0x40 || b[21] % 16)))
         return false;
-    for (size_t p : {size_t(6), size_t(8), size_t(13), size_t(15)}) {
-        const int v = i16(b, p), limit = p == 13 ? 1040 : p == 15 ? 1059 : 1000;
+    for (size_t p : {size_t(6), size_t(8), size_t(13), size_t(15), size_t(26), size_t(28)}) {
+        const int v = i16(b, p), limit = (p == 13 || p == 26) ? 1040 : (p == 15 || p == 28) ? 1059 : 1000;
         if (v != invalid_position && std::abs(v) > limit)
             return false;
     }
@@ -142,7 +144,7 @@ bool decode(const Bytes& b, Uplink& f) {
         if (!knownFault(u16(b, p)) && u16(b, p) != unknown_fault)
             return false;
     f = {b[2],  b[3],       b[4],       b[5],       i16(b, 6),  i16(b, 8), b[10],      b[11],
-         b[12], i16(b, 13), i16(b, 15), u16(b, 17), u16(b, 19), b[21],     u16(b, 22), u16(b, 24)};
+         b[12], i16(b, 13), i16(b, 15), u16(b, 17), u16(b, 19), b[21],     u16(b, 22), u16(b, 24), i16(b, 26), i16(b, 28)};
     return true;
 }
 std::vector<Bytes> Parser::feed(const uint8_t* data, size_t n) {

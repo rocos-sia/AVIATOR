@@ -20,11 +20,12 @@ class CoreClient {
   public:
     explicit CoreClient(const Config& c)
         : config_(c), session_(aviator::new_instance_id()), clock_(aviator::local_clock_id()),
-          feedback_("", clock_) {
+          feedback_("", clock_), camera_(clock_, c.rs422.camera_id, c.rs422.camera_publisher) {
         aviator::configure(pub_);
         aviator::configure(sub_);
         aviator::configure(service_, {16, 16, 0});
         aviator::subscribe(sub_, "flight.state");
+        aviator::subscribe(sub_, "camera.detection");
         pub_.connect(c.publish);
         sub_.connect(c.subscribe);
         service_.set(zmq::sockopt::immediate, 1);
@@ -40,9 +41,12 @@ class CoreClient {
             if (r == aviator::ReceiveResult::empty)
                 break;
             if (r == aviator::ReceiveResult::received &&
-                aviator::decode(wire.topic, wire.payload, candidate, error) &&
-                feedback_.accept(candidate, now, error))
-                state_ = std::move(candidate);
+                aviator::decode(wire.topic, wire.payload, candidate, error)) {
+                if (candidate.topic == aviator::Topic::camera_detection)
+                    camera_.accept(candidate, now);
+                else if (feedback_.accept(candidate, now, error))
+                    state_ = std::move(candidate);
+            }
         }
         for (unsigned i = 0; i < 32; ++i) {
             std::string raw;
@@ -132,12 +136,14 @@ class CoreClient {
     void telemetry(Uplink& up, uint64_t now) const {
         if (!feedback_.expired(now))
             populateTelemetry(up, state_, now);
+        camera_.populate(up, now);
     }
 
   private:
     Config config_;
     std::string session_, clock_;
     CoreFeedback feedback_;
+    CameraTelemetry camera_;
     aviator::Message state_;
     zmq::context_t context_{1};
     zmq::socket_t pub_{context_, zmq::socket_type::pub}, sub_{context_, zmq::socket_type::sub},
@@ -369,12 +375,13 @@ void runRs422(const Config& config, int signals_fd) {
                     const auto& f = replies[i];
                     aviator::Logger::info(
                         "SIM {} {} seq={} selected={} comm={} state={} echo_op={:02X} echo=({}, "
-                        "{}) measured=({}, {}) rear={} brake={} fault={} previous={} "
+                        "{}) camera=({}, {}) joint_fk=({}, {}) rear={} brake={} fault={} previous={} "
                         "severity={:02X} version={:04X} checksum={:04X} bad_bytes={} "
                         "port={} rx_bytes={} tx_frames={} dropped={}",
                         i ? "B" : "A", fresh ? "LIVE" : "STALE", f.counter, f.selected,
                         f.communication, stateName(f.state), f.operation, position(f.roll_echo),
-                        position(f.pitch_echo), position(f.roll), position(f.pitch), f.rear,
+                        position(f.pitch_echo), position(f.roll), position(f.pitch),
+                        position(f.joint_roll), position(f.joint_pitch), f.rear,
                         f.brake, f.fault, f.last_fault, f.severity, f.version, f.checksum,
                         parsers[i].rejected, ports[i].fd() >= 0 ? "open" : "closed",
                         ports[i].rx_bytes, ports[i].tx_frames, ports[i].dropped);
