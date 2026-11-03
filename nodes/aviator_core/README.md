@@ -14,6 +14,8 @@
 
 Core 负责有限动作的 PIN-IK、Pinocchio 碰撞检查和 Ruckig 规划；连续 Servo 由设备端复用同一规划器逐周期执行。Core 通过 RemoteLink 与设备节点通信，不直接加载 xCore SDK 或创建 MuJoCo 窗口。
 
+`aviator_core_managed` 启动时启用异步终端日志，磁盘写入或 stdout 管道短时阻塞由日志线程承担，避免阻塞状态机心跳和 Servo。保留原有 100/200 ms 时效保护；日志队列容量为 8192 条，长期阻塞直至队列满时仍会反压，退出时排空队列。
+
 ## 离线状态机测试入口
 
 参考 `SurgicalRobotArm/src/robot.cpp` 的“事件 → SML 转换表 → 动作 → 完成/失败事件”结构，

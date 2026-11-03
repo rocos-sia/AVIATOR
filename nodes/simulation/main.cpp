@@ -31,6 +31,9 @@ void usage() {
 }
 } // namespace
 int main(int argc, char** argv) try {
+    // Stiffness changes log from the device worker; disk/pipe backpressure
+    // must not stall its feedback and trip Core's resource watchdog.
+    aviator::Logger::configure(true);
     auto file = aviator::defaultSystemConfig();
     std::string model, pub_endpoint, sub_endpoint, camera_config, preview_endpoint, recording_config;
     std::string camera_id = "cockpit";

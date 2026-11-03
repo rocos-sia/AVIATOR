@@ -29,6 +29,31 @@ def smooth(t):
     return t**3 * (10 - 15*t + 6*t*t)
 
 
+def check_hand_alignment(model, data, side):
+    """Check the actual palm/fingers, not just two arbitrarily positioned sites."""
+    hand = model.body(("l" if side == "left" else "r") + "_base_link").id
+    hand_r = data.xmat[hand].reshape(3, 3)
+    handle = model.site(side + "_handle").id
+    point = hand_r.T @ (data.site_xpos[handle] - data.xpos[hand])
+    axis = hand_r.T @ data.site_xmat[handle].reshape(3, 3)[:, 2]
+    # The handle runs across the four fingers, parallel to the palm's Y axis.
+    assert abs(axis[1]) > .995, (side, "handle axis misses finger row", axis)
+    palm = model.body(side + "_plam_force_sensor").id
+    palm_point = hand_r.T @ (data.xpos[palm] - data.xpos[hand])
+    for finger in ("index", "middle", "ring", "little"):
+        knuckle = model.body(side + "_" + finger + "_1").id
+        distal = model.body(side + "_" + finger + "_2").id
+        knuckle_point = hand_r.T @ (data.xpos[knuckle] - data.xpos[hand])
+        distal_point = hand_r.T @ (data.xpos[distal] - data.xpos[hand])
+        crossing = point + axis * ((knuckle_point[1] - point[1]) / axis[1])
+        # Handle center lies between palm and curled fingers, on the palm side
+        # of the knuckles. Tolerances allow the finger fan and small weld error.
+        assert palm_point[0] + .008 < crossing[0] < distal_point[0], (side, finger, crossing)
+        assert .005 < knuckle_point[2] - crossing[2] < .030, (side, finger, crossing)
+    print(f"{side}: handle axis in palm frame={axis.round(4).tolist()}, "
+          f"grasp point={np.round(point * 1000, 2).tolist()} mm")
+
+
 def solve_pose(model, data, joints, body, position, orientation, seed):
     """Damped Jacobian IK; no extra optimizer dependency or saved joint fixture."""
     adr = model.jnt_qposadr[joints]
@@ -156,6 +181,7 @@ def run(path):
               f"weld_position_error={error * 1000:.3f} mm")
         assert closure[s, 1] >= .3 and np.min(closure[s, 2:]) >= .7
         assert error < .001 and rotation_error < .05, (side, error, rotation_error)
+        check_hand_alignment(model, data, side)
     data.eq_active[welds] = 0
     mj.mj_forward(model, data)
     assert not data.eq_active[welds].any()

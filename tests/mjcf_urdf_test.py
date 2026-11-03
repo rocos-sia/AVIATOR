@@ -1,5 +1,6 @@
 """Check URDF/MJCF visuals, kinematics, mimic constraints and lossless STL chunks."""
 import importlib.util
+import json
 import struct
 import tempfile
 import unittest
@@ -112,9 +113,16 @@ class ModelTests(unittest.TestCase):
                                        data.xpos[hand], atol=1e-12)
             self.assertEqual(model.geom_contype[geom], 0)
             self.assertEqual(model.geom_conaffinity[geom], 0)
-            # Default TCP stays at its legacy flange offset; runtime uses grasp.json.
-            np.testing.assert_allclose(data.site_xpos[model.site(side + "_tcp").id],
-                                       data.xpos[flange] + .1296 * axis, atol=1e-12)
+            # Offline previews and runtime must use the same calibrated TCP.
+            tool = json.loads((ROOT / "config/grasp.json").read_text())["tool"][side]
+            flange_r = data.xmat[flange].reshape(3, 3)
+            tcp = model.site(side + "_tcp").id
+            np.testing.assert_allclose(data.site_xpos[tcp],
+                                       data.xpos[flange] + flange_r @ tool["position"], atol=1e-12)
+            tool_r = np.empty(9)
+            mj.mju_quat2Mat(tool_r, np.asarray(tool["quaternion"]))
+            np.testing.assert_allclose(data.site_xmat[tcp].reshape(3, 3),
+                                       flange_r @ tool_r.reshape(3, 3), atol=1e-12)
             link = self.urdf.find(f"link[@name='{flange_name}']")
             self.assertEqual(link.find("visual/geometry/cylinder").attrib,
                              link.find("collision/geometry/cylinder").attrib)

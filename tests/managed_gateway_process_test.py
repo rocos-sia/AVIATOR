@@ -55,6 +55,8 @@ def main():
     checking.set()
     flight_target = (0.0, 0.0)
     children, logs = [], []
+    drain_control_logs = threading.Event()
+    log_readers = []
 
     def publish():
         pub = context.socket(zmq.PUB)
@@ -87,8 +89,37 @@ def main():
     def start(name, args):
         log = (directory / (name + ".log")).open("w")
         logs.append(log)
-        child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                                 env={**os.environ, "LD_BIND_NOW": "1"})
+        if name in ("core", "manipulator"):
+            # A full stdout pipe models a stalled log destination without slowing
+            # the machine or changing the device's 100/200 ms watchdogs.
+            read_fd, write_fd = os.pipe()
+            os.set_blocking(write_fd, False)
+            try:
+                while True:
+                    os.write(write_fd, b"\n" * 4096)
+            except BlockingIOError:
+                pass
+            os.set_blocking(write_fd, True)
+
+            def drain():
+                with os.fdopen(read_fd) as source:
+                    drain_control_logs.wait()
+                    for line in source:
+                        if line.strip():
+                            log.write(line)
+                            log.flush()
+
+            log_reader = threading.Thread(target=drain)
+            log_readers.append(log_reader)
+            log_reader.start()
+            try:
+                child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=write_fd, stderr=write_fd,
+                                         env={**os.environ, "LD_BIND_NOW": "1"})
+            finally:
+                os.close(write_fd)
+        else:
+            child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                     env={**os.environ, "LD_BIND_NOW": "1"})
         children.append(child)
         return child
 
@@ -178,6 +209,14 @@ def main():
         process = start("core", [core, "--config", str(directory / "system.yaml"),
                                  "--operation-service", endpoints[3]])
         initial_state = state("READY", 30)  # Startup enables but waits for external home request, even with stdin EOF.
+        # Keep both log writers blocked longer than the device watchdogs. Core
+        # and simulation must still exchange fresh feedback and heartbeats.
+        deadline = time.monotonic() + .5
+        while time.monotonic() < deadline:
+            message = wait_for(lambda m: True, 1)
+            assert message["system"]["state"] == "READY" and message["system"]["ready"], message
+        drain_control_logs.set()
+        print("PASS: blocked stdout does not stall Core/simulation initialization or heartbeat", flush=True)
         assert abs(initial_state["wheel_reference"]["displacement"] + .085) < 1e-9, initial_state
         assert call(request("enter_standby"), "REJECTED")["result"]["reason"] == "GATEWAY_NOT_BOUND"
         transmitting.set()
@@ -293,6 +332,7 @@ def main():
         state("STANDBY", 120)
         print("PASS: moving ERROR stop, stable enabled hold beyond 1 s, no auto-resume, explicit release", flush=True)
     finally:
+        drain_control_logs.set()
         stopped.set()
         publisher.join()
         for child in reversed(children):
@@ -303,6 +343,9 @@ def main():
                 except subprocess.TimeoutExpired:
                     child.kill()
                     child.wait()
+        for log_reader in log_readers:
+            log_reader.join(timeout=5)
+            assert not log_reader.is_alive(), "Control log reader failed to stop"
         for log in logs:
             log.close()
         sub.close(0)

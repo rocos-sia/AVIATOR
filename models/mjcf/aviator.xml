@@ -447,8 +447,8 @@
                             <inertial fullinertia="2.37671048423346E-05 1.27843040563581E-05 1.20351729261164E-05 -1.29072575162348E-08 -6.43764479926857E-08 9.82907716155012E-08" mass="0.0205046589058927" pos="-0.028227910864842 -0.000242127035993855 0.0835826421996249" />
                             <geom class="visual" mesh="left_plam_casing" name="left_plam_casing_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                           </body>
-                          <!--Legacy grasp frame: preserves the previous TCP pose relative to the flange.-->
-                          <body name="left_gripper" pos="0 0 0.1176" quat="0.707106781187 0 0.707106781187 0">
+                          <!-- Short-wrist grasp frame, matching config/grasp.json in the hand base frame. -->
+                          <body name="left_gripper" pos="0.026 0.020 0.114" quat="0.5 0.5 0.5 -0.5">
                             <site name="left_tcp" rgba="1 0.3 0.1 1" size="0.005" />
                           </body>
                         </body>
@@ -638,8 +638,8 @@
                             <inertial fullinertia="2.37673054625327E-05 1.27806531066944E-05 1.20388397757724E-05 -1.16564720996025E-08 -5.5459072319844E-08 1.11375428223568E-07" mass="0.0205048839956349" pos="-0.0282100608341151 0.000132226954469678 0.0837245353514299" />
                             <geom class="visual" mesh="right_plam_casing" name="right_plam_casing_visual_0" pos="0 0 0" quat="1 0 0 0" rgba="1 1 1 1" />
                           </body>
-                          <!--Legacy grasp frame: preserves the previous TCP pose relative to the flange.-->
-                          <body name="right_gripper" pos="0 0 0.1176" quat="0.707106781187 0 0.707106781187 0">
+                          <!-- Short-wrist grasp frame, matching config/grasp.json in the hand base frame. -->
+                          <body name="right_gripper" pos="0.026 -0.020 0.114" quat="0.5 -0.5 0.5 0.5">
                             <site name="right_tcp" rgba="1 0.3 0.1 1" size="0.005" />
                           </body>
                         </body>
