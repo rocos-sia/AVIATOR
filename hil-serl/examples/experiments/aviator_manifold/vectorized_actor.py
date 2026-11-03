@@ -22,6 +22,7 @@ replay buffer and the DP demo buffer share one format.
 from __future__ import annotations
 
 import os
+import json
 import time
 
 import jax
@@ -195,6 +196,10 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
     window_branch = 0
     online_steps = 0
     transition_budget = vec_env.transition_budget
+    gate_stopped = False
+    episode_log_path = os.getenv('AVIATOR_EPISODE_LOG')
+    episode_log = open(episode_log_path, 'w', buffering=1) if episode_log_path else None
+    completed_episode_count = 0
 
     pbar = tqdm.tqdm(range(config.max_steps), dynamic_ncols=True)
     for step in pbar:
@@ -259,6 +264,16 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
                 online_steps += 1
 
                 if done[i] or truncated[i]:
+                    completed_episode_count += 1
+                    if episode_log is not None:
+                        episode_log.write(json.dumps({
+                            'episode': completed_episode_count, 'env_index': i,
+                            'online_transitions': online_steps,
+                            'termination': info[i].get('termination'),
+                            'progress': info[i].get('progress'),
+                            'model': vec_env.envs[i].unwrapped.model_path,
+                            'return': float(episode_returns[i]),
+                        }) + '\n')
                     window_episodes += 1
                     window_episode_returns.append(float(episode_returns[i]))
                     episode_returns[i] = 0.0
@@ -283,6 +298,15 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
             deadline = time.monotonic() + 120
             while True:
                 progress = client.request("learner-progress", {})
+                if progress is not None and progress.get('training_stop_requested', False):
+                    gate_stopped = True
+                    break
+                if progress is not None and progress.get('gate_waiting', False):
+                    # Checkpoint evaluation is intentionally outside the
+                    # learner's stall timeout, and uses a separate process.
+                    deadline = time.monotonic() + 120
+                    time.sleep(.2)
+                    continue
                 if progress is not None and progress.get("learner_abort", False):
                     raise RuntimeError(
                         "learner aborted before actor completion: "
@@ -293,6 +317,9 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f"learner stalled before update {target_updates}: {progress}")
                 time.sleep(0.1)
+
+        if gate_stopped:
+            break
 
         # Stream env 0's latest kinematic state to a live viewer, if enabled.
         if publisher is not None and vec_env.active[0]:
@@ -357,8 +384,8 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
     # Flush transitions before announcing completion to the learner. A step
     # cap hit is a failed run, not a successful 400-episode experiment.
     client.update()
-    complete = (online_steps >= transition_budget if transition_budget
-                else not np.any(vec_env.active))
+    complete = gate_stopped or (online_steps >= transition_budget if transition_budget
+                               else not np.any(vec_env.active))
     if complete:
         print(f"actor finished: online_transitions={online_steps}, "
               f"episodes_started={vec_env._next_trajectory}", flush=True)
@@ -371,6 +398,8 @@ def vectorized_actor(agent, data_store, intvn_data_store, vec_env, sampling_rng,
                 f"response={response}, progress={progress}"
             )
     client.stop()
+    if episode_log is not None:
+        episode_log.close()
     pbar.close()
     if publisher is not None:
         publisher.close()

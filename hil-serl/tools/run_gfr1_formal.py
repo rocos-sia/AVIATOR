@@ -73,8 +73,11 @@ def run_condition(args, condition: str, seed: int, output: Path) -> dict:
     learner_log = (run_dir / "learner.log").open("w")
     actor_log = (run_dir / "actor.log").open("w")
     start = time.perf_counter()
+    learner_args = common + ["--learner", f"--demo_path={demo}"]
+    if args.bc_checkpoint is not None:
+        learner_args.append(f"--bc_checkpoint_path={args.bc_checkpoint.resolve()}")
     learner = subprocess.Popen(
-        common + ["--learner", f"--demo_path={demo}"],
+        learner_args,
         cwd=HIL, env=base, stdout=learner_log, stderr=subprocess.STDOUT,
     )
     time.sleep(args.learner_startup_s)
@@ -107,6 +110,7 @@ def run_condition(args, condition: str, seed: int, output: Path) -> dict:
         "visible_error": spec["visible"] == "1",
         "correction_weight": float(spec["correction"]),
         "demo": demo,
+        "bc_checkpoint": str(args.bc_checkpoint.resolve()) if args.bc_checkpoint else None,
         "steps_requested": args.steps,
         "actor_returncode": actor_rc,
         "learner_returncode": learner_rc,
@@ -121,6 +125,8 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--output", required=True)
     p.add_argument("--demo-dir", type=Path, default=DEFAULT_DEMO_DIR)
+    p.add_argument("--bc-checkpoint", type=Path, default=None,
+                   help="Optional GFR-compatible BC actor, only for a fresh output directory.")
     p.add_argument("--seed", type=int, default=11)
     p.add_argument("--num-envs", type=int, default=16)
     p.add_argument("--steps", type=int, default=1000)

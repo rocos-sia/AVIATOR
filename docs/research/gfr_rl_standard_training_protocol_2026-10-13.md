@@ -1,5 +1,31 @@
 # GFR-RL 标准训练与验收流程
 
+## 2026-10-30 执行修订：BC 初始化不是 SAC 的完成率前置条件
+
+用户已授权恢复“适配 GFR 的 BC Actor 初始化＋成功示范 replay＋SAC 在线探索”的训练范式。本节替代下方 2026-10-29 的强制 BC 完成率门槛；历史 BC 0/10 与消融结果保留，不重新标为通过。
+
+- 使用未屏蔽上一动作通道的 GFR BC `checkpoint_20000`；完整 40 维观测在 BC、SAC 与示范中保持一致。仅复制 Actor，Critic、优化器及在线 replay 从头建立。
+- 已完成的 BC 闭环诊断用于说明初始化局限，不要求 BC 独立完成任务。`--bc-initialization-only` 显式记录本轮选择；checkpoint、示范哈希与评测完整性仍须通过，屏蔽通道的 checkpoint 不能直接用于完整观测 SAC。
+- 保留 100 条完整成功示范、302,125 transitions；SAC 每批固定 128 demo＋128 online。维持 seed 11、16 个逻辑环境、B4 修正权重 0.1、critic clipping 1.0，以及当前 GFR 奖励和安全后端。
+- 20k/40k 独立 held-out 异步评估门控不变：两次均为零则停止；否则最多继续至 60k，并评估最终 checkpoint。400 条探索 episode 是上限内的目标，必须报告实际完成数。
+- 本轮只检验 BC 初始化后的 SAC；不加入纠偏数据、不同时修改奖励时间尺度或替代动作恢复。结果不得解释成完整复制了旧 LUT 训练环境。
+
+新输出：`outputs/differential_lift_feasibility_20261030/gfr_sac_bc_warmstart/formal_seed11/`。
+
+## 2026-10-29 执行补充：先验收 BC，再启动 SAC
+
+本节保留为 2026-10-29 的执行记录；其强制 BC 完成率前置条件已由上方 2026-10-30 修订替代。下方 2026-10-13 的 nominal-only 数据建议和动态 batch 比例建议同样保留为历史记录；实际配置以最新修订与当轮冻结文件为准。
+
+1. **数据验收**：使用已审计的 100 条完整 model-consistent 示教（nominal、1 mm 平移各 50 条，共 302,125 transitions）。使用原始 GFR 40 维观测与两维 raw action，不导入旧 LUT 的 BC 权重，不把执行后动作重新标成 raw action。
+2. **离线 BC**：全部示教参与训练；本阶段 demo 比例为 100%，不采集在线探索。复用现有三层 256 维 Actor、tanh Gaussian BC likelihood loss、Adam 3e-4、batch 256，seed 11，固定 20k 次更新；记录每 100 次更新的 loss，保留 5k/10k/15k/20k checkpoint。已有 BC loss 仅在计算 log probability 时把 ±1 标签裁到 ±(1−1e-6)，不改原始数据。
+3. **示教覆盖任务闭环验收**：按每个模型的轨迹路径排序，固定选择序号 0、12、24、36、49；共 10 个任务。10k 与最终 20k checkpoint 都运行同一组完整任务，确定性动作、原始 governor、endpoint/swept checker、dt 和全部安全阈值不变。每个 episode 立即追加 JSONL；每步记录 progress、raw/executed action、teacher progress 对齐参考、关节偏差、clearance、closure、干预与候选失败原因。这是训练任务的模仿能力验收，不称为泛化测试。
+4. **BC gate**：两个 checkpoint 各至少 9/10 completion，每个模型至少 4/5；没有接受违反冻结验证规则的动作，没有评测异常。默认只将最终 20k BC 用于后续初始化，不挑最好 checkpoint。未通过则停止，不启动 SAC；loss 下降不能代替闭环通过。
+5. **转入 SAC**：先检验 BC checkpoint 恢复及 Actor 权重转移前后确定性动作一致，并确认 Critic 没有被 BC 覆盖。新目录启动 SAC；仅改变 Actor 初始化，reward、governor、checker 保持冻结。每个 batch 固定 128 demo＋128 online；16 个逻辑环境；400 exploration episodes 为目标，60k transitions 与门控优先，报告实际 episode 数。
+6. **20k/40k 异步 gate**：继续使用冻结的独立 held-out 10 任务；20k 评估不暂停训练，40k 保存后等待两个报告。两次有效 completion 都为零则停止，不进入 60k；评测错误按 instrumentation error 停止。至少一次非零只允许继续观察，不能据此声称收敛。
+7. **归因**：若 BC 无法闭环完成，先检查模仿误差、动作多解和分布偏移；奖励时间尺度、替代动作搜索恢复作为之后的独立消融，不与本轮 BC 初始化同时改变。
+
+本轮输出：`outputs/differential_lift_feasibility_20261029/gfr_bc_teacher_gate/`。旧示教、失败 SAC run 和 checkpoint 保持不变。
+
 ## 目标
 
 验证 RL 是否能在固定闭链流形和冻结的 endpoint-aware governor 后端上学习 phase-rate 调度。RL 不改变流形，不接管 `beta`，也不替代 endpoint/swept checker。

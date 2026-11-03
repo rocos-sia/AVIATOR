@@ -282,7 +282,14 @@ class GFRManifoldEnv(gym.Env):
             info["reason"] = "endpoint_validation"
         return info, info
 
-    def step(self, action):
+    def step(self, action, precomputed=None):
+        """Advance one step, optionally reusing a checked candidate.
+
+        ``precomputed`` is used by the teacher replay tool.  It contains the
+        candidate results already produced by ``_candidate`` so endpoint and
+        swept collision checks are not performed a second time.  The default
+        path is unchanged for existing callers.
+        """
         action = np.asarray(action, dtype=np.float64).reshape(2)
         if not np.all(np.isfinite(action)) or np.any(np.abs(action) > 1.0):
             raise ValueError("action must be finite and within [-1,1]")
@@ -290,16 +297,22 @@ class GFRManifoldEnv(gym.Env):
         xdot_nom = self._path_state(self._u)[1]
         candidates = []
         accepted = None
-        for beta in self.governor_schedule:
-            info, _ = self._candidate(
-                self._x, self._q, xdot_nom, r_nom, beta,
-                self._previous_n,
-                structured=self.mode == "structured",
-            )
-            candidates.append(info)
-            if info.get("feasible", False):
-                accepted = info
-                break
+        if precomputed is not None:
+            accepted = precomputed.get("accepted")
+            candidates = list(precomputed.get("candidates", []))
+            if accepted is None or not accepted.get("feasible", False):
+                raise ValueError("precomputed step must contain a feasible candidate")
+        else:
+            for beta in self.governor_schedule:
+                info, _ = self._candidate(
+                    self._x, self._q, xdot_nom, r_nom, beta,
+                    self._previous_n,
+                    structured=self.mode == "structured",
+                )
+                candidates.append(info)
+                if info.get("feasible", False):
+                    accepted = info
+                    break
 
         previous_u = self._u
         if accepted is None:

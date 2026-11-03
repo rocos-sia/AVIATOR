@@ -1,13 +1,79 @@
+## 2026-11-03 调度器配对与 G1–G3 泛化验收（运行中）
+
+- 当前节点：冻结60k＋combined修复执行器，四种调度器开发集完整配对；随后冻结G1–G3清单并正式评估。
+- 冻结参数：dt=.005、d_safe=.005、beta_stop=.125、r_max=qdot_max=1.5；CPU串行；无训练。
+- 已验证：四方法双模型短预检通过；10项计时/缓存/几何测试通过；当前旧回归20/20且替代恢复0。
+- 未验证：修复后RL独立增量、新扰动迁移、完整任务与周期计算加速。
+- 新结果目录：outputs/differential_lift_feasibility_20261103/gfr_scheduler_generalization/study/；run_status.json可查进度。
+- 下一节点：依结果决定多seed或策略调用频率研究；不自动重训。
+- 旧结果边界：原20条现在为开发回归；历史N15不代表当前完整安全后端计时；所有旧JSON保留。
+
 # Long-horizon experiment status
 
 ## Current node
 
-- Node: RL-N13R — complete demonstration replay and convergence repair
-- Status: complete with strong final held-out checkpoint but non-monotonic training; formal N14 remains blocked
-- Started: 2026-10-07
-- Output record: /home/rocos/sia/AVIATOR/outputs/differential_lift_feasibility_20261007/rl_n13r_extra_prior/n13r_extra_prior_summary.json
+- Node: frozen60k multi-clearance / affine-backtracking 2x2 ablation (2026-11-03).
+- Status: clearance ablation completed; selected combined, completed 20/20, alternative recoveries 0; no training.
+- Frozen: final60k checkpoint, original20 manifests, dt=.005, d_safe=.005, beta schedule, six projection trials, original midpoint and endpoint/discrete swept checks.
+- Snapshots v1/v2 verified: original 0/198, multi 183/198, affine 181/198, combined 198/198 accepted policy schedules; combined all beta=1. All792 decision records identical after diagnostic assertion fix; 16 tests passed. No whole-task conclusion from snapshot acceptance.
+- Correction: reviewer identified original polygon numerical tolerance vs overly strict diagnostic assertion. V2 changes only the assertion and verifies identical decisions before full execution.
+- Output: outputs/differential_lift_feasibility_20261103/gfr_clearance_ablation/.
+- Next: serial first2 timing pilots, then complete all original20 from initial state with predeclared selected variant; preserve negative outcomes, no retraining or new holdout claim.
 
-## Frozen protocol
+## Previous node: final60k recovery cause audit
+
+- Node: final60k alternative-recovery root-cause audit (2026-11-03).
+- Status: completed; all 198 recovery states across 12 episodes reconstructed and replayed. No training or executor changes.
+- Finding: all policy schedules failed clearance validation; 179 events included a candidate protecting the previously closest arm/wall while another arm/wall became unsafe. First r-halving left the affine set in 191 events and worsened clearance in 117 events (overlapping counts).
+- Correction: the earlier 191 swept-only interpretation is withdrawn; swept_min=None was counted as an evaluated swept failure. Internal tracing confirms endpoint failures. Original JSON remains unchanged.
+- Evidence: outputs/differential_lift_feasibility_20261103/gfr_recovery_root_cause/full/.
+- Report: docs/research/gfr_final60k_recovery_root_cause_2026-11-03.md.
+- Verification: accepted-control replay and final alternative candidates agree to floating-point precision; original input/source hashes unchanged.
+- Next: separate same-state ablations of multiple near-obstacle constraints and feasibility-preserving backtracking with frozen 60k weights; no retraining yet. These test trajectories are now diagnostic/development data for future modifications.
+
+## Previous node: prospective new-trajectory evaluation
+
+- Node: GFR final60k prospective new-trajectory evaluation (2026-11-03).
+- Status: completed; 20/20 complete, mean progress=1.000000; accepted-validation violations=0; protected input hashes unchanged.
+- Checkpoint: final 60k from gfr_repaired_scratch/formal_seed11; no training or checkpoint selection on test.
+- Executor: unchanged combined_repair_v1; original endpoint/discrete swept checks and safety thresholds.
+- Data: test/traj_0010–0029; 4 existing perturbation models x 5 trajectories. Content-disjoint from 550 dp_train/rl_train/val trajectories and previously used test_0000–0009. 326 lineage metadata files audited; 20/20 starts valid.
+- Boundary: new-trajectory evidence within previously development-tested perturbation models; no unseen-model or global safety claim.
+- Output: outputs/differential_lift_feasibility_20261103/gfr_final60k_holdout/evaluation/.
+- Report: docs/research/gfr_final60k_new_trajectory_validation_2026-11-03.md.
+- Verification: 11 tests passed; evaluator control logic matches frozen development evaluator, only backend wiring and evidence-role metadata differ; checkpoint and source hashes checked before and after evaluation.
+- Next: completed; subsequent recovery diagnosis is recorded above.
+
+## Previous node: completed repaired-executor scratch training
+
+- Node: GFR repaired-executor SAC from scratch (2026-11-02).
+- Status: completed; 60,000 online transitions, Actor/Learner and all three evaluators returned 0. 20k/40k/60k each completed 10/10 development-val episodes with progress=1. Accepted-validation violations=0 in all three reports. This does not establish unseen-data generalization or policy-only safety.
+- Initialization: random Actor/Critic/temperature, seed 11; no old SAC, BC, or smoke checkpoint initialization.
+- Backend: frozen combined alternative recovery + joint-limit-only midpoint defect compensation; original safety thresholds/checker, reward coefficients and observation semantics retained.
+- Data: existing 100 successful complete teacher episodes / 302,125 transitions; demo/online minibatch fixed 50/50. 100 reset/first-step compatibility checks passed; no claim of exhaustive interior re-replay.
+- Budget: 16 logical environments, sequential geometry and batched CUDA policy; 60k transitions cap, checkpoints every 5k; 400 episode target subordinate to transition cap.
+- Gate: CPU fixed10 development-val eval at 20k while training continues; at 40k wait for both reports; both zero stops, otherwise eligible for 60k. No training/test claim from nonzero alone.
+- Test isolation: unseen test10 trajectories from 2026-11-01 remain excluded from demo/training/gate.
+- Verification: 43 related tests passed; CUDA smoke 128 transitions passed, actor_rc=learner_rc=0; batch diagnostics confirm 128 demo + 128 online.
+- Output: outputs/differential_lift_feasibility_20261102/gfr_repaired_scratch/formal_seed11/.
+- Report: docs/research/gfr_repaired_executor_scratch_training_2026-11-02.md.
+- Results: mean alternative recoveries per episode at 20k/40k/60k = 0.4/23.6/0.0; boundary corrections = 408.3/312.2/593.9; interventions = 747.5/1274.0/1019.2. Completion is consistent across these checkpoints, but intervention costs are not monotonically improving.
+- Next: compare policy intervention costs under the same repaired executor and evaluate separately frozen test tasks; no additional training or evaluation launched by this status check.
+- Historical artifacts: N1–N17, previous SAC/BC checkpoints, teacher buffer and repair regression JSON remain unchanged. Previous original-executor 0-completion evidence does not describe this newly repaired execution backend.
+
+## Previous node: completed unseen-trajectory validation
+
+- Node: GFR 40k unseen-trajectory recovery validation (2026-11-01)
+- Status: completed and audited; original 0/10 complete, mean progress 0.3045; alternative_only 10/10 complete, mean progress 1.0000; combined 10/10 complete, mean progress 1.0000. No training.
+- Frozen checkpoint: outputs/differential_lift_feasibility_20261030/gfr_sac_bc_warmstart/formal_seed11/training/b4_seed11/checkpoint_40000.
+- Dataset: outputs/differential_lift_feasibility_20261101/gfr_unseen_recovery_selection/heldout_manifest.json. First 10 sorted content-disjoint test trajectories, balanced round-robin across the same four perturbation models (3/3/2/2); no outcome-based replacement. All 10 initial states valid.
+- Leakage audit: exact trajectory-array content compared against all 550 dp_train/rl_train/val files; no overlap. Historical test-path reference search in current GFR lineage and repair records found none. This is new-trajectory evidence within existing geometry, not arbitrary unseen-model generalization.
+- Execution: frozen recovery selector and original nonlinear safety checker; full progress horizon, identical reset per pair, deterministic actor, CPU serial, per-step JSONL and immediate episode results.
+- Output: outputs/differential_lift_feasibility_20261101/gfr_unseen_recovery_validation/; console log: outputs/differential_lift_feasibility_20261101/gfr_unseen_recovery_validation.log. Final summary/report/verification are produced only after all 30 runs complete.
+- Next: review completion, progress, accepted safety checks, recovery and unit-progress computation costs. Preserve remaining failure snapshots; keep this test set out of the demo buffer. Decide correction collection on separate training tasks, and do not start training automatically.
+- Validation: 35 tests passed; Python compilation and git diff --check passed. Previous full regression remains immutable: original 0/10, alternative-only 10/10, combined 10/10 on diagnosed cases.
+
+## Historical frozen protocol (N1)
 
 - Python: /home/rocos/miniconda3/envs/mujo/bin/python
 - Manifold: hil-serl/data/aviator/manifold_phi_stale_pitch-10deg
@@ -867,3 +933,252 @@ Four 20k continuation runs were completed serially from the seed-specific 60k SA
 - Manifest contains 100 model-consistent `rl_train` records: 50 nominal and 50 fixture-translation-1 mm.
 - Full teacher replay is running; no RL process has been started for this formal collection.
 - Formal gate remains blocked until the final replay reports 100/100 `termination=end`, zero instrumentation unknown, and all transitions accepted by endpoint/swept checks.
+
+
+## GFR formal training resumed with 100 complete teachers — 2026-10-28
+
+- Current node: GFR-1 B4, seed 11, 20k/40k asynchronous checkpoint gate. Training was explicitly authorized after the 100-trajectory collection gate.
+- Dataset: 98 successful shard episodes plus 2 successful replacements; the two `teacher_no_feasible_candidate` episodes are excluded. Exactly 100 full trajectories, 50 nominal and 50 fixture-translation-1 mm, with 302,125 transitions. Full-task terminal flags, finite values, state continuity, action/trace alignment, initial model consistency and recorded accepted-step clearance passed. This audit does not claim a new independent replay of every stored step.
+- Immutable merged buffer and audit: `outputs/differential_lift_feasibility_20261028/gfr_complete_teacher_gate/demo_buffer/`. SHA-256 of `structured_visible.pkl`: `b070a7d5fc9c3c91f409bece86f9e93ea87c978ffb1a9b5f73499363ac2b9314`.
+- Formal run: `outputs/differential_lift_feasibility_20261028/gfr_complete_teacher_gate/formal_seed11/`. `frozen_config.json` records input/code hashes, exact command and settings; `run_status.json` records live state.
+- Frozen: Python `gfr_clean`, CUDA device 0, B4 correction weight 0.1, critic clipping 1.0, 50/50 demo/online batches, dt 0.005, d_safe 0.005, beta_stop 0.125, r_max/qdot_max 1.5, 16 logical environments. Existing vectorized actor batches policy inference but steps environments sequentially; no claim of 16 simulator worker processes.
+- Budget: at most 60,000 online transitions, checkpoints every 5,000 updates. 400 exploration episodes remains a target; the transition cap and checkpoint stop gate take priority. Actual completed episodes are logged and must not be reported as 400 by assumption.
+- Independent evaluation: fixed 10 held-out model/val-trajectory cases, disjoint from teacher models and training trajectories, deterministic actions, CPU execution, complete-path step budget derived from trajectory length and frozen beta floor. One JSONL row is flushed after each episode. Legacy projection/retry counts are distinguished from actual endpoint/swept failed-candidate counts and executed-state clearance.
+- Gate: training continues during 20k evaluation; after the 40k checkpoint the learner waits for both evaluations while serving actor status requests. Two valid zero-completion results stop further updates. Any evaluation instrumentation error stops as an error, never as a zero success rate. Otherwise continuation to 60k is allowed without a convergence claim. A stop checkpoint retains the actual update count and is not relabelled 60k.
+- Verification: 17 targeted tests passed. A separate 256-transition CUDA preflight loaded all 302,125 demos, sampled 128 demo + 128 online transitions per batch, saved checkpoints 128/256, and both actor/learner exited 0. Preflight is infrastructure evidence only.
+- Previous N1–N17 results, old failed training runs and source teacher records were not overwritten. `gfr_env.py` and the teacher collector retain their pre-existing working-tree edits.
+- Not yet validated: full-trajectory learned completion, convergence, generalization to held-out installation errors, or reduced intervention cost in this new run.
+- Next node: inspect the automatic 20k/40k reports and their failure categories before deciding whether to continue beyond the gate.
+
+
+## GFR complete-teacher run stopped at 40k — 2026-10-29
+
+- Current node: the formal seed-11 B4 run is finished. The automatic gate returned `stop_both_zero`; no 60k checkpoint was produced. Actor and learner both returned 0, and both evaluators returned 0 with `instrumentation_unknown=0`.
+- Actual budget consumed: 40,000 online transitions and 40,000 learner iterations. The runner's `steps=60000` / `steps_requested=60000` fields are requested upper bounds, not completed training steps. Actor assigned 99 episodes; the episode JSONL contains 83 terminal records. This is not a 400-completed-episode result.
+- 20k held-out evaluation: 0/10 complete, mean progress 0.30968193, mean intervention steps 418.0; all 10 terminated with `governor_exhausted`.
+- 40k held-out evaluation: 0/10 complete, mean progress 0.30683878, mean intervention steps 146.2; all 10 terminated with `governor_exhausted`.
+- Sampling remained 128 demo / 128 online per batch. All 302,125 demonstration transitions remained in the independent demo buffer.
+- The two fixed held-out evaluations use unseen models and val trajectories. Their zero completion does not alone isolate failed acquisition on the training distribution from model/trajectory generalization failure. Governor exhaustion is a finite-candidate rejection outcome, not proof of global infeasibility or a branch jump.
+- Results: `outputs/differential_lift_feasibility_20261028/gfr_complete_teacher_gate/formal_seed11/gfr1_async_gate_summary.json`; detailed episodes are in its `evaluations/` directory. Raw JSON/checkpoints were not modified.
+- Next diagnostic: evaluate the same checkpoints on teacher-covered training-model tasks, and test the deterministic teacher on the held-out tasks, before choosing another training revision. No further training has been started.
+
+## Successful-paradigm comparison and local failure probes — 2026-10-29
+
+- Current node: read-only diagnosis of the stopped October 28 run. No training was restarted and no safety, reward, sampling or checkpoint parameters were changed.
+- New evidence: `outputs/differential_lift_feasibility_20261029/gfr_training_paradigm_audit/comparison.json` and `teacher_covered_probe_v2.json`. The comparison verifies source hashes; both checkpoint probes verify checkpoint hashes. The first local-probe attempt stopped while serializing undefined failure diagnostics (`d_min`/`max_qdot`); its empty JSONL is not experimental evidence. The v2 report preserves these undefined fields as null with explicit field paths.
+- Confirmed historical difference: both successful N13R seeds loaded `rl_n13r_bc_warmstart/bc_seed_0/checkpoint_19990` into the SAC actor (confirmed by learner logs). Current GFR started a fresh SAC actor. A 50/50 replay mixture is not teacher-action cloning; B4 supervision targets executed corrections on eligible transitions, not all teacher raw actions.
+- Demonstration audit: old 64 episodes / 64,595 transitions, mean length 1,009.30; current 100 / 302,125, mean length 3,021.25. Mean nonterminal reward changed from +1.14237 to -0.01231. At unchanged gamma=0.999, current successful demonstrations have mean discounted return -2.17254. This increases the credit-assignment concern, but negative return alone does not prove that failure is preferable.
+- Current demonstrations are complete and model-consistent, but 49.817% of stored next states have clearance at most 5.01 mm (the threshold is 5 mm); 65.461% qualify for correction supervision. Successful demonstration is not evidence of a large imitation-error margin. The historical LUT clearances are a different checker, so their values are not a matched robustness comparison.
+- Buffer dilution was not observed: every sampled diagnostic batch remains 128 demo / 128 online. No nonfinite actor/critic diagnostic values were observed at the 100-update logging cadence. This does not establish critic accuracy or rule out unlogged transient spikes.
+- All 83 completed stochastic training episodes stopped with `governor_exhausted`; mean progress was 0.19219. Therefore held-out model mismatch is not the only issue. These training episode records are not a deterministic final-policy training-set evaluation.
+- Bounded deterministic 40k check: selected the first teacher-covered task for each of the two training models before running, capped at 1,024 steps. Nominal stopped at step 124 / progress 0.06887; fixture translation 1 mm stopped at step 301 / progress 0.16254. At each exact stopped state, the existing 25-action teacher search found a candidate at beta=1 satisfying the same endpoint, swept, speed and joint-limit checks. Nominal raw witness [0,1], perturbed raw witness [0,0] (projected by the same filter). Closure residuals at the stops were about 3.5e-7. These witnesses establish only a legal next step, not recoverability of the entire trajectory.
+- Mechanism: `GFRManifoldEnv.step` tries the policy's one nominal action across five beta values. `project_r` projects once and then halves the chosen r up to six times; it does not search other directions. The teacher additionally searches alternative nominal actions. The observed governor exhaustion is thus candidate-search exhaustion in these cases, not an empty nonlinear feasible set. Shrinking r toward zero need not stay in an affine safe slice that excludes zero.
+- Policy probe: 800 evenly spaced teacher states (8 per episode), 40k mean raw-action L2 deviation 0.86090; only 1.625% within 0.1. Different actions can also be valid, so action disagreement is not itself proof of failure or critic overestimation.
+- Next diagnostic/revision: first validate a GFR-compatible teacher imitation initialization on teacher-covered tasks; retain the same safety backend and evaluate checkpoint behavior before adding SAC exploration. Separately test teacher feasibility on the held-out tasks. BC initialization, reward/time-scale changes and stronger action recovery require separate controlled comparisons; this audit does not identify one exclusive causal factor. Do not copy the historical LUT BC weights directly into GFR, whose observation/action semantics differ.
+
+## GFR-compatible BC initialization and execution gate — 2026-10-29
+
+- Current node: execute the user-authorized missing imitation stage before any SAC exploration. All 100 audited full teachers / 302,125 transitions train the existing GFR-compatible Actor with its existing BC likelihood loss. Offline BC uses 100% demo; the subsequent SAC batch ratio remains fixed 50/50.
+- Formal output: `outputs/differential_lift_feasibility_20261029/gfr_bc_teacher_gate/formal_seed11/`. `frozen_protocol.json` records data/code hashes and the predeclared task selection; `status.json` records progress; checkpoints are in `bc_seed11/`.
+- Frozen BC: seed 11, 20k updates, batch 256, Adam 3e-4, unchanged 40-D observations and raw 2-D actions, original reward/governor/checker. No old LUT weights, observation normalization changes, reward shaping changes, or alternative-action recovery were introduced.
+- Gate: deterministic full-horizon evaluation of 10k and 20k checkpoints on the same 10 teacher-covered tasks, five per model, selected before training by sorted task IDs 0/12/24/36/49. Both must complete at least 9/10, with at least 4/5 for each model and no accepted-check violation or instrumentation error. This is a development gate for imitation competence, not generalization evidence. Only final 20k BC may initialize a fresh SAC run.
+- Instrumentation: per-episode JSONL plus per-step progress-aligned teacher action and joint-state comparisons; raw/executed actions, intervention flags and candidate rejection reasons remain distinct. A progress-aligned action difference is not an action-optimality label once rollout states diverge.
+- Verification before the formal run: 17 gate/reward/runtime/correction tests passed; a separate 256-update CUDA BC smoke loaded all teachers, saved/restored its checkpoint, and transferred Actor weights into a fresh SAC with exactly identical deterministic actions on 800 probe states while leaving Critic weights unchanged. Smoke results are infrastructure evidence only.
+- SAC conditional launch: requires the qualification report to pass again in the launcher and requires the selected BC checkpoint/demo hashes to match. Otherwise no SAC process starts. If qualified, the previous 20k/40k asynchronous held-out gate and 60k upper budget apply in a new `sac_from_bc/` directory.
+- Old failed runs, teacher JSON/pickle data, and historical checkpoints remain unchanged. Reward/time-scale and alternative-action recovery ablations are deferred until the imitation gate result is known.
+
+## GFR BC execution gate failed; SAC not started — 2026-10-29
+
+- Current node: the 20k-update BC run and both full-horizon teacher-covered evaluations finished normally. Qualification is `stop_bc_not_stable`; `status.json` records `sac_started=false`. No SAC continuation was launched.
+- Frozen inputs were all 100 teachers / 302,125 transitions, original 40-D observations, raw 2-D action labels, seed 11 and the existing likelihood objective. CUDA training completed 20,000 updates in 41.23 seconds; these are offline minibatch updates, not environment transitions. Both CPU evaluators returned 0 and reported zero instrumentation errors.
+- Fixed 800-state in-sample reconstruction: mean raw-action L2 error decreased from 0.83232 at initialization to 0.31188 at 10k and 0.23065 at 20k. At 20k the P95 error remained 0.94567 and only 53.75% of probe states had error below 0.1. Better likelihood and reconstruction did not establish closed-loop competence.
+- Teacher-covered evaluation (five tasks per model, selected before training): 10k completed 0/10, mean progress 0.0248803, mean intervention 4.7; 20k completed 0/10, mean progress 0.0442462, mean intervention 32.8. All 20 episodes terminated with `governor_exhausted`. No accepted-step checker violation was recorded. Actual endpoint-failed candidate counts were 0/2 and swept-failed counts 26/113 respectively; legacy projection/retry counters are not endpoint failure counts. These results do not establish continuous-time safety or global infeasibility.
+- Concrete rollout evidence: on the first nominal task, the 20k teacher's reference raw action is zero for the first 26 steps. BC starts with raw-action L2 error 0.01399, reaches 1.40038 at step 20 and stops at step 26. At that stop clearance is approximately 8.3 mm, so the failures cannot all be attributed to crossing the 5 mm clearance threshold. Candidate rejection currently groups linear-slice and endpoint checks; a finer constraint-level explanation is still needed.
+- Isolated diagnostic: `bc_feedback_probe_v2.json` keeps all recorded teacher observation fields fixed except previous executed r (indices 33:35), which is recursively replaced by 1.5 times the preceding policy output. On the first 26 nominal teacher states, the 20k policy's last action error is 0.01428 with teacher inputs but 1.40074 with this recursive channel alone. The corresponding 10k values are 0.06690 and 1.40620. This identifies a policy-input feedback amplification mechanism in a synthetic probe; it does not prove global robot-loop instability or identify the only failure cause.
+- The v2 probe uses central finite differences at two increments. The older `bc_feedback_probe.json` automatic-Jacobian fields are invalid as inference sensitivity estimates because the Policy encoder uses stop_gradient; only those fields are superseded. Recursive predictions agree. No policy or encoder was modified. Checkpoint hashes are unchanged.
+- New evidence directory: `outputs/differential_lift_feasibility_20261029/gfr_bc_teacher_gate/formal_seed11/`, including `bc_qualification.json`, `bc_execution_summary.csv`, per-step evaluation JSONL and `bc_feedback_probe_v2.json`. Source demo hash remains `b070a7d5fc9c3c91f409bece86f9e93ea87c978ffb1a9b5f73499363ac2b9314`.
+- Post-run gate regression repair: validate instrumentation for both reports before returning a completion failure. The exact helper used for the completed run is preserved in `source_snapshot/gfr1_bc_support.py`. Both actual reports are valid, so the repaired gate gives the same decision. All 17 targeted tests pass after this repair.
+- Verified: compatible BC training, checkpoint restore, exact Actor transfer into a fresh SAC object without changing Critic, and fail-closed execution gating. Not verified: stable imitation, SAC benefit from BC, convergence, or generalization. Missing BC initialization was not the only obstacle.
+- Next node: isolate the previous-action observation feedback and obtain teacher corrections on policy-deviated states in separately frozen comparisons before resuming SAC. Keep reward/time-scale and alternative-action recovery as separate ablations; do not silently weaken the BC gate or select a favorable checkpoint. Historical N1–N17 and prior failed runs remain unchanged.
+
+## BC previous-executed-action observation ablation started — 2026-10-30
+
+- Current node: user-authorized single-variable ablation. The two previous executed r observation channels (zero-based indices 33, 34) are zeroed in both BC training inputs and policy inference inputs. The environment retains the actual previous executed action and unchanged dynamics, reward, governor and checker. Original replay files are read-only.
+- Frozen comparison: reuse October 29 original BC as A; train B from scratch with the same seed 11, architecture, negative log-likelihood objective, batch 256, 20k updates and 100 teachers / 302,125 transitions. Evaluate 10k and 20k on the identical ten preselected teacher-covered tasks. No correction data or reward/time-scale/recovery changes are included. No SAC launch is authorized by this runner invocation.
+- New output: `outputs/differential_lift_feasibility_20261030/gfr_bc_mask_previous_action/`. `ablation_protocol.json` freezes the comparison and SHA-256 of 39 protected historical/input files; `formal_seed11/frozen_protocol.json` freezes the new run. The previous completion gate remains both checkpoints >=9/10 and >=4/5 per model with no validation violation or instrumentation error.
+- Preflight: existing environment/config/BC implementation and demonstration hashes match the baseline. Eighteen targeted tests pass, including source-array immutability and masking only the selected channels across observation batch shapes. Single-seed task-covered results will not be interpreted as generalization or convergence proof.
+
+## BC previous-action ablation completed; execution gate still fails — 2026-10-30
+
+- Current node: masked-observation BC completed all 20k offline updates; 10k and 20k evaluators each completed ten full-horizon attempts and returned 0. All twenty attempts stopped with `governor_exhausted`; `instrumentation_unknown=0`. Decision remains `stop_bc_not_stable`, and no SAC process was launched.
+- Paired results (original / masked): at 10k, completion 0/10 / 0/10, mean progress 0.0248803 / 0.0658140, mean intervention 4.7 / 95.7; at 20k, completion 0/10 / 0/10, mean progress 0.0442462 / 0.0489335, mean intervention 32.8 / 18.6. Absolute intervention counts depend on travelled distance and cannot alone establish an efficiency gain.
+- Masked 10k recorded 6 endpoint-failed candidates and 73 swept-failed candidates; masked 20k recorded 0 and 14. Both had zero recorded accepted validation violations, with mean episode minimum executed clearance 5.77688 mm and 6.31371 mm. These are frozen checker results, not continuous-time safety guarantees. Stopping reasons still do not establish global or local nonlinear infeasibility.
+- Fixed 800-state teacher reconstruction worsened: final mean raw-action L2 0.510686 versus original 0.230652, and fraction below 0.1 was 18.25% versus 53.75%. The mask removes useful predictive information as well as the previously isolated feedback path; additional training was not added after observing these results.
+- On the first nominal task, final-checkpoint action error at step 20 is 0.2255 versus original 1.4004; termination moves from step 26 / progress 0.01481 to step 185 / progress 0.10900. The masked policy begins with larger action error (0.1580 versus 0.0140) but avoids the same early saturation pattern. This supports an input-channel effect on this trajectory, not universal stabilization.
+- Across paired tasks, progress improves in 8/10 at 10k and 4/10 at 20k (worsens in the remaining 2/10 and 6/10). Therefore the final-checkpoint improvement is not task-consistent, and the original feedback mechanism is not a sufficient explanation of all failures. No completion gain or convergence is established.
+- Evidence: `outputs/differential_lift_feasibility_20261030/gfr_bc_mask_previous_action/ablation_summary.json`, `comparison.csv`, `paired_episodes.csv`; raw checkpoints, qualification and per-step logs are under `formal_seed11/`. The summary audit confirms identical evaluation records/budgets and frozen training settings apart from the mask, all 39 protected hashes unchanged, and exactly zero policy inputs at indices 33:35 on every evaluation step. The environment's true previous r is separately logged.
+- Code: `gfr1_bc_support.py` provides a non-mutating input mask; `gfr1_bc_teacher_gate.py` and `gfr1_eval.py` apply it consistently behind an opt-in flag; `gfr1_bc_ablation_summary.py` audits the matched experiment. Original default behavior is retained. Masked BC cannot auto-launch SAC through this runner because the SAC observation pipeline would require a matching explicit change.
+- Next node: separately test teacher-labelled corrections on states visited by the deviating policy, with the observation version and correction sampling ratio frozen before collection/training. Do not simultaneously change reward/time-scale or alternative-action recovery. No correction collection or new SAC training has started in this ablation.
+
+## User-authorized SAC retry with GFR BC Actor initialization — 2026-10-30
+
+- Current node: launch a fresh SAC run with the original full-observation GFR BC final 20k Actor. The user explicitly authorized BC initialization without requiring BC to complete tasks independently. Prior BC and masked-observation negative results remain unchanged; their gate decision is still `stop_bc_not_stable`.
+- New root: `outputs/differential_lift_feasibility_20261030/gfr_sac_bc_warmstart/`. `launch.json` records the supervisor PID and exact command; `formal_seed11/frozen_config.json` records checkpoint/data/code hashes, and `run_status.json` reports live training/evaluation state.
+- BC: `outputs/differential_lift_feasibility_20261029/gfr_bc_teacher_gate/formal_seed11/bc_seed11/checkpoint_20000`. Only the Actor is transferred into fresh SAC; no historical LUT weights or masked-observation weights are used. `--bc-initialization-only` retains integrity/instrumentation checks while removing the BC completion-rate prerequisite for this explicitly authorized experiment.
+- Frozen: full 40-D observation, 100 complete teachers / 302,125 transitions, 128 demo + 128 online per batch, seed 11, 16 logical environments, B4 correction weight 0.1, critic clipping 1.0, original GFR reward/governor/checker. No correction samples, reward/time-scale changes, or alternative-action recovery changes are introduced. This reproduces the warm-start training pattern while retaining the GFR execution backend, not the old LUT environment.
+- Maximum 60k online transitions/learner updates; 400 exploration episodes remains a budget-dependent target. Checkpoints every 5k; 20k and 40k evaluations use the same ten held-out model/trajectory cases as the failed fresh-Actor SAC run. Evaluations run on CPU while CUDA training continues; at 40k wait for both reports. Both zero stops; instrumentation error stops; otherwise continue to final 60k evaluation without a convergence claim.
+- Preflight: demo/checkpoint/teacher-source hashes verified, nineteen gate/runtime/reward/correction tests passed, and diff whitespace check passed. The launcher forbids using an initialization-only exception to ignore instrumentation failure or observation-mask mismatch.
+- Next node: inspect real Actor initialization, sampling diagnostics, and then the 20k/40k checkpoint results. This entry records launch, not completed training or effectiveness.
+- Startup verified: learner log confirms `seeded SAC actor from BC checkpoint`, loads all 302,125 demo transitions and sends initial weights to the Actor. Both Actor and learner appear as CUDA processes. The first inspected diagnostic at update 400 records exactly 128 demo / 128 online per batch, online buffer size 400, and a live supervisor with no training return code yet. The 20k/40k reports are not available at this point.
+
+## BC-initialized SAC stopped by the 20k/40k gate — verified 2026-11-01
+
+- Training finished on 2026-10-30 at approximately 14:52 China time. Actor, learner and both evaluators returned 0. No training or evaluation process from this run remains active at verification. Gate decision: `stop_both_zero`; actual budget was 40,000 online transitions and 40,000 learner updates. No 60k checkpoint was produced; `steps=60000` in the wrapper summary is the requested cap.
+- Held-out evaluation: 20k completed 0/10, mean progress 0.1297153, mean intervention 113.9; 40k completed 0/10, mean progress 0.3957522, mean intervention 299.3. All twenty attempts stopped with `governor_exhausted`, and both reports have `instrumentation_unknown=0`. Mean episode minimum clearance was approximately 0.00500003 m and 0.00500001 m. These minima do not identify every rejected constraint or establish global infeasibility.
+- Sampling remained 128 demo / 128 online through the final diagnostic; all 302,125 teacher transitions were retained. Online episode logs contain 73 terminal records, all `governor_exhausted`; this is not a 400-completed-episode experiment.
+- Compared with the earlier fresh-Actor run on the same held-out cases, final 40k mean progress increased from 0.3068388 to 0.3957522; completion remained 0/10. The new 20k mean progress was lower than the fresh-Actor 20k result. BC initialization therefore has not established reliable task completion or convergence in this single-seed experiment. Progress improvement alone is insufficient.
+- Evidence: `outputs/differential_lift_feasibility_20261030/gfr_sac_bc_warmstart/formal_seed11/gfr1_async_gate_summary.json`, `run_status.json`, per-checkpoint evaluation JSON, final training diagnostics and `online_episodes.jsonl`. No retry, hyperparameter changes or continuation beyond the frozen stop gate was launched during this status check.
+
+
+## 2026-11-01 — 最新 40k 策略失败状态的同状态 teacher 对照（已完成）
+
+### 冻结输入与方法
+
+- checkpoint：`outputs/differential_lift_feasibility_20261030/gfr_sac_bc_warmstart/formal_seed11/training/b4_seed11/checkpoint_40000`；SHA256（与既有 evaluator 口径一致）：`953f0c0c7da65c82b8fb5ac81f1f061dc121bb57c1b8030273c2e150fcc4e88d`。
+- 复用原 held-out manifest 的全部 10 个 episode、初始化、确定性 Actor、CPU 评估和完整轨迹时间尺度。
+- dt=0.005，d_safe=0.005 m，qdot_max=r_max=1.5，beta_stop=0.125，governor 速率档位保持不变。
+- 停止前保存 q、x、任务索引 u、零空间基、历史动作/速率/干预标志、Actor 观测、wrapper 历史、RNG、完整任务数组及 MuJoCo 工作状态。
+- 恢复原状态后运行策略分支及 teacher 分支。原 `project_r` 仅加 Python 诊断跟踪，逐候选结果与不开启跟踪时完全一致。
+- teacher 初次搜索使用已有 25 个候选动作，固定 seed=20261101+episode，按 beta、clearance 排序；随后沿已有 teacher 规则复用上一动作，失败时才扩展搜索，最多接受 100 步。
+
+### 核心结果
+
+- 10/10 原始停止的步数和进度精确复现；10/10 同状态 teacher 找到合法动作；10/10 连续恢复 100 个接受步。
+- 任务进度增加 5.37–6.23 个百分点，平均 5.87 个百分点；全部因预先冻结的 100 步诊断预算结束。没有开展恢复至终点的成功率测试。
+- 1000 个恢复步均通过未修改的 endpoint/swept checker、速度和关节规划边界检查；最低 clearance=0.005000004699144724 m，最大闭合残差无穷范数=1.8602053199081033e-6（混合位姿误差，不能全部解释为米）。这是离散检查结果，不是连续时间安全证明。
+
+| Episode | 直接拒绝约束 | 原停止进度 | teacher 100 步后进度 | 增加百分点 |
+|---|---|---:|---:|---:|
+| 0 | clearance（endpoint 与 swept） | 40.30% | 46.53% | 6.23 |
+| 1 | clearance（endpoint 与 swept） | 40.38% | 46.61% | 6.23 |
+| 2 | clearance（endpoint 与 swept） | 40.80% | 47.03% | 6.23 |
+| 3 | clearance（endpoint 与 swept） | 40.64% | 46.87% | 6.23 |
+| 4 | 左臂第 2 关节规划上限 | 54.89% | 60.26% | 5.37 |
+| 5 | 左臂第 2 关节规划上限 | 54.93% | 60.30% | 5.37 |
+| 6 | 左臂第 2 关节规划上限 | 55.01% | 60.38% | 5.37 |
+| 7 | 左臂第 2 关节规划上限 | 54.82% | 60.19% | 5.37 |
+| 8 | clearance（endpoint 与 swept） | 7.10% | 13.25% | 6.14 |
+| 9 | clearance（endpoint 与 swept） | 6.88% | 13.04% | 6.16 |
+
+### 已定位的机制
+
+1. **6 个 clearance 案例**：策略在 5 档 beta 下均耗尽 Euler 候选的 6 次回退。30 个首次投影候选的线性 clearance 满足阈值，但非线性 endpoint/swept 检查未通过。后续 150 个缩幅候选中，144 个连线性 clearance 约束也不再满足。原因是速度中仍含闭合反馈和任务推进项；安全集对 r 是仿射约束，r 向零缩小并不保持可行性。teacher 改变动作方向后可以恢复。
+2. **4 个关节边界案例**：Euler 投影接受，midpoint 更新后左臂第 2 关节超过当前规划上限 94.5°；越界量为 8.37e-9–2.17e-7 rad，高于冻结的 1e-9 rad 容差。此处是很小的数值/离散化边界超限，不应称为明显物理撞限位。原 `endpoint_validation` 标签没有准确表达这一原因。teacher 使用其他动作可通过相同约束。
+3. **恢复动作选择存在差异**：当前策略路径对给定 r 做投影、缩幅和 beta 降速；teacher 搜索不同的 r。`governor_exhausted` 表示当前候选恢复路径耗尽，不是证明局部安全集合为空。
+4. 首个案例：策略原始动作约 [-0.1745,-0.6750]；teacher 选择 [-1,0]（执行 r=[-1.5,0]，beta=1），从40.30%恢复到46.53%，第100步 clearance 约8.26 mm。
+
+### 可以与不可以得出的结论
+
+- 可以：在这 10 个失败状态上，合法的局部推进仍存在，teacher 不仅找到一步，还连续恢复了100步。不能把这些停止统一归因于任务几何不可行或示教本身不成功。
+- 可以：失败链同时涉及策略给出的动作、边界上的线性/非线性检查差异，以及缺乏替代方向搜索的恢复路径。
+- 尚不能：仅由本实验判断策略选错动作的训练原因究竟是示教覆盖、奖励、Critic、观测还是训练长度；也不能宣称已经解决全程任务、全局分支保持或泛化。
+- teacher 搜索计算预算大于单次 Actor 推理，本实验提供可行性证据，不证明速度优势。
+- 这些是 held-out 诊断状态。如果直接用于训练，必须将其从正式未见测试集中移除并另建测试集。
+
+### 输出与验证
+
+- 正式新目录：`outputs/differential_lift_feasibility_20261101/gfr_same_state_40k_v2/`。
+- `summary.json`、`diagnostic_analysis.json`、`verification.json`；`same_state_comparison.csv`、`policy_constraints.csv`、`policy_linear_vs_actual.csv`。
+- 每个 `episode_XX/`：`pre_stop_state.pkl/json`、`policy_rejection.json`、`teacher_search.json`、逐步追加的 `continuation.jsonl`、`result.json`。
+- 23 项测试通过（其中新增诊断测试 4 项），instrumentation_unknown=0；快照哈希复核；原训练冻结的12个代码文件哈希匹配；checkpoint、旧评估文件、manifest 和执行器/求解器文件不变。
+- 同级 `gfr_same_state_40k/` 是日志开发阶段中止的预检目录，没有最终结果，不作为证据。
+
+### 下一节点
+
+先用本次快照做候选恢复机制的独立回归：保持 checker/阈值不变，区分替代 r 搜索与积分边界一致性修正的收益；在训练任务上采集类似偏离状态的 teacher 纠偏标签。完成这些独立验收后再决定学习消融，不直接扩大训练时长。
+
+
+## 2026-11-01 — 替代动作恢复 × 积分边界一致性：2×2 快照回归（已完成）
+
+### 范围和冻结条件
+
+使用上一节点的全部 10 个原始停止前快照。保持 SAC checkpoint_40000、观测、dt=0.005、d_safe=0.005 m、qdot_max=r_max=1.5、beta_stop=0.125、5 档 governor、midpoint 积分和 endpoint/swept checker 不变。关节容差仍为1e-9 rad，速度容差仍为2e-5 rad/s，swept subdivisions=5。
+
+每组每个快照最多100个接受步。与上一节点不同，本轮每一步都重新调用当前40k策略，没有让teacher持续接管。没有训练，也没有修改正式GFR执行器；修改仅存在于隔离诊断工具内。
+
+- 原流程：策略动作、原投影、原恢复逻辑。
+- 替代动作恢复：仅当策略所有 beta 候选失败时，依次搜索上一接受候选的名义动作、零动作、正负坐标轴/角点及固定随机候选，总数最多25。按固定顺序取首个合法动作，然后下一周期重新交给策略。这里不是上轮teacher的最大beta/clearance择优搜索。
+- 积分边界补偿：仅当候选在midpoint检查中只违反关节边界时启用；不改变策略给出的名义动作，不启用替代动作搜索。测量 delta=q_midpoint_endpoint-q_euler_endpoint，把候选生成用的lower增加max(-delta,0)、upper减去max(delta,0)，累积保留已测补偿，最多3次重算。最终midpoint仍用原始边界独立验收。补偿仅影响候选生成，不放宽物理/规划阈值，不改变积分器。
+- 两者结合：先尝试边界补偿；策略候选仍全部失败时才进入替代动作搜索。
+
+执行原始策略动作与实际接受动作分别记录；precomputed接口仍传入原始策略动作，因此执行修正没有从下一步观测中被隐藏。计时含诊断与额外复核，不用作部署速度结论。
+
+### 结果
+
+| 组别 | 首步恢复 | 连续恢复100步 | 平均进度增加（全部10例） | 替代动作介入总次数 | 边界补偿步数 | 候选评估次数 |
+|---|---:|---:|---:|---:|---:|---:|
+| 原流程 | 0/10 | 0/10 | 0.00 个百分点 | 0 | 0 | 50 |
+| 仅替代动作恢复 | 10/10 | 10/10 | 5.76 个百分点 | 28 | 0 | 1345 |
+| 仅积分边界补偿 | 4/10 | 4/10 | 2.15 个百分点 | 0 | 33 | 463 |
+| 两者结合 | 10/10 | 10/10 | 5.78 个百分点 | 8 | 33 | 1170 |
+
+注意：上表的恢复比例不是全程任务完成率。所有达到100步的运行都由诊断预算结束，没有测试到任务终点。仅边界补偿组的均值包含6个未恢复案例；其4个恢复案例各推进约5.37个百分点。
+
+### 机制判断
+
+1. **替代动作恢复的独立作用成立于这些快照**：10/10均恢复100步。1000个接受步里仅28步需要替代动作，其他972步由策略名义动作经原投影/governor接受。无需持续teacher接管，说明原先的候选耗尽并非这些状态下的真实局部不可行。
+2. **积分边界补偿的独立作用成立于关节边界案例**：4/4关节边界案例恢复100步；6个clearance案例仍在原位置停止。它修正的是Euler投影与midpoint端点的关节边界差异，并没有顺便解决clearance问题。
+3. **组合的作用**：1000个接受步中仅8步需要替代动作，另有33步使用边界补偿。与仅替代动作组相比，恢复比例同为10/10，替代动作介入从28次降到8次，候选评估数从1345降到1170。补偿本身还有额外lift计算，因此不能把调用数减少直接写成总计算提速。
+4. 真实快照单步反例：episode04的原关节裕量=-8.6740715e-8 rad；一次测量补偿后为+2.2998936e-11 rad，通过同一checker。episode00的clearance失败在补偿开关前后均未通过，说明补偿没有放宽clearance阈值。
+5. 这说明之前的0/10至少包含可修复的执行候选/恢复机制问题，不能仅凭旧completion=0认定需要更多训练步数。也不能因此声称策略已收敛或整条任务已学会。
+
+### 验证与证据边界
+
+- 40个组别×快照结果；每个组的初始Actor动作与快照完全一致。
+- 原流程10个案例的全部5档候选结果，与上一节点原日志逐字段完全一致。
+- 共2400个接受步额外调用原endpoint/swept checker复核，并核对速度、关节边界、beta和正任务进度；违规数0。
+- 最低恢复clearance=0.005000004699144724 m；最大闭合残差无穷范数=1.298178943676525e-06，是混合位姿误差，不能全部解释为米。
+- 27项测试通过（包含真实快照的原失败→补偿通过回归）；git diff --check通过；源快照树、checkpoint、manifest和正式执行器/投影文件哈希不变。
+- 这些是已用于诊断的10个相关案例，不是新的独立泛化测试；swept检查是离散采样，不提供连续时间安全证明。
+- 组合组与替代组达到相同的100步恢复上限，不能据此宣称组合组全程成功率更高。
+
+### 训练决定与下一节点
+
+本轮不启动训练。先冻结这一隔离实现，保持现有40k Actor，执行从轨迹初始状态到终点的开发回归，对照原执行器、替代恢复和组合方案。该步骤回答“先修执行器后，旧策略到底能完成多少”，而非再次混入学习更新。
+
+若全程表现已有明显改善，优先完成执行器回归及独立测试；若仍有早停，再在训练任务上收集偏离状态的teacher纠偏标签。正式续训前必须检查成功示范在修复后后端的replay一致性、原始/执行动作与奖励计账，并保留50/50 replay及20k/40k门控。不得把本批held-out纠偏轨迹直接用于训练后仍称其为未见测试集。
+
+### 新增文件
+
+- `hil-serl/tools/gfr1_recovery_boundary_ablation.py`：隔离2×2回归及边界补偿。
+- `hil-serl/tools/test_gfr_recovery_boundary_ablation.py`：补偿契约、替代动作触发和真实快照回归。
+- 结果目录：`outputs/differential_lift_feasibility_20261101/gfr_recovery_boundary_ablation/`。
+- `protocol.json`、`summary.json`、`verification.json`、`comparison.csv`、逐完成结果`episodes.jsonl`。
+- 每个`episode_XX_方法/`保存首步所有候选`first_step.json`、逐步追加的`trace.jsonl`及`result.json`。
+
+## 2026-11-01: 40k full-trajectory recovery regression completed
+
+- Result directory: outputs/differential_lift_feasibility_20261101/gfr_full_recovery_regression_v2
+- original: 0/10 completed; mean progress 0.395752; stops {'governor_exhausted': 10}.
+- alternative_only: 10/10 completed; mean progress 1.000000; stops {'end': 10}.
+- combined: 10/10 completed; mean progress 1.000000; stops {'end': 10}.
+- Original historical stopping points reproduced in 10/10 cases; all accepted steps independently rechecked. Checkpoint, geometry, safety backend and prior evidence hashes unchanged.
+- Results describe the unchanged policy PLUS execution recovery, not RL convergence or new held-out generalization. Discrete swept validation is not continuous-time safety proof.
+- Next: inspect remaining_failure_constraints.csv and saved pre-stop states; decide correction-data collection on separate training tasks. No retraining was started.
+
+## 2026-11-02: resume interrupted unseen validation
+
+- Processes absent at status check; exit cause unconfirmed. 25 finished case folders retained and hashed; 5 missing cases resume from initial states with frozen seeds.
+- Resume runner: hil-serl/tools/gfr1_resume_unseen_regression.py; 15 focused tests passed.
+- Resume logs and launch record: outputs/differential_lift_feasibility_20261101/gfr_unseen_recovery_validation/resume_console.log and resume_launch.json.
+- Incomplete attempt is not counted as a method failure. Final audit/report still required.
+
+## 2026-11-01: 40k unseen-trajectory recovery validation completed
+
+- Result directory: outputs/differential_lift_feasibility_20261101/gfr_unseen_recovery_validation
+- original: 0/10 completed; mean progress 0.304507; stops {'governor_exhausted': 10}.
+- alternative_only: 10/10 completed; mean progress 1.000000; stops {'end': 10}.
+- combined: 10/10 completed; mean progress 1.000000; stops {'end': 10}.
+- Identical paired initial states verified for all 10 new test trajectories; all accepted steps independently rechecked. Checkpoint, geometry, safety backend and prior evidence hashes unchanged.
+- Results describe the unchanged policy PLUS execution recovery on 10 new trajectories within the same perturbation models, not RL-only convergence or generalization to arbitrary geometry. Discrete swept validation is not continuous-time safety proof.
+- Next: read next_step_decision.json; keep test trajectories out of training, and decide correction-data collection on separate training tasks only after reviewing failures and intervention cost. No retraining was started.

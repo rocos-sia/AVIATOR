@@ -269,6 +269,10 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
     learner_cap_reached = threading.Event()
     learner_abort = threading.Event()
     updates_completed = 0
+    checkpoint_gate = None
+    if os.getenv("AVIATOR_ASYNC_GATE_DIR"):
+        from tools.gfr1_gate_support import TrainingGate
+        checkpoint_gate = TrainingGate(os.environ["AVIATOR_ASYNC_GATE_DIR"])
 
     diagnostic_path = os.getenv("AVIATOR_DIAGNOSTIC_LOG")
     diagnostic_period = int(os.getenv("AVIATOR_DIAGNOSTIC_PERIOD", "100"))
@@ -302,6 +306,8 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
                 "updates": updates_completed,
                 "learner_cap_reached": learner_cap_reached.is_set(),
                 "learner_abort": learner_abort.is_set(),
+                "gate_waiting": bool(checkpoint_gate and checkpoint_gate.waiting),
+                "training_stop_requested": bool(checkpoint_gate and checkpoint_gate.stop_requested()),
             }
         assert type == "send-stats", f"Invalid request type: {type}"
         if wandb_logger is not None:
@@ -410,6 +416,8 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
     for step in tqdm.tqdm(
         range(start_step, config.max_steps), dynamic_ncols=True, desc="learner"
     ):
+        if checkpoint_gate and checkpoint_gate.stop_requested():
+            break
         if aviator_online:
             # The actor is intentionally paced. Without this gate a fast GPU
             # exhausts the learner's update budget long before 400 rollouts.
@@ -459,14 +467,22 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
             wandb_logger.log(update_info, step=step)
             wandb_logger.log({"timer": timer.get_average_times()}, step=step)
 
+        checkpoint_step = (start_step + updates_completed) if checkpoint_gate else step
         if (
-            step > 0
+            checkpoint_step > 0
             and config.checkpoint_period
-            and step % config.checkpoint_period == 0
+            and checkpoint_step % config.checkpoint_period == 0
         ):
             checkpoints.save_checkpoint(
-                os.path.abspath(FLAGS.checkpoint_path), agent.state, step=step, keep=100
+                os.path.abspath(FLAGS.checkpoint_path), agent.state, step=checkpoint_step, keep=100
             )
+            if checkpoint_gate:
+                checkpoint_gate.checkpoint_ready(
+                    checkpoint_step,
+                    os.path.join(os.path.abspath(FLAGS.checkpoint_path), f"checkpoint_{checkpoint_step}"))
+                if checkpoint_step == checkpoint_gate.pause_step:
+                    if not checkpoint_gate.wait_for_decision():
+                        break
 
     if aviator_online:
         # The learner can reach its nominal update cap one scheduling tick
@@ -482,11 +498,17 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None,
     if aviator_online and FLAGS.checkpoint_path:
         # Keep the final actor/critic/temperature state even when completion
         # falls between the periodic checkpoint steps.
-        final_step = config.max_steps if actor_done.is_set() else config.max_steps
-        checkpoints.save_checkpoint(
-            os.path.abspath(FLAGS.checkpoint_path), agent.state,
-            step=final_step, keep=100, overwrite=True,
-        )
+        final_step = start_step + updates_completed if checkpoint_gate else config.max_steps
+        final_path = os.path.join(os.path.abspath(FLAGS.checkpoint_path), f"checkpoint_{final_step}")
+        # Never relabel an early gate stop as a 60k checkpoint or rewrite a
+        # checkpoint while its independent evaluator is reading it.
+        if not checkpoint_gate or not os.path.exists(final_path):
+            checkpoints.save_checkpoint(
+                os.path.abspath(FLAGS.checkpoint_path), agent.state,
+                step=final_step, keep=100, overwrite=not bool(checkpoint_gate),
+            )
+        if checkpoint_gate:
+            checkpoint_gate.checkpoint_ready(final_step, final_path)
     if diagnostic_stream is not None:
         diagnostic_stream.close()
     if aviator_online:
