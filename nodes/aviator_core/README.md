@@ -648,7 +648,7 @@ grasp_wheel:
   wait_timeout_ms: 2000  # 等待有效新帧上限，max_age_ms..10000 ms
 ```
 
-`wheel_initial` 模式保持上述行为；省略 `grasp_wheel` 也使用该模式。`camera` 模式只在抓取指令执行后、回 home 完成且开始规划接近前订阅 `camera.detection`，要求 `publisher_id=camera`、指定的 `camera_id`、本机时钟，以及采集时间不早于本次读取请求。初始化、使能和 Managed 的进入 STANDBY 不采集相机位形；每次重抓都重新等待新帧。
+`wheel_initial` 模式保持上述行为；省略 `grasp_wheel` 也使用该模式。`camera` 模式只在抓取指令执行后、回 home 完成且开始规划接近前订阅 `camera.detection`。Core 根据设备服务 `describe.device_backend` 自动选择发布者：`simulation` 后端要求 `publisher_id=simulation`，其余后端（含未报告该字段的旧设备服务）要求 `publisher_id=camera`。因此 `--simulation`（包括 `--simulation --rs422`）无需真实相机，也无需修改 `grasp_wheel.source: camera`；需同时部署更新后的 Core 和 simulation。仍要求指定的 `camera_id`、本机时钟，以及采集时间不早于本次读取请求。初始化、使能和 Managed 的进入 STANDBY 不采集相机位形；每次重抓都重新等待新帧。仿真相机禁用或观测无效时仍终止抓握，不回退到初始位形。
 
 使用 `steering_wheel` 派生字段换算：`angle=-theta_rad`（rad），`displacement=-translation_along_axis_m-0.085`（m），不叠加 `wheel_initial`。该约定要求相机标定零位对应控制模型的零转角、行程中位，标定轴方向与控制端正方向相反。无需转换原始标签 `pose` 或 `translation_vector_m`。两层 `valid` 均须为 true；`axis_match` 仅保留为相机诊断，不作为抓握门槛，false、null 或缺失均不阻止读取。过期、乱序、非有限值、越界或缺失必需字段不能用于抓握；等待超时则终止抓握并报告原因，不回退、不限幅。
 

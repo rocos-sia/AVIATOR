@@ -58,6 +58,7 @@ class RemoteLink final : public DataLink {
     HandLink hand_;
     zmq::context_t context_{1};
     std::string session_, epoch_;
+    std::string grasp_camera_publisher_ = "camera";
     std::atomic<bool> quit_{false};
     std::atomic<uint64_t> heartbeat_{0};
     mutable std::mutex mutex_;

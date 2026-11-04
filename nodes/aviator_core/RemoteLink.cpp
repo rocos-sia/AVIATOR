@@ -11,6 +11,9 @@ RemoteLink::RemoteLink(const MotionConfig &c, bool authorize) : config_(c), sess
     const auto info = callService(context_, c, serviceRequest(session_, "describe", Json::object()));
     if (info.at("config_id") != c.config_id)
         throw std::runtime_error("Core/device config_id mismatch");
+    if (info.value("device_backend", "manipulator") == "simulation")
+        grasp_camera_publisher_ = "simulation";
+    Logger::info("Core grasp camera publisher={}", grasp_camera_publisher_);
     latest_supported_ = info.value("capabilities", Json::object()).value("latest_servo", false);
     if (c.photoelectric.enabled && !info.value("capabilities", Json::object()).value("emergency_disable", false))
         throw std::runtime_error("Photoelectric interlock requires a manipulator with emergency_disable support");
@@ -292,7 +295,7 @@ std::array<double, 2> RemoteLink::readCameraWheel(const std::string& camera_id,
             if (!motion_allowed_ || quit_) throw MotionCancelled();
         }
         check();
-    });
+    }, grasp_camera_publisher_);
 }
 void RemoteLink::handTarget(bool close) {
     if (!hand_.enabled()) return;

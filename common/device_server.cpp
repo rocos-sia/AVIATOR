@@ -733,6 +733,7 @@ int runDeviceServer(DataLink& device, const MotionConfig& config, const DeviceSe
                          {"result", Json::object()}};
                 if (op == "describe")
                     reply["result"] = {{"server_session", session},
+                                       {"device_backend", options.name},
                                        {"target", state.target},
                                        {"q", state.q},
                                        {"speed", speed},

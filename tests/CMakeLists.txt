@@ -257,6 +257,20 @@ if(TARGET aviator_core_control)
   target_include_directories(aviator_camera_wheel_input_test PRIVATE ../nodes/aviator_core)
   target_link_libraries(aviator_camera_wheel_input_test PRIVATE aviator_runtime)
   add_test(NAME camera_wheel_input COMMAND aviator_camera_wheel_input_test)
+  if(TARGET simulation AND Python3_Interpreter_FOUND)
+    execute_process(COMMAND ${Python3_EXECUTABLE} -c "import yaml"
+      RESULT_VARIABLE GRASP_CAMERA_PYTHON_DEPS OUTPUT_QUIET ERROR_QUIET)
+  endif()
+  if(TARGET simulation AND Python3_Interpreter_FOUND AND GRASP_CAMERA_PYTHON_DEPS EQUAL 0)
+    aviator_add_test_executable(aviator_simulation_grasp_camera_driver simulation_grasp_camera_driver.cpp)
+    target_link_libraries(aviator_simulation_grasp_camera_driver PRIVATE aviator_core_control)
+    add_dependencies(aviator_simulation_grasp_camera_driver simulation aviator_bus)
+    add_test(NAME simulation_grasp_camera COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/simulation_grasp_camera_test.py
+      $<TARGET_FILE:aviator_simulation_grasp_camera_driver> $<TARGET_FILE:aviator_bus>
+      $<TARGET_FILE:simulation> ${PROJECT_SOURCE_DIR})
+    set_tests_properties(simulation_grasp_camera PROPERTIES TIMEOUT 50 ENVIRONMENT "LD_BIND_NOW=1")
+  endif()
   add_test(NAME core_camera_servo_help COMMAND aviator_core_camera_servo --help)
   aviator_add_test_executable(aviator_wheel_bandwidth_test ../tools/wheel_bandwidth/test_estimate.cpp)
   target_link_libraries(aviator_wheel_bandwidth_test PRIVATE aviator_core_control)

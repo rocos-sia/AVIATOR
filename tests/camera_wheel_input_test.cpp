@@ -123,6 +123,26 @@ int main() try {
         near(grasp.target().angle, 0);
         near(grasp.target().displacement, -.085);
     }
+    // Simulation uses the same freshness, validity and range gates, with an exclusive publisher.
+    for (int kind = 0; kind < 5; ++kind) {
+        CameraWheelInput grasp("cockpit", "local", 200000, 1000000,
+                               CameraWheelInput::Mode::Grasp, "simulation");
+        auto m = observation(1, 1000000);
+        check(!grasp.accept(m, 1000000, error), "Real camera accepted in simulation");
+        m.header.publisher_id = "simulation";
+        check(grasp.accept(m, 1000000, error), error.c_str());
+        m.header.sequence = 2;
+        m.header.sample_mono_us = 1010000;
+        switch (kind) {
+        case 0: m.header.valid = false; break;
+        case 1: m.body["steering_wheel"]["valid"] = false; break;
+        case 2: m.header.sample_mono_us = 999999; break;
+        case 3: m.header.clock_id = "foreign"; break;
+        case 4: m.body["steering_wheel"]["theta_rad"] = 1.; break;
+        }
+        check(!grasp.accept(m, 1010000, error), "Invalid simulation observation accepted");
+        check(!grasp.fresh(1010000), "Invalid simulation observation left cached target usable");
+    }
     // Axis diagnostics must not block an otherwise valid grasp observation.
     for (int kind = 0; kind < 3; ++kind) {
         CameraWheelInput grasp("cockpit", "local", 200000, 1000000, CameraWheelInput::Mode::Grasp);
