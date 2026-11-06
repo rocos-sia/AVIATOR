@@ -349,6 +349,9 @@ def check_runtime(root, account):
     for script in ('start_aviator.sh', 'start_camera_servo.sh', 'start_wheel_bandwidth.sh'):
         user_run(account, ['bash', resource / 'scripts' / script, '--dry-run'], env=env,
                  stdout=subprocess.DEVNULL)
+    # Validate the field RS422 config and bundled Python without touching serial ports.
+    user_run(account, [python, resource / 'scripts/test_rs422_loss.py', '--dry-run'], env=env,
+             stdout=subprocess.DEVNULL)
     user_run(account, [root / 'bin/aviator_photoelectric', '--config',
                        resource / 'config/photoelectric.yaml', '--check-config'], env=env)
     user_run(account, [root / 'bin/rh56_485_probe', '--dry-run'], env=env)

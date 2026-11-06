@@ -73,6 +73,10 @@ ctest --test-dir build/communication --output-on-failure
 
 `monitor_state` 覆盖只读监控统计与有界缓存；`monitor_http`（Python3 标准库，仅测试依赖）启动真实 HTTP 服务与 C++ TCP 发布者，验证页面、接口、慢连接、过期、动态配置保存/来源切换、失败回滚、版本冲突、重启持久化和退出。`monitor_config` 覆盖 YAML 解析、类型往返与原子保存；`monitor_preview_receiver` 使用隔离 TCP 端口验证图像订阅启用、地址与身份切换、关闭和重新启用。配置页浏览器测试见 `monitor_config_browser_test.cjs`，需要 Node ≥18、playwright-core 和 Chrome。
 
+`python3 tests/rs422_loss_test.py`（CTest：`rs422_loss`）覆盖独立 RS422 接收工具的拆帧/粘帧、
+坏校验与重同步、计数回绕/重复/歧义、双 PTY 各 10000 拍及首尾漏帧、网关文件锁冲突、
+Ctrl+C 收尾、断开后的部分报告和部署目录下的 Python/配置选择。无需串口硬件，仅依赖项目已有 PyYAML。
+
 ## Logger 记录验证
 
 通信构建包含 `recording`、`logger_help` 和 `logger_invalid_queue`；发现 Python 解释器时还运行 `logger_process`（仅使用标准库）。覆盖 MCAP 读回、全部已注册 Topic、多来源/版本映射、TCP 订阅和有界队列，以及信号关闭、输出冲突与写盘失败。测试使用独立临时目录和动态 TCP 端口，无需机器人硬件。

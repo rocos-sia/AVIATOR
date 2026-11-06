@@ -28,6 +28,11 @@ cd /home/sia/Documents/GitHub/AVIATOR
 
 Python 依赖在开发机生成 wheel，目标端在固定的 `/opt/aviator/cache/python` 虚拟环境中离线安装。相机、标定、TTS、手部演示等启动脚本会自动使用这个环境。Chrome 的官方 deb 随包提供，仅在目标机没有 `google-chrome-stable` 时安装。
 
+RS422 丢包测试入口也随包安装，可执行 `/opt/aviator/share/aviator/scripts/test_rs422_loss.sh`。
+它自动使用上述 Python 和已有 PyYAML，读取现场 `config/flight-rs422.yaml` 的两路串口，
+无需另建 Python 环境或安装串口模块。测试前停止占用同一串口的网关；用法和统计边界见
+[脚本说明](../scripts/README.md#rs422-独立接收与丢包统计)。
+
 RealSense 固定为 `pyrealsense2==2.58.1.10581`，支持 D436。`deploy/99-aviator-realsense.rules` 来自 [SDK v2.58.1 官方规则](https://github.com/realsenseai/librealsense/blob/v2.58.1/config/99-realsense-libusb.rules)。SDK 2.56.5 无法识别 D436，不能仅凭 Python 导入成功判断实机可用。
 
 目标端安装 `python3.10-venv`，并明确使用 `/usr/bin/python3.10` 创建环境，不请求会严格绑定 `python3` 默认包版本的 `python3-venv` 元包。安装器也会转换旧发布包中的这一依赖名称。若 APT 仍报告 `python3.10-venv` 与 `python3.10` 版本不匹配，需要检查目标机软件源是否提供配套版本；安装器不会自动降级系统 Python。
@@ -92,6 +97,8 @@ xCoreSDK 还会按进程工作目录生成 `_rokae_log_`。发布校验明确排
 ## 启动与检查边界
 
 部署检查包括校验清单、动态库解析、Python 模块导入、Shell 语法、启动命令预览、标定工具的 help 模式和 485 probe 的 dry-run。不会连接机器人、打开串口、执行电机上电，也不创建开机自动启动服务。
+
+RS422 测试工具还会执行 `--dry-run` 校验已保留的现场配置和依赖，不要求对应串口设备在线。
 
 在工控机的桌面应用菜单打开 **AVIATOR 启动器**、**AVIATOR 双手 485 测试**、**AVIATOR 手部演示**，或在工控机桌面终端执行：
 

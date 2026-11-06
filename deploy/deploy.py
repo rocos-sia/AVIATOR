@@ -164,6 +164,7 @@ def prepare_package(args):
                     'bin/manipulator', 'bin/aviator_grasp_tool_session', 'bin/aviator_grasp_tool_state',
                     'bin/simulation', 'bin/aviator_launcher']
         required += ['share/aviator/scripts/' + p.name for p in (ROOT / 'scripts').glob('*.sh')]
+        required += ['share/aviator/scripts/test_rs422_loss.py']
         for name in required:
             if not (stage / name).is_file():
                 raise RuntimeError(f'Incomplete runtime install: missing {name}; rebuild without --skip-build')
