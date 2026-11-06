@@ -174,6 +174,11 @@ class Worker(threading.Thread):
         failure = None
         try:
             argv, endpoint = commands(self.args, self.session_id)
+            for name, command in argv:
+                if not Path(command[0]).is_file() or not os.access(command[0], os.X_OK):
+                    hint = ("请通过 CAMERA_PYTHON 或 --camera-python 指定已安装相机依赖的 Python。"
+                            if name == "camera" else "请先构建 Bus，或通过 AVIATOR_BIN / --bus-bin 指定路径。")
+                    raise RuntimeError(f"{name} 启动程序不存在或不可执行：{command[0]}\n{hint}")
             lock_path = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / f"aviator-start-{os.getuid()}.lock"
             launch_lock = lock_path.open("a")
             try:

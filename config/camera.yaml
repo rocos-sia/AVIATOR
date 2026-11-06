@@ -6,6 +6,7 @@ camera:
   width: 1280            # 彩色流分辨率
   height: 720
   fps: 30
+  color_exposure: 80     # RGB 手动曝光，SDK 原始单位；调小更暗，null 恢复自动曝光；重启生效
   depth:                 # recording.yaml 对应源 record_depth=true 时才启用 Z16；fps 沿用彩色流
     width: 1280
     height: 720

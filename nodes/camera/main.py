@@ -13,6 +13,7 @@ from aviator_logger import Logger
 import argparse
 import hashlib
 import json
+import math
 import os
 import signal
 import socket
@@ -92,6 +93,34 @@ def required(mapping, key, where):
     if key not in mapping:
         raise SystemExit(f"配置文件缺少 {where}.{key}")
     return mapping[key]
+
+
+def configure_color_exposure(device, camera):
+    """Use the RGB sensor's native exposure units; null restores auto exposure."""
+    if "color_exposure" not in camera:
+        return
+    exposure = camera["color_exposure"]
+    if exposure is not None and (isinstance(exposure, bool)
+                                 or not isinstance(exposure, (int, float))
+                                 or not math.isfinite(exposure)):
+        raise ValueError("camera.color_exposure 必须为有限数值或 null（自动曝光）")
+    sensor = device.first_color_sensor()
+    if not sensor.supports(rs.option.enable_auto_exposure):
+        raise ValueError("RGB 相机不支持切换自动曝光")
+    if exposure is None:
+        sensor.set_option(rs.option.enable_auto_exposure, 1)
+        Logger.info("aviator_camera: RGB auto_exposure=on")
+        return
+    if not sensor.supports(rs.option.exposure):
+        raise ValueError("RGB 相机不支持手动曝光")
+    limits = sensor.get_option_range(rs.option.exposure)
+    if not limits.min <= exposure <= limits.max:
+        raise ValueError(f"camera.color_exposure={exposure} 超出 RGB 相机范围 "
+                         f"[{limits.min}, {limits.max}]（SDK 原始单位）")
+    sensor.set_option(rs.option.enable_auto_exposure, 0)
+    sensor.set_option(rs.option.exposure, float(exposure))
+    Logger.info(f"aviator_camera: RGB auto_exposure=off "
+                f"exposure={sensor.get_option(rs.option.exposure)} (SDK units)")
 
 
 def resolve_device(context, model, serial):
@@ -293,6 +322,7 @@ def main(argv):
         profile = pipeline.start(config)
         started = True
         device = profile.get_device()
+        configure_color_exposure(device, camera)
         device_name = device.get_info(rs.camera_info.name)
         intrinsics = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
         camera_matrix = np.array([

@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 import numpy as np
 import cv2
@@ -15,7 +15,8 @@ import yaml
 
 from detection_subscriber import fmt_pose
 from detectors import DetectionResult, create_detector, pose_from_pnp
-from main import DEFAULT_CONFIG, load_config, make_message, make_record_frame, parse_args
+from main import (DEFAULT_CONFIG, configure_color_exposure, load_config, make_message,
+                  make_record_frame, parse_args, rs)
 from recording_client import RecordingClient, camera_packet
 from visualization import CameraVisualization, pose_lines, render_preview, visualization_options
 
@@ -54,6 +55,37 @@ def decode_packet(packet):
 
 
 class CameraNodeTest(unittest.TestCase):
+    def test_rgb_exposure_manual_auto_and_unchanged(self):
+        device = Mock()
+        sensor = device.first_color_sensor.return_value
+        sensor.get_option_range.return_value = Mock(min=1, max=10000, step=1)
+        sensor.get_option.return_value = 80
+        configure_color_exposure(device, {})
+        device.first_color_sensor.assert_not_called()
+        configure_color_exposure(device, {"color_exposure": 80})
+        self.assertEqual(sensor.set_option.call_args_list, [
+            call(rs.option.enable_auto_exposure, 0), call(rs.option.exposure, 80.0)])
+        device.first_depth_sensor.assert_not_called()
+        sensor.reset_mock()
+        configure_color_exposure(device, {"color_exposure": None})
+        sensor.set_option.assert_called_once_with(rs.option.enable_auto_exposure, 1)
+
+    def test_invalid_rgb_exposure_does_not_change_sensor(self):
+        for value in (True, "80", float("nan"), float("inf"), 0, 10001):
+            with self.subTest(value=value):
+                device = Mock()
+                sensor = device.first_color_sensor.return_value
+                sensor.get_option_range.return_value = Mock(min=1, max=10000, step=1)
+                with self.assertRaises(ValueError):
+                    configure_color_exposure(device, {"color_exposure": value})
+                sensor.set_option.assert_not_called()
+        device = Mock()
+        sensor = device.first_color_sensor.return_value
+        sensor.supports.return_value = False
+        with self.assertRaises(ValueError):
+            configure_color_exposure(device, {"color_exposure": 80})
+        sensor.set_option.assert_not_called()
+
     def test_visualization_defaults_overrides_and_headless(self):
         _, _, _, settings = load_config(DEFAULT_CONFIG)
         options = visualization_options(settings, parse_args([]))

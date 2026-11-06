@@ -42,6 +42,8 @@ packages=(
   qtbase5-dev
   # Optional aviator_tts cached WAV playback and offline cue configuration.
   alsa-utils python3-yaml python3-venv
+  # Python calibration UIs (Tkinter, NumPy, PyYAML above, and pyzmq).
+  python3-tk python3-numpy python3-zmq
   clangd clang-format clang-tidy gdb
   # common/ transport and JSON protocol.
   libzmq3-dev nlohmann-json3-dev

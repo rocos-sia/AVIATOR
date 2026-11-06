@@ -130,6 +130,19 @@ class SamplingTests(unittest.TestCase):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_missing_camera_python_does_not_start_bus(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing_python = str(Path(directory) / "missing-python")
+            args = parse_args(["--bus-bin", sys.executable, "--camera-python", missing_python])
+            worker = Worker(args, "test-session")
+            with patch("tools.steering_wheel_calibration.ui_backend.ManagedNodes") as nodes:
+                worker.run()
+            nodes.assert_not_called()
+            state = worker.snapshot()
+            self.assertTrue(state["error"])
+            self.assertIn(missing_python, state["message"])
+            self.assertIn("CAMERA_PYTHON", state["message"])
+
     def test_real_zmq_and_owned_child_cleanup(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)

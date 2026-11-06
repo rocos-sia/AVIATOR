@@ -88,6 +88,14 @@ Python RealSense + ChArUco/AprilTag 节点。`config/camera.yaml` 的 `detector.
 绘制只作用于图像副本，Logger 收到的原始图像不含叠加文字。预览需要桌面会话和带 GUI 的 OpenCV，
 无需独立显卡；无桌面时可只加 `--print-pose`。打印和预览与检测共用主循环，开启后会增加处理开销。
 
+## RGB 曝光
+
+`config/camera.yaml` 的 `camera.color_exposure` 控制彩色相机曝光，当前设为 `80`。
+数值使用设备 SDK 的原始曝光单位，不能直接当作微秒；调小可降低亮度。
+指定数值会关闭 RGB 自动曝光；设为 `null` 恢复自动曝光。省略此项则不修改设备曝光设置。
+修改后重启相机或标定 UI 生效，启动日志会打印实际曝光读数；超出设备范围会明确报错。
+此项不修改深度相机曝光或 RGB 增益。可先比较 `80` 的画面，仍过亮时试 `40`，过暗时调大。
+
 ## 识别模式
 
 在 [camera.yaml](../../config/camera.yaml) 中将 `detector.type` 设为 `charuco` 或 `apriltag`，修改后重启相机节点。当前配置为 `apriltag`，不是同时检测两种码。

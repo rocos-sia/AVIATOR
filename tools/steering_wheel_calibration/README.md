@@ -53,6 +53,21 @@ UI 默认使用 `python3`，需要 Tkinter、NumPy、PyYAML、pyzmq；相机默�
 `~/miniconda3/envs/apriltag_realsense/bin/python`。推荐系统 Python 运行窗口，以使用
 系统中文字体；Ubuntu 缺少依赖时可安装 `python3-tk python3-numpy python3-yaml python3-zmq`。
 `UI_PYTHON`、`CAMERA_PYTHON`、`CONDA_ROOT`、`AVIATOR_BIN` 可覆盖对应路径。
+若出现 `No module named 'zmq'`，缺少的是 UI 解释器中的 `pyzmq`，仅在相机环境中
+安装并不能解决。默认系统 Python 可执行 `sudo apt-get install python3-zmq`；
+自定义环境则用该解释器执行 `-m pip install pyzmq`。项目的
+`scripts/install_dependencies.sh` 已包含上述 UI 系统依赖。
+相机 Conda 环境需另行准备；若默认路径不存在，可创建环境并安装项目部署清单中的相机依赖：
+
+```bash
+conda create -n apriltag_realsense python=3.10 pip -y
+conda run -n apriltag_realsense python -m pip install \
+  numpy==1.26.4 PyYAML==6.0.2 pyzmq==26.4.0 \
+  opencv-contrib-python==4.11.0.86 pyrealsense2==2.58.1.10581 apriltag==0.0.16
+```
+
+也可用 `CAMERA_PYTHON=/实际环境/bin/python` 指定已有环境。启动前会检查 Bus 和相机解释器
+是否存在且可执行；路径错误时不会启动节点。
 例如：
 
 ```bash

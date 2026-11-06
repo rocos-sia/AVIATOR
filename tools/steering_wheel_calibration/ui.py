@@ -169,6 +169,23 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except ModuleNotFoundError as exc:
+        print(f"方向盘标定 UI：{exc}（Python：{sys.executable}）", file=sys.stderr)
+        dependency = {
+            "zmq": ("python3-zmq", "pyzmq"),
+            "numpy": ("python3-numpy", "numpy"),
+            "yaml": ("python3-yaml", "PyYAML"),
+            "tkinter": ("python3-tk", None),
+            "_tkinter": ("python3-tk", None),
+        }.get(exc.name)
+        if dependency:
+            apt_package, pip_package = dependency
+            print(f"Ubuntu 系统 Python 可安装：sudo apt-get install {apt_package}", file=sys.stderr)
+            if pip_package:
+                command = shlex.join([sys.executable, "-m", "pip", "install", pip_package])
+                print(f"自定义 Python 环境可安装：{command}", file=sys.stderr)
+            print("也可通过 UI_PYTHON 指定已安装 UI 依赖的解释器。", file=sys.stderr)
+        raise SystemExit(1)
     except Exception as exc:
         print(f"方向盘标定 UI：{exc}", file=sys.stderr)
         raise SystemExit(1)
