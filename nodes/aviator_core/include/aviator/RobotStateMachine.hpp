@@ -45,6 +45,9 @@ struct RobotMachine {
       return c.ready && c.release_authorized && !c.emergency_latched &&
              (c.job == Job::none || c.job == Job::following_impedance);
     };
+    const auto grasp_leave_ok = [leave_ok](const Context& c) {
+      return c.job == Job::following_impedance && leave_ok(c);
+    };
     const auto recover_ok = [](const Context& c) {
       return c.ready && c.settled && c.clear_of_wheel && c.job == Job::none && c.executor_idle;
     };
@@ -96,10 +99,14 @@ struct RobotMachine {
       state<HOMING> + event<Done>[home_done] / finished = state<STANDBY>,
       state<STANDBY> + event<ENTER_STANDBY> / [] {},
       state<STANDBY> + event<GRASP_WHEEL>[grasp_ok] / grasp = state<GRASPING>,
-      state<GRASPING> + event<Done>[grasp_done] / following = state<FOLLOWING>,
-      state<FOLLOWING> + event<Done>[following_done] / finished,
+      // FOLLOWING means its impedance task has completed and the executor is settled.
+      state<GRASPING> + event<Done>[grasp_done] / following,
+      state<GRASPING> + event<Done>[following_done] / finished = state<FOLLOWING>,
+      state<GRASPING> + event<LEAVE_WHEEL>[grasp_leave_ok] / leave = state<RELEASING>,
+      state<GRASPING> + event<ENTER_STANDBY>[grasp_leave_ok] / leave = state<RELEASING>,
       state<FOLLOWING> + event<START_CONTROL>[control_ok] / enable = state<CONTROL>,
-      state<CONTROL> + event<EXIT_CONTROL>[([](const Context& c) { return c.following_authorized; })] / disable = state<FOLLOWING>,
+      state<CONTROL> + event<EXIT_CONTROL>[([](const Context& c) { return c.following_authorized; })] / disable,
+      state<CONTROL> + event<Done>[following_done] / finished = state<FOLLOWING>,
       state<FOLLOWING> + event<EXIT_CONTROL> / [] {},
       state<FOLLOWING> + event<LEAVE_WHEEL>[leave_ok] / leave = state<RELEASING>,
       state<FOLLOWING> + event<ENTER_STANDBY>[leave_ok] / leave = state<RELEASING>,

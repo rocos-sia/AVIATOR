@@ -1261,7 +1261,8 @@ private:
             cancelled_ = true;
             executor_.stop();
             input_at_ = 0;
-            if (std::string(machine_.state()) != "FOLLOWING" &&
+            if (machine_.job() != fsm::Job::following_impedance &&
+                std::string(machine_.state()) != "FOLLOWING" &&
                 std::string(machine_.state()) != "RELEASING") options_.allow_motion(false);
         }
     }

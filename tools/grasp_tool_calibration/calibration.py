@@ -214,7 +214,10 @@ def calibrate(grasp: dict, samples: list[dict], *, max_joint_span_rad: float,
     if wheel_span[0] > limits["max_wheel_angle_span_rad"]:
         raise CalibrationError(f"wheel angle is not static: span {wheel_span[0]:.6g} rad")
     if wheel_span[1] > limits["max_wheel_displacement_span_m"]:
-        raise CalibrationError(f"wheel displacement is not static: span {wheel_span[1]:.6g} m")
+        raise CalibrationError(
+            f"轮盘位移未通过静止检查：采样范围 {wheel_span[1] * 1000:.6g} mm（最大值减最小值），"
+            f"阈值 {limits['max_wheel_displacement_span_m'] * 1000:.6g} mm。"
+            "请确认双臂和轮盘停稳，并检查相机测量抖动后重试。")
     result = copy.deepcopy(grasp)
     # Upgrade the legacy shared representation, preserving physical metadata.
     result["tool"].pop("position", None)

@@ -24,6 +24,7 @@ def main():
     config["photoelectric_emergency"] = {"enabled": False}  # This fixture has no optical input.
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot.update(viewer=False, settle_duration=.15)
+    robot["grasp_wheel"] = {"source": "wheel_initial"}  # Camera input is exercised only during hold.
     # Stable lifecycle fixture, independent of later deployment stiffness tuning.
     robot["rokae"]["joint_stiffness"] = [500, 500, 500, 500, 50, 50, 50]
     robot["rokae"]["following_joint_stiffness"] = [500, 500, 500, 500, 50, 50, .1]
@@ -97,6 +98,9 @@ def main():
             if sub.poll(50):
                 last = json.loads(sub.recv_multipart()[1])
                 assert last["system"]["state"] != "ERROR", last["system"]
+                if last["system"]["state"] == "FOLLOWING":
+                    assert last["system"]["settled"], last["system"]
+                    assert last["system"]["task_phase"] != "STIFFNESS", last["system"]
                 if predicate(last):
                     return last
             assert all(child.poll() is None for child in children), "process exited; inspect logs"
@@ -104,7 +108,6 @@ def main():
 
     def state(name, timeout=15):
         return wait(lambda m: m["system"]["state"] == name and
-                    (name != "FOLLOWING" or m["system"]["settled"]) and
                     (name != "CONTROL" or m["system"]["control_source"] == "JOYSTICK"), timeout)
 
     def operation(name):

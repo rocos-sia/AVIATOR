@@ -71,7 +71,7 @@ def main():
         last_request_count = 0
 
         def cycle(operation=0, a=True, b=True, roll=125, pitch=-250, malformed=False, core=True,
-                  prefix_operation=0, camera=True, camera_valid=True, fk_valid=True):
+                  prefix_operation=0, camera=True, camera_valid=True, fk_valid=True, core_state='FOLLOWING'):
             nonlocal tick, sequence, next_tick
             now = time.monotonic()
             if next_tick > now:
@@ -101,7 +101,7 @@ def main():
                 msg = dict(msg_type='FlightState', version='1.0', sequence=sequence,
                            timestamp=time.time_ns()//1000, sample_mono_us=sampled,
                            publisher_id='aviator_core', session_id='test-core', clock_id=clock, valid=True,
-                           system=dict(state='FOLLOWING', current_error_code=0, last_error_code=1203,
+                           system=dict(state=core_state, current_error_code=0, last_error_code=1203,
                                        source_authorized=True, input_source='FLIGHT'),
                            software_lock=True,
                            wheel_joint_measurement=dict(source="joint_fk", valid=fk_valid,
@@ -140,13 +140,14 @@ def main():
                 last = collection[-1]
                 assert last[3:5] == bytes([0, 0]), last.hex()
                 assert last[10] == 7 and last[11:13] == b'\xff\xff', last.hex()
-                assert struct.unpack_from('<hh', last, 13) == (1040, 1059), last.hex()
-                assert struct.unpack_from('<hh', last, 26) == (250, -500), last.hex()
+                assert struct.unpack_from('<hh', last, 6) == (125, -250), 'echo must retain ICD signs'
+                assert struct.unpack_from('<hh', last, 13) == (-1040, -1059), last.hex()
+                assert struct.unpack_from('<hh', last, 26) == (-250, 500), last.hex()
                 assert last[30:63] == bytes(33)
                 assert struct.unpack_from('<H', last, 24)[0] == 0x9ca1
             valid = [m for m in seen_commands if m['valid']]
             assert valid and valid[-1]['source'] == 'FLIGHT' and 'input_state' not in valid[-1]
-            assert valid[-1]['control'] == {'roll': .125, 'pitch': -.25}
+            assert valid[-1]['control'] == {'roll': -.125, 'pitch': .25}
             observation = valid[-1]['rs422']
             assert observation['selected_channel'] == 'A'
             for channel in observation['channels']:
@@ -184,20 +185,24 @@ def main():
                 raw = bytes(channel['raw_bytes'])
                 assert raw[-1] == sum(raw[2:-1]) & 255, 'bad checksum replaced accepted frame'
                 assert seen_commands[-1]['sample_mono_us'] - channel['received_mono_us'] >= 100000
+            # A fresh emergency is 0xff on both channels; Core silence must become 0xfe.
+            for _ in range(8): cycle(core_state='EMERGENCY_STOP')
+            assert all(channel[-1][10] == 0xff for channel in received)
             # Core silence invalidates only Core/FK feedback; fresh camera data remains independent.
             for _ in range(18): cycle(core=False)
             last = received[0][-1]
-            assert last[10] == 255 and struct.unpack_from('<hh', last, 26) == (-32768, -32768)
-            assert struct.unpack_from('<hh', last, 13) == (1040, 1059)
+            assert all(channel[-1][10] == 0xfe for channel in received)
+            assert struct.unpack_from('<hh', last, 26) == (-32768, -32768)
+            assert struct.unpack_from('<hh', last, 13) == (-1040, -1059)
             for _ in range(18): cycle(camera=False)
             last = received[0][-1]
             assert struct.unpack_from('<hh', last, 13) == (-32768, -32768)
-            assert struct.unpack_from('<hh', last, 26) == (250, -500)
+            assert struct.unpack_from('<hh', last, 26) == (-250, 500)
             for _ in range(4): cycle()
             for _ in range(4): cycle(camera_valid=False)
             assert struct.unpack_from('<hh', received[0][-1], 13) == (-32768, -32768)
             for _ in range(4): cycle(fk_valid=False)
-            assert struct.unpack_from('<hh', received[0][-1], 13) == (1040, 1059)
+            assert struct.unpack_from('<hh', received[0][-1], 13) == (-1040, -1059)
             assert struct.unpack_from('<hh', received[0][-1], 26) == (-32768, -32768)
             # New samples recover; no old operation is replayed.
             for _ in range(25): cycle()
@@ -221,6 +226,13 @@ def main():
                 assert channel['last_operation']['received_utc_us'] >= operation_started, channel
                 assert channel['last_operation']['request_id'] is None, channel
             assert len(requests) == 2
+            # Physical direction and wire echo are separate from the unchanged Core coordinates.
+            for roll, pitch in ((1000, 0), (-1000, 0), (0, 1000), (0, -1000), (0, 0)):
+                for _ in range(10): cycle(roll=roll, pitch=pitch)
+                assert seen_commands[-1]['valid']
+                assert seen_commands[-1]['control'] == {'roll': -roll / 1000, 'pitch': -pitch / 1000}
+                for channel in received:
+                    assert struct.unpack_from('<hh', channel[-1], 6) == (roll, pitch)
             print('PASS: real dual-PTY robot, 80 Hz uplinks, FLIGHT input, direct operation change without neutral, single execution, failover, CRC loss, stale Core, recovery')
         except Exception:
             log.flush();log.seek(0);print(log.read(), file=sys.stderr)

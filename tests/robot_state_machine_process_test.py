@@ -45,6 +45,7 @@ def main():
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot["viewer"] = False
     robot["settle_duration"] = .15
+    robot["grasp_wheel"] = {"source": "wheel_initial"}  # Lifecycle fixture has no calibrated camera.
     for key in ("model", "urdf", "grasp", "posture"):
         robot[key] = str((root / "config" / robot[key]).resolve())
     endpoints = [f"tcp://127.0.0.1:{port()}" for _ in range(3)]

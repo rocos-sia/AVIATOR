@@ -30,7 +30,7 @@ function cardFor(name, saved = false) {
     const row=element('tr'), values=Array.from({length:4},()=>element('td'));
     row.append(...values); body.append(row); return values;
   });
-  const note=element('p','位置字段：int16 小端，1 = 0.1%，有效范围 −1000～1000。操作码仅表示收到的请求，执行结果查看 REQ / REP。','footnote');
+  const note=element('p','位置字段：int16 小端，1 = 0.1%，有效范围 −1000～1000。ICD 1107：左正右负、推正拉负。操作码仅表示收到的请求，执行结果查看 REQ / REP。','footnote');
   panel.append(heading,meta,empty,raw,copy,scroll,note);
   const card={panel,title,badge,meta,empty,raw,copy,scroll,note,cells,bytes:[]};
   copy.onclick=async()=>{

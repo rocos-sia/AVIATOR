@@ -165,8 +165,20 @@ class GeometryTests(unittest.TestCase):
                     last["angle_rad"] += 0.02
                 else:
                     last["displacement_m"] += 0.003
-                with self.assertRaisesRegex(CalibrationError, "not static"):
+                with self.assertRaisesRegex(CalibrationError, "not static|未通过静止检查"):
                     calibrate(grasp, samples, **LIMITS)
+
+    def test_wheel_span_reports_mm_and_obeys_explicit_limit(self):
+        grasp, samples, _ = fixture()
+        original = copy.deepcopy(grasp)
+        samples[-1]["displacement_m"] += 0.00318575
+        limits = dict(LIMITS, max_wheel_displacement_span_m=0.003)
+        with self.assertRaisesRegex(CalibrationError, r"3\.18575 mm.*阈值 3 mm"):
+            calibrate(grasp, samples, **limits)
+        self.assertEqual(grasp, original)
+        _, report = calibrate(grasp, samples, **dict(limits, max_wheel_displacement_span_m=0.004))
+        self.assertAlmostEqual(report["wheel"]["displacement_span_m"], 0.00318575)
+        self.assertEqual(report["limits"]["max_wheel_displacement_span_m"], 0.004)
 
     def test_small_noise_has_reported_residual(self):
         grasp, samples, truth = fixture()

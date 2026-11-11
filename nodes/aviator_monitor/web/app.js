@@ -165,8 +165,9 @@ function renderOverview() {
     $(id).value = value ?? 0; $(id).hidden = !Number.isFinite(value);
   }
   $('command-marker').toggleAttribute('hidden',!c); $('measured-marker').toggleAttribute('hidden',!y);
-  if (c) $('command-marker').setAttribute('transform',`translate(${140+c.roll_percent},${125-c.pitch_percent})`);
-  if (y) { $('measured-marker').setAttribute('cx',140+y.roll_percent); $('measured-marker').setAttribute('cy',125-y.pitch_percent); }
+  // Driver view: positive roll is left; positive pitch is forward (up on this plot).
+  if (c) $('command-marker').setAttribute('transform',`translate(${140-c.roll_percent},${125-c.pitch_percent})`);
+  if (y) { $('measured-marker').setAttribute('cx',140-y.roll_percent); $('measured-marker').setAttribute('cy',125-y.pitch_percent); }
   text('command-meta',c ? `观测指令 · 样本 ${fmt(cg.sample_age_ms)} ms · 消息有效不代表执行到位` : `${labels[stateOf(cg)]} · 无当前有效指令`);
 }
 const streamRows = new Map(), serviceRows = new Map();

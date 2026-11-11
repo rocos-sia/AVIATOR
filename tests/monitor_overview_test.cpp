@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
         ingest(state, aviator::Topic::flight_command,
                {{"source", "JOYSTICK"}, {"control", {{"roll", .35}, {"pitch", -.12}}}});
         auto command = state.overview(1010000, "clock")["flight_command"];
-        check(command["current"]["roll_percent"] == 35 &&
+        check(command["current"]["roll_percent"] == -35 &&
                   command["current"]["pitch_normalized"] == -.12 &&
                   command["current"]["pitch_percent"] == 12 &&
                   std::abs(command["current"]["pitch_mm"].get<double>() - 95.2) < 1e-9,
@@ -86,11 +86,36 @@ int main(int argc, char** argv) {
             const auto current = endpoint.overview(1010000, "clock")["flight_command"]["current"];
             check(current["pitch_normalized"] == sample[0] &&
                       current["pitch_percent"] == sample[1] && current["pitch_mm"] == sample[2] &&
-                      current["roll_percent"] == 35,
+                      current["roll_percent"] == -35,
                   "command pitch display direction at endpoints and neutral");
         }
         check(state.overview(1100000, "clock")["flight_command"]["current"].is_null(),
               "stale command remains current");
+        // The same internal target has identical ICD display polarity for local and RS422 input.
+        for (const char* source : {"JOYSTICK", "FLIGHT"}) {
+            for (const auto& axis : std::array<std::array<double, 2>, 5>{{
+                     {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0, 0}}}) {
+                monitor::State aligned;
+                const double angle = axis[0] * 50 * 3.14159265358979323846 / 180;
+                ingest(aligned, aviator::Topic::flight_command,
+                    {{"source", source}, {"control", {{"roll", -axis[0]}, {"pitch", -axis[1]}}}});
+                ingest(aligned, aviator::Topic::camera_detection,
+                    {{"camera_id", "cockpit"}, {"steering_wheel", {{"valid", true},
+                     {"theta_rad", -angle}, {"translation_along_axis_m", axis[1] * .085}}}});
+                const auto snapshot = aligned.overview(1010000, "clock");
+                const auto& command = snapshot["flight_command"]["current"];
+                const auto& measured = snapshot["yoke_observation"]["current"];
+                for (const auto* field : {"roll_percent", "pitch_percent", "roll_deg", "pitch_mm"})
+                    check(std::abs(command[field].get<double>() - measured[field].get<double>()) < 1e-9,
+                          "command and camera display agree for all ICD directions");
+                check(command["roll_percent"] == axis[0] * 100 && command["pitch_percent"] == axis[1] * 100,
+                      "ICD left and push percentages are positive");
+                check(measured["model_joints"]["roll_input_joint"] == angle &&
+                          std::abs(measured["model_joints"]["pitch_input_joint"].get<double>() +
+                                   .085 * (axis[1] + 1)) < 1e-9,
+                      "display conversion preserves internal model joint coordinates");
+            }
+        }
         check(state.overview(1010000, "other")["flight_command"]["measurement_state"] ==
                   "CLOCK_UNKNOWN",
               "cross clock");
@@ -213,13 +238,13 @@ int main(int argc, char** argv) {
         vision.config["yoke_calibration"] = calibration();
         monitor::validate_config(vision.config);
         auto y = vision.overview(1010000, "clock")["yoke_observation"]["current"];
-        check(std::abs(y["roll_percent"].get<double>() - 34) < 1e-8 &&
+        check(std::abs(y["roll_percent"].get<double>() + 34) < 1e-8 &&
                   std::abs(y["pitch_percent"].get<double>() + 14) < 1e-8,
               "visual mapping");
         monitor::State edges;
         edges.config["yoke_calibration"] = calibration();
         ingest(edges, aviator::Topic::camera_detection, detection(51.9, 174.9));
-        check(edges.overview(1010000, "clock")["yoke_observation"]["current"]["roll_percent"] > 100,
+        check(edges.overview(1010000, "clock")["yoke_observation"]["current"]["roll_percent"] < -100,
               "feedback overshoot clipped");
         monitor::State outside;
         outside.config["yoke_calibration"] = calibration();
@@ -272,6 +297,8 @@ int main(int argc, char** argv) {
                 const auto& current = observed["current"];
                 check(observed["measurement_state"] == "VALID" &&
                           observed["calibration_id"] == "camera-test" &&
+                          std::abs(current["roll_deg"].get<double>() + .25 * 180 / 3.14159265358979323846) < 1e-9 &&
+                          std::abs(current["roll_percent"].get<double>() + .25 * 360 / 3.14159265358979323846) < 1e-9 &&
                           current["model_joints"]["roll_input_joint"] == -.25 &&
                           std::abs(current["model_joints"]["pitch_input_joint"].get<double>() -
                                    expected_pitch) < 1e-9 &&
@@ -369,7 +396,7 @@ int main(int argc, char** argv) {
         check(!assets.read("/models/../config/flight.yaml", asset) &&
                   !assets.read("/assets/../main.cpp", asset),
               "path traversal");
-        check(assets.manifest["aliases"]["/models/meshes/aircraft.STL"] ==
+        check(assets.manifest["aliases"]["/models/meshes/Cessna/aircraft.STL"] ==
                   "/models/meshes/Cessna/aircraft.STL",
               "resource alias");
         std::cout << "monitor overview, calibration, preview and asset tests passed\n";

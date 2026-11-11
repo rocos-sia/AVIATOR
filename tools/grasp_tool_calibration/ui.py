@@ -6,6 +6,7 @@ import argparse
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
 import os
 from pathlib import Path
 import secrets
@@ -69,10 +70,15 @@ def parse_args(argv=None):
     parser.add_argument("--camera-python", type=Path,
                         default=python_default("CAMERA_PYTHON", conda / "envs/apriltag_realsense/bin/python"))
     parser.add_argument("--camera-id", default="cockpit")
+    parser.add_argument("--max-wheel-displacement-span-mm", type=float,
+                        help="轮盘位移采样最大值减最小值的上限，mm（默认 3）；确认实物静止后按测量噪声设置")
     parser.add_argument("--log-dir", type=Path,
                         help="指定日志目录；默认优先使用仓库 logs，无法写入时自动使用临时目录")
     parser.add_argument("--lease-timeout", type=float, default=10, help="浏览器失联清理等待秒数（3..60）")
     options = parser.parse_args(argv)
+    span = options.max_wheel_displacement_span_mm
+    if span is not None and (not math.isfinite(span) or span <= 0):
+        parser.error("max-wheel-displacement-span-mm 必须为有限正数")
     if not 0 <= options.port <= 65535 or not 3 <= options.lease_timeout <= 60:
         parser.error("port 必须为 0..65535，lease-timeout 必须为 3..60")
     for name, value in vars(options).items():

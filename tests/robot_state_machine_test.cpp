@@ -15,6 +15,7 @@ void finish(RobotStateMachine& m, Snapshot s = healthy()) {
     auto task = m.takeTask(); check(bool(task), "missing task");
     check(!m.takeTask(), "task submitted twice"); m.done(task->generation, s);
     if (m.job() == Job::following_impedance) {
+        state(m, "GRASPING");
         auto profile = m.takeTask(); check(bool(profile), "missing following impedance task");
         check(!m.acceptsControl(), "following impedance enabled control");
         m.done(profile->generation, s);
@@ -49,12 +50,13 @@ int main() try {
     state(m, "CONTROL"); check(m.acceptsControl(), "gate disabled");
     check(!m.takeTask(), "START_CONTROL created an extra FSM task");
     check(m.controlSince() == 7, "input boundary");
-    m.request(Operation::exit_control, s, 9); state(m, "FOLLOWING");
+    m.request(Operation::exit_control, s, 9); state(m, "CONTROL");
     check(!m.acceptsControl() && m.takeStop(), "exit must decelerate");
     s.settled = false;
     check(m.request(Operation::start_control, s, 10) == Reply::busy, "unsettled control");
     m.request(Operation::exit_control, s, 11); check(!m.takeStop(), "idempotent exit repeated stop");
-    s = healthy(); finish(m); m.request(Operation::leave_wheel, s, 12); state(m, "RELEASING"); finish(m); state(m, "STANDBY");
+    s = healthy(); finish(m); state(m, "FOLLOWING");
+    m.request(Operation::leave_wheel, s, 12); state(m, "RELEASING"); finish(m); state(m, "STANDBY");
     m.fault("first"); state(m, "ERROR"); check(m.takeStop(), "fault stop");
     m.fault("second"); check(!m.takeStop() && m.lastError() == "second", "fault repeat");
     s.fault_cleared = false;
@@ -118,6 +120,57 @@ int main() try {
     check(switching.request(Operation::leave_wheel, s, 5) == Reply::accepted, "impedance prevented leave");
     switching.done(cancelled->generation, healthy(), 6); state(switching, "RELEASING");
     finish(switching); state(switching, "STANDBY");
+    // Neither entry path may advertise FOLLOWING before stiffness completion.
+    for (bool from_control : {false, true}) {
+        for (const std::string outcome : {"success", "failure", "timeout", "emergency", "leave", "home"}) {
+            RobotStateMachine pending_profile; s = healthy();
+            if (from_control) {
+                following(pending_profile);
+                pending_profile.request(Operation::start_control, s, 3);
+                pending_profile.request(Operation::exit_control, s, 4);
+            } else {
+                pending_profile.boot(s, 1); finish(pending_profile);
+                pending_profile.request(Operation::enter_standby, s, 2); finish(pending_profile);
+                pending_profile.request(Operation::grasp_wheel, s, 3);
+                auto grasp = pending_profile.takeTask();
+                pending_profile.done(grasp->generation, s, 4);
+            }
+            const auto before = from_control ? "CONTROL" : "GRASPING";
+            state(pending_profile, before);
+            auto profile = pending_profile.takeTask();
+            check(profile && profile->job == Job::following_impedance, "missing profile task");
+            check(!pending_profile.acceptsControl(), "profile switch admitted motion");
+            s.settled = s.executor_idle = false;
+            check(pending_profile.request(Operation::start_control, s, 5) == Reply::busy,
+                  "profile switch allowed START_CONTROL");
+            check(!pending_profile.done(profile->generation, s, 6), "unsettled completion accepted");
+            state(pending_profile, before);
+            s.input_ready = s.source_authorized = false; s.input_timed_out = true;
+            pending_profile.supervise(s, 7);
+            pending_profile.supervise(s, 100008);
+            state(pending_profile, before); // EXIT_CONTROL no longer needs continuous input.
+            if (outcome == "success") {
+                s = healthy();
+                check(pending_profile.done(profile->generation, s, 100009), "profile completion rejected");
+                state(pending_profile, "FOLLOWING");
+                check(pending_profile.request(Operation::start_control, s, 100010) == Reply::completed,
+                      "first START_CONTROL after FOLLOWING rejected");
+            } else if (outcome == "leave" || outcome == "home") {
+                check(pending_profile.request(outcome == "leave" ? Operation::leave_wheel : Operation::enter_standby,
+                                              s, 100009) == Reply::accepted, "profile switch prevented release");
+                pending_profile.done(profile->generation, healthy(), 100010);
+                state(pending_profile, "RELEASING");
+                finish(pending_profile); state(pending_profile, "STANDBY");
+            } else {
+                if (outcome == "failure") pending_profile.failed(profile->generation, "profile failed");
+                if (outcome == "timeout") pending_profile.supervise(s, profile->deadline);
+                if (outcome == "emergency") pending_profile.emergency("profile interrupted");
+                pending_profile.done(profile->generation, healthy(), 100010);
+                state(pending_profile, outcome == "emergency" ? "EMERGENCY_STOP" : "ERROR");
+                check(!pending_profile.acceptsControl(), "late completion enabled motion");
+            }
+        }
+    }
     // A transient resource loss must preserve an active job and its generation.
     RobotStateMachine working; working.boot(healthy(), 1); pending = working.takeTask();
     s = healthy(); s.ready = false; working.supervise(s, 2);

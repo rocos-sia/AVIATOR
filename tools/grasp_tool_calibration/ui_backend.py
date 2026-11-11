@@ -96,10 +96,14 @@ class CalibrationController:
         self._monitor_at = 0
         self._bad_hand_since = None
         self._lease_expired = False
-        self.args = calibration_args(["--robot-config", str(options.robot_config),
-                                      "--camera-id", options.camera_id])
+        arguments = ["--robot-config", str(options.robot_config), "--camera-id", options.camera_id]
+        span = getattr(options, "max_wheel_displacement_span_mm", None)
+        if span is not None:
+            arguments += ["--max-wheel-displacement-span-mm", str(span)]
+        self.args = calibration_args(arguments)
         self.grasp_path, _, _ = read_inputs(self.args)
         self.state = dict(dry_run=options.dry_run, phase="idle", busy=False, error="", message="尚未连接设备",
+                          max_wheel_displacement_span_mm=self.args.max_wheel_displacement_span_mm,
                           prepared=False, wheel_source="camera", arms=self._empty_arms(),
                           progress=dict(current=0, total=self.args.samples), result=None, backup=None,
                           config={"robot": str(options.robot_config), "system": str(options.system_config),
@@ -176,6 +180,10 @@ class CalibrationController:
             raise CalibrationError("未知手部目标")
         if action == "prepare" and request.get("wheel_source") not in ("camera", "manual"):
             raise CalibrationError("请选择 camera 或 manual")
+        if action == "sample" and "max_wheel_displacement_span_mm" in request:
+            span = request["max_wheel_displacement_span_mm"]
+            if type(span) not in (int, float) or not math.isfinite(span) or span <= 0:
+                raise CalibrationError("轮盘位移静止阈值必须为大于 0 的有限数值（mm）")
         with self.lock:
             if self._shutdown.is_set():
                 raise CalibrationError("界面服务正在退出")
@@ -389,6 +397,8 @@ class CalibrationController:
 
     def _sample(self, request):
         self._invalidate()
+        span = request.get("max_wheel_displacement_span_mm", self.state["max_wheel_displacement_span_mm"])
+        self._set(max_wheel_displacement_span_mm=span)
         self._check_inputs()
         self._require_link()
         self._refresh_arms()
@@ -446,7 +456,7 @@ class CalibrationController:
                                     max_position_span_m=self.args.max_position_span_mm / 1000,
                                     max_rotation_span_rad=math.radians(self.args.max_rotation_span_deg),
                                     max_wheel_angle_span_rad=math.radians(self.args.max_wheel_angle_span_deg),
-                                    max_wheel_displacement_span_m=self.args.max_wheel_displacement_span_mm / 1000)
+                                    max_wheel_displacement_span_m=span / 1000)
         self._check_cancel()
         self._check_inputs()
         self._updated, self._snapshots = updated, snapshots

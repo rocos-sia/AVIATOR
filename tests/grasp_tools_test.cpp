@@ -297,10 +297,15 @@ void managedReleaseFailure(const fs::path& config, bool camera = false, bool dur
 }
 // Hold a profile RPC open to exercise CONTROL entry independently of SDK/hardware.
 struct ProfileDevice : Device {
-    std::atomic<int> following_calls{0}, default_calls{0};
+    std::atomic<int> following_calls{0}, following_completed{0}, default_calls{0};
     bool fail_default = false;
     void setImpedanceProfile(bool following) override {
-        if (following) { ++following_calls; return; }
+        if (following) {
+            ++following_calls;
+            std::this_thread::sleep_for(std::chrono::milliseconds(150));
+            ++following_completed;
+            return;
+        }
         ++default_calls;
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
         if (fail_default) throw std::runtime_error("Injected default impedance failure");
@@ -324,6 +329,14 @@ void managedControlEntry(const fs::path& config, const std::string& outcome) {
     options.allow_motion = [&](bool value) { allowed = value; };
     options.heartbeat = [&] { ++heartbeats; };
     options.request_brake = [] {};
+    options.report = [&](const SystemStatus& status) {
+        if (status.state == "FOLLOWING") {
+            check(observed->following_completed > 0 &&
+                  observed->following_completed == observed->following_calls,
+                  "FOLLOWING published before stiffness completed");
+            check(status.conditions.settled, "FOLLOWING published before executor settled");
+        }
+    };
     Aviator core(std::move(device), std::make_unique<RecordingIk>(), nullptr, config.string(), options);
     const auto wait = [&](auto predicate) {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
@@ -339,7 +352,12 @@ void managedControlEntry(const fs::path& config, const std::string& outcome) {
     core.Init(); wait([&] { return settled("READY"); });
     core.EnterStandby(); wait([&] { return settled("STANDBY"); });
     const auto home_target = observed->q;
-    core.GraspWheel(); wait([&] { return settled("FOLLOWING"); });
+    core.GraspWheel(); wait([&] { return observed->following_calls == 1; });
+    check(core.GetSystemState() == "GRASPING", "Grasp advertised FOLLOWING during profile switch");
+    check(!core.GetSystemStatus().conditions.settled, "Profile switch reported settled");
+    check(core.StartControl() == fsm::Reply::busy, "Profile switch accepted START_CONTROL");
+    wait([&] { return core.GetSystemState() == "FOLLOWING"; });
+    check(settled("FOLLOWING"), "First FOLLOWING feedback was not settled");
     check(observed->following_calls == 1, "Following profile missing");
     const auto before_target = observed->q;
     const auto sample = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -368,7 +386,9 @@ void managedControlEntry(const fs::path& config, const std::string& outcome) {
     }
     if (outcome == "exit") {
         check(core.ExitControl() == fsm::Reply::accepted, "Exit during restoration rejected");
-        check(core.GetSystemState() == "FOLLOWING", "Exit did not leave CONTROL immediately");
+        check(core.GetSystemState() == "CONTROL", "Exit advertised FOLLOWING before profile completion");
+        check(!core.GetSystemStatus().accepts_control && allowed, "Exit failed to close targets or revoked hold");
+        input_ready = false; // An exited control session no longer needs continuous input.
     }
     if (outcome == "success" || outcome == "transient") {
         wait([&] { return core.GetSystemStatus().accepts_control; });
@@ -480,6 +500,7 @@ int main(int argc, char **argv) try {
     config["posture"] = (root / "config/posture.json").string();
     config["grasp"] = (dir / "grasp.yaml").string();
     config["collision_check_enabled"] = false;
+    config["grasp_wheel"]["source"] = "wheel_initial"; // Default mock has no camera adapter.
     auto runCore = [&](const YAML::Node &g) {
         std::ofstream(dir / "grasp.yaml") << g;
         std::ofstream(dir / "robot.yaml") << config;

@@ -12,6 +12,7 @@
   let localError = "";
   let networkError = "";
   let manualChanged = false;
+  let spanInitialized = false;
   let lastResult = "";
   let lastLogs = "";
 
@@ -23,6 +24,9 @@
   function showError() { const message = networkError || localError || state?.error || ""; $("error").hidden = !message; text("error", message); }
   function manualValid() {
     return $("angle-deg").value.trim() !== "" && $("displacement-m").value.trim() !== "" && $("angle-deg").checkValidity() && $("displacement-m").checkValidity();
+  }
+  function spanValid() {
+    return $("wheel-span-mm").checkValidity() && Number.isFinite($("wheel-span-mm").valueAsNumber) && $("wheel-span-mm").valueAsNumber > 0;
   }
 
   function renderButtons() {
@@ -36,8 +40,10 @@
     $("manual-input").hidden = source !== "manual";
     $("angle-deg").disabled = blocked;
     $("displacement-m").disabled = blocked;
-    $("sample").disabled = blocked || !s.can_sample || (source === "manual" && !manualValid());
-    $("save").disabled = blocked || !s.can_save || s.dry_run || manualChanged;
+    $("wheel-span-mm").disabled = blocked;
+    const spanChanged = Boolean(s.result) && (!spanValid() || Math.abs(Number($("wheel-span-mm").value) / 1000 - s.result.limits?.max_wheel_displacement_span_m) > 1e-12);
+    $("sample").disabled = blocked || !s.can_sample || !spanValid() || (source === "manual" && !manualValid());
+    $("save").disabled = blocked || !s.can_save || s.dry_run || manualChanged || spanChanged;
     for (const button of document.querySelectorAll("[data-action]")) {
       const side = button.dataset.side;
       const arms = side === "both" ? [s.arms?.left, s.arms?.right] : [s.arms?.[side]];
@@ -45,7 +51,8 @@
       else if (button.dataset.action === "drag_start") button.disabled = blocked || !s.prepared || !arms.every((arm) => arm?.connected && !arm.dragging);
       else button.disabled = blocked || !s.prepared || !arms.some((arm) => arm?.connected && arm.dragging);
     }
-    if (manualChanged) text("save-hint", "手动轮盘值已更改，请重新采样后再写回。下方仍显示上一次采样的结果。");
+    if (spanChanged) text("save-hint", "静止阈值已更改，请重新采样后再写回。下方仍显示上一次采样的结果及其阈值。");
+    else if (manualChanged) text("save-hint", "手动轮盘值已更改，请重新采样后再写回。下方仍显示上一次采样的结果。");
     else if (s.dry_run) text("save-hint", "模拟模式仅供检查操作流程，不能写回 grasp.json。");
     else text("save-hint", "写回仅更新 tool.left / tool.right，保留原文件备份。后续控制程序重新启动后使用新参数。");
   }
@@ -59,7 +66,7 @@
     $("result-content").hidden = !report;
     $("result-tables").replaceChildren();
     if (!report) return;
-    text("result-summary", `${report.sample_count} 组样本 · 轮盘平均角度 ${scaled(report.wheel?.mean_angle_rad, 180 / Math.PI)}° · 平均位移 ${number(report.wheel?.mean_displacement_m, 5)} m`);
+    text("result-summary", `${report.sample_count} 组样本 · 轮盘平均角度 ${scaled(report.wheel?.mean_angle_rad, 180 / Math.PI)}° · 平均位移 ${number(report.wheel?.mean_displacement_m, 5)} m · 位移波动 ${scaled(report.wheel?.displacement_span_m, 1000)} mm / 阈值 ${scaled(report.limits?.max_wheel_displacement_span_m, 1000)} mm`);
     for (const side of ["left", "right"]) {
       const arm = report.arms?.[side];
       if (!arm) continue;
@@ -85,6 +92,10 @@
 
   function render(s) {
     state = s;
+    if (!spanInitialized) {
+      $("wheel-span-mm").value = s.max_wheel_displacement_span_mm ?? 3;
+      spanInitialized = true;
+    }
     text("phase", phases[s.phase] || s.phase || "待准备");
     $("dry-run").hidden = !s.dry_run;
     $("status-message").hidden = !s.message; text("status-message", s.message || "");
@@ -156,8 +167,9 @@
   $("stop").addEventListener("click", () => requestAction({action: "stop"}));
   $("save").addEventListener("click", () => requestAction({action: "save"}));
   $("sample").addEventListener("click", () => {
+    if (!spanValid()) return;
     if (($("wheel-source").value === "manual") && !manualValid()) return;
-    requestAction({action: "sample", angle_deg: Number($("angle-deg").value), displacement_m: Number($("displacement-m").value)});
+    requestAction({action: "sample", angle_deg: Number($("angle-deg").value), displacement_m: Number($("displacement-m").value), max_wheel_displacement_span_mm: Number($("wheel-span-mm").value)});
   });
   for (const button of document.querySelectorAll("[data-action]")) button.addEventListener("click", () => {
     const payload = {action: button.dataset.action, side: button.dataset.side};
@@ -166,6 +178,11 @@
   });
   $("wheel-source").addEventListener("change", () => { renderButtons(); badge("camera-state", $("wheel-source").value === "manual" ? "手动输入" : "等待有效测量"); });
   for (const id of ["angle-deg", "displacement-m"]) $(id).addEventListener("input", () => { if (state?.result) manualChanged = true; renderButtons(); });
+  $("wheel-span-mm").addEventListener("input", () => {
+    const input = $("wheel-span-mm");
+    input.setCustomValidity(Number.isFinite(input.valueAsNumber) && input.valueAsNumber > 0 ? "" : "请输入大于 0 的阈值（mm）");
+    renderButtons();
+  });
   window.addEventListener("pagehide", () => {
     if (state?.prepared || state?.busy || submitting) navigator.sendBeacon("/api/action", new Blob([JSON.stringify({action: "stop", token})], {type: "application/json"}));
   });

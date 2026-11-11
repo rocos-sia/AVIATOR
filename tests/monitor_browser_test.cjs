@@ -30,11 +30,17 @@ async function main() {
     page.setDefaultTimeout(30000);
     page.on('pageerror',e=>errors.push(e.message));
     await page.goto(`http://127.0.0.1:${http}/`,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>document.getElementById('command-roll').textContent.includes('+35.0'),{timeout:15000});
+    await page.waitForFunction(()=>document.getElementById('command-roll').textContent.includes('-35.0'),{timeout:15000});
     await page.waitForFunction(()=>document.getElementById('model-loading').hidden,{timeout:30000});
     await page.waitForFunction(()=>document.getElementById('actual-pitch').textContent==='73.1 mm');
     await page.waitForFunction(()=>!document.getElementById('camera-image').hidden && document.getElementById('camera-image').naturalWidth>0);
     await page.waitForFunction(()=>!document.getElementById('command-marker').hasAttribute('hidden') && !document.getElementById('measured-marker').hasAttribute('hidden'));
+    assert.strictEqual(await page.locator('#command-pitch').textContent(), '+12.0%');
+    assert.strictEqual(await page.locator('#actual-roll-percent').textContent(), '-34.0%');
+    assert.strictEqual(await page.locator('#actual-pitch-percent').textContent(), '-14.0%');
+    assert.strictEqual(await page.locator('#command-marker').getAttribute('transform'), 'translate(175,113)');
+    assert(Math.abs(Number(await page.locator('#measured-marker').getAttribute('cx')) - 174) < 1e-6);
+    assert.strictEqual(await page.locator('#roll-meter').evaluate(e=>getComputedStyle(e).direction), 'rtl');
     // Capture the active viewer through its render hook without adding a production debug API.
     await page.evaluate(async()=>{
       const {Viewer}=await import('/assets/viewer.js'),update=Viewer.prototype.updateHelpers;
@@ -202,9 +208,9 @@ async function main() {
     await page.screenshot({path:path.join(directory,'messages.png')});
     await page.locator('#pause-display').click(); await page.locator('#tab-overview').click();
     fs.writeFileSync(controlPath,JSON.stringify({camera_stale:true}));
-    await page.waitForFunction(()=>document.getElementById('camera-overlay').textContent.includes('过期') && document.getElementById('actual-pitch').textContent==='—' && document.getElementById('command-roll').textContent==='+35.0%');
+    await page.waitForFunction(()=>document.getElementById('camera-overlay').textContent.includes('过期') && document.getElementById('actual-pitch').textContent==='—' && document.getElementById('command-roll').textContent==='-35.0%');
     assert.strictEqual(await page.locator('#actual-pitch').textContent(),'—');
-    assert.strictEqual(await page.locator('#command-roll').textContent(),'+35.0%');
+    assert.strictEqual(await page.locator('#command-roll').textContent(),'-35.0%');
     assert(await page.locator('#measured-marker').evaluate(e=>e.hasAttribute('hidden')));
     await page.screenshot({path:path.join(directory,'camera-stale.png')});
     await page.setViewportSize({width:1600,height:900});
@@ -235,7 +241,7 @@ async function main() {
         const v=window.testViewer,g=v.data.arms.left;
         return g.measurement_state==='STALE' && !v.isLive(g) &&
           document.querySelector('#devices .device-title span').textContent==='数据过期' &&
-          document.getElementById('command-roll').textContent==='+35.0%';
+          document.getElementById('command-roll').textContent==='-35.0%';
       });
       fs.writeFileSync(controlPath,'{}');
       await page.waitForFunction(()=>window.testViewer.isLive(window.testViewer.data.arms.left));

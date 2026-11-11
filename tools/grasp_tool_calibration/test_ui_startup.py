@@ -16,6 +16,14 @@ import ui_backend
 
 
 class InterpreterTests(unittest.TestCase):
+    def test_wheel_span_override_requires_finite_positive_value(self):
+        self.assertIsNone(ui.parse_args([]).max_wheel_displacement_span_mm)
+        self.assertEqual(ui.parse_args(["--max-wheel-displacement-span-mm", "4"])
+                         .max_wheel_displacement_span_mm, 4)
+        for value in ("0", "-1", "nan", "inf"):
+            with self.subTest(value=value), redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                ui.parse_args(["--max-wheel-displacement-span-mm", value])
+
     def test_virtualenv_survives_defaults_cli_and_executable_validation(self):
         with tempfile.TemporaryDirectory(prefix="grasp-ui-python-") as directory:
             environment = Path(directory) / "venv"

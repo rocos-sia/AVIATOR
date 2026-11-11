@@ -16,7 +16,7 @@ void put(Bytes& b, size_t p, uint16_t v) {
 }
 const std::array<const char*, 7> operations{{"", "enter_standby", "grasp_wheel", "start_control",
                                              "exit_control", "leave_wheel", "reset_error"}};
-const std::array<std::pair<uint8_t, const char*>, 11> states{{{0, "EMERGENCY_STOP"},
+const std::array<std::pair<uint8_t, const char*>, 11> states{{{0xff, "EMERGENCY_STOP"},
                                                               {1, "INIT"},
                                                               {3, "READY"},
                                                               {5, "STANDBY"},
@@ -50,7 +50,7 @@ uint8_t stateCode(const std::string& s) {
     for (auto [v, n] : states)
         if (s == n)
             return v;
-    return unknown;
+    return unknown_state;
 }
 const char* stateName(uint8_t c) {
     for (auto [v, n] : states)
@@ -131,7 +131,7 @@ bool decode(const Bytes& b, Uplink& f) {
     if (!envelope(b, uplink_size))
         return false;
     if ((b[3] > 1 && b[3] != unknown) || b[4] > 3 || (b[5] && !*operationName(b[5])) ||
-        (b[10] != unknown && stateCode(stateName(b[10])) != b[10]) ||
+        (b[10] != unknown_state && stateCode(stateName(b[10])) != b[10]) ||
         (b[11] > 1 && b[11] != unknown) || (b[12] > 1 && b[12] != unknown) ||
         (b[21] != unknown && (b[21] > 0x40 || b[21] % 16)))
         return false;

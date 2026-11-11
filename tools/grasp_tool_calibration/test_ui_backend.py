@@ -166,6 +166,16 @@ class CalibrationControllerTests(unittest.TestCase):
         self.assertEqual(self.events[0][0], "connect")
         self.assertEqual(self.controller.nodes.started, [])
 
+    def test_ui_wheel_span_reaches_calibration_settings(self):
+        self.assertEqual(self.controller.args.max_wheel_displacement_span_mm, 3)
+        self.controller.close()
+        self.options.max_wheel_displacement_span_mm = ui.parse_args(
+            ["--max-wheel-displacement-span-mm", "4"]).max_wheel_displacement_span_mm
+        self.controller = app.CalibrationController(self.options, nodes_factory=FakeNodes)
+        self.assertEqual(self.controller.args.max_wheel_displacement_span_mm, 4)
+        self.assertFalse(self.controller.snapshot()["prepared"])
+        self.assertEqual(self.controller.nodes.started, [])
+
     def test_left_right_hand_targets_preserve_other_side_and_thumb(self):
         self.prepare()
         status = self.action("hand", side="left", pose="close")
@@ -304,6 +314,29 @@ class CalibrationControllerTests(unittest.TestCase):
         self.assertEqual(self.grasp_path.read_bytes(), before)
         self.assertFalse(status["can_save"])
         self.assertEqual(len(list(self.options.log_dir.glob("preview-*.json"))), 1)
+
+    def test_sample_threshold_is_used_recorded_and_retained(self):
+        self.prepare()
+        self.assertEqual(self.controller.snapshot()["max_wheel_displacement_span_mm"], 3)
+        status = self.action("sample", angle_deg=0, displacement_m=-.085,
+                             max_wheel_displacement_span_mm=4)
+        self.assertEqual(status["phase"], "preview", status["error"])
+        self.assertEqual(status["max_wheel_displacement_span_mm"], 4)
+        self.assertEqual(status["result"]["limits"]["max_wheel_displacement_span_m"], .004)
+        report = json.loads(next(self.options.log_dir.glob("preview-*.json")).read_text())
+        self.assertEqual(report["limits"]["max_wheel_displacement_span_m"], .004)
+        status = self.action("sample", angle_deg=0, displacement_m=-.085)
+        self.assertEqual(status["result"]["limits"]["max_wheel_displacement_span_m"], .004)
+
+    def test_invalid_sample_threshold_is_rejected_before_device_access(self):
+        self.prepare()
+        previous_events = list(self.events)
+        for span in (None, True, "4", 0, -1, float("nan"), float("inf")):
+            with self.subTest(span=span), self.assertRaisesRegex(CalibrationError, "静止阈值"):
+                self.controller.submit(dict(action="sample", max_wheel_displacement_span_mm=span))
+        self.assertEqual(self.events, previous_events)
+        self.assertFalse(self.controller.snapshot()["busy"])
+        self.assertEqual(self.controller.snapshot()["max_wheel_displacement_span_mm"], 3)
 
     def test_camera_sampling_converts_sign_offset_and_uses_independent_frames(self):
         with patch.object(app, "DemoLink", OffsetDemoLink):

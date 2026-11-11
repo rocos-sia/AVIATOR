@@ -31,6 +31,7 @@ def main():
     config["photoelectric_emergency"] = {"enabled": False}  # This fixture has no optical input.
     robot = yaml.safe_load((root / "config/robot.yaml").read_text())
     robot.update(viewer=False, settle_duration=.15)
+    robot["grasp_wheel"] = {"source": "wheel_initial"}  # Gateway fixture has no calibrated camera.
     for key in ("model", "urdf", "grasp", "posture"):
         robot[key] = str((root / "config" / robot[key]).resolve())
     endpoints = [f"tcp://127.0.0.1:{port()}" for _ in range(4)]

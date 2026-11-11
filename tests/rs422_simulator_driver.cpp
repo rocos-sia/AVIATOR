@@ -28,7 +28,10 @@ int main(int argc, char** argv) try {
         SDL_JoystickSetVirtualButton(joystick, 0, 1);
         std::this_thread::sleep_for(180ms);
         SDL_JoystickSetVirtualButton(joystick, 0, 0);
-        std::this_thread::sleep_for(420ms);
+        std::this_thread::sleep_for(200ms);
+        SDL_JoystickSetVirtualAxis(joystick, 0, -16384);
+        SDL_JoystickSetVirtualAxis(joystick, 1, 16384);
+        std::this_thread::sleep_for(220ms);
         SDL_JoystickDetachVirtual(index);
         std::this_thread::sleep_for(500ms);
         const char byte = 1;

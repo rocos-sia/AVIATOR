@@ -190,9 +190,9 @@ int main(int argc, char** argv) try {
     OfflineRuntime runtime;
     if (demo) {
         const std::pair<const char*, const char*> sequence[] = {
-            {"done", "READY"}, {"ENTER_STANDBY", "HOMING"}, {"done", "STANDBY"}, {"GRASP_WHEEL", "GRASPING"}, {"done", "FOLLOWING"},
+            {"done", "READY"}, {"ENTER_STANDBY", "HOMING"}, {"done", "STANDBY"}, {"GRASP_WHEEL", "GRASPING"}, {"done", "GRASPING"},
             {"done", "FOLLOWING"}, {"START_CONTROL", "CONTROL"},
-            {"EXIT_CONTROL", "FOLLOWING"}, {"done", "FOLLOWING"},
+            {"EXIT_CONTROL", "CONTROL"}, {"done", "FOLLOWING"},
             {"LEAVE_WHEEL", "RELEASING"}, {"done", "STANDBY"}};
         for (const auto& [command, expected] : sequence) {
             runtime.command(command);

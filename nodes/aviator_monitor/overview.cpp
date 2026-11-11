@@ -211,9 +211,10 @@ void yoke(Json& g, const Json& b, const Json& c, const std::string& camera_id) {
         const double roll = theta.get<double>() * 180 / pi;
         const double travel = translation.get<double>();
         g["current"] = {
-            {"roll_deg", roll},
+            // ICD 1107 display polarity; raw camera values and model joints stay unchanged.
+            {"roll_deg", -roll},
             {"pitch_mm", (travel + .085) * 1000},
-            {"roll_percent", roll * 2},
+            {"roll_percent", -roll * 2},
             {"pitch_percent", travel / .085 * 100},
             {"confidence", at(b, "confidence")},
             {"camera_id", at(b, "camera_id")},
@@ -283,9 +284,9 @@ void yoke(Json& g, const Json& b, const Json& c, const std::string& camera_id) {
         return;
     }
     const auto& model = c.at("model");
-    g["current"] = {{"roll_deg", roll},
+    g["current"] = {{"roll_deg", -roll},
                     {"pitch_mm", pitch},
-                    {"roll_percent", roll * 2},
+                    {"roll_percent", -roll * 2},
                     {"pitch_percent", (pitch - 85) / 85 * 100},
                     {"confidence", confidence},
                     {"camera_id", at(b, "camera_id")},
@@ -335,13 +336,13 @@ Json State::overview(std::uint64_t now, const std::string& clock) {
             std::abs(pitch.get<double>()) > 1)
             invalidate(cg, "INVALID", "command_out_of_range");
         else
-            // Core pitch maps to 0.085 * (pitch - 1) m. Display travel is
-            // the opposite of that joint displacement, matching camera feedback.
+            // ICD 1107: left/push are positive, opposite to both Core input axes.
+            // Keep normalized fields as raw Core values and the existing physical pitch origin.
             cg["current"] = {{"roll_normalized", roll},
                              {"pitch_normalized", pitch},
-                             {"roll_percent", roll.get<double>() * 100},
+                             {"roll_percent", -roll.get<double>() * 100},
                              {"pitch_percent", -pitch.get<double>() * 100},
-                             {"roll_deg", roll.get<double>() * 50},
+                             {"roll_deg", -roll.get<double>() * 50},
                              {"pitch_mm", 85 - pitch.get<double>() * 85},
                              {"control_source", at(command->message.body, "source")}};
     }

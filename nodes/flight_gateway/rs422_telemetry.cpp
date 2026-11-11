@@ -4,8 +4,9 @@ namespace flight_gateway {
 namespace {
 constexpr double roll_scale = 50 * 3.14159265358979323846 / 180;
 void wheelPosition(double angle, double displacement, int16_t& roll, int16_t& pitch) {
-    const double r = -angle / roll_scale;
-    const double p = (displacement + .085) / .085;
+    // Convert measured Core coordinates to ICD 1107 percentages only at the wire boundary.
+    const double r = angle / roll_scale;
+    const double p = -(displacement + .085) / .085;
     // Round-off at an exact physical endpoint must not revoke an otherwise valid sample.
     if (std::isfinite(r) && std::abs(r) <= 1.04 + 1e-12)
         roll = static_cast<int16_t>(std::lround(r * 1000));

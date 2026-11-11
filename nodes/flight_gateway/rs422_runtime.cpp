@@ -89,10 +89,11 @@ class CoreClient {
         const bool valid = !shutdown && input.valid(now);
         m.header = {"1.0",  ++sequence_,      aviator::utc_us(), valid ? input.sampleTime() : now,
                     clock_, "flight_gateway", session_,          valid};
+        // ICD 1107: left/push are positive. Core retains its existing input coordinates.
         m.body = {
             {"source", "FLIGHT"},
             {"control",
-             {{"roll", input.target().roll / 1000.0}, {"pitch", input.target().pitch / 1000.0}}}};
+             {{"roll", -input.target().roll / 1000.0}, {"pitch", -input.target().pitch / 1000.0}}}};
         // Optional observation only. Preserve received bytes (including reserved bytes),
         // never reconstruct a frame from the normalized control values.
         auto& observation = m.body["rs422"];
@@ -332,8 +333,9 @@ void runRs422(const Config& config, int signals_fd) {
             ++ticks;
             if (simulator) {
                 if (sample.fresh(now, config.input_timeout_ms * 1000ULL)) {
-                    const Downlink down{counter, sender.next(), quantize(sample.roll_value),
-                                        quantize(sample.pitch_value)};
+                    // Match the standalone simulator: local inputs -> ICD 1107 wire polarity.
+                    const Downlink down{counter, sender.next(), quantize(-sample.roll_value),
+                                        quantize(-sample.pitch_value)};
                     auto bytes = encode(down);
                     if (config.simulator.send_b)
                         ports[1].send(bytes, now);

@@ -13,6 +13,7 @@ inline constexpr size_t downlink_checksum_offset = downlink_size - 1;
 inline constexpr size_t uplink_checksum_offset = uplink_size - 1;
 inline constexpr int16_t invalid_position = -32768;
 inline constexpr uint8_t unknown = 0xff;
+inline constexpr uint8_t unknown_state = 0xfe; // Byte 10: 0xff is EMERGENCY_STOP.
 inline constexpr uint16_t unknown_fault = 0xffff;
 struct Downlink {
     uint8_t counter = 0, operation = 0;
@@ -21,7 +22,7 @@ struct Downlink {
 struct Uplink {
     uint8_t counter = 0, selected = unknown, communication = 3, operation = 0;
     int16_t roll_echo = invalid_position, pitch_echo = invalid_position;
-    uint8_t state = unknown, rear = unknown, brake = unknown;
+    uint8_t state = unknown_state, rear = unknown, brake = unknown;
     int16_t roll = invalid_position, pitch = invalid_position; // Camera feedback, bytes 13..16.
     uint16_t fault = unknown_fault, last_fault = unknown_fault;
     uint8_t severity = unknown;

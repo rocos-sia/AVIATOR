@@ -106,8 +106,9 @@ void run(const Config& config, int stop_fd) {
             ++counter;
             ++ticks;
             if (sample.fresh(now, config.input_timeout_ms * 1000ULL)) {
-                auto bytes = encode(Downlink{counter, sender.next(), quantize(sample.roll_value),
-                                             quantize(sample.pitch_value)});
+                // ICD 1107: left/push positive; preserve the existing local input coordinates.
+                auto bytes = encode(Downlink{counter, sender.next(), quantize(-sample.roll_value),
+                                             quantize(-sample.pitch_value)});
                 if (config.simulator.send_b)
                     ports[1].send(bytes, now);
                 if (config.simulator.corrupt_every && ticks % config.simulator.corrupt_every == 0)

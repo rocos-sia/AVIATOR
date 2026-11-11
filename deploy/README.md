@@ -14,7 +14,7 @@ cd /home/sia/Documents/GitHub/AVIATOR
 - 开发机与目标机均为 Ubuntu 22.04 x86_64；目标使用 Python 3.10。实时内核无需修改。
 - 已能执行 `ssh rocos@192.168.31.100`，该账号能使用 sudo。
 - 开发机已有主工程构建依赖，以及 `qtbase5-dev python3-pip python3-dev python3-venv`；首次可以在开发机执行 `scripts/install_dependencies.sh` 准备主工程依赖。
-- 开发机能访问 PyPI 和 Google 的 Chrome 下载地址。目标机首次安装系统运行库时能访问 Ubuntu 软件源。网线直连本身不提供互联网；必要时另外接入网络。
+- 开发机在依赖缓存不完整时需能访问 PyPI 或配置的镜像源，Chrome deb 尚未缓存时需能访问 Google 下载地址。目标机首次安装系统运行库时能访问 Ubuntu 软件源。网线直连本身不提供互联网；必要时另外接入网络。
 - RealSense udev 规则随仓库提供并打包，无需从开发机系统复制；规则与部署用 SDK 配套，包含 D436（`8086:1156`）。
 - 更新前停止已部署的 AVIATOR 程序及桌面启动器。如果配置了 systemd 自启/自动重启服务，先停止对应服务，部署完成后再启动。安装器检测到部署目录中的进程时会退出，不强制结束程序。
 
@@ -93,6 +93,24 @@ xCoreSDK 还会按进程工作目录生成 `_rokae_log_`。发布校验明确排
 ```
 
 本机产物位于 `build/deployment/aviator-runtime.tar.gz`，附带 SHA256 文件。`--skip-python-download` 仍会检查缓存 wheel 是否能完整安装；缺包会报错。默认复用本机 `build/`，可用 `--build-dir` 指定其他构建目录。为这个部署配置，脚本会设置 Release、关闭测试和无关示例、启用全部运行节点及 485 示例。
+
+### PyPI 连接失败与缓存复用
+
+默认先离线解析 `build/deployment/wheels/`，确认满足当前 `deploy/requirements.txt` 及全部间接依赖后直接复用；缓存不足才联网补齐。打包时仍会在临时虚拟环境中验证离线安装。
+
+如果出现 `SSLEOFError` / `UNEXPECTED_EOF_WHILE_READING`，随后又提示 `No matching distribution found`，应先处理软件源连接问题；这不能证明固定版本不存在。可以通过 pip 的 `PIP_INDEX_URL` 为本次部署指定可访问的 HTTPS 镜像，仍保留证书校验：
+
+```bash
+# 上次已完成 Release 编译、在 Python 下载阶段失败时
+PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+  ./scripts/deploy_aviator.sh --skip-build
+
+# 已有完整 wheel 缓存时，明确禁止下载 Python 运行依赖
+./scripts/deploy_aviator.sh --skip-build --skip-python-download
+```
+
+镜像配置也会被打包用的 patchelf 安装继承，不会修改系统或用户的 pip 配置。`--skip-python-download` 仅控制 Python 运行依赖；缺失的 patchelf、Chrome deb 和目标机系统包仍可能需要联网。
+参考：[pip wheel 参数](https://pip.pypa.io/en/stable/cli/pip_wheel/)、[清华 PyPI 镜像说明](https://mirrors.tuna.tsinghua.edu.cn/help/pypi/)。
 
 ## 启动与检查边界
 

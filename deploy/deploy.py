@@ -138,6 +138,33 @@ def sanitize(stage):
         run(['strip', '--strip-unneeded', binary], stdout=subprocess.DEVNULL)
 
 
+def prepare_python_wheels(wheel_cache):
+    command = ['/usr/bin/python3', '-m', 'pip', 'wheel', '--disable-pip-version-check',
+               '--wheel-dir', wheel_cache, '--find-links', wheel_cache,
+               '-r', ROOT / 'deploy/requirements.txt']
+    # Resolve the complete dependency graph locally before contacting an index.
+    # Merely having some wheels is insufficient after requirements change.
+    if any(wheel_cache.glob('*.whl')):
+        try:
+            run([*command, '--no-index'], capture_output=True, text=True)
+            print('Using complete cached Python wheels (no index access).', flush=True)
+            return
+        except subprocess.CalledProcessError:
+            print('Python wheel cache is incomplete; fetching missing dependencies.', flush=True)
+    try:
+        # Build source-only dependencies here, never on the IPC. Existing wheels
+        # remain candidates, including locally built packages such as apriltag.
+        run(command)
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(
+            'Python wheel preparation failed; see pip output above. For TLS/connection errors, '
+            'check network/proxy settings or retry with '
+            'PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple '
+            './scripts/deploy_aviator.sh --skip-build. '
+            'With a complete wheel cache, --skip-python-download avoids index access.'
+        ) from error
+
+
 def prepare_package(args):
     build = Path(args.build_dir).resolve()
     build.mkdir(parents=True, exist_ok=True)
@@ -174,9 +201,7 @@ def prepare_package(args):
         wheel_cache = artifacts / 'wheels'
         wheel_cache.mkdir(exist_ok=True)
         if not args.skip_python_download:
-            # Build any source-only Python dependencies here, never on the IPC.
-            run(['/usr/bin/python3', '-m', 'pip', 'wheel', '--wheel-dir', wheel_cache,
-                 '-r', ROOT / 'deploy/requirements.txt'])
+            prepare_python_wheels(wheel_cache)
         wheel_files = list(wheel_cache.glob('*.whl'))
         if not wheel_files:
             raise RuntimeError('No Python wheels available; omit --skip-python-download')

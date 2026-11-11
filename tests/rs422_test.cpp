@@ -29,14 +29,14 @@ void checkDualFeedback() {
     Uplink up;
     populateTelemetry(up, state, t);
     vision.populate(up, t);
-    check(up.roll == 1040 && up.pitch == 1059 && up.joint_roll == -1040 && up.joint_pitch == -1059,
+    check(up.roll == -1040 && up.pitch == -1059 && up.joint_roll == 1040 && up.joint_pitch == 1059,
           "independent camera/FK signs and expanded physical ranges");
     auto bytes = encode(up);
-    check(bytes[13] == 0x10 && bytes[14] == 0x04 && bytes[15] == 0x23 && bytes[16] == 0x04 &&
-          bytes[26] == 0xf0 && bytes[27] == 0xfb && bytes[28] == 0xdd && bytes[29] == 0xfb,
+    check(bytes[13] == 0xf0 && bytes[14] == 0xfb && bytes[15] == 0xdd && bytes[16] == 0xfb &&
+          bytes[26] == 0x10 && bytes[27] == 0x04 && bytes[28] == 0x23 && bytes[29] == 0x04,
           "camera and FK feedback exact little-endian offsets");
     Uplink decoded;
-    check(decode(bytes, decoded) && decoded.joint_roll == -1040 && decoded.joint_pitch == -1059,
+    check(decode(bytes, decoded) && decoded.joint_roll == 1040 && decoded.joint_pitch == 1059,
           "expanded FK endpoints decode without saturation");
     for (size_t offset : {13, 15, 26, 28}) {
         auto bad = bytes;
@@ -45,7 +45,7 @@ void checkDualFeedback() {
         check(!decode(bad, decoded), "out-of-range feedback rejected by both decoders");
     }
     vision.populate(up, t + 100000);
-    check(up.roll == invalid_position && up.joint_roll == -1040, "camera expiry does not overwrite FK");
+    check(up.roll == invalid_position && up.joint_roll == 1040, "camera expiry does not overwrite FK");
     camera.header.sequence++; camera.header.sample_mono_us++;
     camera.body["steering_wheel"]["valid"] = false;
     check(!vision.accept(camera, t + 1), "target lost revokes visual feedback");
@@ -59,7 +59,7 @@ void checkDualFeedback() {
     vision.populate(up, t + 2);
     state.body["wheel_joint_measurement"]["valid"] = false;
     populateTelemetry(up, state, t + 2);
-    check(up.roll == -1020 && up.pitch == -1012 && up.joint_roll == invalid_position,
+    check(up.roll == 1020 && up.pitch == 1012 && up.joint_roll == invalid_position,
           "invalid FK leaves fresh expanded camera measurement intact");
     state.body["wheel_joint_measurement"]["valid"] = true;
     state.body["software_lock"] = false;
@@ -152,6 +152,39 @@ void checkWireBoundaries() {
         require(!valid(extended));
     }
 }
+void checkIcdPolarity() {
+    constexpr uint64_t t = 1000000;
+    constexpr double radians = 3.14159265358979323846 / 180;
+    // Fixed physical poses: left/push positive, right/pull negative, then center.
+    for (const auto& pose : std::array<std::array<double, 4>, 5>{{
+             {50, -.085, 1000, 0}, {-50, -.085, -1000, 0},
+             {0, -.170, 0, 1000}, {0, 0, 0, -1000}, {0, -.085, 0, 0}}}) {
+        const double angle = pose[0] * radians, displacement = pose[1];
+        aviator::Message camera;
+        camera.topic = aviator::Topic::camera_detection;
+        camera.header = {"1.0", 1, t, t, "clock", "camera", "session", true};
+        camera.body = {{"camera_id", "cockpit"}, {"steering_wheel", {
+            {"valid", true}, {"theta_rad", -angle},
+            {"translation_along_axis_m", -displacement - .085}}}};
+        aviator::Message state;
+        state.header.valid = true;
+        state.header.sample_mono_us = t;
+        state.body = {{"system", {{"state", "CONTROL"}, {"current_error_code", 0}, {"last_error_code", 0}}},
+            {"software_lock", true}, {"wheel_joint_measurement", {{"source", "joint_fk"},
+             {"valid", true}, {"sample_mono_us", t}, {"angle", angle}, {"displacement", displacement}}}};
+        const auto original_camera = camera.body, original_state = state.body;
+        CameraTelemetry vision("clock");
+        check(vision.accept(camera, t), "ICD pose camera sample accepted");
+        Uplink up, decoded;
+        populateTelemetry(up, state, t);
+        vision.populate(up, t);
+        check(decode(encode(up), decoded) && decoded.roll == pose[2] && decoded.pitch == pose[3] &&
+                  decoded.joint_roll == pose[2] && decoded.joint_pitch == pose[3],
+              "camera and FK share ICD left/push polarity at physical endpoints and center");
+        check(camera.body == original_camera && state.body == original_state,
+              "wire conversion leaves calibration and Core measurements unchanged");
+    }
+}
 void checkRingParser() {
     auto require = [](bool ok) {
         if (!ok)
@@ -239,10 +272,15 @@ void checkRingParser() {
     }
 }
 int main() try {
+    checkIcdPolarity();
     checkWireBoundaries();
     checkRingParser();
-    check(stateCode("SAFE") == unknown && std::string(stateName(0x09)) == "UNKNOWN",
+    check(stateCode("SAFE") == unknown_state && std::string(stateName(0x09)) == "UNKNOWN",
           "retired SAFE remains mapped");
+    check(stateCode("EMERGENCY_STOP") == 0xff && std::string(stateName(0xff)) == "EMERGENCY_STOP",
+          "ICD emergency state is 0xff");
+    check(stateCode("UNKNOWN") == 0xfe && std::string(stateName(0xfe)) == "UNKNOWN",
+          "unknown state is distinct from emergency");
     check(stateCode("ERROR") == 0x10 && stateCode("READY") == 0x03, "state codes renumbered");
     Bytes neutral(32, 0);
     neutral[0] = 0xeb;
@@ -265,20 +303,24 @@ int main() try {
     up.checksum = 0xba78;
     up.selected = 0;
     up.communication = 0;
-    up.state = 0;
+    up.state = 0xff;
     up.rear = up.brake = 0;
     up.fault = up.last_fault = 0;
     up.severity = 0;
     up.roll_echo = up.pitch_echo = up.roll = up.pitch = up.joint_roll = up.joint_pitch = 0;
     bytes = encode(up);
-    check(bytes.size() == 64 && bytes[63] == 0x35 && bytes[22] == 1 && bytes[23] == 2 &&
+    check(bytes.size() == 64 && bytes[10] == 0xff && bytes[63] == 0x34 && bytes[22] == 1 && bytes[23] == 2 &&
               bytes[24] == 0x78 && bytes[25] == 0xba,
           "independent uplink vector");
     Uplink decoded;
-    check(decode(bytes, decoded), "uplink decode");
+    check(decode(bytes, decoded) && decoded.state == 0xff, "emergency uplink decode");
+    bytes[10] = 0;
+    bytes.back() = checksum(bytes.data() + 2, bytes.size() - 3);
+    check(!decode(bytes, decoded), "obsolete emergency state 0x00 rejected");
     up = Uplink{};
     check(decode(encode(up), decoded) && decoded.roll == invalid_position &&
-              decoded.fault == unknown_fault,
+              decoded.state == 0xfe && decoded.fault == unknown_fault && decoded.selected == 0xff &&
+              decoded.rear == 0xff && decoded.brake == 0xff && decoded.severity == 0xff,
           "bench unknown sentinel roundtrip");
     Parser parser(false);
     auto down = encode(Downlink{1, 0, -1000, 0});
@@ -497,8 +539,17 @@ int main() try {
               up.joint_pitch == 0 && up.roll == invalid_position && up.pitch == invalid_position && up.rear == unknown,
           "real feedback and unknown mapping");
     up = Uplink{};
+    state.body["system"]["state"] = "EMERGENCY_STOP";
+    populateTelemetry(up, state, t + 1000);
+    check(encode(up)[10] == 0xff, "fresh Core emergency reaches wire as 0xff");
+    up = Uplink{};
     populateTelemetry(up, state, t + 100000);
-    check(up.state == unknown && up.roll == invalid_position, "stale telemetry never refreshed");
+    check(encode(up)[10] == 0xfe && up.roll == invalid_position, "stale Core emergency becomes unknown 0xfe");
+    up = Uplink{};
+    state.header.valid = false;
+    populateTelemetry(up, state, t);
+    check(encode(up)[10] == 0xfe, "invalid Core feedback remains unknown 0xfe");
+    state.header.valid = true;
     state.body.erase("wheel_joint_measurement");
     up = Uplink{};
     populateTelemetry(up, state, t);

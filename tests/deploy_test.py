@@ -5,6 +5,7 @@ import io
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import tarfile
 import tempfile
 from types import SimpleNamespace
@@ -23,6 +24,44 @@ def module(name, path):
 
 remote = module('deploy_remote', ROOT / 'deploy/remote.py')
 release = module('deploy_release', ROOT / 'scripts/aviator_release.py')
+deploy = module('deploy_local', ROOT / 'deploy/deploy.py')
+
+
+class PythonWheelCacheTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.cache = Path(self.temp.name)
+
+    def test_complete_cache_never_contacts_index(self):
+        (self.cache / 'cached.whl').touch()
+        with mock.patch.object(deploy, 'run') as run:
+            deploy.prepare_python_wheels(self.cache)
+        run.assert_called_once()
+        self.assertIn('--no-index', run.call_args.args[0])
+        self.assertIn('--find-links', run.call_args.args[0])
+
+    def test_incomplete_cache_falls_back_to_index_with_local_wheels(self):
+        (self.cache / 'cached.whl').touch()
+        with mock.patch.object(deploy, 'run', side_effect=[
+                subprocess.CalledProcessError(1, ['pip']), None]) as run:
+            deploy.prepare_python_wheels(self.cache)
+        self.assertEqual(run.call_count, 2)
+        self.assertIn('--no-index', run.call_args_list[0].args[0])
+        online = run.call_args_list[1].args[0]
+        self.assertNotIn('--no-index', online)
+        self.assertEqual(online[online.index('--find-links') + 1], self.cache)
+
+    def test_empty_cache_downloads_directly(self):
+        with mock.patch.object(deploy, 'run') as run:
+            deploy.prepare_python_wheels(self.cache)
+        run.assert_called_once()
+        self.assertNotIn('--no-index', run.call_args.args[0])
+
+    def test_download_failure_explains_index_override(self):
+        with mock.patch.object(deploy, 'run', side_effect=subprocess.CalledProcessError(1, ['pip'])):
+            with self.assertRaisesRegex(RuntimeError, 'PIP_INDEX_URL='):
+                deploy.prepare_python_wheels(self.cache)
 
 
 class DeploymentTest(unittest.TestCase):

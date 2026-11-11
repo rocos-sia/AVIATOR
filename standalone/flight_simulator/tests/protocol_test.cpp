@@ -165,7 +165,9 @@ void checkRingParser() {
 int main() try {
     checkWireBoundaries();
     checkRingParser();
-    check(stateCode("SAFE") == unknown && std::string(stateName(0x09)) == "UNKNOWN");
+    check(stateCode("SAFE") == unknown_state && std::string(stateName(0x09)) == "UNKNOWN");
+    check(stateCode("EMERGENCY_STOP") == 0xff && std::string(stateName(0xff)) == "EMERGENCY_STOP");
+    check(stateCode("UNKNOWN") == 0xfe && std::string(stateName(0xfe)) == "UNKNOWN");
     check(stateCode("ERROR") == 0x10 && stateCode("READY") == 0x03);
     Bytes neutral(32, 0);
     neutral[0] = 0xeb;
@@ -213,7 +215,15 @@ int main() try {
     check(encode(reply) == up);
     Uplink unknown_reply;
     check(decode(encode(unknown_reply), reply));
-    check(reply.roll == invalid_position && reply.fault == unknown_fault);
+    check(reply.state == 0xfe && reply.roll == invalid_position && reply.fault == unknown_fault);
+    check(reply.selected == 0xff && reply.rear == 0xff && reply.brake == 0xff && reply.severity == 0xff);
+    for (uint8_t state : {0xff, 0xfe, 0x00}) {
+        auto frame = up;
+        frame[10] = state;
+        frame.back() = checksum(frame.data() + 2, frame.size() - 3);
+        check(decode(frame, reply) == (state != 0));
+        if (state != 0) check(reply.state == state && encode(reply) == frame);
+    }
     up[63] ^= 1;
     check(!decode(up, reply));
     CommandSender sender;

@@ -129,7 +129,7 @@ InputHelp::InputHelp(const Config& config) {
                   amber, 22);
         font.text(surface, 40, 161, "操作连续发送 10 拍；回绕不等于完成。反馈详情见终端。", white);
         font.text(surface, 28, 215, "方向键操作", green, 21);
-        font.text(surface, 28, 246, "左 / 右：roll − / +       上 / 下：pitch − / +");
+        font.text(surface, 28, 246, "左 / 右：roll + / −       上 / 下：pitch + / −");
         font.text(surface, 28, 274, "按住累加，松开或到限位后保持；[0] 回到初始原点。", muted);
         font.text(surface, 28, 302,
                   "反向键同时按下停止累加；移动摇杆对应轴可接管。速度 / 限位按配置生效。", muted,

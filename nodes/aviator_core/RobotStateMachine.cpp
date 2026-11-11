@@ -75,7 +75,8 @@ void RobotStateMachine::supervise(const Snapshot& s, std::uint64_t now) {
     const bool operating = !machine_.is(sml::state<INIT>) && !machine_.is(sml::state<ERROR>);
     const bool following = machine_.is(sml::state<GRASPING>) || machine_.is(sml::state<FOLLOWING>) ||
                            machine_.is(sml::state<CONTROL>);
-    const bool controlling = machine_.is(sml::state<CONTROL>);
+    // EXIT_CONTROL closes input admission immediately, before the state changes.
+    const bool controlling = acceptsControl();
     if (controlling && s.input_timed_out) { fault("Control input deadline exceeded"); return; }
     // Preserve the state, task and generation during a bounded recoverable loss.
     // Track causes independently so alternating losses cannot renew the deadline.
@@ -107,7 +108,8 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
     supervise(s, now); // Protection always precedes ordinary requests.
     if (machine_.is(sml::state<EMERGENCY_STOP>)) return reply(Reply::invalid_state);
     const bool leaving = (op == Operation::leave_wheel || op == Operation::enter_standby) &&
-        (machine_.is(sml::state<CONTROL>) || machine_.is(sml::state<FOLLOWING>));
+        (machine_.is(sml::state<CONTROL>) || machine_.is(sml::state<FOLLOWING>) ||
+         (machine_.is(sml::state<GRASPING>) && context_.job == Job::following_impedance));
     if (context_.job != Job::none && !(leaving && context_.job == Job::following_impedance))
         return reply(Reply::busy);
     bool accepted = false;
@@ -131,6 +133,7 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
         (machine_.is(sml::state<FOLLOWING>) && (op == Operation::start_control ||
             op == Operation::leave_wheel || op == Operation::enter_standby)) ||
         (machine_.is(sml::state<CONTROL>) && leaving) ||
+        (machine_.is(sml::state<GRASPING>) && leaving) ||
         (machine_.is(sml::state<ERROR>) && op == Operation::reset_error);
     if (!permitted) return reply(Reply::invalid_state);
     if (!s.executor_idle || !s.settled) return reply(Reply::busy);
