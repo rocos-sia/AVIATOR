@@ -501,6 +501,11 @@ endif()
 if(Python3_Interpreter_FOUND)
   add_test(NAME deployment_invariants COMMAND ${Python3_EXECUTABLE}
     ${PROJECT_SOURCE_DIR}/tests/deploy_test.py)
+  add_test(NAME evaluate_collector COMMAND ${Python3_EXECUTABLE} -B
+    ${PROJECT_SOURCE_DIR}/tests/evaluate_test.py)
+  add_test(NAME evaluate_deployment COMMAND ${Python3_EXECUTABLE} -B
+    ${PROJECT_SOURCE_DIR}/tests/evaluate_deploy_test.py)
+  set_tests_properties(evaluate_collector evaluate_deployment PROPERTIES TIMEOUT 60)
   add_test(NAME remote_launcher COMMAND ${Python3_EXECUTABLE} -m unittest discover
     -s ${PROJECT_SOURCE_DIR}/tools/remote_launcher/tests -v)
   set_tests_properties(remote_launcher PROPERTIES TIMEOUT 90)

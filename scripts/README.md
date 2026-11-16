@@ -1,5 +1,31 @@
 # 项目配置脚本
 
+## 独立性能评估
+
+`evaluate_aviator.py` 在 `start_aviator.sh` 已启动后手动运行，采集多进程 CPU、内存、I/O
+和新增时序日志，生成离线 HTML、CSV、JSON。默认每 2 秒轻量采集且降低自身优先级，无需 sudo。
+`--cpu` 显式开启时默认仅 Core、19 Hz、30 秒、无调用栈。
+`--collect-only` 只保存原始数据，开发机用 `--report 结果目录 --open` 离线生成图表。
+1.2 新增 `--report 结果目录 --functions --symbol-file 匹配二进制`，输出函数热点 CSV/HTML，
+自动核对符号 build ID；函数解析不会在采集期间自动运行。
+
+```bash
+# 开发机：只打包检查，或独立部署至默认工控机。
+./scripts/deploy_evaluate.sh --package-only
+./scripts/deploy_evaluate.sh --target rocos@192.168.31.100
+
+# 工控机：在另一个终端启动评估，原 AVIATOR 继续运行。
+python3 ~/.local/share/aviator-evaluate/evaluate_aviator.py --open
+
+# 源码目录直接使用。
+python3 scripts/evaluate_aviator.py --open
+```
+
+两个入口及其辅助文件不随 `deploy_aviator.sh` 安装；独立包只需要 Linux + Python 3.9+，
+不重编译 AVIATOR、不自动安装 profiler。完整参数、权限、输出和数据限制见
+[使用说明](../tools/evaluate/README.md)，设计与后续范围见
+[多进程性能评估方案](../docs/AVIATOR多进程性能评估方案.md)。
+
 ## 工控机部署
 
 在开发机执行 `./scripts/deploy_aviator.sh`，本机编译后通过 SSH 部署到

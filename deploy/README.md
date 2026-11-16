@@ -20,7 +20,12 @@ cd /home/sia/Documents/GitHub/AVIATOR
 
 ## 部署内容
 
-包括主工程硬件/仿真程序、动态库、全部 `scripts/*.sh` 和 `scripts/*.py`、Python 相机与手节点、标定工具、轮盘工具、配置、机器人模型、TTS 模型和音频，以及独立的 `xCoreSDK_RH56FTP_485`、`rh56_485_probe`、`run.sh` 和 `run_grip_demo.sh`。
+包括主工程硬件/仿真程序、动态库、运行用 `scripts/*.sh` 和 `scripts/*.py`、Python 相机与手节点、标定工具、轮盘工具、配置、机器人模型、TTS 模型和音频，以及独立的 `xCoreSDK_RH56FTP_485`、`rh56_485_probe`、`run.sh` 和 `run_grip_demo.sh`。
+
+独立性能评估工具 `evaluate_aviator.py`、`deploy_evaluate.sh` 及 `tools/evaluate/` 不进入本流程的构建和部署产物。
+需要时单独运行 `./scripts/deploy_evaluate.sh`，默认安装到目标用户的 `~/.local/share/aviator-evaluate/`，
+不会重编译或替换 AVIATOR。主流程使用旧 CMake 安装规则的 `--skip-build` 打包也会剔除评估入口。
+用法见 [独立性能评估工具](../tools/evaluate/README.md)。
 
 `include/`、静态库、C/C++ 源文件、CMake 开发文件、Git 数据和构建目录不会进入发布压缩包。Shell、Python、网页和配置按原格式部署。`install_dependencies.sh` 保留供维护使用，但它是开发机依赖安装工具，不会在工控机部署流程中执行。
 

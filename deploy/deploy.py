@@ -16,6 +16,7 @@ import tarfile
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+EVALUATION_SCRIPTS = {'evaluate_aviator.py', 'deploy_evaluate.sh'}
 
 
 def run(args, **kwargs):
@@ -124,6 +125,9 @@ def system_packages(stage):
 
 def sanitize(stage):
     # CMake's full install includes developer artifacts; deployment contains runtime only.
+    # Also handle --skip-build with old generated CMake installation rules.
+    for name in EVALUATION_SCRIPTS:
+        (stage / 'share/aviator/scripts' / name).unlink(missing_ok=True)
     for relative in ('include', 'share/doc', 'lib/cmake', 'lib/pkgconfig'):
         path = stage / relative
         if path.exists():
@@ -190,7 +194,8 @@ def prepare_package(args):
         required = ['bin/xCoreSDK_RH56FTP_485', 'bin/rh56_485_probe', 'bin/aviator_core_managed',
                     'bin/manipulator', 'bin/aviator_grasp_tool_session', 'bin/aviator_grasp_tool_state',
                     'bin/simulation', 'bin/aviator_launcher']
-        required += ['share/aviator/scripts/' + p.name for p in (ROOT / 'scripts').glob('*.sh')]
+        required += ['share/aviator/scripts/' + p.name for p in (ROOT / 'scripts').glob('*.sh')
+                     if p.name not in EVALUATION_SCRIPTS]
         required += ['share/aviator/scripts/test_rs422_loss.py']
         for name in required:
             if not (stage / name).is_file():

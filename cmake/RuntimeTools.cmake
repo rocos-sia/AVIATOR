@@ -1,7 +1,8 @@
 # Complete runtime tool resources. Native helper targets own their binary installs.
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/scripts/"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/scripts"
-  USE_SOURCE_PERMISSIONS FILES_MATCHING PATTERN "*.sh" PATTERN "*.py")
+  USE_SOURCE_PERMISSIONS FILES_MATCHING PATTERN "*.sh" PATTERN "*.py"
+  PATTERN "evaluate_aviator.py" EXCLUDE PATTERN "deploy_evaluate.sh" EXCLUDE)
 foreach(tool grasp_tool_calibration steering_wheel_calibration wheel_bandwidth wheel_accuracy remote_launcher)
   install(DIRECTORY "${PROJECT_SOURCE_DIR}/tools/${tool}/"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/aviator/tools/${tool}"
