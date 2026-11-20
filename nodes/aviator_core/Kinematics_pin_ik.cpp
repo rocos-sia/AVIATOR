@@ -78,8 +78,7 @@ class PinIkKinematics final : public Kinematics {
         const Eigen::Map<const Eigen::Matrix<double, 7, 1>> angles(q.data());
         if (!angles.allFinite()) return false;
         pinocchio::forwardKinematics(model_[i], *data_[i], angles);
-        pinocchio::updateFramePlacements(model_[i], *data_[i]);
-        out = data_[i]->oMf[tip_[i]];
+        out = pinocchio::updateFramePlacement(model_[i], *data_[i], tip_[i]);
         return true;
     }
 

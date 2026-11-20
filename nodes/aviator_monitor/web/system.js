@@ -43,6 +43,10 @@ for (const [key,label] of [['cpu','CPU'],['gpu','GPU'],['memory','内存'],['dis
   panel.append(head,plot,times,legend); $('resource-charts').append(panel);
   charts.set(key,{svg,maximum,legend});
 }
+const gpuStatus = document.createElement('p');
+gpuStatus.id = 'gpu-sample-status';
+gpuStatus.className = 'gpu-sample-status';
+$('system-summary').append(gpuStatus);
 let history = [], current = null, busy = false;
 function series(key, data) {
   if (key === 'cpu') return [
@@ -64,6 +68,12 @@ function render(data) {
   }
   cards.get('cpu').textContent = percent(data?.cpu?.percent);
   cards.get('gpu').textContent = percent(data?.gpu?.percent);
+  const gpu = data?.gpu;
+  gpuStatus.textContent = gpu ?
+    `GPU 样本时间：主机启动后 ${(gpu.sample_mono_us / 1e6).toFixed(1)} 秒` +
+    (Number.isFinite(gpu.discovery_interval_ms) ?
+      ` · Intel 客户端每 ${gpu.discovery_interval_ms / 1000} 秒发现一次，采样时距上次发现 ${(gpu.discovery_age_ms / 1000).toFixed(1)} 秒；新客户端需等待发现及下一次采样` : '') :
+    'GPU 样本不可用';
   cards.get('memory').textContent = percent(data?.memory?.percent);
   cards.get('disk').textContent = `读 ${rate(data?.disk?.read_bytes_per_sec)} · 写 ${rate(data?.disk?.write_bytes_per_sec)}`;
   cards.get('network').textContent = `↓ ${rate(data?.network?.receive_bytes_per_sec)} · ↑ ${rate(data?.network?.send_bytes_per_sec)}`;

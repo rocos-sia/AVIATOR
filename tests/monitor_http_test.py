@@ -205,7 +205,9 @@ try:
     config_path.with_suffix('.backup').rename(config_path)
     # A remote client can take longer than two seconds to receive a large mesh.
     # Keep its receive window small so the kernel cannot buffer the entire STL.
-    mesh_path = '/models/meshes/Cessna/steering_wheel_qr.STL'
+    # Use the wheel referenced by the current URDF (including model variants).
+    mesh_path = next(url for url in manifest['aliases'].values()
+                     if url.endswith('/steering_wheel_qr.STL'))
     with socket.socket() as download:
         download.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
         download.settimeout(10)

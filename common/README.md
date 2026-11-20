@@ -51,6 +51,18 @@ if (!aviator::encode(message, payload, error)) {
 
 后续 sequence 按 Topic 递增。示例使用当前时间模拟一次新采样，真实设备必须填原始采样时刻；重发旧值不能刷新 sample_mono_us。会话/时钟 ID 不在每次发送时生成。encode/decode 返回 false 时保留输出参数，错误写入 error；socket 错误通过异常交由节点生命周期处理。
 
+一次性消息可用 `encode(std::move(message), payload, error)` 或
+`publishMessage(socket, std::move(message))` 消除 body 深拷贝。右值接口在失败时也会消费消息，
+调用后只能重新赋值或销毁；编码失败仍保留原 payload。还需使用消息的调用方继续传 const 引用。
+两条编码路径共用头字段冲突、数值、包长及业务校验。
+
+`local_clock_id()` 在进程内线程安全地缓存 boot_id，hostname 仍逐次读取；初始化读取失败会抛异常，
+下次调用重试。节点运行期应保持 boot_id 来源不变（不切换到另一来源的挂载命名空间）。
+`new_session_id()` 每次读取新的随机 UUID。
+
+`decode()` 保留完整 DOM 与全部校验，在每个线程复用最多 16 层、每层 32 个键的查重工作区；
+单个保留字符串容量不超过 256 字节，宽对象使用临时哈希集合，超大键和哈希集合在对象结束或解析失败后释放。
+
 订阅侧持有一个 `ReceiveState` 和 `WireMessage`，循环调用 `receive()`：
 
 1. `empty`：本次无消息，用 `zmq::poll` 或调度器等待，避免忙循环。

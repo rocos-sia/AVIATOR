@@ -1,6 +1,8 @@
 #include "ServoPlanner.hpp"
 #include "DeviceServo.hpp"
 #include <chrono>
+#include <algorithm>
+#include <vector>
 #include "aviator/backend.hpp"
 #include "aviator/GraspTools.hpp"
 #include <filesystem>
@@ -236,6 +238,7 @@ int main(int argc, char** argv) {
         auto latest = options.servo(start);
         previous = start;
         double total_us = 0, max_us = 0;
+        std::vector<double> planning_us;
         unsigned count = 0;
         for (int k = 0; k < 4000; ++k) {
             const bool stopping = k >= 1600;
@@ -244,6 +247,7 @@ int main(int argc, char** argv) {
             const auto current = latest->step(goal);
             const double us = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - began).count();
             total_us += us; max_us = std::max(max_us, us); ++count;
+            planning_us.push_back(us);
             for (int j = 0; j < 14; ++j) {
                 if (std::abs(current.q[j] - previous.q[j] - .0005 * (current.dq[j] + previous.dq[j])) > 1e-7 ||
                     std::abs(current.dq[j] - previous.dq[j] - .0005 * (current.ddq[j] + previous.ddq[j])) > 1e-5)
@@ -254,7 +258,10 @@ int main(int argc, char** argv) {
             if (stopping && latest->stopped()) break;
         }
         if (!latest->stopped()) throw std::runtime_error("Latest Servo did not stop");
+        std::sort(planning_us.begin(), planning_us.end());
         std::cout << "Latest 1 ms Servo passed: steps=" << count << " mean_us=" << total_us/count
+                  << " p50_us=" << planning_us[planning_us.size()/2]
+                  << " p95_us=" << planning_us[planning_us.size()*95/100]
                   << " max_us=" << max_us << " (wall time includes scheduler jitter)\n";
         // Captured after compliant grasp: using the old wheel reference (0, -.085)
         // adds its drift to every goal; an unweighted wrist also hits +/-60 degrees.

@@ -25,6 +25,44 @@ void require(bool condition, const char* reason) {
     if (!condition) throw std::runtime_error(reason);
 }
 
+// Most wire objects have only a handful of fields. Reuse their key storage,
+// including across sibling objects in trajectory arrays, without a hash node
+// allocation per field. Wide objects fall back to hashing to bound lookup cost.
+struct ObjectKeys {
+    static constexpr std::size_t small_limit = 32, retained_key_bytes = 256;
+    std::vector<std::string> small;
+    std::unordered_set<std::string> wide;
+    std::size_t count = 0;
+    bool insert(const std::string& key) {
+        if (count < small_limit) {
+            for (std::size_t i = 0; i < count; ++i)
+                if (small[i] == key) return false;
+            if (count == small.size()) small.emplace_back(key);
+            else small[count] = key;
+            ++count;
+            return true;
+        }
+        if (wide.empty()) wide.insert(small.begin(), small.end());
+        return wide.insert(key).second;
+    }
+    void reset() {
+        count = 0;
+        // Only small strings survive a packet. Neither oversized keys nor hash
+        // tables from unusually wide objects can permanently inflate a thread.
+        for (auto& key : small)
+            if (key.capacity() > retained_key_bytes) std::string{}.swap(key);
+        if (!wide.empty()) std::unordered_set<std::string>{}.swap(wide);
+    }
+};
+struct ParseWorkspace {
+    std::array<ObjectKeys, 16> objects;
+    std::size_t level = 0;
+    void reset() {
+        for (auto& object : objects) object.reset();
+        level = 0;
+    }
+};
+
 std::string identifier(const Json& value, const char* key) {
     const auto& field = value.at(key);
     require(field.is_string(), "identifier must be a string");
@@ -177,13 +215,20 @@ bool decode(std::string_view topic, std::string_view payload,
         require(!payload.empty() && payload.size() <= max_payload_bytes, "invalid payload size");
         require(payload.substr(0, 3) != "\xef\xbb\xbf", "UTF-8 BOM is not allowed");
         require(payload.find('\0') == std::string_view::npos, "NUL is not allowed");
-        std::vector<std::unordered_set<std::string>> keys;
+        // Parsing is synchronous with no user callbacks/reentry. Each thread
+        // owns at most 16 * 32 retained keys, capped at 256 bytes each.
+        thread_local ParseWorkspace keys;
+        struct Reset {
+            ParseWorkspace& keys;
+            ~Reset() { keys.reset(); }
+        } reset{keys};
         auto callback = [&](int depth, Json::parse_event_t event, Json& parsed) {
             require(depth < 16, "JSON nesting exceeds 16");
-            if (event == Json::parse_event_t::object_start) keys.emplace_back();
+            if (event == Json::parse_event_t::object_start) ++keys.level;
             if (event == Json::parse_event_t::key)
-                require(keys.back().insert(parsed.get<std::string>()).second, "duplicate JSON key");
-            if (event == Json::parse_event_t::object_end) keys.pop_back();
+                require(keys.objects[keys.level - 1].insert(parsed.get_ref<const std::string&>()),
+                        "duplicate JSON key");
+            if (event == Json::parse_event_t::object_end) keys.objects[--keys.level].reset();
             return true;
         };
         auto json = Json::parse(payload.begin(), payload.end(), callback);
@@ -202,9 +247,12 @@ bool decode(std::string_view topic, std::string_view payload,
     } catch (const std::exception& e) { error = e.what(); return false; }
 }
 
-bool encode(const Message& message, std::string& payload, std::string& error) {
+namespace {
+// json is either a copy of the caller's body or the body of an owned Message.
+// In the latter case command validation sees the same body with envelope fields
+// added; those fields have already been checked for collisions.
+bool encode_body(const Message& message, Json& json, std::string& payload, std::string& error) {
     try {
-        auto json = message.body;
         require(json.is_object(), "body must be an object");
         for (const auto* key : header_keys)
             require(!json.contains(key), "body shadows common header");
@@ -229,5 +277,18 @@ bool encode(const Message& message, std::string& payload, std::string& error) {
         error.clear();
         return true;
     } catch (const std::exception& e) { error = e.what(); return false; }
+}
+} // namespace
+
+bool encode(const Message& message, std::string& payload, std::string& error) {
+    try {
+        auto json = message.body;
+        return encode_body(message, json, payload, error);
+    } catch (const std::exception& e) { error = e.what(); return false; }
+}
+
+bool encode(Message&& message, std::string& payload, std::string& error) {
+    Message owned = std::move(message);
+    return encode_body(owned, owned.body, payload, error);
 }
 } // namespace aviator

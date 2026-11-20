@@ -31,6 +31,8 @@ std::filesystem::path defaultSystemConfig();
 Message motionMessage(Topic, const std::string &publisher, const std::string &session, uint64_t sequence,
                       bool valid = true);
 void publishMessage(zmq::socket_t &, const Message &);
+// Consumes the message even if encoding or sending fails.
+void publishMessage(zmq::socket_t &, Message &&);
 Json parseService(std::string_view); // Same size, depth, duplicate/numeric rules as bus JSON.
 Json serviceRequest(const std::string &session, const std::string &operation, const Json &parameters);
 Json callService(zmq::context_t &, const MotionConfig &, const Json &request);

@@ -709,7 +709,7 @@ void RemoteLink::io() {
                     m.header.sample_mono_us = send_servo ? servo.sample : w.sample;
                     m.body = send_servo ? encodeServo(servo, session_, epoch_) : encodeWindow(w, session_, epoch_);
                     m.body["config_id"] = config_.config_id;
-                    publishMessage(pub, m);
+                    publishMessage(pub, std::move(m));
                 }
             }
             if (now >= flight_at) {
@@ -780,7 +780,7 @@ void RemoteLink::io() {
                     m.body["wheel_reference"] = {{"angle", state_.angle},
                                                  {"displacement", state_.displacement}};
                 }
-                publishMessage(pub, m);
+                publishMessage(pub, std::move(m));
             }
             if (now >= system_at) {
                 system_at = now + 200000;
@@ -794,7 +794,7 @@ void RemoteLink::io() {
                         m.body["ready"] = system_body_.value("ready", false);
                     }
                 }
-                publishMessage(pub, m);
+                publishMessage(pub, std::move(m));
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }

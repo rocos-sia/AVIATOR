@@ -57,10 +57,94 @@ class DeploymentTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'SHA256'):
             installer.install(archive, '0' * 64, prefix)
         self.assertEqual(before, (prefix / 'evaluate_aviator.py').read_bytes())
-        (prefix / 'user-file').write_text('do not erase')
-        with self.assertRaisesRegex(ValueError, '额外文件'):
+        (prefix / 'evaluate_aviator.py').write_text('modified by user')
+        with self.assertRaisesRegex(ValueError, '文件校验失败'):
             installer.install(archive, checksum, prefix)
-        self.assertEqual((prefix / 'user-file').read_text(), 'do not erase')
+        self.assertEqual((prefix / 'evaluate_aviator.py').read_text(), 'modified by user')
+        unknown = self.root / 'unknown/aviator-evaluate'
+        unknown.mkdir(parents=True)
+        (unknown / 'user-file').write_text('do not erase')
+        with self.assertRaisesRegex(ValueError, '缺少评估包标识'):
+            installer.install(archive, checksum, unknown)
+        self.assertEqual((unknown / 'user-file').read_text(), 'do not erase')
+
+    def test_upgrade_preserves_extra_files_and_symlinks_in_unique_archive(self):
+        archive, checksum = self.package()
+        prefix = self.root / 'installed/aviator-evaluate'
+        installer.install(archive, checksum, prefix)
+        old_readme = (prefix / 'README.md').read_bytes()
+        cache = prefix / '__pycache__'
+        cache.mkdir()
+        (cache / 'evaluate_aviator.cpython-310.pyc').write_bytes(b'cached bytecode')
+        (prefix / 'report.html').write_text('saved report')
+        external = self.root / 'outside'
+        external.mkdir()
+        (external / 'keep').write_text('untouched')
+        (prefix / 'external').symlink_to(external, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, '__pycache__'):
+            installer.verified(prefix)  # Archive/stage verification stays strict.
+        new_readme = self.root / 'new-readme.md'
+        new_readme.write_text('new evaluator documentation')
+        with mock.patch.dict(deploy.PAYLOAD, {'README.md': new_readme}):
+            archive, checksum = self.package()
+        installer.install(archive, checksum, prefix)
+        installer.verified(prefix)
+        self.assertEqual((prefix / 'README.md').read_text(), new_readme.read_text())
+        saved = list(prefix.parent.glob('.aviator-evaluate.saved-*/aviator-evaluate'))
+        self.assertEqual(len(saved), 1)
+        installer.verified(saved[0], allow_extra=True)
+        self.assertEqual((saved[0] / 'README.md').read_bytes(), old_readme)
+        self.assertEqual((saved[0] / 'report.html').read_text(), 'saved report')
+        self.assertEqual((saved[0] / '__pycache__' / 'evaluate_aviator.cpython-310.pyc').read_bytes(),
+                         b'cached bytecode')
+        self.assertTrue((saved[0] / 'external').is_symlink())
+        self.assertEqual((external / 'keep').read_text(), 'untouched')
+        (prefix / 'report.html').write_text('second report')
+        installer.install(archive, checksum, prefix)
+        saved_again = list(prefix.parent.glob('.aviator-evaluate.saved-*/aviator-evaluate'))
+        self.assertEqual(len(saved_again), 2)
+        self.assertEqual(sorted((path / 'report.html').read_text() for path in saved_again),
+                         ['saved report', 'second report'])
+        installer.install(archive, checksum, prefix)  # A clean upgrade leaves saved trees alone.
+        self.assertEqual(len(list(prefix.parent.glob('.aviator-evaluate.saved-*'))), 2)
+
+    def test_extra_files_survive_interruption_before_and_after_activation(self):
+        archive, checksum = self.package()
+        prefix = self.root / 'installed/aviator-evaluate'
+        backup = prefix.parent / '.aviator-evaluate.backup'
+        installer.install(archive, checksum, prefix)
+        (prefix / 'user-file').write_text('before activation')
+        prefix.rename(backup)
+        installer.install(archive, checksum, prefix)
+        installer.verified(prefix)
+        saved = list(prefix.parent.glob('.aviator-evaluate.saved-*/aviator-evaluate'))
+        self.assertEqual((saved[0] / 'user-file').read_text(), 'before activation')
+        shutil.copytree(prefix, backup)
+        (backup / 'user-file').write_text('after activation')
+        installer.install(archive, checksum, prefix)
+        saved = list(prefix.parent.glob('.aviator-evaluate.saved-*/aviator-evaluate'))
+        self.assertEqual(sorted((path / 'user-file').read_text() for path in saved),
+                         ['after activation', 'before activation'])
+        self.assertFalse(backup.exists())
+
+    def test_activation_failure_restores_extra_files(self):
+        archive, checksum = self.package()
+        prefix = self.root / 'installed/aviator-evaluate'
+        installer.install(archive, checksum, prefix)
+        (prefix / 'user-file').write_text('restore me')
+        rename = Path.rename
+
+        def fail_stage(path, target):
+            if path.parent.name.startswith('.evaluate-stage-'):
+                raise OSError('injected activation failure')
+            return rename(path, target)
+
+        with mock.patch.object(Path, 'rename', fail_stage):
+            with self.assertRaisesRegex(OSError, 'injected activation'):
+                installer.install(archive, checksum, prefix)
+        installer.verified(prefix, allow_extra=True)
+        self.assertEqual((prefix / 'user-file').read_text(), 'restore me')
+        self.assertFalse((prefix.parent / '.aviator-evaluate.backup').exists())
 
     def test_recover_interrupted_rename_and_reject_symlink(self):
         archive, checksum = self.package()

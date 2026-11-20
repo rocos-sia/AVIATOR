@@ -101,6 +101,10 @@ int main() {
         check(encode(sm, payload, error), error.c_str());
         check(payload.size() > 65536 && payload.size() <= max_payload_bytes,
               "Full precision Servo window must exercise the enlarged wire budget");
+        auto consuming = sm;
+        std::string moved_payload;
+        check(encode(std::move(consuming), moved_payload, error) && moved_payload == payload,
+              "consuming encoder preserves full 81-point dual-arm window");
         std::cout << "81-point dual-arm payload: " << payload.size() << " bytes\n";
         Message wire;
         check(decode("arm.command", payload, wire, error), error.c_str());

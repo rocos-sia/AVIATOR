@@ -32,6 +32,7 @@ GCC/Clang 的 Debug 构建保留调试符号，并对 Monitor 启用 `-O2`。`CO
 | `--model-root` | 源码或安装目录的 `models/` | 包含 `urdf/aviator.urdf` 和 `meshes/` 的目录。 |
 | `--preview` | 配置中的 `tcp://127.0.0.1:5561` | 独立 Camera JPEG PUB 地址；`off` 禁用订阅。 |
 | `--log-dir` | 未配置 | 本次运行的节点 `.log` 目录；一键启动脚本自动传入。 |
+| `--gpu-discovery-ms` | `3000` | Intel GPU 客户端全量发现间隔，范围 `2000..5000` 毫秒。 |
 | `--help` | — | 显示帮助。 |
 
 源码构建默认读取 [config/monitor.yaml](../../config/monitor.yaml)；安装后优先使用可执行文件相邻的 `../share/aviator/monitor/` 资源。模型与前端文件通过精确资源清单提供，不开放任意文件读取。
@@ -60,6 +61,15 @@ GCC/Clang 的 Debug 构建保留调试符号，并对 Monitor 启用 `-O2`。`CO
 后端读取 `/proc` 和驱动指标，所有客户端共享一秒采样缓存，不增加采样线程。CPU 和 I/O 使用相邻计数差值，内存使用 `MemTotal - MemAvailable`；磁盘统计 `/sys/block/<设备>/device` 存在的整盘硬件设备，排除分区及 dm/md/loop 重复计数；网络合计所有非回环接口（包含虚拟接口，桥接场景可能重复计量）。速率按 B/s、KiB/s、MiB/s 自动显示。首个速率样本、计数器重置或不可读指标显示 `—`，不伪装成零。
 
 GPU 卡片位于 CPU 与内存之间，`GET /api/system` 的 `gpu.percent` 返回可读取设备使用率的算术平均值。NVIDIA 使用可选的 [NVML 使用率接口](https://docs.nvidia.com/deploy/nvml-api/latest/api/group__nvmlDeviceQueries.html)，运行时加载驱动库，无需 CUDA SDK 构建依赖；Intel 核显或独显支持 `i915` / `xe` 驱动的 [DRM 客户端统计](https://docs.kernel.org/gpu/drm-usage-stats.html)，从可读取的 `/proc/<pid>/fdinfo` 汇总同一设备各引擎的计数差值，去重共享客户端并按引擎容量归一化，以最繁忙引擎估算占用。Intel 统计受进程读取权限限制，不能保证覆盖其他用户或已退出进程的 GPU 工作量，卡片提示注明此口径；无需启动额外采集命令或修改系统权限。支持该指标的其他驱动读取 [sysfs `gpu_busy_percent`](https://kernel.org/doc/html/latest/gpu/amdgpu/thermal.html)。无兼容设备、驱动未就绪、Intel 首次采样或指标不可用时返回 `null`，页面显示 `—`；可观测的空闲设备正常显示 `0.0%`。
+
+Intel 已发现的客户端保持每秒采样，全量发现默认每 3 秒一次，可用
+`--gpu-discovery-ms 2000..5000` 调整。缓存核对 PID starttime、FD 中的设备/client-id；
+进程退出、复用或读取失败后重新建立计数基线，dup/fork 共享客户端仍只计一次。
+页面显示 GPU 样本时间、发现周期和最近发现时间；新客户端需等待下一轮发现与后续采样，
+不代表立即可见。`gpu` 对象另外提供 `sample_mono_us`，Intel 路径提供
+`discovery_mono_us`、`discovery_interval_ms`、`discovery_age_ms`、`full_scan`、
+`fdinfo_reads`、`clients`、`scan_duration_us` 和 `scan_cpu_us`，供离线验证扫描开销。
+这些设置不改变 arm/hand 消息接收与新鲜度刷新周期。
 
 ## 节点日志
 

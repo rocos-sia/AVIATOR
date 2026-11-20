@@ -152,7 +152,7 @@ void HandLink::io(zmq::context_t& context, const MotionConfig& config, const std
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (stopping_) {
                     const auto now = monotonic_us();
-                    if (auto command = control_.command(now, now, session)) publishMessage(pub, *command);
+                    if (auto command = control_.command(now, now, session)) publishMessage(pub, std::move(*command));
                     return;
                 }
                 control_.receive(m, monotonic_us(), session);
@@ -161,7 +161,7 @@ void HandLink::io(zmq::context_t& context, const MotionConfig& config, const std
             std::unique_lock<std::mutex> lock(mutex_);
             if (stopping_) {
                 const auto now = monotonic_us();
-                if (auto command = control_.command(now, now, session)) publishMessage(pub, *command);
+                if (auto command = control_.command(now, now, session)) publishMessage(pub, std::move(*command));
                 return;
             }
             // Load the heartbeat FIRST, then time. A concurrent newer heartbeat must not
@@ -170,7 +170,7 @@ void HandLink::io(zmq::context_t& context, const MotionConfig& config, const std
             const auto now = monotonic_us();
             if (!failed_) {
                 if (auto command = control_.command(now, origin, session))
-                    publishMessage(pub, *command);
+                    publishMessage(pub, std::move(*command));
                 warnLocked(control_.fault(now), !control_.failed());
             }
             // Publication is serialized with target replacement/revocation. On return

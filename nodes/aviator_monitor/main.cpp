@@ -238,7 +238,8 @@ void response(Client& client, monitor::State& state, monitor::Preview& preview,
 } // namespace
 int main(int argc, char** argv) {
     try {
-        monitor::SystemStats system;
+        const auto started_us = aviator::monotonic_us();
+        unsigned gpu_discovery_ms = 3000;
         ResourceCache resources;
         unsigned port = 8081;
         std::string bind_address = "0.0.0.0";
@@ -263,6 +264,7 @@ int main(int argc, char** argv) {
                 aviator::Logger::info("Usage: aviator_monitor [--bind 0.0.0.0] [--port 8081]\n"
                     "  [--subscribe tcp://127.0.0.1:5556] [--log-dir DIRECTORY]\n"
                     "  [--config monitor.yaml] [--model-root MODELS] [--preview tcp://127.0.0.1:5561|off]\n"
+                    "  [--gpu-discovery-ms 2000..5000] (default: 3000)\n"
                     "Monitoring and live configuration Web UI; HTTP listens on all IPv4 interfaces by default.\n"
                     "Open http://<server-LAN-IP>:PORT/ from another computer; use --bind 127.0.0.1 for "
                     "local-only access.\n"
@@ -281,6 +283,11 @@ int main(int argc, char** argv) {
                 config_path = argv[i];
             else if (key == "--log-dir")
                 log_directory = argv[i];
+            else if (key == "--gpu-discovery-ms") {
+                gpu_discovery_ms = number(argv[i], 5000);
+                if (gpu_discovery_ms < 2000)
+                    throw std::runtime_error("GPU discovery interval must be 2000–5000 ms");
+            }
             else if (key == "--model-root")
                 model_root = argv[i];
             else if (key == "--preview") {
@@ -289,6 +296,7 @@ int main(int argc, char** argv) {
             } else
                 throw std::runtime_error("unknown option: " + key);
         }
+        monitor::SystemStats system("/proc", "/sys", started_us, gpu_discovery_ms);
         if (endpoint.rfind("tcp://", 0) != 0)
             throw std::runtime_error("subscription must use TCP");
         sockaddr_in address{};

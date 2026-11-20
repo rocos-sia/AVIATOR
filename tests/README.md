@@ -88,3 +88,31 @@ Ctrl+C 收尾、断开后的部分报告和部署目录下的 Python/配置选�
 `rs422_process` 还验证真实双 PTY 接收字节完整附加到 `flight.command.rs422`（包含非零保留位）、选用通道与控制样本时间对应、A→B 切换及坏校验帧不会刷新原始报文；操作与空闲帧同批到达时仍保留操作，再次发送相同操作不继承旧请求 ID。
 `monitor_state` 覆盖可选附加数据、原始接收时间超时、跨时钟及损坏附加字段的隔离处理，以及保留帧校验、精确请求关联、等待／拒绝结果与新操作清除旧应答。
 `node tests/monitor_rs422_browser_test.cjs build/bin/aviator_monitor` 使用隔离 ZMQ 发布者与真实 Monitor，验证无 RS422 的空状态、原始 HEX／字段含义、操作帧保留与替换、实时刷新、Core 等待／拒绝结果、页面切换／刷新、暂停／复制、报文过期、HTTP 断流、未知时钟、异常附加数据和布局；需要 Node ≥18、playwright-core、Chrome 和 Python pyzmq，不需要串口硬件。
+
+## A1–A5 优化回归与离线基准
+
+`communication` 增加并发 clock-id 初始化、UUID 不缓存、const/右值编码逐字节对照、
+失败输出保留，以及查重工作区的宽对象、长键、转义重复键、兄弟对象、异常恢复与并发隔离。
+`motion_protocol` 对照完整 81 点窗口的两条编码路径。
+`monitor_system` 使用隔离 proc/sys 夹具覆盖候选缓存、发现延迟、PID starttime 与 FD 复用、
+dup/fork 去重、读取失败、权限变化、发现周期及时间回退。
+`kinematics_fk` 对左右臂共 1004 个随机/边界姿态，与全部帧更新的参考结果比较，
+并验证 FK 后求导与独立工作区的结果及失败行为一致。`servo_planner`、`grasp_tools`
+及 `control_nodes_servo_window` 继续覆盖几何残差和控制约束。
+无相机的 `control_nodes` 夹具显式使用 `wheel_initial` 抓握来源；相机采集由专用用例覆盖。
+HTTP 慢下载用例从当前模型清单选择轮盘网格，避免绑定旧模型路径。
+
+手动基准目标 `aviator_protocol_benchmark` 不加入默认构建或 CTest：
+
+```bash
+cmake --build build --target aviator_protocol_benchmark
+build/tests/aviator_protocol_benchmark --bench /path/to/corpus.jsonl
+build/tests/aviator_protocol_benchmark --verify /path/to/corpus.jsonl
+```
+
+JSONL 每行包含字符串 `topic` 和原始字符串 `payload`，可附加接收时间等字段。
+`--bench` 对各 topic 均匀选取最多 256 包，分别重复三轮测量 decode、const 编码和右值编码；
+输出包大小、耗时与 C++ 分配次数，排除输入加载和调用方构造消息的成本。
+`--verify` 输出每包接受/拒绝、错误与重新编码结果，供新旧版本逐行对照。
+对旧源码编译基准时定义 `AVIATOR_BENCHMARK_BASELINE`，跳过旧版不存在的右值接口。
+这类微基准不等同于整个节点 CPU 收益；运行阶段、输入与页面状态应固定后再做进程测量。

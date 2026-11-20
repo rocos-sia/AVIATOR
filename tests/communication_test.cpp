@@ -97,6 +97,90 @@ void codec_tests() {
         check(decode(topic_name(message.topic), payload, parsed, error), "registered topic decode");
     }
 }
+void consuming_codec_tests() {
+    const auto compare = [](Message message) {
+        std::string copied = "unchanged", moved = copied, copy_error, move_error;
+        const bool a = encode(message, copied, copy_error);
+        const bool b = encode(std::move(message), moved, move_error);
+        check(a == b && copied == moved && copy_error == move_error,
+              "consuming encoder must preserve wire bytes, errors and failure output");
+    };
+    compare(flight());
+    for (int i = 0; i <= static_cast<int>(Topic::photoelectric_state); ++i) {
+        auto m = flight(); m.topic = static_cast<Topic>(i);
+        if (m.topic == Topic::arm_command || m.topic == Topic::hand_command) {
+            m.body["mode"] = "JOINT_POSITION";
+            m.body["control_epoch"] = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+            m.body["origin"] = {{"publisher_id", "flight_gateway"}, {"session_id", "session"},
+                {"sequence", 1}, {"sample_mono_us", 1000000}, {"clock_id", "host-boot"}};
+            compare(m);
+            m.body["origin"]["sequence"] = -1;
+        }
+        compare(m);
+    }
+    for (const auto& value : {nlohmann::json(1.01), nlohmann::json("bad"),
+                            nlohmann::json(std::numeric_limits<double>::infinity()),
+                            nlohmann::json(std::numeric_limits<double>::quiet_NaN())}) {
+        auto m = flight(); m.body["control"]["roll"] = value; compare(m);
+    }
+    auto m = flight(); m.body["sequence"] = 42; compare(m);
+    m = flight(); m.header.sequence = max_json_integer + 1; compare(m);
+    m = flight(); m.header.version = "2.0"; compare(m);
+    m = flight(); m.body = nlohmann::json::array(); compare(m);
+    m = flight(); m.body["large"] = std::string(max_payload_bytes, 'x'); compare(m);
+    m = flight(); m.body["input_state"] = {{"mode", "POSITION_HOLD"},
+        {"device_connected", true}, {"checked_mono_us", m.header.sample_mono_us}};
+    compare(m);
+    m.body["input_state"]["checked_mono_us"] = 0; compare(m);
+}
+void clock_id_tests() {
+    std::vector<std::future<std::string>> readers;
+    for (int i = 0; i < 8; ++i) readers.push_back(std::async(std::launch::async, [] {
+        const auto first = local_clock_id();
+        for (int j = 0; j < 500; ++j) check(local_clock_id() == first, "stable clock domain");
+        return first;
+    }));
+    const auto expected = readers.front().get();
+    for (std::size_t i = 1; i < readers.size(); ++i)
+        check(readers[i].get() == expected, "concurrent clock domain initialization");
+    check(new_session_id() != new_session_id(), "session UUID must never be cached");
+}
+void parser_workspace_tests() {
+    std::string good, error;
+    check(encode(flight(), good, error), "workspace fixture");
+    auto envelope = nlohmann::json::parse(good);
+    for (int i = 0; i < 80; ++i) envelope["wide"]["key-" + std::to_string(i)] = i;
+    envelope["siblings"] = nlohmann::json::array({{{"same", 1}}, {{"same", 2}}});
+    envelope[std::string(4096, 'k')] = 1;
+    const auto wide = envelope.dump();
+    const auto with_extension = [&](const std::string& extension) {
+        return good.substr(0, good.size() - 1) + ",\"extension\":" + extension + "}";
+    };
+    std::string repeated = "{";
+    for (int i = 0; i < 80; ++i) repeated += "\"key-" + std::to_string(i) + "\":0,";
+    repeated += "\"key-0\":1}";
+    std::vector<std::string> bad{
+        with_extension(repeated), with_extension("{\"a\":1,\"\\u0061\":2}"),
+        with_extension("{\"x\":1,\"x\":2}"), with_extension("[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]"),
+        with_extension("{\"unfinished\":"), with_extension("1e999"),
+        with_extension("9007199254740992"), std::string(max_payload_bytes + 1, ' ')};
+    const auto run = [&] {
+        Message output; std::string reason;
+        for (int repeat = 0; repeat < 10; ++repeat) {
+            check(decode("flight.command", wide, output, reason), "wide/long/sibling key fixture");
+            for (const auto& input : bad) {
+                const auto saved = output.body;
+                check(!decode("flight.command", input, output, reason) && output.body == saved,
+                      "invalid parse leaves output unchanged");
+                check(decode("flight.command", good, output, reason) && output.body == flight().body,
+                      "parser workspace recovers after every failure");
+            }
+        }
+    };
+    std::vector<std::future<void>> readers;
+    for (int i = 0; i < 8; ++i) readers.push_back(std::async(std::launch::async, run));
+    for (auto& reader : readers) reader.get();
+}
 void runtime_tests() {
     auto message = flight();
     InputGuard guard(flight_policy());
@@ -291,7 +375,8 @@ void bus_tests() {
 } // namespace
 int main() {
     try {
-        codec_tests(); runtime_tests(); position_hold_tests(); framing_tests(); bus_tests();
+        clock_id_tests(); codec_tests(); consuming_codec_tests(); parser_workspace_tests(); runtime_tests();
+        position_hold_tests(); framing_tests(); bus_tests();
         std::cout << "communication tests passed\n";
         return 0;
     } catch (const std::exception& error) {

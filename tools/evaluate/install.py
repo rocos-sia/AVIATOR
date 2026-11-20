@@ -21,7 +21,7 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def verified(directory):
+def verified(directory, *, allow_extra=False):
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError(f'拒绝操作非实体评估目录: {directory}')
     marker = directory / 'manifest.json'
@@ -36,9 +36,29 @@ def verified(directory):
         path = directory / name
         if path.is_symlink() or not path.is_file() or digest(path) != checksum:
             raise ValueError(f'评估包文件校验失败: {name}')
-    if {p.name for p in directory.iterdir()} != FILES:
-        raise ValueError(f'评估安装目录含额外文件；拒绝覆盖: {directory}')
+    extra = sorted(p.name for p in directory.iterdir() if p.name not in FILES)
+    if extra and not allow_extra:
+        raise ValueError(f'评估安装目录含额外文件；拒绝覆盖: {directory}: {extra!r}')
     return data
+
+
+def retire_backup(backup):
+    """Only discard a pristine package; keep the entire tree if anything was added."""
+    verified(backup, allow_extra=True)
+    extra = sorted(p.name for p in backup.iterdir() if p.name not in FILES)
+    if not extra:
+        shutil.rmtree(backup)
+        return
+    # Reserve a private unique parent so no earlier archive can be overwritten.
+    # Rename the tree without traversing added files or following their symlinks.
+    saved = Path(tempfile.mkdtemp(prefix='.aviator-evaluate.saved-', dir=backup.parent))
+    destination = saved / 'aviator-evaluate'
+    try:
+        backup.rename(destination)
+    except BaseException:
+        saved.rmdir()
+        raise
+    print(f'旧安装含额外文件 {extra!r}，已完整保留: {destination}', flush=True)
 
 
 def unpack(archive, destination):
@@ -78,14 +98,14 @@ def install(archive, checksum, prefix):
     with os.fdopen(fd, 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if backup.exists() or backup.is_symlink():
-            verified(backup)
+            verified(backup, allow_extra=True)
             if not prefix.exists():
                 backup.rename(prefix)
             else:
-                verified(prefix)
-                shutil.rmtree(backup)
+                verified(prefix, allow_extra=True)
+                retire_backup(backup)
         if prefix.exists():
-            verified(prefix)
+            verified(prefix, allow_extra=True)
         with tempfile.TemporaryDirectory(prefix='.evaluate-stage-', dir=prefix.parent) as temporary:
             stage = Path(temporary) / 'aviator-evaluate'
             stage.mkdir()
@@ -104,7 +124,7 @@ def install(archive, checksum, prefix):
                     backup.rename(prefix)
                 raise
             if old:
-                shutil.rmtree(backup)
+                retire_backup(backup)
     command = shlex.join(['python3', str(prefix / 'evaluate_aviator.py'), '--open'])
     print(f'独立评估工具已安装: {prefix}\n运行: {command}')
     print('未安装系统 profiler，未修改或启动 AVIATOR；结果默认写入用户 state 目录。')

@@ -246,6 +246,9 @@ int main(int argc, char **argv) {
         robot["wheel_angular_speed"] = .4;
         robot["wheel_linear_speed"] = .04;
         robot["settle_duration"] = .15;
+        // This fixture starts simulation with --no-camera. Keep grasp geometry
+        // deterministic; camera acquisition has its own integration coverage.
+        robot["grasp_wheel"]["source"] = "wheel_initial";
         write(directory / "system.yaml", system);
         write(directory / "robot.yaml", robot);
         Child bus(

@@ -38,7 +38,10 @@ std::string local_clock_id() {
     char hostname[256]{};
     if (gethostname(hostname, sizeof(hostname) - 1) != 0)
         throw std::runtime_error("gethostname failed");
-    return std::string(hostname).substr(0, 80) + "-" + read_id("/proc/sys/kernel/random/boot_id");
+    // Nodes retain their boot-id source for their lifetime. Keep hostname dynamic;
+    // failed static initialization throws and is retried on the next call.
+    static const std::string boot = read_id("/proc/sys/kernel/random/boot_id");
+    return std::string(hostname).substr(0, 80) + "-" + boot;
 }
 
 InputGuard::InputGuard(InputPolicy policy) : policy_(std::move(policy)) {

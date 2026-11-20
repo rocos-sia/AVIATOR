@@ -103,6 +103,13 @@ void publishMessage(zmq::socket_t &socket, const Message &m) {
         throw std::runtime_error(error);
     send(socket, topic_name(m.topic), payload);
 }
+void publishMessage(zmq::socket_t &socket, Message &&m) {
+    const auto topic = m.topic;
+    std::string payload, error;
+    if (!encode(std::move(m), payload, error))
+        throw std::runtime_error(error);
+    send(socket, topic_name(topic), payload);
+}
 Json parseService(std::string_view text) {
     require(!text.empty() && text.size() <= max_payload_bytes && text.find('\0') == text.npos &&
                 text.substr(0, 3) != "\xef\xbb\xbf",

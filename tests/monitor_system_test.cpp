@@ -98,6 +98,16 @@ int main() {
         write("devices/0000:00:02.0/vendor", "0x8086\n");
         std::filesystem::create_directories(root / "101/fdinfo");
         std::filesystem::create_directories(root / "102/fdinfo");
+        auto process = [&](const char* pid, unsigned start) {
+            std::filesystem::create_directories(root / pid / "fdinfo");
+            std::ofstream stat(root / pid / "stat");
+            stat << pid << " (gpu worker ) name) S";
+            for (int field = 4; field < 22; ++field) stat << " 0";
+            stat << ' ' << start << " 0\n";
+        };
+        process("101", 123); process("102", 456);
+        for (int fd = 10; fd < 110; ++fd)
+            std::ofstream(root / "101/fdinfo" / std::to_string(fd)) << "pos: 0\nflags: 0100000\n";
         auto intel = [&](const char* file, const char* client, const std::string& counters,
                          const char* driver = "i915") {
             write(file, std::string("drm-driver: ") + driver +
@@ -110,12 +120,16 @@ int main() {
         std::filesystem::create_symlink(root / "101/fdinfo/3", root / "101/fdinfo/4");
         std::filesystem::create_symlink(root / "101/fdinfo/3", root / "102/fdinfo/4");
         check(stats.snapshot(8000000)["gpu"]["percent"].is_null(), "Intel GPU needs a baseline");
+        check(stats.snapshot(8000000)["gpu"]["fdinfo_reads"] == 104, "initial discovery scans all fdinfo");
         intel("101/fdinfo/3", "1",
               "drm-engine-render: 600000000 ns\ndrm-engine-video: 1600000000 "
               "ns\ndrm-engine-capacity-video: 2\n");
         intel("102/fdinfo/3", "2", "drm-engine-render: 300000000 ns\n");
         check(stats.snapshot(9000000)["gpu"]["percent"] == 80,
               "Intel uses busiest engine, normalizes capacity and deduplicates shared clients");
+        check(stats.snapshot(9000000)["gpu"]["fdinfo_reads"] == 4 &&
+              stats.snapshot(9000000)["gpu"]["discovery_age_ms"] == 1000,
+              "cached sampling reads only candidates and exposes discovery age");
         check(stats.snapshot(10000000)["gpu"]["percent"] == 0, "idle Intel GPU is zero");
         std::filesystem::remove(root / "102/fdinfo/3");
         intel("101/fdinfo/3", "1",
@@ -146,6 +160,59 @@ int main() {
         std::filesystem::remove(root / "101/fdinfo/3");
         check(stats.snapshot(16000000)["gpu"]["percent"].is_null(),
               "unreadable Intel counters are unavailable");
+        std::filesystem::remove_all(root / "101");
+        std::filesystem::remove_all(root / "102");
+        process("103", 100);
+        intel("103/fdinfo/3", "3", "drm-engine-render: 100000000 ns\n");
+        check(stats.snapshot(17000000)["gpu"]["percent"].is_null(), "new client starts at baseline");
+        process("104", 200);
+        intel("104/fdinfo/3", "4", "drm-engine-render: 100000000 ns\n");
+        intel("103/fdinfo/3", "3", "drm-engine-render: 200000000 ns\n");
+        check(stats.snapshot(18000000)["gpu"]["percent"] == 10 &&
+              stats.snapshot(18000000)["gpu"]["clients"] == 1,
+              "new client waits for discovery while known client retains sampling frequency");
+        stats.snapshot(19000000);
+        check(stats.snapshot(20000000)["gpu"]["clients"] == 2 &&
+              stats.snapshot(20000000)["gpu"]["percent"] == 0,
+              "discovered client's lifetime counters must not become a utilization spike");
+        intel("104/fdinfo/3", "4", "drm-engine-render: 600000000 ns\n");
+        check(stats.snapshot(21000000)["gpu"]["percent"] == 50, "new client's second sample");
+        process("103", 300); // Same PID, FD and DRM id, different process generation.
+        intel("103/fdinfo/3", "3", "drm-engine-render: 900000000 ns\n");
+        check(stats.snapshot(22000000)["gpu"]["clients"] == 1 &&
+              stats.snapshot(22000000)["gpu"]["percent"] == 0, "PID reuse invalidates cached client");
+        check(stats.snapshot(23000000)["gpu"]["percent"] == 0, "reused PID gets a new baseline");
+        intel("103/fdinfo/3", "3", "drm-engine-render: 1100000000 ns\n");
+        check(stats.snapshot(24000000)["gpu"]["percent"] == 20, "reused PID resumes sampling");
+        intel("103/fdinfo/3", "5", "drm-engine-render: 9000000000 ns\n");
+        check(stats.snapshot(25000000)["gpu"]["percent"] == 0, "FD reuse resets DRM client baseline");
+        intel("103/fdinfo/3", "5", "drm-engine-render: 9100000000 ns\n");
+        check(stats.snapshot(26000000)["gpu"]["percent"] == 10, "reused FD resumes sampling");
+        // A directory at fdinfo simulates an unreadable entry even under root.
+        std::filesystem::remove(root / "103/fdinfo/3");
+        std::filesystem::create_directory(root / "103/fdinfo/3");
+        check(stats.snapshot(27000000)["gpu"]["clients"] == 1, "read failure evicts candidate");
+        std::filesystem::remove(root / "103/fdinfo/3");
+        intel("103/fdinfo/3", "5", "drm-engine-render: 9900000000 ns\n");
+        check(stats.snapshot(28000000)["gpu"]["clients"] == 1, "recovery waits for discovery");
+        check(stats.snapshot(29000000)["gpu"]["percent"] == 0, "recovered counter resets baseline");
+        if (geteuid() != 0) {
+            std::filesystem::permissions(root / "103/fdinfo/3", std::filesystem::perms::none);
+            check(stats.snapshot(30000000)["gpu"]["clients"] == 1,
+                  "permission loss evicts cached candidate");
+            std::filesystem::permissions(root / "103/fdinfo/3", std::filesystem::perms::owner_all);
+            stats.snapshot(31000000);
+            check(stats.snapshot(32000000)["gpu"]["clients"] == 2 &&
+                  stats.snapshot(32000000)["gpu"]["percent"] == 0,
+                  "permission recovery rediscovers without a spike");
+        }
+        monitor::SystemStats slow(root, root, 0, 5000);
+        check(slow.snapshot(1000000)["gpu"]["full_scan"] == true &&
+              slow.snapshot(5000000)["gpu"]["full_scan"] == false &&
+              slow.snapshot(6000000)["gpu"]["full_scan"] == true,
+              "configured discovery interval");
+        check(slow.snapshot(100000)["gpu"]["full_scan"] == true,
+              "clock rollback refreshes discovery and counter baselines");
         std::filesystem::remove_all(root);
         std::cout << "system metrics passed\n";
     } catch (const std::exception& error) {
