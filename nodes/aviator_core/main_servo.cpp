@@ -1,3 +1,4 @@
+#include "wheel_units.hpp"
 #include "Logger.hpp"
 #include "aviator/Aviator.hpp"
 #include "aviator/CollisionChecker.hpp"
@@ -34,7 +35,7 @@ int main(int argc, char **argv) {
                 aviator::Logger::info("aviator_core_servo [--config <system.yaml>] [--gateway-session <ignored>]\n"
                     "Session pinning is disabled; publisher, freshness and sequence checks remain.\n"
                     "Enable, approach and lock, then follow flight_gateway JOYSTICK input.\n"
-                    "roll -> +/-0.87266 rad; pitch [-1,0,1] -> [-0.170,-0.085,0] m; v=1.\n"
+                    "roll_deg -> rad; pitch_mm [-80,0,70] -> [0,-0.080,-0.150] m; v=1.\n"
                     "Start bus, manipulator and flight_gateway first. Ctrl+C stops and disables.");
                 return 0;
             } else throw std::runtime_error("Unknown or incomplete option: " + arg);
@@ -122,8 +123,8 @@ int main(int argc, char **argv) {
                     }
                     input_error.clear();
                     // decode 已拒绝非有限值/越界值；这里显式限定映射范围。
-                    roll = std::clamp(message.body.at("control").at("roll").get<double>(), -1.0, 1.0);
-                    pitch = std::clamp(message.body.at("control").at("pitch").get<double>(), -1.0, 1.0);
+                    roll = std::clamp(message.body.at("control").at("roll_deg").get<double>(), -50.0, 50.0);
+                    pitch = std::clamp(message.body.at("control").at("pitch_mm").get<double>(), -80.0, 70.0);
                 }
                 const auto now = aviator::monotonic_us();
                 const bool fresh = input && !input->expired(now);
@@ -141,7 +142,7 @@ int main(int argc, char **argv) {
                 connection->report(state, fresh ? "JOYSTICK" : "NONE");
                 if (fresh && now >= next_servo &&
                     (state == "LOCKED" || (state == "SERVO" && current.motion_error.empty()))) {
-                    const double angle = roll * 0.87266;
+                    const double angle = aviator::wheel::angle(roll);
                     const double displacement = aviator::joystickWheelDisplacement(pitch);
                     robot.servoWheel(angle, displacement, 1.0);
                     next_servo = now + period; // 不补发错过的周期。

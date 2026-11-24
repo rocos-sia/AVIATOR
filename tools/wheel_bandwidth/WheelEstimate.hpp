@@ -20,12 +20,12 @@ struct Sweep {
     bool translation = false;
     int settle = 2, measure = 5, ramp = 1;
     void validateMotion(double center) const {
-        if (!std::isfinite(center) || center < -.170 || center > 0 ||
+        if (!std::isfinite(center) || center < -.150 || center > 0 ||
             !std::isfinite(amplitude) || amplitude <= 0)
             throw std::runtime_error("Invalid sweep center or amplitude");
         if (translation) {
-            if (center-amplitude < -.170 || center+amplitude > 0)
-                throw std::runtime_error("Translation center +/- amplitude must be within [-170,0] mm");
+            if (center-amplitude < -.150 || center+amplitude > 0)
+                throw std::runtime_error("Translation center +/- amplitude must be within [-150,0] mm");
         } else if (amplitude > 10*pi/180) {
             throw std::runtime_error("Rotation amplitude must be (0,10] deg");
         }

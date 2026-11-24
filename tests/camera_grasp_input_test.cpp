@@ -73,7 +73,7 @@ int main() try {
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
         const auto pose = result.get();
-        check(std::abs(pose[0] + theta) < 1e-12 && std::abs(pose[1] + travel + .085) < 1e-12,
+        check(std::abs(pose[0] + theta) < 1e-12 && std::abs(pose[1] + travel + .080) < 1e-12,
               "Wrong camera grasp conversion or reused previous grasp pose");
         check(supervised > 2, "No supervision during acquisition");
     }

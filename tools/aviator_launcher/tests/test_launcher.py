@@ -57,7 +57,7 @@ class LauncherTests(unittest.TestCase):
                 self.assertEqual('启动 simulation:' in result.stdout, mode == 'simulation')
                 self.assertEqual('启动 logger:' in result.stdout, logger)
                 self.assertEqual('启动 tts:' in result.stdout, tts)
-                self.assertEqual('flight-rs422.yaml' in result.stdout, rs422)
+                self.assertEqual(('system-simulation-rs422.yaml' if mode == 'simulation' else 'flight-rs422.yaml') in result.stdout, rs422)
         self.assertFalse((self.base / 'data').exists(), 'dry-run created recording directory')
 
     def test_option_types_and_boundaries(self):

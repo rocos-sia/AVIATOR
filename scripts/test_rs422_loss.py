@@ -47,8 +47,8 @@ def load_config(path):
     if not isinstance(root, dict) or root.get('role', 'robot') != 'robot' or root.get('source') != 'rs422':
         raise ValueError('需要项目的 robot / rs422 配置')
     rs = root.get('rs422')
-    if not isinstance(rs, dict) or rs.get('profile') != 'aviator-bench-v1':
-        raise ValueError('rs422.profile 必须为 aviator-bench-v1')
+    if not isinstance(rs, dict) or rs.get('profile') != 'aviator-icd-1120':
+        raise ValueError('rs422.profile 必须为 aviator-icd-1120')
     ports = {name: rs.get('channel_' + name.lower()) for name in ('A', 'B')}
     if any(not isinstance(p, str) or not Path(p).is_absolute() for p in ports.values()):
         raise ValueError('channel_a / channel_b 必须为绝对串口路径')
@@ -82,7 +82,7 @@ class Receiver:
         self.valid_frames += 1
         counter = frame[2]
         roll, pitch = struct.unpack_from('<hh', frame, 4)
-        if frame[3] not in (0, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60) or abs(roll) > 1000 or abs(pitch) > 1000:
+        if frame[3] not in (0, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60) or roll == -32768 or pitch == -32768:
             self.semantic_invalid_frames += 1
             self.event('invalid_business_fields', now, counter=counter)
         if self.last_counter is not None:
@@ -262,7 +262,7 @@ def measure(ports, timeout, expected):
         except (OSError, ValueError, termios.error) as exc:
             error, stop_reason = str(exc), 'error'
         elapsed = time.monotonic() - started if started is not None else 0
-    return dict(config=str(CONFIG), ports=ports, profile='aviator-bench-v1',
+    return dict(config=str(CONFIG), ports=ports, profile='aviator-icd-1120',
                 serial='115200/8E1', receive_timeout_ms=timeout,
                 expected_frames_per_channel=expected, elapsed_s=elapsed,
                 stop_reason=stop_reason, error=error, ready=started is not None,

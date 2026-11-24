@@ -1,4 +1,5 @@
 #include "input.hpp"
+#include "wheel_units.hpp"
 #include <limits>
 
 #include <algorithm>
@@ -95,8 +96,8 @@ void JoystickSample::update(const input_event& event, std::uint64_t now) {
         invalidate();
         return;
     }
-    roll_value = normalized(roll);
-    pitch_value = normalized(pitch);
+    roll_value = aviator::wheel::stickRoll(normalized(roll));
+    pitch_value = aviator::wheel::stickPitch(normalized(pitch));
     sample_us = time;
     valid = true;
     report_pending = false;
@@ -111,8 +112,8 @@ void JoystickSample::initializePosition(int roll_raw, int pitch_raw, std::uint64
         invalidate();
         return;
     }
-    roll_value = normalized(roll);
-    pitch_value = normalized(pitch);
+    roll_value = aviator::wheel::stickRoll(normalized(roll));
+    pitch_value = aviator::wheel::stickPitch(normalized(pitch));
     initial_snapshot_us = sample_us = now;
     valid = true;
 }
@@ -137,24 +138,18 @@ void KeyboardInput::suppressHeld(unsigned code) {
             suppressed_[i] = true;
 }
 void KeyboardInput::setAxis(unsigned axis, double value) {
-    if (axis == 0)
-        roll_ = std::clamp(sample_.roll.inverted ? -value : value, -config_.roll_limit,
-                           config_.roll_limit);
-    else
-        pitch_ = std::clamp(sample_.pitch.inverted ? -value : value, -config_.pitch_limit,
-                            config_.pitch_limit);
+    if (axis == 0) roll_ = std::clamp(value, -config_.roll_limit_deg, config_.roll_limit_deg);
+    else pitch_ = std::clamp(value, config_.pitch_min_mm, config_.pitch_max_mm);
 }
 void KeyboardInput::advance(std::uint64_t now) {
     if (integrated_us_ && now > integrated_us_) {
         const double dt = (now - integrated_us_) / 1000000.0;
-        const int roll_direction = int(held_[1]) - int(held_[0]);
-        const int pitch_direction = int(held_[3]) - int(held_[2]);
-        roll_ = roll_direction ? std::clamp(roll_ + roll_direction * config_.roll_speed * dt,
-                                            -config_.roll_limit, config_.roll_limit)
-                               : roll_;
-        pitch_ = pitch_direction ? std::clamp(pitch_ + pitch_direction * config_.pitch_speed * dt,
-                                              -config_.pitch_limit, config_.pitch_limit)
-                                 : pitch_;
+        const int rd = (int(held_[0]) - int(held_[1])) * (sample_.roll.inverted ? -1 : 1);
+        const int pd = (int(held_[2]) - int(held_[3])) * (sample_.pitch.inverted ? -1 : 1);
+        roll_ = std::clamp(roll_ + rd * config_.roll_speed_deg_s * dt,
+                           -config_.roll_limit_deg, config_.roll_limit_deg);
+        pitch_ = std::clamp(pitch_ + pd * config_.pitch_speed_mm_s * dt,
+                            config_.pitch_min_mm, config_.pitch_max_mm);
     }
     integrated_us_ = std::max(integrated_us_, now);
 }
@@ -216,8 +211,8 @@ void KeyboardInput::deviceChecked(std::uint64_t now) {
     if (sample_.failed || sample_.report_pending)
         return;
     advance(now);
-    sample_.roll_value = sample_.roll.inverted ? -roll_ : roll_;
-    sample_.pitch_value = sample_.pitch.inverted ? -pitch_ : pitch_;
+    sample_.roll_value = roll_;
+    sample_.pitch_value = pitch_;
     // This is a newly integrated software target, based on checked keyboard state.
     sample_.sample_us = now;
     sample_.valid = true;

@@ -61,7 +61,7 @@
     <child link="dummy_link"/>
     <origin xyz="0 0 0" rpy="1.5707 0 -1.5707"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-0.87266" upper="0.87266" effort="10.0" velocity="1.0"/>
+    <limit lower="-0.8726646259971648" upper="0.8726646259971648" effort="10.0" velocity="1.0"/>
   </joint>
 
   <link name="dummy_link" />
@@ -71,7 +71,7 @@
     <child link="steering_wheel"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-0.170" upper="0" effort="10.0" velocity="1.0"/>
+    <limit lower="-0.150" upper="0" effort="10.0" velocity="1.0"/>
   </joint>
 
   <!-- Main yoke: each grip inset 25 mm; shaft/tag plate unchanged.
@@ -105,7 +105,7 @@
     <mimic joint="roll_input_joint" multiplier="1.0"/>
     <origin xyz="0 0.47 0" rpy="1.5707 0 -1.5707"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-0.87266" upper="0.87266" effort="10.0" velocity="1.0"/>
+    <limit lower="-0.8726646259971648" upper="0.8726646259971648" effort="10.0" velocity="1.0"/>
   </joint>
 
   <link name="dummy_link_2" />
@@ -116,7 +116,7 @@
     <mimic joint="pitch_input_joint" multiplier="1.0"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-0.170" upper="0" effort="10.0" velocity="1.0"/>
+    <limit lower="-0.150" upper="0" effort="10.0" velocity="1.0"/>
   </joint>
 
   <!-- Steering Wheel 2 -->

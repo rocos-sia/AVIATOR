@@ -407,10 +407,10 @@ class CalibrationController:
         manual = self.state["wheel_source"] == "manual"
         if manual:
             angle, displacement = request.get("angle_deg"), request.get("displacement_m")
-            if (type(angle) not in (int, float) or not math.isfinite(angle) or abs(math.radians(angle)) > .87266
+            if (type(angle) not in (int, float) or not math.isfinite(angle) or abs(math.radians(angle)) > .8726646259971648
                     or type(displacement) not in (int, float) or not math.isfinite(displacement)
-                    or not -.170 <= displacement <= 0):
-                raise CalibrationError("手动角度必须在 ±0.87266 rad 内，位移必须为 [-0.170,0] m")
+                    or not -.150 <= displacement <= 0):
+                raise CalibrationError("手动角度必须在 ±0.8726646259971648 rad 内，位移必须为 [-0.150,0] m")
             angle = math.radians(angle)
         grasp_path, grasp, snapshots = read_inputs(self.args)
         self._set(phase="sampling", progress=dict(current=0, total=self.args.samples), message="请保持轮盘和双臂静止…")

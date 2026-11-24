@@ -30,7 +30,7 @@ function cardFor(name, saved = false) {
     const row=element('tr'), values=Array.from({length:4},()=>element('td'));
     row.append(...values); body.append(row); return values;
   });
-  const note=element('p','位置字段：int16 小端，1 = 0.1%，有效范围 −1000～1000。ICD 1107：左正右负、推正拉负。操作码仅表示收到的请求，执行结果查看 REQ / REP。','footnote');
+  const note=element('p','位置字段：int16 小端，滚转 raw×50/32767 deg；俯仰 raw×75/32767−5 mm；−32768 无效。ICD 1120：左正右负、推正拉负。操作码仅表示收到的请求，执行结果查看 REQ / REP。','footnote');
   panel.append(heading,meta,empty,raw,copy,scroll,note);
   const card={panel,title,badge,meta,empty,raw,copy,scroll,note,cells,bytes:[]};
   copy.onclick=async()=>{
@@ -48,7 +48,7 @@ function drawFrame(card, bytes) {
     return value > 32767 ? value-65536 : value;
   };
   const checksum = bytes.slice(2,31).reduce((sum,b) => sum+b,0) & 255;
-  const axis = offset => `${i16(offset)} → ${(i16(offset)/10).toFixed(1)}% · 归一化 ${(i16(offset)/1000).toFixed(3)}`;
+  const axis = offset => i16(offset) === -32768 ? "无效位置" : `${i16(offset)} → ${(offset === 4 ? i16(offset)*50/32767 : i16(offset)*75/32767-5).toFixed(3)} ${offset === 4 ? "deg" : "mm"}`;
   const fields = [
     ['0–1','同步字',hex(bytes.slice(0,2)),bytes[0] === 235 && bytes[1] === 144 ? 'EB 90 · 帧头匹配' : '帧头异常'],
     ['2','帧计数器',hex(bytes.slice(2,3)),`${bytes[2]} · 0–255 循环`],
@@ -89,8 +89,8 @@ function drawOperations(observation, elapsed) {
       hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, fractionalSecondDigits:3
     });
     const age = Number.isFinite(saved.age_ms) ? `${((saved.age_ms + elapsed) / 1000).toFixed(1)} 秒前` : '时间差未知';
-    const axis = offset => { const value = bytes[offset] | bytes[offset+1] << 8; return (value > 32767 ? value - 65536 : value) / 10; };
-    card.meta.textContent = `接收时间 ${time}（北京时间） · ${age} · 帧计数 ${bytes[2]} · roll ${axis(4)}% · pitch ${axis(6)}% · 帧校验通过`;
+    const axis = offset => { const value = bytes[offset] | bytes[offset+1] << 8; const raw = value > 32767 ? value - 65536 : value; return raw === -32768 ? "无效" : (offset === 4 ? raw*50/32767 : raw*75/32767-5).toFixed(3); };
+    card.meta.textContent = `接收时间 ${time}（北京时间） · ${age} · 帧计数 ${bytes[2]} · roll ${axis(4)} deg · pitch ${axis(6)} mm · 帧校验通过`;
     const execution = saved.execution ?? {status:'RECEIVED'};
     card.note.textContent = outcomes[execution.status] ?? execution.status;
     if (execution.state) card.note.textContent += ` · 应答时状态 ${execution.state}`;

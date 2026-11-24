@@ -236,7 +236,7 @@ ctest --test-dir build -R '^(aviator_managed_api|robot_state_machine|core_sml_de
 
 - `flight.command`：SUB 连接 system.yaml 的 Bus 输出，校验生产者、固定 Gateway 会话、时钟、序号、有效位和时效。
 - 六操作服务：ROUTER 默认 bind `tcp://127.0.0.1:5559`，调用 Aviator 六个大写接口，由同一状态机决定是否执行。
-- 仅 CONTROL 向大写 `ServoWheel()` 传目标，沿用当前反向 roll 配置 `angle = roll * -0.87266` rad、`displacement = 0.085 * (pitch - 1.0)` m、`v = 1`。最大约 50 Hz，不补发错过周期。
+控制目标统一采用 ICD 1120 的 `roll_deg`（±50°）、`pitch_mm`（−80～+70 mm）。`angle=roll_deg×π/180`，`displacement=−(pitch_mm+80)/1000` m，速度系数 1；中位为 −0.080 m，控制调度保持 50 Hz。
 
 目标仍是绝对目标；进入 CONTROL 后，下一份通过校验的输入可能立即要求运动到当前摇杆对应位置。
 静止摇杆通过新鲜设备检查保持位置；重复检查时间不能续期。原始轴事件可早于本次 START_CONTROL，
@@ -420,9 +420,9 @@ cmake --build build/release --target aviator_core_camera_servo -j2
 只接受 `publisher_id=camera`、指定 `camera_id` 的观测，并要求消息与
 `steering_wheel.valid` 有效、坐标为有限数。按 Monitor 的模型映射调用小写直接接口：
 `servoWheel(clamp(-theta_rad, -0.87266, 0.87266),
-clamp(-translation_along_axis_m - 0.085, -0.170, 0), 1.0)`。
-角度单位 rad、位移单位 m；相机轴向位移 -0.085/0/+0.085 分别对应
-0/-0.085/-0.170，目标为绝对位置，不叠加 `wheel_initial`。越界时限幅并打印提示。
+clamp(-translation_along_axis_m - 0.080, -0.150, 0), 1.0)`。
+角度单位 rad、位移单位 m；相机轴向位移 -0.080/0/+0.070 分别对应
+0/-0.080/-0.150，目标为绝对位置，不叠加 `wheel_initial`。越界时限幅并打印提示。
 
 更新周期沿用 `servo_period`，复用现有 IK、碰撞检查及 Ruckig Servo 规划。
 `--camera-timeout-ms` 默认 200（允许 20..1000），检查本机 `clock_id` 和原始
@@ -447,9 +447,9 @@ clamp(-translation_along_axis_m - 0.085, -0.170, 0), 1.0)`。
 
 默认配置路径与原 Core 相同，开发构建读取源码根目录 `config/system.yaml`，可用 `--config` 指定。输入按 flight_gateway 发布者、时钟、有效性、时效和序号检查；`--gateway-session` 已忽略，不再固定启动会话。
 
-两个摇杆入口共用 `joystickWheelDisplacement()`，`main_servo.cpp` 的映射为：`angle = roll * 0.87266` rad，`displacement = 0.085 * (pitch - 1.0)` m，`v = 1.0`。pitch 的 -1、0、+1 分别对应 -0.170、-0.085、0 m；轮盘速度上限由 robot.yaml 的 wheel_*_speed 决定，目标仍经 Servo 规划执行；不再按应用层关节动态上限拦截。
+控制目标统一采用 ICD 1120 的 `roll_deg`（±50°）、`pitch_mm`（−80～+70 mm）。`angle=roll_deg×π/180`，`displacement=−(pitch_mm+80)/1000` m，速度系数 1；中位为 −0.080 m，控制调度保持 50 Hz。
 
-仅接收同一时钟域、publisher_id=flight_gateway、source=JOYSTICK 的有限且处于 [-1,1] 的数据。沿用 InputGuard 检查序号与 valid。POSITION_HOLD 输入显式按 input_state.checked_mono_us 和消息接收时刻检查时效，同时保留原始轴事件时间并拒绝时间倒退；没有扩展的普通输入仍按原始采样时间检查。输入时效取 system.yaml 的 origin_timeout_ms（默认 100 ms）。失效后不再更新 Servo 目标，现有 servo_timeout（默认 250 ms）触发减速并保持软件锁定，因此停更到触发停止的上限约为两项超时之和，实际停止还需制动时间。有效数据恢复后可恢复跟随；网关重启后按新启动标记重新计数，不需要手动绑定会话。Ctrl+C 停止、调用 UnlockHandles（启用真实手时等待张开）、释放软件锁定并失能。
+仅接收同一时钟域、publisher_id=flight_gateway、source=JOYSTICK 的有限且滚转处于 [-50,50] deg、俯仰处于 [-80,70] mm 的数据。沿用 InputGuard 检查序号与 valid。POSITION_HOLD 输入显式按 input_state.checked_mono_us 和消息接收时刻检查时效，同时保留原始轴事件时间并拒绝时间倒退；没有扩展的普通输入仍按原始采样时间检查。输入时效取 system.yaml 的 origin_timeout_ms（默认 100 ms）。失效后不再更新 Servo 目标，现有 servo_timeout（默认 250 ms）触发减速并保持软件锁定，因此停更到触发停止的上限约为两项超时之和，实际停止还需制动时间。有效数据恢复后可恢复跟随；网关重启后按新启动标记重新计数，不需要手动绑定会话。Ctrl+C 停止、调用 UnlockHandles（启用真实手时等待张开）、释放软件锁定并失能。
 
 新入口有效跟随时 flight.state 的 control_source=JOYSTICK，等待或失效时为 NONE。Manipulator 仍验证 Core 的 local.task 心跳；网关输入时效在本入口检查，不宣称已实现端到端 flight.command origin 传播。位置保持输入在设备检查正常时允许静止持杆，详见 [flight_gateway 位置保持与设备检查](../flight_gateway/README.md#位置保持与设备检查)。网关与 Core 需一起更新并重启。
 
@@ -610,7 +610,7 @@ python tests/core_hand_process_test.py "$PWD/build/tests/aviator_core_hand_link_
 ```yaml
 wheel_initial:
   angle: 0.0           # rad，范围 [-0.87266, 0.87266]
-  displacement: -0.085 # m，范围 [-0.170, 0]
+  displacement: -0.080 # m，范围 [-0.150, 0]
 ```
 
 该值表示启动时轮盘实际所在位形。Manipulator 初始化软件参考并通过 `arm.state.wheel_reference` 传给 Core；Rokae 不会因为这项配置自动移动轮盘。MuJoCo 同时设置实体轮盘关节初值。省略整个配置块时保持旧版 `(0, 0)` 初值；给出配置块时必须包含两个有限数值。
@@ -618,7 +618,7 @@ wheel_initial:
 默认情况下，使能保持、回 home 和连续抓取接近沿用这一参考。抓取完成后 Servo 从该位形衔接；松开/重新抓取使用运行中的最新参考，不在每次使能时重置初值。`grasp.json` 的几何零位及抓取点不变，位移沿轮盘自身推拉轴定义。
 
 FOLLOWING → CONTROL 不修改 flight_gateway 轴值，也不把当前位置设为零点。摇杆 `(0,0)`
-固定对应 `angle=0 rad, displacement=-0.085 m`。刚度切换先将目标和恢复首帧同步到新鲜
+固定对应 `angle=0 rad, displacement=-0.080 m`。刚度切换先将目标和恢复首帧同步到新鲜
 实测关节角；最终保持目标返回 Core 并确认后，才接收本次 CONTROL 的新输入。
 真机不再要求从柔性抓握姿态反解一致的轮盘位形；没有独立测量时，wheel_reference
 仅保留上次软件参考，不能视为实测轮盘位置。仿真仍使用轮盘关节测量，启动时从
@@ -650,17 +650,17 @@ grasp_wheel:
 
 `wheel_initial` 模式保持上述行为；省略 `grasp_wheel` 也使用该模式。`camera` 模式只在抓取指令执行后、回 home 完成且开始规划接近前订阅 `camera.detection`。Core 根据设备服务 `describe.device_backend` 自动选择发布者：`simulation` 后端要求 `publisher_id=simulation`，其余后端（含未报告该字段的旧设备服务）要求 `publisher_id=camera`。因此 `--simulation`（包括 `--simulation --rs422`）无需真实相机，也无需修改 `grasp_wheel.source: camera`；需同时部署更新后的 Core 和 simulation。仍要求指定的 `camera_id`、本机时钟，以及采集时间不早于本次读取请求。初始化、使能和 Managed 的进入 STANDBY 不采集相机位形；每次重抓都重新等待新帧。仿真相机禁用或观测无效时仍终止抓握，不回退到初始位形。
 
-使用 `steering_wheel` 派生字段换算：`angle=-theta_rad`（rad），`displacement=-translation_along_axis_m-0.085`（m），不叠加 `wheel_initial`。该约定要求相机标定零位对应控制模型的零转角、行程中位，标定轴方向与控制端正方向相反。无需转换原始标签 `pose` 或 `translation_vector_m`。两层 `valid` 均须为 true；`axis_match` 仅保留为相机诊断，不作为抓握门槛，false、null 或缺失均不阻止读取。过期、乱序、非有限值、越界或缺失必需字段不能用于抓握；等待超时则终止抓握并报告原因，不回退、不限幅。
+使用 `steering_wheel` 派生字段换算：`angle=-theta_rad`（rad），`displacement=-translation_along_axis_m-0.080`（m），不叠加 `wheel_initial`。该约定要求相机标定零位对应控制模型的零转角、行程中位，标定轴方向与控制端正方向相反。无需转换原始标签 `pose` 或 `translation_vector_m`。两层 `valid` 均须为 true；`axis_match` 仅保留为相机诊断，不作为抓握门槛，false、null 或缺失均不阻止读取。过期、乱序、非有限值、越界或缺失必需字段不能用于抓握；等待超时则终止抓握并报告原因，不回退、不限幅。
 
 读取成功后固定本次位形，用于双臂 IK、接近碰撞检查和闭手距离。每个接近轨迹帧携带同一位形，设备执行时同步 `arm.state.wheel_reference`；Core 同步后续 MoveWheel/Servo 的起点。同步不驱动轮盘归位，不覆盖关节保持目标，也不修改标定文件。接近过程中不继续追踪相机；后续操纵目标仍遵循各入口的原有规则。`wheel_initial` 继续用于设备启动软件参考和仿真实体初始位形，相机模式不会改变仿真实体初值。
 
 切换来源或调整采集参数后重启 Core。相机模式的成功日志为 `Grasp camera=... angle=... rad displacement=... m`；相机无有效反馈时允许等待上述时限，期间继续检查停止请求、授权和设备状态。
 
-`aviator_core_servo` 和 `aviator_core_managed` 的 pitch 均按 `0.085 * (pitch - 1)` 映射：-1 → -0.170 m，0 → -0.085 m，+1 → 0 m。该映射固定为绝对位移，不额外叠加 wheel_initial。配置其它初值时，摇杆中位仍对应 -0.085 m。原有 roll 方向各自保持不变。
+控制目标统一采用 ICD 1120 的 `roll_deg`（±50°）、`pitch_mm`（−80～+70 mm）。`angle=roll_deg×π/180`，`displacement=−(pitch_mm+80)/1000` m，速度系数 1；中位为 −0.080 m，控制调度保持 50 Hz。
 
 直接调用 `moveWheel/servoWheel` 的位移参数仍是绝对位置。`main.cpp --demo/--servo-demo` 中写明的目标值保持原样（目标 0 仍会移到零位）；改变的是抓取起始位形。
 
-修改初值后需重启 Manipulator 和 Core；使用手节点/Gateway 时按控制 epoch 授权流程一起重启。启动日志显示 `Manipulator initial wheel`，READY/STANDBY/抓取前可检查 `wheel_reference.displacement=-0.085`。启动前真机轮盘应处于所声明的位形，这不是轮盘位置测量。
+修改初值后需重启 Manipulator 和 Core；使用手节点/Gateway 时按控制 epoch 授权流程一起重启。启动日志显示 `Manipulator initial wheel`，READY/STANDBY/抓取前可检查 `wheel_reference.displacement=-0.080`。启动前真机轮盘应处于所声明的位形，这不是轮盘位置测量。
 
 ### 统一 URDF 的碰撞检查
 

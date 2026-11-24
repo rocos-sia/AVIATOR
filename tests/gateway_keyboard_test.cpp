@@ -14,7 +14,7 @@ input_event event(unsigned type, unsigned code, int value, std::uint64_t time) {
 }
 struct Keyboard {
     flight_gateway::JoystickSample sample{{ABS_X, -1, 1, 0}, {ABS_Y, -1, 1, 0}};
-    flight_gateway::KeyboardInput input{sample, {0.5, 2.0, 0.75, 0.5}};
+    flight_gateway::KeyboardInput input{sample, {25.0, 150.0, 37.5, -40.0, 35.0}};
     flight_gateway::JoystickButtons buttons;
     std::uint64_t now = 1000000;
     Keyboard() {
@@ -42,28 +42,28 @@ int main() {
                   k.sample.pitch_value == 0, "keyboard starts centered and valid");
         k.key(KEY_RIGHT, 1); k.key(KEY_UP, 1);
         for (int i = 0; i < 10; ++i) k.tick();
-        check(near(k.sample.roll_value, 0.1) && near(k.sample.pitch_value, -0.4),
+        check(near(k.sample.roll_value, -5) && near(k.sample.pitch_value, 30),
               "independent time-based simultaneous axes");
         for (int i = 0; i < 100; ++i) k.tick();
-        check(k.sample.roll_value == 0.75 && k.sample.pitch_value == -0.5,
+        check(k.sample.roll_value == -37.5 && k.sample.pitch_value == 35,
               "holding without repeat reaches configured limits");
         k.key(KEY_RIGHT, 0);
-        check(k.sample.roll_value == 0.75 && k.sample.pitch_value == -0.5,
+        check(k.sample.roll_value == -37.5 && k.sample.pitch_value == 35,
               "release holds the last position");
         k.key(KEY_DOWN, 1);
-        check(k.sample.pitch_value == -0.5, "opposing directions hold");
-        k.tick(); check(k.sample.pitch_value == -0.5, "opposing keys remain stationary");
+        check(k.sample.pitch_value == 35, "opposing directions hold");
+        k.tick(); check(k.sample.pitch_value == 35, "opposing keys remain stationary");
         k.key(KEY_UP, 0); k.tick();
-        check(near(k.sample.pitch_value, -0.46), "remaining direction resumes from held target");
+        check(near(k.sample.pitch_value, 32), "remaining direction resumes from held target");
         k.key(KEY_DOWN, 0);
         check(k.key(KEY_0, 1).empty(), "zero must not send a state request");
         k.key(KEY_0, 0); k.tick();
         check(k.sample.roll_value == 0 && k.sample.pitch_value == 0, "zero returns both targets to origin");
         k.key(KEY_LEFT, 1); k.tick();
-        check(near(k.sample.roll_value, -0.01), "left is negative");
+        check(near(k.sample.roll_value, .5), "left is positive");
         k.sample.roll.inverted = true; k.sample.pitch.inverted = true;
         k.key(KEY_DOWN, 1); k.tick();
-        check(near(k.sample.roll_value, 0.02) && near(k.sample.pitch_value, -0.04),
+        check(near(k.sample.roll_value, 0) && near(k.sample.pitch_value, 3),
               "keyboard obeys axis inversion");
         std::string payload, error;
         auto message = flight_gateway::command(k.sample, "keyboard-test", "boot", 1, k.now, 1, 100000);
@@ -94,7 +94,7 @@ int main() {
         check(startup.sample.roll_value == 0 && startup.key(KEY_1, 1).empty(),
               "startup held keys do not move or request");
         startup.key(KEY_RIGHT, 0); startup.key(KEY_RIGHT, 1); startup.tick();
-        check(startup.sample.roll_value > 0, "startup arrow works after release");
+        check(startup.sample.roll_value < 0, "startup arrow works after release");
         Keyboard partial;
         partial.send(EV_KEY, KEY_RIGHT, 1); partial.tick();
         check(partial.sample.checked_us == 1000000, "partial frame cannot renew lease");

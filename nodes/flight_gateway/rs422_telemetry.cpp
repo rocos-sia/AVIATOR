@@ -2,16 +2,13 @@
 #include <cmath>
 namespace flight_gateway {
 namespace {
-constexpr double roll_scale = 50 * 3.14159265358979323846 / 180;
 void wheelPosition(double angle, double displacement, int16_t& roll, int16_t& pitch) {
-    // Convert measured Core coordinates to ICD 1107 percentages only at the wire boundary.
-    const double r = angle / roll_scale;
-    const double p = -(displacement + .085) / .085;
-    // Round-off at an exact physical endpoint must not revoke an otherwise valid sample.
-    if (std::isfinite(r) && std::abs(r) <= 1.04 + 1e-12)
-        roll = static_cast<int16_t>(std::lround(r * 1000));
-    if (std::isfinite(p) && std::abs(p) <= 90.0 / 85 + 1e-12)
-        pitch = static_cast<int16_t>(std::lround(p * 1000));
+    const double r = aviator::wheel::roll(angle), p = aviator::wheel::pitch(displacement);
+    // Only tolerate floating-point roundoff, never clip actual out-of-range measurements.
+    if (std::isfinite(r) && std::abs(r) <= 50.0 + 1e-9)
+        roll = rs422::encodeRoll(std::clamp(r, -50.0, 50.0));
+    if (std::isfinite(p) && p >= -80.0 - 1e-9 && p <= 70.0 + 1e-9)
+        pitch = rs422::encodePitch(std::clamp(p, -80.0, 70.0));
 }
 aviator::InputPolicy cameraPolicy(std::string clock, const std::string& publisher) {
     aviator::InputPolicy p;
@@ -42,7 +39,7 @@ bool CameraTelemetry::accept(const aviator::Message& message, uint64_t now) {
         const auto& theta = wheel.at("theta_rad");
         const auto& travel = wheel.at("translation_along_axis_m");
         if (!theta.is_number() || !travel.is_number()) return false;
-        wheelPosition(-theta.get<double>(), -travel.get<double>() - .085, roll_, pitch_);
+        wheelPosition(-theta.get<double>(), -travel.get<double>() - .080, roll_, pitch_);
         return roll_ != rs422::invalid_position || pitch_ != rs422::invalid_position;
     } catch (const nlohmann::json::exception&) { return false; }
 }

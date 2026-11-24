@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
                     "  [--camera-timeout-ms 200]\n"
                     "Automatically enable, approach and lock, then follow camera.detection.steering_wheel.\n"
                     "Joint impedance uses robot.yaml stiffness; servoWheel speed ratio is 1.\n"
-                    "angle=-theta_rad, displacement=-translation_along_axis_m-0.085; targets are clamped.\n"
+                    "angle=-theta_rad, displacement=-translation_along_axis_m-0.080; targets are clamped.\n"
                     "Start bus, manipulator, hand and camera first; run only one Core.\n"
                     "Stale/invalid input stops target refresh; Ctrl+C stops and disables.");
                 return 0;
@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
                         aviator::Logger::info("Camera servo target angle={} displacement={} v=1 limited={}",
                                               target.angle, target.displacement, target.limited);
                         if (target.limited)
-                            aviator::Logger::warn("Camera target clamped to angle +/-0.87266 rad, displacement [-0.170,0] m");
+                            aviator::Logger::warn("Camera target clamped to angle +/-0.8726646259971648 rad, displacement [-0.150,0] m");
                         next_print = now + 100000;
                     }
                 }

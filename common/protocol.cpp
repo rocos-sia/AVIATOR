@@ -1,4 +1,5 @@
 #include "protocol.hpp"
+#include "wheel_units.hpp"
 
 #include <array>
 #include <cmath>
@@ -139,11 +140,12 @@ void check_commands(const Message& message) {
         const auto source = identifier(body, "source");
         require(source == "FLIGHT" || source == "JOYSTICK", "unknown control source");
         const auto& control = body.at("control");
-        for (const char* key : {"roll", "pitch"}) {
+        for (const char* key : {"roll_deg", "pitch_mm"}) {
             const auto& axis = control.at(key);
             require(axis.is_number(), "control axis must be numeric");
             const double number = axis.get<double>();
-            require(number >= -1 && number <= 1, "control axis out of range");
+            require(std::string(key) == "roll_deg" ? wheel::validRoll(number) : wheel::validPitch(number),
+                    "control axis out of physical range");
         }
         if (body.contains("input_state")) {
             std::uint64_t checked;

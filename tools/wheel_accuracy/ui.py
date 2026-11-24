@@ -8,15 +8,15 @@ import time
 import uuid
 
 DEFAULT_POINTS = ((0, 0), (-25, -42.5), (25, -42.5), (-25, -127.5), (25, -127.5))
-ANGLE_LIMIT = math.degrees(.87266)
+ANGLE_LIMIT = math.degrees(.8726646259971648)
 
 
 def target(angle_deg, displacement_mm):
     angle, displacement = float(angle_deg), float(displacement_mm)
     if not (math.isfinite(angle) and math.isfinite(displacement)):
         raise ValueError("请输入有限数字")
-    if not -ANGLE_LIMIT <= angle <= ANGLE_LIMIT or not -170 <= displacement <= 0:
-        raise ValueError(f"转角须在 ±{ANGLE_LIMIT:.5f}° 内，位移须在 -170～0 mm 内")
+    if not -ANGLE_LIMIT <= angle <= ANGLE_LIMIT or not -150 <= displacement <= 0:
+        raise ValueError(f"转角须在 ±{ANGLE_LIMIT:.5f}° 内，位移须在 -150～0 mm 内")
     return dict(angle=math.radians(angle), displacement=displacement / 1000)
 
 
@@ -239,7 +239,7 @@ def run_ui(path, mode):
         buttons[operation] = button
     ttk.Separator(content).pack(fill="x", pady=8)
     ttk.Label(content, text="目标点位", font=("sans-serif", 14, "bold")).pack(anchor="w", pady=(8, 3))
-    ttk.Label(content, text="转角约 ±50°；绝对位移 -170～0 mm。零位是行程端点，中位为 -85 mm。",
+    ttk.Label(content, text="转角约 ±50°；绝对位移 -150～0 mm。零位是行程端点，俯仰 0 mm 对应 -80 mm。",
               style="Hint.TLabel").pack(anchor="w")
     grid = ttk.Frame(content)
     grid.pack(fill="x", pady=8)

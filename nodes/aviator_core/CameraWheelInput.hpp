@@ -1,5 +1,6 @@
 #pragma once
 #include "runtime.hpp"
+#include "wheel_units.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -7,7 +8,7 @@
 namespace aviator {
 struct CameraWheelTarget {
     double angle = 0;
-    double displacement = -.085;
+    double displacement = -.080;
     bool limited = false;
 };
 
@@ -51,14 +52,14 @@ public:
             if (!theta.is_number() || !travel.is_number())
                 throw std::runtime_error("camera wheel coordinates must be numeric");
             const double angle = -theta.get<double>();
-            const double displacement = -travel.get<double>() - .085;
+            const double displacement = wheel::displacement(travel.get<double>() * 1000.0);
             if (!std::isfinite(angle) || !std::isfinite(displacement))
                 throw std::runtime_error("non-finite camera wheel coordinates");
-            target_.angle = std::clamp(angle, -.87266, .87266);
-            target_.displacement = std::clamp(displacement, -.170, 0.0);
-            target_.limited = target_.angle != angle || target_.displacement != displacement;
+            target_.angle = std::clamp(angle, -.8726646259971648, .8726646259971648);
+            target_.displacement = std::clamp(displacement, -.150, 0.0);
+            target_.limited = std::abs(target_.angle - angle) > 1e-12 || std::abs(target_.displacement - displacement) > 1e-12;
             if (mode_ == Mode::Grasp && target_.limited)
-                throw std::runtime_error("camera grasp pose outside angle +/-0.87266 rad or displacement [-0.170,0] m");
+                throw std::runtime_error("camera grasp pose outside angle +/-0.8726646259971648 rad or displacement [-0.150,0] m");
             valid_ = true;
             error.clear();
             return true;

@@ -1,6 +1,6 @@
 # flight_gateway
 
-当前 RS422 帧长为下行 32B、上行 64B，上下行均无帧尾。`aviator-bench-v1` 配置名保留，但旧 9/29 字节程序不兼容；网关与模拟器必须配套更新。当前 UART 为 8E1，帧校验为排除帧头后的直接累加，版本为高 8 位主版本/低 8 位小版本；此前采用其他编码的 32/64B 程序也须更新。
+当前 RS422 帧长为下行 32B、上行 64B，上下行均无帧尾。`aviator-icd-1120` 配置名保留，但旧 9/29 字节程序不兼容；网关与模拟器必须配套更新。当前 UART 为 8E1，帧校验为排除帧头后的直接累加，版本为高 8 位主版本/低 8 位小版本；此前采用其他编码的 32/64B 程序也须更新。
 
 同一程序支持本机手柄/键盘、机器人端双路 RS422、飞控模拟端双路 RS422。机器人端连接本机 ZMQ/Core；模拟端直接读取手柄并与另一台工控机串口通信，不需要 Bus、Core 或机器人 SDK 运行进程。
 
@@ -10,7 +10,7 @@
 | robot | rs422 | 接收双路 32B，发布 FLIGHT，双路发送 232B |
 | flight_simulator | joystick | 手柄/键盘发送双路 32B，接收/显示两路 232B |
 
-串口按 [RS422 规范第 10 节](../../docs/AVIATOR_RS422通信协议规范.md) 的 `aviator-bench-v1` 台架约定运行。基础 ICD 的未定义字段使用显式台架哨兵，不伪造传感器反馈。下面“键盘操作”和“摇杆输入”章节的 50 Hz、5 分钟失焦保持描述适用于本机模式；模拟端例外见双机运行步骤。
+串口按 [RS422 规范第 10 节](../../docs/AVIATOR_RS422通信协议规范.md) 的 `aviator-icd-1120` 台架约定运行。基础 ICD 的未定义字段使用显式台架哨兵，不伪造传感器反馈。下面“键盘操作”和“摇杆输入”章节的 50 Hz、5 分钟失焦保持描述适用于本机模式；模拟端例外见双机运行步骤。
 
 ## 双工控机运行
 
@@ -51,7 +51,7 @@ cmake --build build --parallel 2
 
 独立配置将 `profile` 放在根级，不含 Bus/Core 参数。已有 `flight_gateway --config config/flight-simulator.yaml` 和 `scripts/start_flight_simulator.sh` 入口继续兼容；其配置格式和独立项目不同，不应直接混用。
 
-输入窗口显示原有按钮映射，标题显示两路 LIVE 状态对应的机器人运行状态（无新鲜上行为 STALE）；终端每秒显示两路帧计数、主备选择、通信位、指令回绕、相机与机械臂 FK 两路实测百分比、机构状态、故障、版本和短码。STALE 行保留最后值供诊断，其值不可视为当前状态。
+输入窗口显示原有按钮映射，标题显示两路 LIVE 状态对应的机器人运行状态（无新鲜上行为 STALE）；终端每秒显示两路帧计数、主备选择、通信位、指令回绕、相机与机械臂 FK 两路实测物理量（deg、mm）、机构状态、故障、版本和短码。STALE 行保留最后值供诊断，其值不可视为当前状态。
 
 默认 `require_joystick: true`：没有手柄时不发送；拔出手柄停止两路下行。设为 false 可用聚焦键盘，无手柄且失焦立即停发。按键 1～6 默认待机、抓握、控制、退出控制、释放、复位；配置映射与本机模式相同。每次操作发送 10 拍，无 10 拍空闲等待；不同操作可直接衔接，相同操作的两次紧邻点击自动用一帧 `0x00` 分隔。发送期间新点击不缓存，终端提示 BUSY 时需重新按键。回绕不是动作完成，必须观察上行状态。
 
@@ -69,11 +69,11 @@ cmake --build build --parallel 2
 
 | 字段 | 含义 |
 | --- | --- |
-| rs422.profile | 必须显式为 aviator-bench-v1 |
+| rs422.profile | 必须显式为 aviator-icd-1120 |
 | rs422.channel_a / channel_b | 两个不同的绝对设备路径；重连间隔 1 s |
 | rs422.receive_timeout_ms | 默认 50，允许 25～100 |
 | rs422.recovery_frames | 默认连续 10 帧后可选用通道 |
-| rs422.switch_max_step | 默认 100，即切路位置差超过 10 个百分点进入保护 |
+| rs422.switch_max_roll_deg / switch_max_pitch_mm | 默认 5° / 7.5 mm，切路位置差超过阈值进入保护 |
 | rs422.release_root | 默认程序所在的安装/构建根目录；必须包含正在运行的程序 |
 | rs422.allow_test_identity | 缺省 false；台架样例显式 true，仅所有发布元数据缺失时用既有测试短码 |
 | simulator.require_joystick | 默认 true；false 允许聚焦键盘备用 |
@@ -132,8 +132,8 @@ cmake --build build/communication --parallel
 | `core_session` | 旧配置兼容字段，已忽略；接收合法 Core 发布者的新鲜反馈，不再固定会话。 |
 | `lock_file` | 空字符串自动使用 `/tmp/flight_gateway-<uid>.lock`，否则填写绝对路径。 |
 | `buttons` | 恰好 11 项，依次对应按钮 1–11；键盘对应 `1`–`9`、`0`、`-`；`none` 禁用该按钮。 |
-| `keyboard.roll_speed` / `keyboard.pitch_speed` | 均为 `1.0`；每秒增加的归一化行程，必须为有限正数。 |
-| `keyboard.roll_limit` / `keyboard.pitch_limit` | 均为 `1.0`；各轴对称绝对限位，范围 `(0, 1]`。 |
+| `keyboard.roll_speed_deg_s` / `keyboard.pitch_speed_mm_s` | 默认 50 deg/s、75 mm/s；有限正数。 |
+| `keyboard.roll_limit_deg` / `pitch_min_mm` / `pitch_max_mm` | 默认 50°、−80 mm、+70 mm；不得超过物理行程。 |
 
 终端保留启动、状态变化、失焦和超时提示，不周期打印 roll/pitch。仅使用键盘时，连续失焦满 5 分钟后输入无效。
 
@@ -149,13 +149,14 @@ cmake --build build/communication --parallel
 source: joystick
 device: auto
 keyboard:
-  roll_speed: 1.0
-  pitch_speed: 1.0
-  roll_limit: 1.0
-  pitch_limit: 1.0
+  roll_speed_deg_s: 50.0
+  pitch_speed_mm_s: 75.0
+  roll_limit_deg: 50.0
+  pitch_min_mm: -80.0
+  pitch_max_mm: 70.0
 ```
 
-- 左/右方向键沿 roll 负/正方向增加目标，上/下沿 pitch 负/正方向增加；`invert_roll` / `invert_pitch` 同样生效。
+- 左/右方向键沿 roll 正/负方向增加目标，上/下沿 pitch 正/负方向增加；`invert_roll` / `invert_pitch` 同样生效。
 - 按住按单调时钟经过时间积分，以 50 Hz 发布，达到各轴限位后保持；默认从零到满行程需 1 秒，不依赖系统按键重复。两轴可同时操作。
 - 方向键按下时从当前输出接管对应轴，另一轴继续使用摇杆。松开、到达限位或同轴相反方向同时按下时保持当前目标；换向从当前值继续累加。松开后移动摇杆对应轴可重新接管。实际机械运动仍由 Core 控制。
 - 主键盘或小键盘 `0` 将 roll/pitch 目标归零，并停止当前按住的方向键；需松开再按才能继续累加。这是输入目标原点，不是机械臂 Home 操作。
@@ -247,3 +248,5 @@ USB 串口一次读取可以包含多帧。网关按顺序确认最多 4 帧的�
 真机一键 `--rs422` 会启动相机，即使 `grasp_wheel.source` 为 wheel_initial。
 两路分别校验有效性和 100 ms 时效；未抓握、关节不完整或失效时 FK 无效，
 相机缺失时视觉反馈无效，不互相替代。终端分别显示 `camera` 与 `joint_fk`。
+
+ICD 1120：内部 `control` 使用 `roll_deg`、`pitch_mm`，不接收旧归一化字段。手柄中位为物理零位，俯仰负/正半轴分别映射 −80/+70 mm。键盘 0 键回物理零位。线上编码、反馈与底层零点见 [协议规范](../../docs/AVIATOR_RS422通信协议规范.md)。

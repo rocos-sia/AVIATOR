@@ -656,14 +656,14 @@
     <child link="dummy_link" />
     <origin xyz="0 0 0" rpy="1.5707 0 -1.5707" />
     <axis xyz="0 0 1" />
-    <limit lower="-0.87266" upper="0.87266" effort="10.0" velocity="1.0" />
+    <limit lower="-0.8726646259971648" upper="0.8726646259971648" effort="10.0" velocity="1.0" />
   </joint>
   <joint name="pitch_input_joint" type="prismatic">
     <parent link="dummy_link" />
     <child link="steering_wheel" />
     <origin xyz="0 0 0" rpy="0 0 0" />
     <axis xyz="0 0 1" />
-    <limit lower="-0.170" upper="0" effort="10.0" velocity="1.0" />
+    <limit lower="-0.150" upper="0" effort="10.0" velocity="1.0" />
   </joint>
   <joint name="left_arm_base" type="fixed">
     <parent link="aircraft" />

@@ -148,7 +148,7 @@ int main(int argc, char** argv) {
                        : k < 1300 ? .87266
                        : k < 2350 ? -.87266
                                   : .5;
-            double d = k < 140 ? 0 : k < 350 ? -.017 : k < 1300 ? -.170 : 0;
+            double d = k < 140 ? 0 : k < 350 ? -.017 : k < 1300 ? -.150 : 0;
             bool stop = k >= 2500;
             auto block = planner.advance(a, d, 1, stop);
             for (int j = 0; j < 14; ++j)
@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
         peak_a = peak_j = 0;
         for (int k = 0; k < 800; ++k) {
             double a = k < 60 ? .00085304 : k < 180 ? -.87266 : k < 360 ? .87266 : .0332686;
-            double d = k < 60 ? -.00116325 : k < 180 ? -.170 : 0;
+            double d = k < 60 ? -.00116325 : k < 180 ? -.150 : 0;
             const bool stop = k >= 700;
             auto block = fast.advance(a, d, 1, stop);
             if (block.front().q != previous.q || block.front().dq != previous.dq || block.front().ddq != previous.ddq)
@@ -222,7 +222,7 @@ int main(int argc, char** argv) {
             if (k % 50 == 0)
                 for (auto& value : direction) value = int(random() % 3) - 1;
             a = std::clamp(a + direction[0] * (-.87266 * .02), -.87266, .87266);
-            d = std::clamp(d + direction[1] * .085 * .02, -.170, 0.);
+            d = std::clamp(d + direction[1] * .085 * .02, -.150, 0.);
             const auto block = keyboard.advance(a, d, 1, false);
             if (block.front().q != previous.q || block.front().dq != previous.dq ||
                 block.front().ddq != previous.ddq)
@@ -348,7 +348,7 @@ int main(int argc, char** argv) {
         compliant = nominal(pose(compliant.angle, compliant.displacement));
         auto sweep = options.servo(compliant);
         previous = compliant;
-        for (double displacement : {-.09949, -.085, -.17, 0.}) {
+        for (double displacement : {-.09949, -.085, -.150, 0.}) {
             for (double angle : {-.87266, .87266}) {
                 for (int tick = 0; tick < 2000; ++tick) {
                     const auto current = sweep->step({angle, displacement, 1., 1, false});

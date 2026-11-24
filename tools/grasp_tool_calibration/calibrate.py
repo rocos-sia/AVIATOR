@@ -55,7 +55,7 @@ def parse_args(argv=None):
     angle = p.add_mutually_exclusive_group()
     angle.add_argument("--angle-deg", type=float, help="手动 Core 轮盘角度，度")
     angle.add_argument("--angle-rad", type=float, help="手动 Core 轮盘角度，弧度")
-    p.add_argument("--displacement-m", type=float, help="手动 Core 轮盘位移，[-0.170, 0] m")
+    p.add_argument("--displacement-m", type=float, help="手动 Core 轮盘位移，[-0.150, 0] m")
     p.add_argument("--endpoint", default="tcp://127.0.0.1:5556", help="camera.detection SUB connect 端点")
     p.add_argument("--camera-id", default="cockpit")
     p.add_argument("--min-confidence", type=float, default=0.5)
@@ -89,9 +89,9 @@ def parse_args(argv=None):
     if a.wheel_source == "manual":
         if manual_angle is None or a.displacement_m is None:
             p.error("manual 模式需要 angle-deg/angle-rad 和 displacement-m")
-        if (not number(manual_angle) or abs(manual_angle) > .87266 or
-                not number(a.displacement_m) or not -.170 <= a.displacement_m <= 0):
-            p.error("手动角度需在 ±0.87266 rad，位移需在 [-0.170,0] m")
+        if (not number(manual_angle) or abs(manual_angle) > .8726646259971648 or
+                not number(a.displacement_m) or not -.150 <= a.displacement_m <= 0):
+            p.error("手动角度需在 ±0.8726646259971648 rad，位移需在 [-0.150,0] m")
     elif manual_angle is not None or a.displacement_m is not None:
         p.error("手动角度/位移仅用于 --wheel-source manual，避免坐标约定混用")
     a.manual_angle = manual_angle

@@ -1,5 +1,5 @@
 # 飞控模拟端专用配置；修改后重启。串口路径必须按实际硬件替换。
-profile: aviator-bench-v1
+profile: aviator-icd-1120
 device: auto # 或 --list-joysticks 输出的设备索引
 roll_axis: 0
 pitch_axis: 1
@@ -7,10 +7,11 @@ invert_roll: false
 invert_pitch: false
 input_timeout_ms: 100
 keyboard:
-  roll_speed: 1.0
-  pitch_speed: 1.0
-  roll_limit: 1.0
-  pitch_limit: 1.0
+  roll_speed_deg_s: 50.0
+  pitch_speed_mm_s: 75.0
+  roll_limit_deg: 50.0
+  pitch_min_mm: -80.0
+  pitch_max_mm: 70.0
 # SDL 按钮 1..11；键盘 1..9、- 对应同号按钮，0 专用于目标归零。
 buttons:
   - enter_standby

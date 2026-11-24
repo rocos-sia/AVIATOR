@@ -1,4 +1,5 @@
 #include "motion.hpp"
+#include "wheel_units.hpp"
 #include <cmath>
 #include <thread>
 #include <unistd.h>
@@ -27,14 +28,14 @@ WheelReference loadInitialWheel(const std::filesystem::path& robot_file) {
         value.angle = initial["angle"].as<double>();
         value.displacement = initial["displacement"].as<double>();
     }
-    require(std::isfinite(value.angle) && std::abs(value.angle) <= .87266 &&
-            std::isfinite(value.displacement) && value.displacement >= -.170 && value.displacement <= 0,
-            "Invalid wheel_initial: angle must be in [-0.87266,0.87266] rad, displacement in [-0.170,0] m");
+    require(std::isfinite(value.angle) && std::abs(value.angle) <= .8726646259971648 &&
+            std::isfinite(value.displacement) && value.displacement >= -.150 && value.displacement <= 0,
+            "Invalid wheel_initial: angle must be in [-0.8726646259971648,0.8726646259971648] rad, displacement in [-0.150,0] m");
     return value;
 }
 double joystickWheelDisplacement(double pitch) {
-    require(std::isfinite(pitch) && pitch >= -1 && pitch <= 1, "Joystick pitch must be in [-1,1]");
-    return .085 * (pitch - 1.0);
+    require(wheel::validPitch(pitch), "Pitch must be in [-80,70] mm");
+    return wheel::displacement(pitch);
 }
 std::filesystem::path defaultSystemConfig() {
     auto exe = std::filesystem::read_symlink("/proc/self/exe");
@@ -205,8 +206,8 @@ ServoCommand decodeServo(const Message& m) {
     c.goal.speed_ratio = b.at("speed_ratio").get<double>();
     c.goal.stop = b.at("stop").get<bool>();
     require(c.goal.input_sample <= c.sample && std::isfinite(c.goal.angle) &&
-            std::abs(c.goal.angle) <= 0.87266 && std::isfinite(c.goal.displacement) &&
-            c.goal.displacement >= -0.170 && c.goal.displacement <= 0 &&
+            std::abs(c.goal.angle) <= 0.8726646259971648 && std::isfinite(c.goal.displacement) &&
+            c.goal.displacement >= -0.150 && c.goal.displacement <= 0 &&
             std::isfinite(c.goal.speed_ratio) && c.goal.speed_ratio > 0 && c.goal.speed_ratio <= 1,
             "Invalid servo goal");
     return c;
@@ -328,9 +329,9 @@ TrajectoryWindow decodeWindow(const Message &m, const Joints &lo, const Joints &
         require(wheel[k].is_array() && wheel[k].size() == 2, "Invalid wheel reference");
         w.frames[stride * k].angle = wheel[k][0].get<double>();
         w.frames[stride * k].displacement = wheel[k][1].get<double>();
-        require(std::isfinite(w.frames[stride * k].angle) && std::abs(w.frames[stride * k].angle) <= .87266 + 1e-8 &&
+        require(std::isfinite(w.frames[stride * k].angle) && std::abs(w.frames[stride * k].angle) <= .8726646259971648 + 1e-8 &&
                     std::isfinite(w.frames[stride * k].displacement) &&
-                    w.frames[stride * k].displacement >= -.170 - 1e-8 && w.frames[stride * k].displacement <= 1e-8,
+                    w.frames[stride * k].displacement >= -.150 - 1e-8 && w.frames[stride * k].displacement <= 1e-8,
                 "Wheel reference out of range");
     }
     if (!w.streaming) for (size_t k = 1; k < w.count; k += 2) {

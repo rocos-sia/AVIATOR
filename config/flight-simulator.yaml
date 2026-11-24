@@ -17,16 +17,17 @@ roll_axis: 0
 pitch_axis: 1
 invert_roll: false
 invert_pitch: false
-# 键盘方向键：左/右 = roll -/+，上/下 = pitch -/+；反转参数同样生效。
+# 键盘方向键：左/右 = roll +/-，上/下 = pitch +/-；反转参数同样生效。
 # 按住按实际经过时间累加，松开/到限位保持；相反方向同时按下停止累加；0 将两轴目标归零。
 # 失焦停止累加，键盘输入保持有效 5 分钟；超时使 CONTROL 进入 ERROR。
-# speed 为归一化行程/秒（正数）；limit 为归一化绝对位置上限 (0, 1]。
-# 以下默认从 0 到满行程需 1 秒；不依赖系统按键重复速度。
+# 速度单位 deg/s、mm/s；限位单位 deg、mm，俯仰采用独立上下限。
+# 默认滚转 50 deg/s、俯仰 75 mm/s；不依赖系统按键重复速度。
 keyboard:
-  roll_speed: 1.0
-  pitch_speed: 1.0
-  roll_limit: 1.0
-  pitch_limit: 1.0
+  roll_speed_deg_s: 50.0
+  pitch_speed_mm_s: 75.0
+  roll_limit_deg: 50.0
+  pitch_min_mm: -80.0
+  pitch_max_mm: 70.0
 input_timeout_ms: 100 # 1..100，设备检查有效期
 service_timeout_ms: 100 # 1..10000，超时结果未知，不自动重试
 # SDL 摇杆按钮索引 0..10 对应按钮 1..11；none 表示禁用。
@@ -48,12 +49,13 @@ buttons:
 
 rs422:
   # Explicit bench profile, including unknown sentinels and RELEASING=0x14.
-  profile: aviator-bench-v1
+  profile: aviator-icd-1120
   channel_a: /dev/serial/by-id/REPLACE_CHANNEL_A
   channel_b: /dev/serial/by-id/REPLACE_CHANNEL_B
   receive_timeout_ms: 50
   recovery_frames: 10
-  switch_max_step: 100 # 0.1 percentage-point units; failover step >10% invalidates input
+  switch_max_roll_deg: 5.0
+  switch_max_pitch_mm: 7.5
 simulator:
   require_joystick: true
   send_a: true

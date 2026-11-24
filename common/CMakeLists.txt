@@ -5,7 +5,7 @@ target_include_directories(aviator_logging INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   $<INSTALL_INTERFACE:include/aviator>)
 target_link_libraries(aviator_logging INTERFACE spdlog::spdlog)
-install(FILES Logger.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/aviator)
+install(FILES wheel_units.hpp Logger.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/aviator)
 
 find_package(Threads REQUIRED)
 find_package(nlohmann_json 3.10 REQUIRED CONFIG)

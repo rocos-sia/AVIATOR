@@ -63,7 +63,7 @@ class ReceiverTest(unittest.TestCase):
 
     def test_business_validation_does_not_hide_received_envelopes(self):
         receiver = loss.Receiver()
-        receiver.feed(frame(0, operation=0x70) + frame(1, roll=1001) + frame(2), 0)
+        receiver.feed(frame(0, operation=0x70) + frame(1, roll=-32768) + frame(2), 0)
         result = receiver.summary(2, 1)
         self.assertEqual(result['valid_frames'], 3)
         self.assertEqual(result['semantic_invalid_frames'], 2)

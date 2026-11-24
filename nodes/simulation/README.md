@@ -80,7 +80,7 @@ MuJoCo 隐式积分的附加阻尼为 `80*sqrt(K/1000)` Nm·s/rad，并保留 MJ
 **检测仍为仿真真值**（`detector=mujoco_ground_truth`），不执行图像识别或遮挡判断；
 有效时 `confidence=1`，失效时 `pose`、`yoke.roll/pitch` 清空。
 同时发布 Monitor 使用的 `steering_wheel`：`theta_rad=-roll_input_joint`，
-`translation_along_axis_m=-pitch_input_joint-0.085`（rad / m），来自同帧关节真值；
+`translation_along_axis_m=-pitch_input_joint-0.080`（rad / m），来自同帧关节真值；
 `calibration_id=mujoco_ground_truth`，目标失效时 `valid=false` 并清空物理量。
 
 默认使用 MJCF 的固定 `cockpit_apriltag` 相机，图像尺寸读取其 `resolution`
@@ -144,7 +144,7 @@ D436 虚拟相机固定在双臂底座安装件上方，朝向驾驶盘中位的
 [aviator.xml](../../models/mjcf/aviator.xml) 使用当前
 [aviator.urdf](../../models/urdf/aviator.urdf) 的机身、外壳、带标签板的主驾驶盘及
 第二驾驶盘显示网格、材质和关节范围。第二驾驶盘位于 Y=0.47 m，通过两个 joint equality
-跟随主驾驶盘；两个 pitch 范围均为 -0.170～0 m，home 为 -0.085 m。
+跟随主驾驶盘；两个 pitch 范围均为 -0.150～0 m，home 为 -0.080 m。
 无质量的 dummy_link 与对应驾驶盘 body 合并，保留同轴 roll/slide 的运动学关系。
 自定义初始驾驶盘位置同时写入第二驾驶盘，避免初始 equality 残差。
 

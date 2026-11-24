@@ -70,17 +70,12 @@ bool knownFault(uint16_t c) {
            (cat == 8 &&
             (tail == 1 || tail == 2 || (tail >= 201 && tail <= 208) || tail == 210 || tail == 211));
 }
-int16_t quantize(double n, double limit) {
-    if (!std::isfinite(n) || std::abs(n) > limit)
-        throw std::invalid_argument("RS422 position out of range");
-    return static_cast<int16_t>(std::lround(n * 1000));
-}
 bool samePayload(const Downlink& a, const Downlink& b) {
     return a.operation == b.operation && a.roll == b.roll && a.pitch == b.pitch;
 }
 Bytes encode(const Downlink& f) {
-    if ((f.operation && !*operationName(f.operation)) || std::abs(int(f.roll)) > 1000 ||
-        std::abs(int(f.pitch)) > 1000)
+    if ((f.operation && !*operationName(f.operation)) || f.roll == invalid_position ||
+        f.pitch == invalid_position)
         throw std::invalid_argument("invalid RS422 downlink");
     Bytes b(downlink_size, 0); // Reserved bytes 8..30 are transmitted as zero.
     b[0] = 0xeb;
@@ -121,8 +116,8 @@ bool decode(const Bytes& b, Downlink& f) {
     if (!envelope(b, downlink_size))
         return false;
     Downlink v{b[2], b[3], i16(b, 4), i16(b, 6)};
-    if ((v.operation && !*operationName(v.operation)) || std::abs(int(v.roll)) > 1000 ||
-        std::abs(int(v.pitch)) > 1000)
+    if ((v.operation && !*operationName(v.operation)) || v.roll == invalid_position ||
+        v.pitch == invalid_position)
         return false;
     f = v;
     return true;
@@ -135,11 +130,7 @@ bool decode(const Bytes& b, Uplink& f) {
         (b[11] > 1 && b[11] != unknown) || (b[12] > 1 && b[12] != unknown) ||
         (b[21] != unknown && (b[21] > 0x40 || b[21] % 16)))
         return false;
-    for (size_t p : {size_t(6), size_t(8), size_t(13), size_t(15), size_t(26), size_t(28)}) {
-        const int v = i16(b, p), limit = (p == 13 || p == 26) ? 1040 : (p == 15 || p == 28) ? 1059 : 1000;
-        if (v != invalid_position && std::abs(v) > limit)
-            return false;
-    }
+    // Every int16 position is representable; -32768 is the explicit invalid sentinel.
     for (size_t p : {size_t(17), size_t(19)})
         if (!knownFault(u16(b, p)) && u16(b, p) != unknown_fault)
             return false;
@@ -284,8 +275,8 @@ uint8_t DualReceiver::update(uint64_t now) {
             }
         if (next != selected_) {
             if (next >= 0 && had_target_ &&
-                (std::abs(int(channels[next].frame.roll) - target_.roll) > jump_ ||
-                 std::abs(int(channels[next].frame.pitch) - target_.pitch) > jump_)) {
+                (std::abs(int(channels[next].frame.roll) - target_.roll) * 50.0 / 32767.0 > roll_jump_ ||
+                 std::abs(int(channels[next].frame.pitch) - target_.pitch) * 75.0 / 32767.0 > pitch_jump_)) {
                 blocked_ = true;
                 blocked_at_ = now;
                 neutral_ = 0;

@@ -48,7 +48,7 @@ int main() {
         idle.update(event(EV_ABS, ABS_X, 32767, 1030000), 1030000);
         idle.update(event(EV_SYN, SYN_REPORT, 0, 1030000), 1030000);
         idle.deviceChecked(1030000);
-        check(idle.fresh(1030000, 100000) && idle.roll_value == 1, "events replace initial snapshot");
+        check(idle.fresh(1030000, 100000) && idle.roll_value == -50, "events replace initial snapshot");
         idle.invalidate();
         idle.initializePosition(0, 32767, 1040000);
         check(idle.failed && !idle.valid, "snapshot cannot revive a failed device");
@@ -65,7 +65,7 @@ int main() {
         sample.update(event(EV_SYN, SYN_REPORT, 0, 1000000), 1000000);
         check(!sample.fresh(1000000, 100000), "report alone does not renew device check");
         sample.deviceChecked(1000000);
-        check(sample.roll_value == -1 && sample.pitch_value == 1, "full-range normalization");
+        check(sample.roll_value == 50 && sample.pitch_value == -80, "physical endpoint mapping");
         check(sample.fresh(1099999, 100000) && !sample.fresh(1100000, 100000), "timeout boundary");
         const auto session = aviator::new_session_id();
         auto first = flight_gateway::command(sample, session, "boot", 1, 1010000, 123, 100000);
@@ -103,7 +103,7 @@ int main() {
         sample.update(event(EV_ABS, ABS_X, 32767, 1020000), 1020000);
         sample.update(event(EV_ABS, ABS_Y, 32767, 1020000), 1020000);
         sample.update(event(EV_SYN, SYN_REPORT, 0, 1020000), 1020000);
-        check(sample.roll_value == -1 && sample.pitch_value == 0, "inversion and unsigned center");
+        check(sample.roll_value == 50 && sample.pitch_value == 0, "inversion and unsigned center");
         sample.update(event(EV_ABS, ABS_X, 0, 1030000), 1030000);
         sample.update(event(EV_SYN, SYN_REPORT, 0, 1030000), 1030000);
         check(sample.roll_value == 0, "signed zero preserved");

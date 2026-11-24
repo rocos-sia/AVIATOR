@@ -24,7 +24,7 @@ static Message observation(uint64_t seq, uint64_t sample, double theta = .3, dou
 }
 int main() try {
     std::string error;
-    for (const double travel : {-.085, 0., .085}) {
+    for (const double travel : {-.080, 0., .070}) {
         CameraWheelInput input("cockpit", "local", 200000);
         auto m = observation(1, 1000000, .3, travel);
         // Exercise the actual common wire codec too.
@@ -34,7 +34,7 @@ int main() try {
         check(decode("camera.detection", payload, decoded, error), error.c_str());
         check(input.accept(decoded, 1000000, error), error.c_str());
         near(input.target().angle, -.3);
-        near(input.target().displacement, -travel - .085);
+        near(input.target().displacement, -travel - .080);
         check(!input.target().limited, "valid endpoints should not clamp");
         check(input.fresh(1199999), "premature timeout");
         check(!input.fresh(1200000), "stale cached target remained usable");
@@ -42,8 +42,8 @@ int main() try {
     for (const double sign : {-1., 1.}) {
         CameraWheelInput input("cockpit", "local", 200000);
         check(input.accept(observation(1, 1000000, sign * 2, sign), 1000000, error), error.c_str());
-        near(input.target().angle, -sign * .87266);
-        near(input.target().displacement, sign > 0 ? -.170 : 0);
+        near(input.target().angle, -sign * .8726646259971648);
+        near(input.target().displacement, sign > 0 ? -.150 : 0);
         check(input.target().limited, "out-of-range target not marked limited");
     }
     // Each bad observation must revoke a previously live target immediately.
@@ -107,7 +107,7 @@ int main() try {
         m.body["steering_wheel"]["axis_match"] = true;
         check(grasp.accept(m, 1000000, error), error.c_str());
         near(grasp.target().angle, .15);
-        near(grasp.target().displacement, -.125);
+        near(grasp.target().displacement, -.120);
         m.header.sequence = 2;
         m.header.sample_mono_us = 1010000;
         switch (kind) {
@@ -121,7 +121,7 @@ int main() try {
         m.body["steering_wheel"]["axis_match"] = nullptr;
         check(grasp.accept(m, 1020000, error), "zero pose with unknown axis rejected");
         near(grasp.target().angle, 0);
-        near(grasp.target().displacement, -.085);
+        near(grasp.target().displacement, -.080);
     }
     // Simulation uses the same freshness, validity and range gates, with an exclusive publisher.
     for (int kind = 0; kind < 5; ++kind) {
@@ -152,7 +152,7 @@ int main() try {
         // kind 2 deliberately omits the diagnostic field.
         check(grasp.accept(m, 1000000, error), "Axis diagnostic blocked valid grasp input");
         near(grasp.target().angle, -.082321);
-        near(grasp.target().displacement, -.087622);
+        near(grasp.target().displacement, -.082622);
         m.header.sequence = 2;
         m.header.sample_mono_us = 1010000;
         m.body["steering_wheel"]["valid"] = false;

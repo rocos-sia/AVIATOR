@@ -175,7 +175,7 @@ UUID 拟统一采用小写带连字符文本。一般标识字符串拟限制为
 | TCP 位置 | m；`position:{x,y,z}`。 |
 | TCP 姿态 | 单位四元数 `orientation:{qx,qy,qz,qw}`；范数容差由配置定义。 |
 | 坐标系 | `tcp_pose.frame_id` 必填；例如 `robot_base`，变换与标定版本须可追溯。 |
-| 飞控 / 视觉 roll、pitch | 归一化量 `[-1,1]`，不是角度；正方向与行程映射待标定冻结。 |
+| 飞控指令 roll_deg、pitch_mm | 滚转 [-50,50] deg、俯仰 [-80,70] mm；左压盘/前推为正，右压盘/后拉为负。视觉物理反馈使用下文 steering_wheel 扩展。 |
 | 置信度 | `[0,1]`；执行阈值由视觉依赖策略指定，不因值非零就视为可靠。 |
 | 图像 ROI | 像素，左上角为原点，x 向右、y 向下；见第 11 节。 |
 | 错误码 | uint53，线上十进制；0 表示无错误。 |
@@ -196,8 +196,8 @@ UUID 拟统一采用小写带连字符文本。一般标识字符串拟限制为
 | --- | --- | --- |
 | `source` | enum string | 本文拟定 `FLIGHT`（真实飞控）、`JOYSTICK`（USB 摇杆）；仿真也须使用测试配置授权的来源。 |
 | `control` | object | 完整连续目标。 |
-| `control.roll` | number | `[-1,1]`。 |
-| `control.pitch` | number | `[-1,1]`。 |
+| `control.roll_deg` | number | 滚转绝对位置，`[-50,50]` deg。 |
+| `control.pitch_mm` | number | 俯仰绝对位置，`[-80,70]` mm。 |
 
 Core 同时校验部署模式、publisher/session 白名单和 source。到达顺序不能切换控制权。摇杆失联或外部样本过期后发布 invalid 或停止有效输出；禁止用新时间重发旧值延长有效期。切换来源通过可靠服务或受控本地流程完成。
 
@@ -228,7 +228,7 @@ Frame0：`flight.command`。
   "session_id": "11111111-1111-4111-8111-111111111111",
   "valid": true,
   "source": "JOYSTICK",
-  "control": {"roll": 0.35, "pitch": -0.12}
+  "control": {"roll_deg": -17.5, "pitch_mm": 8.4}
 }
 ```
 
@@ -891,7 +891,7 @@ REQ/REP 一次请求只能有一次响应：短操作可直接返回终态；长
 
 ### 14.5 RS422 Gateway → Core 高层操作服务
 
-当前实现以 [RS422 协议第 10 节](AVIATOR_RS422通信协议规范.md) `aviator-bench-v1` 为准。旧 REQUEST/REPLY、串口 timestamp_ms、事务 ID 和独立应答映射不适用于当前 32/64 字节布局。
+当前实现以 [RS422 协议第 10 节](AVIATOR_RS422通信协议规范.md) `aviator-icd-1120` 为准。旧 REQUEST/REPLY、串口 timestamp_ms、事务 ID 和独立应答映射不适用于当前 32/64 字节布局。
 
 Core 的 system 配置 `flight_source` 为 `FLIGHT` 或 `JOYSTICK`，缺省 JOYSTICK。网关串口模式发布 source=FLIGHT 的标准 FlightCommand，不携带 POSITION_HOLD；采样时间为机器人本机接收串口的单调时间。内部 50 Hz 发布可以复用最后有效样本，但不刷新它的采样时刻。失效时显式发布 valid=false。
 
@@ -1181,7 +1181,7 @@ Managed 入口的 Rokae 待机就绪判据使用 arm.state 的 `status_mono_us`�
   "mode": "WHEEL_SERVO", "execution": "LATEST_TARGET",
   "control_epoch": "本次授权 UUID", "config_id": "配置摘要",
   "trajectory_id": 12,
-  "angle": 0.1, "displacement": -0.085, "speed_ratio": 1.0,
+  "angle": 0.1, "displacement": -0.080, "speed_ratio": 1.0,
   "input_sample_mono_us": 123456789, "stop": false,
   "origin": {"publisher_id": "aviator_core", "session_id": "Core 会话",
     "sequence": 10, "sample_mono_us": 123456789,
@@ -1189,7 +1189,7 @@ Managed 入口的 Rokae 待机就绪判据使用 arm.state 的 `status_mono_us`�
 }
 ```
 
-角度范围 ±0.87266 rad，位移 [-0.170,0] m，倍率 (0,1]；所有数值须有限，ID/时间为正 uint53。`input_sample_mono_us` 是 Core 接纳本次目标的时间，不是通信重发时间，且不得晚于消息采样时间。同一 Servo ID 的输入时间不得倒退；包序号、控制授权、生命周期屏障和 origin 检查沿用有限轨迹规则。
+角度范围 ±50°（±0.8726646259971648 rad），位移 [-0.150,0] m，倍率 (0,1]；所有数值须有限，ID/时间为正 uint53。`input_sample_mono_us` 是 Core 接纳本次目标的时间，不是通信重发时间，且不得晚于消息采样时间。同一 Servo ID 的输入时间不得倒退；包序号、控制授权、生命周期屏障和 origin 检查沿用有限轨迹规则。
 
 接收线程覆盖最新目标槽；执行线程保留同一个 Ruckig 状态，每步生成一个 1 ms 双臂关节指令，不预计算未来窗口。新 ID 只允许从上一动作停稳处开始，不重置实测姿态。`stop=true` 或输入超过 servo_timeout 触发有界 Ruckig 减速，同一 ID 的停止状态锁存，迟到目标不能重启。命令或 origin watchdog 失效仍锁存故障并停止双臂。回零/抓取/释放及旧流式能力继续使用 19.2 的窗口。
 
@@ -1213,7 +1213,7 @@ Managed 入口的 Rokae 待机就绪判据使用 arm.state 的 `status_mono_us`�
 
 Managed 服务默认 ROUTER bind 5559，检查发布者、同机时钟、请求期限和六操作白名单，拒绝记录副本。JOYSTICK 参数为 source/button，兼容并忽略旧 server_session_id；FLIGHT 参数为 source/operation_code。会话文本不作为授权凭据，Core/Gateway 的旧 session 固定参数仅为兼容；新鲜度和序号检查仍保留。每个 Core 进程最多缓存 1024 条原始应答，不淘汰已执行身份；ACCEPTED 不等同于动作完成，最终结果看 flight.state，尚无 get_result/异步最终应答。
 
-仅 CONTROL 调用 ServoWheel；内部滚转为 `-roll*0.87266` rad，俯仰为 `0.085*(pitch-1)` m。JOYSTICK 的 POSITION_HOLD 使用经校验的设备检查时间；FLIGHT 使用串口接收样本时间。短暂输入失效保持原状态，恢复窗口或控制输入租约到期直接 ERROR；输入恢复不会自动退出 ERROR，RESET_ERROR 成功后到 READY。设备轨迹仍使用 Core 的 local.task，尚未把 flight.command 原始 origin 完整贯穿至 Manipulator。其他本地入口的行为以 Core README 为准。
+仅 CONTROL 调用 ServoWheel；内部滚转为 `roll_deg*π/180` rad，俯仰为 `-(pitch_mm+80)/1000` m。JOYSTICK 的 POSITION_HOLD 使用经校验的设备检查时间；FLIGHT 使用串口接收样本时间。短暂输入失效保持原状态，恢复窗口或控制输入租约到期直接 ERROR；输入恢复不会自动退出 ERROR，RESET_ERROR 成功后到 READY。设备轨迹仍使用 Core 的 local.task，尚未把 flight.command 原始 origin 完整贯穿至 Manipulator。其他本地入口的行为以 Core README 为准。
 
 
 Core 已通过同机 hand.command / hand.state 接入真实手开合，软件 lock 不表示抓握已验证；尚未实现视觉闭环或跨主机控制。离散服务与短轨迹能力只对明确支持本节约定的节点开放，既有 simulation 节点不能直接消费此轨迹模式。

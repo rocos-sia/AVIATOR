@@ -57,7 +57,7 @@ int main() {
         check(rejected && SDL_WasInit(0) == 0, "RS422 must not initialize SDL");
         config.source = "joystick"; config.device = "auto";
         config.roll_axis = 0; config.pitch_axis = 1;
-        config.keyboard.roll_speed = 10;
+        config.keyboard.roll_speed_deg_s = 10;
         auto now = aviator::monotonic_us();
         // An explicitly selected keyboard must not inject its full-scale HID axes.
         for (const char* name : {"CHERRY MX 3.0S Dongle Keyboard", "USB mOuSe", "无线键盘", "无线鼠标"}) {
@@ -86,7 +86,7 @@ int main() {
         check(sample.roll_value == 0 && sample.pitch_value == 0 && pressed.empty(),
               "false joystick is skipped on hotplug");
         key(SDL_SCANCODE_RIGHT, true); poll(); now += 20000; poll();
-        check(sample.roll_value > 0, "SDL keyboard ramps");
+        check(sample.roll_value < 0, "SDL keyboard ramps");
         key(SDL_SCANCODE_RIGHT, false); poll();
         const auto held = sample.roll_value;
         now += 20000; poll();
@@ -98,7 +98,7 @@ int main() {
         key(SDL_SCANCODE_RIGHT, true); poll(); now += 20000; poll();
         focus(false); poll();
         const auto unfocused = sample.roll_value;
-        check(sample.valid && unfocused > held, "focus loss holds a valid target");
+        check(sample.valid && unfocused < held, "focus loss holds a valid target");
         key(SDL_SCANCODE_1, true); poll(); check(pressed.empty(), "background keyboard disabled");
         now += 299999999; poll();
         check(sample.valid && sample.roll_value == unfocused, "5 minute grace holds without accumulating");
@@ -130,7 +130,7 @@ int main() {
             now += 20000; poll();
             check(sample.roll_value == 0 && sample.pitch_value == 0, "keypad navigation legends do not move axes");
             key(SDL_SCANCODE_RIGHT, true); poll(); now += 20000; poll();
-            check(sample.roll_value > 0, "prepare nonzero keypad reset target");
+            check(sample.roll_value < 0, "prepare nonzero keypad reset target");
             key(SDL_SCANCODE_KP_0, true); poll();
             check(sample.roll_value == 0 && sample.pitch_value == 0 && pressed.empty(), "keypad zero recenters without service request");
             now += 20000; poll(); check(sample.roll_value == 0, "keypad zero stops held arrows");
@@ -153,9 +153,9 @@ int main() {
         poll();
         check(SDL_JoystickSetVirtualAxis(joystick, 0, 32767) == 0 &&
               SDL_JoystickSetVirtualAxis(joystick, 1, -32768) == 0, "set virtual axes");
-        poll(); check(sample.roll_value == 1 && sample.pitch_value == -1, "joystick movement takes over axes");
+        poll(); check(sample.roll_value == -50 && sample.pitch_value == 70, "joystick movement takes over axes");
         key(SDL_SCANCODE_LEFT, true); poll(); now += 20000; poll();
-        check(sample.roll_value > 0 && sample.roll_value < 1 && sample.pitch_value == -1,
+        check(sample.roll_value < 0 && sample.roll_value > -50 && sample.pitch_value == 70,
               "keyboard accumulates from current joystick target on its axis");
         const auto keyboard_stamp = sample.sample_us;
         key(SDL_SCANCODE_LEFT, false); poll();
@@ -167,7 +167,7 @@ int main() {
         now += 20000; poll(); check(sample.roll_value == keyboard_target, "opposing keys hold target");
         focus(false); poll();
         now += 300000000; poll();
-        check(sample.valid && sample.roll_value == 1, "joystick remains available after keyboard focus timeout");
+        check(sample.valid && sample.roll_value == -50, "joystick remains available after keyboard focus timeout");
         SDL_JoystickSetVirtualButton(joystick, 0, 1); poll();
         check(pressed == std::vector<unsigned>{0}, "SDL joystick button mapping");
         poll(); check(pressed.empty(), "held joystick button does not repeat");

@@ -165,7 +165,7 @@ void validate_config(const Json& c) {
         for (const auto* key : {"pitch_zero_mm", "min_confidence", "max_rotation_residual_deg",
                                 "max_translation_residual_mm"})
             require(finite(y.at(key)), "invalid yoke threshold");
-        require(y.at("pitch_zero_mm") >= -5 && y.at("pitch_zero_mm") <= 175 &&
+        require(y.at("pitch_zero_mm") >= -80 && y.at("pitch_zero_mm") <= 70 &&
                     y.at("min_confidence") >= 0 && y.at("min_confidence") <= 1 &&
                     y.at("max_rotation_residual_deg") > 0 &&
                     y.at("max_translation_residual_mm") > 0,

@@ -52,13 +52,13 @@ def fixture(angle=0.3, displacement=-0.06):
 
 class GeometryTests(unittest.TestCase):
     def test_camera_coordinates(self):
-        self.assertEqual(camera_wheel(0.2, 0), (-0.2, -0.085))
-        self.assertEqual(camera_wheel(0, -0.085), (0, 0))
-        self.assertEqual(camera_wheel(0, 0.085), (0, -0.17))
-        self.assertEqual(camera_wheel(-0.87266, 0), (0.87266, -0.085))
+        self.assertEqual(camera_wheel(0.2, 0), (-0.2, -0.080))
+        self.assertEqual(camera_wheel(0, -0.080), (0, 0))
+        self.assertEqual(camera_wheel(0, 0.070), (0, -0.15))
+        self.assertEqual(camera_wheel(-0.8726646259971648, 0), (0.8726646259971648, -0.080))
         for theta, translation in [(True, 0), (0, False), (float("nan"), 0),
-                                   (0, float("inf")), (0.872661, 0), (0, 0.085001),
-                                   (0, -0.085001), ("0.1", 0), (None, 0)]:
+                                   (0, float("inf")), (0.872665, 0), (0, 0.070001),
+                                   (0, -0.080001), ("0.1", 0), (None, 0)]:
             with self.subTest(theta=theta, translation=translation), self.assertRaises(CalibrationError):
                 camera_wheel(theta, translation)
 

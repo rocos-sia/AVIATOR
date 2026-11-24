@@ -172,7 +172,8 @@ int main() try {
     Bytes neutral(32, 0);
     neutral[0] = 0xeb;
     neutral[1] = 0x90;
-    neutral[31] = 0x00;
+    neutral[6] = 0x88; neutral[7] = 0x08; // physical pitch zero = raw 2184
+    neutral[31] = 0x90;
     check(encode(Downlink{}) == neutral);
     Bytes extreme{0xeb, 0x90, 0xff, 0x60, 0x18, 0xfc, 0xe8, 0x03};
     extreme.resize(32, 0);
@@ -188,8 +189,8 @@ int main() try {
     bad[31] = checksum(bad.data() + 2, 29);
     check(!decode(bad, down));
     bad = neutral;
-    bad[4] = 0xe9;
-    bad[5] = 3;
+    bad[4] = 0x00;
+    bad[5] = 0x80;
     bad[31] = checksum(bad.data() + 2, 29);
     check(!decode(bad, down));
     Parser parser(false);
@@ -244,7 +245,7 @@ int main() try {
     sender.reset();
     check(sender.next() == 0);
     check(sender.request(0x10));
-    check(quantize(.5) == 500 && quantize(-1) == -1000);
+    check(encodeRoll(25) == 16384 && encodePitch(-80) == -32767 && encodePitch(70) == 32767 && encodePitch(0) == 2184);
     std::cout << "PASS: independent wire vectors, validation, resync, command timing\n";
     return 0;
 } catch (const std::exception& e) {

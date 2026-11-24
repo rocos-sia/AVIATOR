@@ -7,11 +7,11 @@ import tempfile
 binary, template = map(Path, sys.argv[1:3])
 base = template.read_text()
 cases = [
-    (base.replace('aviator-bench-v1', 'unknown'), 'profile must'),
+    (base.replace('aviator-icd-1120', 'unknown'), 'profile must'),
     (base.replace('REPLACE_CHANNEL_B', 'REPLACE_CHANNEL_A'), 'distinct absolute'),
     (base + '\nunknown_option: true\n', 'unknown or duplicate'),
-    (base + '\nprofile: aviator-bench-v1\n', 'unknown or duplicate'),
-    (base.replace('roll_limit: 1.0', 'roll_limit: .nan'), 'finite and positive'),
+    (base + '\nprofile: aviator-icd-1120\n', 'unknown or duplicate'),
+    (base.replace('roll_limit_deg: 50.0', 'roll_limit_deg: .nan'), 'finite'),
     (base.replace('receive_timeout_ms: 50', 'receive_timeout_ms: 1'), '25..100'),
     (base.replace('pitch_axis: 1', 'pitch_axis: 0'), 'axes must differ'),
     (base.replace('send_a: true', 'send_a: yes'), 'true or false'),

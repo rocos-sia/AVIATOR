@@ -40,7 +40,7 @@ message.topic = aviator::Topic::flight_command;
 message.header = {"1.0", 1, aviator::utc_us(), aviator::monotonic_us(),
                   clock, "flight_gateway", session, true};
 message.body = {{"source", "JOYSTICK"},
-                {"control", {{"roll", 0.0}, {"pitch", 0.0}}}};
+                {"control", {{"roll_deg", 0.0}, {"pitch_mm", 0.0}}}};
 std::string payload, error;
 if (!aviator::encode(message, payload, error)) {
     // 记录 error，本条消息不发送。

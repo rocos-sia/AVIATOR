@@ -208,7 +208,7 @@ python3 -m venv .cache/tts-venv
 （sudo，含 RH56FTP）、相机、Monitor 和 Chrome，最后启动 `aviator_core_camera_servo`；
 不需要 Gateway。Core 会自动使能、接近并锁定把手，再根据 `cockpit` 相机的
 `steering_wheel` 在关节阻抗模式下随动。角度取 `-theta_rad`，位移取
-`-translation_along_axis_m - 0.085` 并限幅到 `[-0.170, 0]` m。
+`-translation_along_axis_m - 0.080` 并限幅到 `[-0.150, 0]` m。
 启动前先停止手动运行的节点；此脚本与 `start_aviator.sh` 使用同一互斥锁。
 
 默认二进制目录为 `build/release/bin`（可通过 `AVIATOR_BIN` 覆盖），Monitor 默认
@@ -228,7 +228,7 @@ python3 -m venv .cache/tts-venv
 `start_wheel_bandwidth.sh` 从 [`config/wheel_bandwidth.yaml`](../config/wheel_bandwidth.yaml)
 读取测试轴、幅值、扫频频点、等待/测量/过渡周期、`fake_hand` 和分析选项。
 默认转动 ±3°；将 `axis` 改为 `translation` 可测试 ±20 mm 推拉。
-推拉中心取 `robot.yaml` 的 `wheel_initial.displacement`，当前范围为 −105～−65 mm。
+推拉中心取 `robot.yaml` 的 `wheel_initial.displacement`，当前范围为 −100～−60 mm。
 设 `fake_hand: true` 可使用真实机械臂搭配模拟手。
 
 ```bash
@@ -343,7 +343,7 @@ sudo ./scripts/setup_joystick_udev.sh --device /dev/input/eventN --user YOUR_USE
 ## RS422 独立接收与丢包统计
 
 `test_rs422_loss.sh` 直接读取项目 `config/flight-rs422.yaml` 中的
-`rs422.channel_a`、`channel_b` 和 `receive_timeout_ms`，按 `aviator-bench-v1` 接收两路下行。
+`rs422.channel_a`、`channel_b` 和 `receive_timeout_ms`，按 `aviator-icd-1120` 接收两路下行。
 串口与网关一致：115200 / 8E1，无流控，`EB 90` 帧头，32 字节，字节 2～30 累加低 8 位校验。
 不提供串口、波特率或空闲结束参数，不创建另一份配置。
 

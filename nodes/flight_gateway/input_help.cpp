@@ -95,7 +95,7 @@ InputHelp::InputHelp(const Config& config) {
         font.text(surface, 28, 215, "方向键操作", green, 21);
         font.text(surface, 28, 246, config.role == "flight_simulator" ?
                   "左 / 右：roll + / −       上 / 下：pitch + / −" :
-                  "左 / 右：roll − / +       上 / 下：pitch − / +");
+                  "左 / 右：roll + / −       上 / 下：pitch + / −");
         font.text(surface, 28, 274, "按住累加，松开或到限位后保持；[0] 回到初始原点。", muted);
         font.text(surface, 28, 302, "反向键同时按下停止累加；移动摇杆对应轴可接管。速度 / 限位按配置生效。", muted, 18);
         font.text(surface, 28, 340, "状态操作键（主键盘 / 小键盘数字键均可）", green, 21);

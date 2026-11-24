@@ -56,7 +56,7 @@ class AnalysisTest(unittest.TestCase):
     def test_translation_range_and_axis_validation(self):
         robot = {"wheel_initial": {"displacement": -.085}}
         validate_motion(self.options("--axis", "translation"), robot)
-        for values in (("--amplitude-mm", "20"), ("--axis", "translation", "--amplitude-deg", "3"),
+        for values in (("--axis", "rotation", "--amplitude-mm", "20"), ("--axis", "translation", "--amplitude-deg", "3"),
                        ("--axis", "translation", "--amplitude-mm", "nan"),
                        ("--axis", "translation", "--amplitude-mm", "0"),
                        ("--axis", "translation", "--amplitude-mm", "86")):
@@ -80,7 +80,7 @@ class AnalysisTest(unittest.TestCase):
             self.assertFalse(output.exists())
             self.assertIn("--axis translation --amplitude-mm 20", text.getvalue())
             self.assertIn("--fake-hand", text.getvalue())
-            self.assertIn("-105..-65 mm", text.getvalue())
+            self.assertIn("-100..-60 mm", text.getvalue())
             with patch("sys.argv", argv + ["--simulation"]), patch("launch.require_regular_user"):
                 with self.assertRaisesRegex(ValueError, "不能同时使用"):
                     main()

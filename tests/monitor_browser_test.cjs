@@ -1,4 +1,5 @@
 // Run with Node >=18 and playwright-core. Uses an installed Chrome executable.
+// Optional --wheel-only runs wheel polarity, units and camera/model checks.
 const {chromium} = require(process.env.AVIATOR_PLAYWRIGHT || 'playwright-core');
 const {spawn} = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), net = require('net'), assert = require('assert');
@@ -13,8 +14,8 @@ async function main() {
   assert(new Set([http,bus,rgb]).size===3);
   const identity={position_m:[0,0,0],quaternion_xyzw:[0,0,0,1]};
   const config={timeouts_ms:{'arm.state':100},yoke_calibration:{id:'BROWSER-TEST-ONLY',aircraft_camera:identity,tag_yoke:identity,aircraft_yoke_zero:identity,
-    roll_axis:[0,0,1],pitch_axis:[0,0,1],pitch_zero_mm:85,min_confidence:.5,max_rotation_residual_deg:2,max_translation_residual_mm:2,
-    model:{roll_sign:1,roll_offset_rad:0,pitch_sign:-1,pitch_offset_m:0}}};
+    roll_axis:[0,0,1],pitch_axis:[0,0,1],pitch_zero_mm:0,min_confidence:.5,max_rotation_residual_deg:2,max_translation_residual_mm:2,
+    model:{roll_sign:1,roll_offset_rad:0,pitch_sign:-1,pitch_offset_m:-.080}}};
   const configPath=path.join(directory,'monitor.yaml'),controlPath=path.join(directory,'fixture.json');
   fs.writeFileSync(configPath,JSON.stringify(config)); fs.writeFileSync(controlPath,'{}');
   const web=spawn(binary,['--port',String(http),'--subscribe',`tcp://127.0.0.1:${bus}`,'--preview',`tcp://127.0.0.1:${rgb}`,'--config',configPath]);
@@ -30,14 +31,14 @@ async function main() {
     page.setDefaultTimeout(30000);
     page.on('pageerror',e=>errors.push(e.message));
     await page.goto(`http://127.0.0.1:${http}/`,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>document.getElementById('command-roll').textContent.includes('-35.0'),{timeout:15000});
+    await page.waitForFunction(()=>document.getElementById('command-roll').textContent.includes('-17.5'),{timeout:15000});
     await page.waitForFunction(()=>document.getElementById('model-loading').hidden,{timeout:30000});
-    await page.waitForFunction(()=>document.getElementById('actual-pitch').textContent==='73.1 mm');
+    await page.waitForFunction(()=>document.getElementById('actual-pitch').textContent==='-11.9 mm');
     await page.waitForFunction(()=>!document.getElementById('camera-image').hidden && document.getElementById('camera-image').naturalWidth>0);
     await page.waitForFunction(()=>!document.getElementById('command-marker').hasAttribute('hidden') && !document.getElementById('measured-marker').hasAttribute('hidden'));
-    assert.strictEqual(await page.locator('#command-pitch').textContent(), '+12.0%');
-    assert.strictEqual(await page.locator('#actual-roll-percent').textContent(), '-34.0%');
-    assert.strictEqual(await page.locator('#actual-pitch-percent').textContent(), '-14.0%');
+    assert.strictEqual(await page.locator('#command-pitch').textContent(), '+8.4 mm');
+    assert.strictEqual(await page.locator('#actual-roll').textContent(), '-17.0°');
+    assert.strictEqual(await page.locator('#actual-pitch').textContent(), '-11.9 mm');
     assert.strictEqual(await page.locator('#command-marker').getAttribute('transform'), 'translate(175,113)');
     assert(Math.abs(Number(await page.locator('#measured-marker').getAttribute('cx')) - 174) < 1e-6);
     assert.strictEqual(await page.locator('#roll-meter').evaluate(e=>getComputedStyle(e).direction), 'rtl');
@@ -47,9 +48,26 @@ async function main() {
       Viewer.prototype.updateHelpers=function(){window.testViewer=this;return update.call(this);};
     });
     await page.waitForFunction(()=>window.testViewer?.robot);
+    // ICD polarity is unchanged in both plotted commands and the actual 3D wheel.
+    for (const [roll,pitch] of [[50,0],[-50,0],[0,70],[0,-80],[0,0]]) {
+      fs.writeFileSync(controlPath,JSON.stringify({command_roll_deg:roll,command_pitch_mm:pitch,
+        wheel_roll:-roll*Math.PI/180,wheel_translation:pitch/1000}));
+      await page.waitForFunction(([roll,pitch])=>{
+        const v=window.testViewer,c=v.data.flight_command?.current,y=v.data.yoke_observation?.current;
+        if(!c || !y || Math.abs(c.roll_deg-roll)>1e-8 || Math.abs(c.pitch_mm-pitch)>1e-8 ||
+           Math.abs(y.roll_deg-roll)>1e-8 || Math.abs(y.pitch_mm-pitch)>1e-8) return false;
+        const x=140-roll*2, py=125-pitch*(pitch>=0?100/70:100/80);
+        return document.getElementById('command-marker').getAttribute('transform')===`translate(${x},${py})` &&
+          Math.abs(Number(document.getElementById('measured-marker').getAttribute('cx'))-x)<1e-6 &&
+          Math.abs(Number(document.getElementById('measured-marker').getAttribute('cy'))-py)<1e-6 &&
+          Math.abs(v.robot.joints.roll_input_joint.angle-roll*Math.PI/180)<1e-5 &&
+          Math.abs(v.robot.joints.pitch_input_joint.angle+(pitch+80)/1000)<1e-5;
+      },[roll,pitch]);
+    }
+    fs.writeFileSync(controlPath,'{}');
     // Verify camera-derived roll and the full negative pitch stroke in the real
     // URDF loader, including the endpoint outside the original 165 mm limit.
-    for (const [travel,expected] of [[-.085,0],[0,-.085],[.085,-.170]]) {
+    for (const [travel,expected] of [[-.080,0],[0,-.080],[.070,-.150]]) {
       fs.writeFileSync(controlPath,JSON.stringify({wheel_translation:travel,wheel_roll:-.3}));
       await page.waitForFunction(expected=>{
         const v=window.testViewer,g=v.data.yoke_observation;
@@ -66,25 +84,29 @@ async function main() {
     await page.waitForFunction(()=>{
       const v=window.testViewer,g=v.data.yoke_observation;
       return v.isLive(g) && !v.invalidGroups.has('yoke_observation') &&
-        Math.abs(v.robot.joints.pitch_input_joint.angle+.205)<1e-5 &&
+        Math.abs(v.robot.joints.pitch_input_joint.angle+.200)<1e-5 &&
         Math.abs(v.robot.joints.roll_input_joint.angle+1.2)<1e-5 &&
         !document.getElementById('model-state').textContent.includes('驾驶盘：');
     });
     fs.writeFileSync(controlPath,JSON.stringify({wheel_valid:false}));
     await page.waitForFunction(()=>window.testViewer.data.yoke_observation.measurement_state==='INVALID');
-    assert(await page.evaluate(()=>Math.abs(window.testViewer.robot.joints.pitch_input_joint.angle+.205)<1e-5));
+    assert(await page.evaluate(()=>Math.abs(window.testViewer.robot.joints.pitch_input_joint.angle+.200)<1e-5));
     fs.writeFileSync(controlPath,JSON.stringify({legacy_camera:true}));
     await page.waitForFunction(()=>{
       const v=window.testViewer;
       return v.data.yoke_observation.current &&
         !v.data.yoke_observation.current.pose_mapping &&
         !v.robot.joints.pitch_input_joint.ignoreLimits && !v.robot.joints.roll_input_joint.ignoreLimits &&
-        Math.abs(v.robot.joints.pitch_input_joint.angle+.0731)<1e-5;
+        Math.abs(v.robot.joints.pitch_input_joint.angle+.0681)<1e-5;
     });
     fs.writeFileSync(controlPath,'{}');
     await page.waitForFunction(()=>window.testViewer.data.yoke_observation.current?.pose_mapping==='CAMERA_STEERING_WHEEL');
     await page.screenshot({path:path.join(directory,'camera-wheel.png')});
     console.log('Camera wheel checks passed: roll, pitch endpoints/midpoint, axis warning, limit overshoot, receive freshness, invalid feedback, legacy fallback.');
+    if (process.argv.includes('--wheel-only')) {
+      assert.deepStrictEqual(errors, []);
+      return;
+    }
     // Exercise the real HandState -> overview -> URDF path, including the
     // endpoints, distinct channels, and recursively coupled mimic joints.
     async function handPose(positions,sides=['left','right']) {
@@ -208,15 +230,15 @@ async function main() {
     await page.screenshot({path:path.join(directory,'messages.png')});
     await page.locator('#pause-display').click(); await page.locator('#tab-overview').click();
     fs.writeFileSync(controlPath,JSON.stringify({camera_stale:true}));
-    await page.waitForFunction(()=>document.getElementById('camera-overlay').textContent.includes('过期') && document.getElementById('actual-pitch').textContent==='—' && document.getElementById('command-roll').textContent==='-35.0%');
+    await page.waitForFunction(()=>document.getElementById('camera-overlay').textContent.includes('过期') && document.getElementById('actual-pitch').textContent==='—' && document.getElementById('command-roll').textContent==='-17.5°');
     assert.strictEqual(await page.locator('#actual-pitch').textContent(),'—');
-    assert.strictEqual(await page.locator('#command-roll').textContent(),'-35.0%');
+    assert.strictEqual(await page.locator('#command-roll').textContent(),'-17.5°');
     assert(await page.locator('#measured-marker').evaluate(e=>e.hasAttribute('hidden')));
     await page.screenshot({path:path.join(directory,'camera-stale.png')});
     await page.setViewportSize({width:1600,height:900});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
     fs.writeFileSync(controlPath,'{}');
-    await page.waitForFunction(()=>document.getElementById('actual-pitch').textContent==='73.1 mm');
+    await page.waitForFunction(()=>document.getElementById('actual-pitch').textContent==='-11.9 mm');
     // Hold the message-list response beyond the 100 ms arm budget. Overview
     // samples must keep advancing; message-list failures must not mark it offline.
     let releaseState, stateStarted;
@@ -241,7 +263,7 @@ async function main() {
         const v=window.testViewer,g=v.data.arms.left;
         return g.measurement_state==='STALE' && !v.isLive(g) &&
           document.querySelector('#devices .device-title span').textContent==='数据过期' &&
-          document.getElementById('command-roll').textContent==='-35.0%';
+          document.getElementById('command-roll').textContent==='-17.5°';
       });
       fs.writeFileSync(controlPath,'{}');
       await page.waitForFunction(()=>window.testViewer.isLive(window.testViewer.data.arms.left));

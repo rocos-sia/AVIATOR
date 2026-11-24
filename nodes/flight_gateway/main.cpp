@@ -1,3 +1,4 @@
+#include <iostream>
 #include "Logger.hpp"
 #include "gateway.hpp"
 #include "config.hpp"
@@ -38,14 +39,17 @@ int main(int argc, char** argv) {
         }
         auto config_path = flight_gateway::default_config_path();
         std::string test_ui_path;
+        bool check_config = false;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
+            if (arg == "--check-config") { check_config = true; continue; }
             require(i + 1 < argc, "Missing option value");
             if (arg == "--config") config_path = argv[++i];
             else if (arg == "--test-ui-socket") test_ui_path = argv[++i];
             else throw std::runtime_error("Unknown option: " + arg);
         }
         const auto config = flight_gateway::load_config(config_path);
+        if (check_config) { std::cout << "ICD 1120 configuration OK\n"; return 0; }
         require(test_ui_path.empty() || (config.source == "joystick" && config.role == "robot"),
                 "Test UI requires robot / joystick configuration");
         const auto& path = config.device;

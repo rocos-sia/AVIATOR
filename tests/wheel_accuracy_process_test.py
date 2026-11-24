@@ -20,7 +20,7 @@ def main():
     ui = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ui)
     # UI validation includes NaN/Inf, both units, exact backend boundary and zero.
-    for a, d in (("nan", 0), (0, "inf"), (50, 0), (0, -170.1), (0, .1)):
+    for a, d in (("nan", 0), (0, "inf"), (50.01, 0), (0, -150.1), (0, .1)):
         try:
             ui.target(a, d)
             raise AssertionError(f"Accepted invalid input {a}, {d}")
@@ -46,6 +46,8 @@ def main():
     for key in ("model", "urdf", "grasp", "posture"):
         robot[key] = str((root / "config" / robot[key]).resolve())
     robot["viewer"] = False
+    # This UI fixture has no camera publisher; grasp its known initial pose.
+    robot["grasp_wheel"] = {"source": "wheel_initial"}
     flight = yaml.safe_load((root / "config/flight.yaml").read_text())
     flight.update(publish=endpoints[0], subscribe=endpoints[1], service=endpoints[3],
                   lock_file=str(directory / "gateway.lock"), service_timeout_ms=1000)

@@ -1,3 +1,4 @@
+#include "wheel_units.hpp"
 #include "monitor.hpp"
 #include <algorithm>
 #include <array>
@@ -211,17 +212,15 @@ void yoke(Json& g, const Json& b, const Json& c, const std::string& camera_id) {
         const double roll = theta.get<double>() * 180 / pi;
         const double travel = translation.get<double>();
         g["current"] = {
-            // ICD 1107 display polarity; raw camera values and model joints stay unchanged.
+            // ICD 1120 physical coordinates; camera travel is relative to the neutral pose.
             {"roll_deg", -roll},
-            {"pitch_mm", (travel + .085) * 1000},
-            {"roll_percent", -roll * 2},
-            {"pitch_percent", travel / .085 * 100},
+            {"pitch_mm", travel * 1000},
             {"confidence", at(b, "confidence")},
             {"camera_id", at(b, "camera_id")},
             {"frame_id", at(b, "frame_id")},
             {"pose_mapping", "CAMERA_STEERING_WHEEL"},
             {"model_joints", {{"roll_input_joint", -theta.get<double>()},
-                              {"pitch_input_joint", -travel - .085}}}};
+                              {"pitch_input_joint", -travel - .080}}}};
         return;
     }
     // Legacy raw poses still need the configured camera's geometry. Calibrated
@@ -279,15 +278,13 @@ void yoke(Json& g, const Json& b, const Json& c, const std::string& camera_id) {
     }
     double roll = std::remainder(2 * std::atan2(projection, relative.q[3]), 2 * pi) * 180 / pi;
     double pitch = displacement * 1000 + c.at("pitch_zero_mm").get<double>();
-    if (roll < -52 - 1e-6 || roll > 52 + 1e-6 || pitch < -5 - 1e-6 || pitch > 175 + 1e-6) {
+    if (roll < -50 - 1e-6 || roll > 50 + 1e-6 || pitch < -80 - 1e-6 || pitch > 70 + 1e-6) {
         invalidate(g, "INVALID", "physical_feedback_out_of_range");
         return;
     }
     const auto& model = c.at("model");
     g["current"] = {{"roll_deg", -roll},
                     {"pitch_mm", pitch},
-                    {"roll_percent", -roll * 2},
-                    {"pitch_percent", (pitch - 85) / 85 * 100},
                     {"confidence", confidence},
                     {"camera_id", at(b, "camera_id")},
                     {"frame_id", at(b, "frame_id")},
@@ -330,20 +327,13 @@ Json State::overview(std::uint64_t now, const std::string& clock) {
     auto [command, cg] = choose(aviator::Topic::flight_command);
     if (valid(cg)) {
         const auto& b = at(command->message.body, "control");
-        const auto& roll = at(b, "roll");
-        const auto& pitch = at(b, "pitch");
-        if (!finite(roll) || !finite(pitch) || std::abs(roll.get<double>()) > 1 ||
-            std::abs(pitch.get<double>()) > 1)
+        const auto& roll = at(b, "roll_deg");
+        const auto& pitch = at(b, "pitch_mm");
+        if (!finite(roll) || !finite(pitch) || !aviator::wheel::validRoll(roll.get<double>()) ||
+            !aviator::wheel::validPitch(pitch.get<double>()))
             invalidate(cg, "INVALID", "command_out_of_range");
         else
-            // ICD 1107: left/push are positive, opposite to both Core input axes.
-            // Keep normalized fields as raw Core values and the existing physical pitch origin.
-            cg["current"] = {{"roll_normalized", roll},
-                             {"pitch_normalized", pitch},
-                             {"roll_percent", -roll.get<double>() * 100},
-                             {"pitch_percent", -pitch.get<double>() * 100},
-                             {"roll_deg", -roll.get<double>() * 50},
-                             {"pitch_mm", 85 - pitch.get<double>() * 85},
+            cg["current"] = {{"roll_deg", roll}, {"pitch_mm", pitch},
                              {"control_source", at(command->message.body, "source")}};
     }
     result["flight_command"] = cg;

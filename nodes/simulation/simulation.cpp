@@ -375,7 +375,7 @@ aviator::Message Simulation::detection(std::uint64_t now, bool captured, bool in
         // Inverse of Monitor's camera-to-model convention, using measured joints.
         out.body["steering_wheel"]["theta_rad"] = -frame->qpos[model()->jnt_qposadr[roll_]];
         out.body["steering_wheel"]["translation_along_axis_m"] =
-            -frame->qpos[model()->jnt_qposadr[pitch_]] - .085;
+            -frame->qpos[model()->jnt_qposadr[pitch_]] - .080;
         // Synthetic calibration: model lower/upper joint limits map to -1/+1.
         for (const auto& entry : {std::pair<const char*,int>{"roll",roll_}, {"pitch",pitch_}}) {
             int j = entry.second; double lo=model()->jnt_range[2*j], hi=model()->jnt_range[2*j+1];

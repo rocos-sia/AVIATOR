@@ -3,7 +3,8 @@
 #include <string>
 namespace flight_simulator {
 struct KeyboardConfig {
-    double roll_speed = 1, pitch_speed = 1, roll_limit = 1, pitch_limit = 1;
+    double roll_speed_deg_s = 50.0, pitch_speed_mm_s = 75.0;
+    double roll_limit_deg = 50.0, pitch_min_mm = -80.0, pitch_max_mm = 70.0;
 };
 struct Rs422Config {
     std::string channel_a, channel_b;

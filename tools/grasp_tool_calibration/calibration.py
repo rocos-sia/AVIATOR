@@ -46,17 +46,17 @@ def _vector(value: Any, size: int, name: str) -> np.ndarray:
 def _wheel(angle: Any, displacement: Any) -> tuple[float, float]:
     angle = _number(angle, "angle_rad")
     displacement = _number(displacement, "displacement_m")
-    if not -0.87266 <= angle <= 0.87266:
-        raise CalibrationError("angle_rad must be in [-0.87266, 0.87266]")
-    if not -0.170 <= displacement <= 0:
-        raise CalibrationError("displacement_m must be in [-0.170, 0]")
+    if not -0.8726646259971648 <= angle <= 0.8726646259971648:
+        raise CalibrationError("angle_rad must be in [-0.8726646259971648, 0.8726646259971648]")
+    if not -0.150 <= displacement <= 0:
+        raise CalibrationError("displacement_m must be in [-0.150, 0]")
     return angle, displacement
 
 
 def camera_wheel(theta_rad: Any, translation_along_axis_m: Any) -> tuple[float, float]:
     """Convert camera measurements to Core coordinates without hiding outliers."""
     return _wheel(-_number(theta_rad, "theta_rad"),
-                  -_number(translation_along_axis_m, "translation_along_axis_m") - 0.085)
+                  -(_number(translation_along_axis_m, "translation_along_axis_m") * 1000 + 80) / 1000)
 
 
 def pose_matrix(pose: dict) -> np.ndarray:

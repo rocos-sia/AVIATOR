@@ -8,8 +8,8 @@
 #include <sstream>
 namespace flight_simulator {
 namespace {
-std::string position(int16_t value) {
-    return value == rs422::invalid_position ? "unknown" : std::to_string(value / 10.0) + "%";
+std::string position(int16_t value, bool pitch = false) {
+    return value == rs422::invalid_position ? "unknown" : std::to_string(pitch ? rs422::decodePitch(value) : rs422::decodeRoll(value)) + (pitch ? " mm" : " deg");
 }
 } // namespace
 void run(const Config& config, int stop_fd) {
@@ -27,7 +27,7 @@ void run(const Config& config, int stop_fd) {
     uint8_t counter = 0;
     bool was_valid = false, input_logged = false;
     const uint64_t timeout = config.rs422.receive_timeout_ms * 1000ULL;
-    std::clog << "flight_simulator: aviator-bench-v1, 115200 8E1, 80 Hz\n";
+    std::clog << "flight_simulator: aviator-icd-1120, 115200 8E1, 80 Hz\n";
     if (!config.simulator.send_a || !config.simulator.send_b || config.simulator.corrupt_every)
         std::clog << "Fault injection enabled: send A=" << config.simulator.send_a
                   << " B=" << config.simulator.send_b
@@ -106,9 +106,9 @@ void run(const Config& config, int stop_fd) {
             ++counter;
             ++ticks;
             if (sample.fresh(now, config.input_timeout_ms * 1000ULL)) {
-                // ICD 1107: left/push positive; preserve the existing local input coordinates.
-                auto bytes = encode(Downlink{counter, sender.next(), quantize(-sample.roll_value),
-                                             quantize(-sample.pitch_value)});
+                // ICD 1120: left/push positive; inputs already use deg and mm.
+                auto bytes = encode(Downlink{counter, sender.next(), encodeRoll(sample.roll_value),
+                                             encodePitch(sample.pitch_value)});
                 if (config.simulator.send_b)
                     ports[1].send(bytes, now);
                 if (config.simulator.corrupt_every && ticks % config.simulator.corrupt_every == 0)
@@ -130,9 +130,9 @@ void run(const Config& config, int stop_fd) {
                      << " seq=" << unsigned(f.counter) << " selected=" << unsigned(f.selected)
                      << " comm=" << unsigned(f.communication) << " state=" << stateName(f.state)
                      << " echo_op=" << unsigned(f.operation) << " echo=(" << position(f.roll_echo)
-                     << ", " << position(f.pitch_echo) << ") camera=(" << position(f.roll) << ", "
-                     << position(f.pitch) << ") joint_fk=(" << position(f.joint_roll) << ", "
-                     << position(f.joint_pitch) << ") rear=" << unsigned(f.rear)
+                     << ", " << position(f.pitch_echo, true) << ") camera=(" << position(f.roll) << ", "
+                     << position(f.pitch, true) << ") joint_fk=(" << position(f.joint_roll) << ", "
+                     << position(f.joint_pitch, true) << ") rear=" << unsigned(f.rear)
                      << " brake=" << unsigned(f.brake) << " fault=" << f.fault
                      << " previous=" << f.last_fault << " severity=" << unsigned(f.severity)
                      << " version=" << std::hex << std::uppercase << std::setfill('0')

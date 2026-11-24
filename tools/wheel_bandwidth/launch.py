@@ -65,8 +65,8 @@ def prepare_config(source, destination):
         raise ValueError("robot.yaml 必须显式配置 wheel_initial")
     angle = float(robot["wheel_initial"]["angle"])
     displacement = float(robot["wheel_initial"]["displacement"])
-    if not (math.isfinite(angle) and abs(angle) <= .87266 and
-            math.isfinite(displacement) and -.170 <= displacement <= 0):
+    if not (math.isfinite(angle) and abs(angle) <= .8726646259971648 and
+            math.isfinite(displacement) and -.150 <= displacement <= 0):
         raise ValueError("wheel_initial 超出轮盘范围")
     robot.setdefault("grasp_wheel", {})["source"] = "wheel_initial"
     system.setdefault("xcore_sdk_hand", {})["enabled"] = False
@@ -120,7 +120,7 @@ def load_sweep_config(args):
             raise ValueError(f"测试配置 {key} 须为整数")
     for key in ("amplitude_deg", "amplitude_mm"):
         value = settings[key]
-        limit = 10 if key == "amplitude_deg" else 85
+        limit = 10 if key == "amplitude_deg" else 75
         if type(value) not in (int, float) or not 0 < value <= limit:
             raise ValueError(f"测试配置 {key} 须为 (0,{limit}] 内的数值")
     frequencies = settings["frequencies_hz"]
@@ -150,8 +150,8 @@ def validate_motion(args, robot):
             raise ValueError("--axis translation 须使用 --amplitude-mm")
         amplitude = args.amplitude_mm / 1000
         if not (math.isfinite(amplitude) and amplitude > 0 and
-                center - amplitude >= -.170 and center + amplitude <= 0):
-            raise ValueError("推拉幅值须为有限正数，且中心 ± 幅值须在 [-170,0] mm 内")
+                center - amplitude >= -.150 and center + amplitude <= 0):
+            raise ValueError("推拉幅值须为有限正数，且中心 ± 幅值须在 [-150,0] mm 内")
 
 
 def main():

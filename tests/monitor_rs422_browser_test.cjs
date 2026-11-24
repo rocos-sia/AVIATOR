@@ -19,7 +19,7 @@ while True:
     now=time.monotonic_ns()//1000
     message=dict(msg_type='FlightCommand',version='1.0',sequence=sequence,timestamp=time.time_ns()//1000,
         sample_mono_us=now,clock_id=clock,publisher_id='flight_gateway',session_id='rs422-browser',
-        valid=mode!='stale',source='JOYSTICK',control=dict(roll=.125,pitch=-.25))
+        valid=mode!='stale',source='JOYSTICK',control=dict(roll_deg=.125,pitch_mm=-.25))
     if mode!='joystick':
         operation=16 if mode=='next' else (32 if mode in ['serial','stale','unknown','malformed'] else 0)
         raw=struct.pack('<BBBBhh',235,144,sequence%256,operation,125,-250)+bytes([165])+bytes(22)
@@ -68,7 +68,7 @@ async function main() {
     await page.waitForFunction(()=>document.querySelector('#rs422-note').textContent.includes('暂无 RS422 报文'));
     fs.writeFileSync(mode,'serial');
     await page.waitForFunction(()=>document.querySelector('#rs422-channels .rs422-hex')?.textContent.includes('7D 00 06 FF A5'));
-    assert((await page.locator('#rs422-channels .rs422-frame').first().innerText()).includes('-250 → -25.0%'));
+    assert((await page.locator('#rs422-channels .rs422-frame').first().innerText()).includes('-250 → -5.572 mm'));
     assert((await page.locator('#rs422-channels .rs422-frame').first().innerText()).includes('握盘 · grasp_wheel'));
     assert((await page.locator('#rs422-channels .rs422-frame').first().innerText()).includes('通过 · 字节 2–30'));
     assert((await page.locator('#rs422-channels .rs422-frame').last().innerText()).includes('尚未接收到可用报文'));

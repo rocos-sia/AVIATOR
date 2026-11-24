@@ -1,4 +1,5 @@
 #pragma once
+#include "wheel_units.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -17,7 +18,7 @@ inline constexpr uint8_t unknown_state = 0xfe; // Byte 10: 0xff is EMERGENCY_STO
 inline constexpr uint16_t unknown_fault = 0xffff;
 struct Downlink {
     uint8_t counter = 0, operation = 0;
-    int16_t roll = 0, pitch = 0;
+    int16_t roll = 0, pitch = aviator::wheel::encodePitch(0);
 };
 struct Uplink {
     uint8_t counter = 0, selected = unknown, communication = 3, operation = 0;
@@ -41,7 +42,10 @@ const char* operationName(uint8_t);
 uint8_t stateCode(const std::string&);
 const char* stateName(uint8_t);
 bool knownFault(uint16_t);
-int16_t quantize(double normalized, double limit = 1.0);
+using aviator::wheel::encodeRoll;
+using aviator::wheel::encodePitch;
+using aviator::wheel::decodeRoll;
+using aviator::wheel::decodePitch;
 bool samePayload(const Downlink&, const Downlink&);
 class Parser {
   public:
@@ -100,8 +104,8 @@ struct Channel {
 // frames; oversized backlogs cannot satisfy the operation gate.
 class DualReceiver {
   public:
-    DualReceiver(uint64_t timeout, unsigned recovery, int jump)
-        : timeout_(timeout), recovery_(recovery), jump_(jump) {}
+    DualReceiver(uint64_t timeout, unsigned recovery, double roll_jump_deg, double pitch_jump_mm = 7.5)
+        : timeout_(timeout), recovery_(recovery), roll_jump_(roll_jump_deg), pitch_jump_(pitch_jump_mm) {}
     bool receive(unsigned, const Downlink&, uint64_t now);
     void disconnect(unsigned);
     uint8_t update(uint64_t now);
@@ -118,7 +122,8 @@ class DualReceiver {
   private:
     uint64_t timeout_, sample_ = 0, processed_ = 0, blocked_at_ = 0;
     unsigned recovery_, neutral_ = 0;
-    int jump_, selected_ = -1;
+    double roll_jump_, pitch_jump_;
+    int selected_ = -1;
     bool blocked_ = false, had_target_ = false, continuous_ = false;
     Downlink target_;
     CommandGate gate_;

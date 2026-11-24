@@ -85,10 +85,11 @@ class ScriptsTests(unittest.TestCase):
                                  env={'AVIATOR_REMOTE_UI': '1'})
         order = lambda text: re.findall(r'^启动 ([^:]+):', text, re.M)
         self.assertEqual(order(normal), order(remote))
-        self.assertNotIn('启动 camera:', normal)
+        # Default robot.yaml uses camera-based grasping in both UI modes.
+        self.assertIn('启动 camera:', normal)
         self.assertNotIn('--image-output', normal)
         self.assertNotIn('SDL_VIDEODRIVER', normal)
-        self.assertNotIn('启动 camera:', remote)
+        self.assertIn('启动 camera:', remote)
         self.assertIn('SDL_VIDEODRIVER=dummy', remote)
         self.assertIn('--image-output', remote)
         self.assertNotIn('启动浏览器:', remote)
@@ -99,7 +100,7 @@ class ScriptsTests(unittest.TestCase):
         self.assertEqual(order(normal), order(keyboard))
         self.assertIn('SDL_VIDEODRIVER=x11', keyboard)
         self.assertNotIn('SDL_VIDEODRIVER=dummy', keyboard)
-        self.assertNotIn('启动 camera:', keyboard)
+        self.assertIn('启动 camera:', keyboard)
         self.assertNotIn('--fake-hand', keyboard)
         for flag in ('--rs422', '--wheel-test'):
             self.run_script('start_aviator.sh', '--dry-run', flag, env=keyboard_env, ok=False)

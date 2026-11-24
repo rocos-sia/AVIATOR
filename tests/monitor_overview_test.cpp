@@ -43,12 +43,12 @@ Json calibration() {
         {"aircraft_yoke_zero", pose()},
         {"roll_axis", {0, 0, 1}},
         {"pitch_axis", {0, 0, 1}},
-        {"pitch_zero_mm", 85},
+        {"pitch_zero_mm", 0},
         {"min_confidence", .5},
         {"max_rotation_residual_deg", 2},
         {"max_translation_residual_mm", 2},
         {"model",
-         {{"roll_sign", 1}, {"roll_offset_rad", 0}, {"pitch_sign", -1}, {"pitch_offset_m", 0}}}};
+         {{"roll_sign", 1}, {"roll_offset_rad", 0}, {"pitch_sign", -1}, {"pitch_offset_m", -.080}}}};
 }
 Json detection(double roll, double pitch) {
     double rad = roll * 3.14159265358979323846 / 180;
@@ -57,7 +57,7 @@ Json detection(double roll, double pitch) {
             {"status", "TRACKING"},
             {"confidence", .9},
             {"pose",
-             {{"position", {{"x", 0}, {"y", 0}, {"z", (pitch - 85) / 1000}}},
+             {{"position", {{"x", 0}, {"y", 0}, {"z", pitch / 1000}}},
               {"orientation",
                {{"qx", 0}, {"qy", 0}, {"qz", std::sin(rad / 2)}, {"qw", std::cos(rad / 2)}}}}}};
 }
@@ -71,23 +71,17 @@ int main(int argc, char** argv) {
         monitor::State state;
         check(state.overview(1000000, "clock")["system"]["current"].is_null(), "empty overview");
         ingest(state, aviator::Topic::flight_command,
-               {{"source", "JOYSTICK"}, {"control", {{"roll", .35}, {"pitch", -.12}}}});
+               {{"source", "JOYSTICK"}, {"control", {{"roll_deg", .35}, {"pitch_mm", -.12}}}});
         auto command = state.overview(1010000, "clock")["flight_command"];
-        check(command["current"]["roll_percent"] == -35 &&
-                  command["current"]["pitch_normalized"] == -.12 &&
-                  command["current"]["pitch_percent"] == 12 &&
-                  std::abs(command["current"]["pitch_mm"].get<double>() - 95.2) < 1e-9,
-              "command mapping");
-        for (const auto& sample : std::array<std::array<double, 3>, 3>{
-                 {{-1, 100, 170}, {0, 0, 85}, {1, -100, 0}}}) {
+        check(command["current"]["roll_deg"] == .35 && command["current"]["pitch_mm"] == -.12,
+              "command physical units pass through unchanged");
+        for (double pitch : {-80., 0., 70.}) {
             monitor::State endpoint;
             ingest(endpoint, aviator::Topic::flight_command,
-                   {{"source", "JOYSTICK"}, {"control", {{"roll", .35}, {"pitch", sample[0]}}}});
+                   {{"source", "JOYSTICK"}, {"control", {{"roll_deg", 50}, {"pitch_mm", pitch}}}});
             const auto current = endpoint.overview(1010000, "clock")["flight_command"]["current"];
-            check(current["pitch_normalized"] == sample[0] &&
-                      current["pitch_percent"] == sample[1] && current["pitch_mm"] == sample[2] &&
-                      current["roll_percent"] == -35,
-                  "command pitch display direction at endpoints and neutral");
+            check(current["pitch_mm"] == pitch && current["roll_deg"] == 50,
+                  "command physical endpoints and zero");
         }
         check(state.overview(1100000, "clock")["flight_command"]["current"].is_null(),
               "stale command remains current");
@@ -98,21 +92,21 @@ int main(int argc, char** argv) {
                 monitor::State aligned;
                 const double angle = axis[0] * 50 * 3.14159265358979323846 / 180;
                 ingest(aligned, aviator::Topic::flight_command,
-                    {{"source", source}, {"control", {{"roll", -axis[0]}, {"pitch", -axis[1]}}}});
+                    {{"source", source}, {"control", {{"roll_deg", axis[0]*50}, {"pitch_mm", axis[1] * (axis[1] > 0 ? 70 : 80)}}}});
                 ingest(aligned, aviator::Topic::camera_detection,
                     {{"camera_id", "cockpit"}, {"steering_wheel", {{"valid", true},
-                     {"theta_rad", -angle}, {"translation_along_axis_m", axis[1] * .085}}}});
+                     {"theta_rad", -angle}, {"translation_along_axis_m", axis[1] * (axis[1] > 0 ? .070 : .080)}}}});
                 const auto snapshot = aligned.overview(1010000, "clock");
                 const auto& command = snapshot["flight_command"]["current"];
                 const auto& measured = snapshot["yoke_observation"]["current"];
-                for (const auto* field : {"roll_percent", "pitch_percent", "roll_deg", "pitch_mm"})
+                for (const auto* field : {"roll_deg", "pitch_mm"})
                     check(std::abs(command[field].get<double>() - measured[field].get<double>()) < 1e-9,
                           "command and camera display agree for all ICD directions");
-                check(command["roll_percent"] == axis[0] * 100 && command["pitch_percent"] == axis[1] * 100,
-                      "ICD left and push percentages are positive");
+                check(command["roll_deg"] == axis[0] * 50 && command["pitch_mm"] == axis[1] * (axis[1] > 0 ? 70 : 80),
+                      "ICD left and push physical coordinates are positive");
                 check(measured["model_joints"]["roll_input_joint"] == angle &&
                           std::abs(measured["model_joints"]["pitch_input_joint"].get<double>() +
-                                   .085 * (axis[1] + 1)) < 1e-9,
+                                   .080 + axis[1] * (axis[1] > 0 ? .070 : .080)) < 1e-9,
                       "display conversion preserves internal model joint coordinates");
             }
         }
@@ -190,7 +184,7 @@ int main(int argc, char** argv) {
         }
         monitor::State held;
         Json hold = {{"source", "JOYSTICK"},
-                     {"control", {{"roll", .35}, {"pitch", -.12}}},
+                     {"control", {{"roll_deg", .35}, {"pitch_mm", -.12}}},
                      {"input_state",
                       {{"mode", "POSITION_HOLD"},
                        {"device_connected", true},
@@ -231,20 +225,20 @@ int main(int argc, char** argv) {
         }
         check(rejected_config, "nonmonotonic calibration accepted");
         monitor::State vision;
-        ingest(vision, aviator::Topic::camera_detection, detection(17, 73.1));
+        ingest(vision, aviator::Topic::camera_detection, detection(17, -11.9));
         check(vision.overview(1010000, "clock")["yoke_observation"]["measurement_state"] ==
                   "UNCALIBRATED",
               "unconfigured pose converted");
         vision.config["yoke_calibration"] = calibration();
         monitor::validate_config(vision.config);
         auto y = vision.overview(1010000, "clock")["yoke_observation"]["current"];
-        check(std::abs(y["roll_percent"].get<double>() + 34) < 1e-8 &&
-                  std::abs(y["pitch_percent"].get<double>() + 14) < 1e-8,
+        check(std::abs(y["roll_deg"].get<double>() + 17) < 1e-8 &&
+                  std::abs(y["pitch_mm"].get<double>() + 11.9) < 1e-8,
               "visual mapping");
         monitor::State edges;
         edges.config["yoke_calibration"] = calibration();
-        ingest(edges, aviator::Topic::camera_detection, detection(51.9, 174.9));
-        check(edges.overview(1010000, "clock")["yoke_observation"]["current"]["roll_percent"] < -100,
+        ingest(edges, aviator::Topic::camera_detection, detection(49.9, 69.9));
+        check(edges.overview(1010000, "clock")["yoke_observation"]["current"]["roll_deg"] < -49,
               "feedback overshoot clipped");
         monitor::State outside;
         outside.config["yoke_calibration"] = calibration();
@@ -253,7 +247,7 @@ int main(int argc, char** argv) {
               "out of range feedback accepted");
         monitor::State other_camera;
         other_camera.config["yoke_calibration"] = calibration();
-        auto different_camera = detection(17, 73.1);
+        auto different_camera = detection(17, -11.9);
         different_camera["camera_id"] = "other";
         ingest(other_camera, aviator::Topic::camera_detection, different_camera);
         check(other_camera.overview(1010000, "clock")["yoke_observation"]["current"].is_null(),
@@ -286,8 +280,8 @@ int main(int argc, char** argv) {
                                              {"calibration_id", "camera-test"}};
         for (bool legacy : {false, true}) {
             for (const auto& [travel, expected_pitch] :
-                 std::array<std::array<double, 2>, 5>{{{-.1, .015}, {-.085, 0.},
-                                                       {0., -.085}, {.085, -.170}, {.1, -.185}}}) {
+                 std::array<std::array<double, 2>, 5>{{{-.1, .020}, {-.080, 0.},
+                                                       {0., -.080}, {.070, -.150}, {.1, -.180}}}) {
                 monitor::State direct;
                 if (legacy)
                     direct.config["yoke_calibration"] = calibration();
@@ -298,12 +292,12 @@ int main(int argc, char** argv) {
                 check(observed["measurement_state"] == "VALID" &&
                           observed["calibration_id"] == "camera-test" &&
                           std::abs(current["roll_deg"].get<double>() + .25 * 180 / 3.14159265358979323846) < 1e-9 &&
-                          std::abs(current["roll_percent"].get<double>() + .25 * 360 / 3.14159265358979323846) < 1e-9 &&
+
                           current["model_joints"]["roll_input_joint"] == -.25 &&
                           std::abs(current["model_joints"]["pitch_input_joint"].get<double>() -
                                    expected_pitch) < 1e-9 &&
-                          std::abs(current["pitch_mm"].get<double>() - (travel + .085) * 1000) < 1e-9 &&
-                          std::abs(current["pitch_percent"].get<double>() - travel / .085 * 100) < 1e-9 &&
+                          std::abs(current["pitch_mm"].get<double>() - travel * 1000) < 1e-9 &&
+
                           current["pose_mapping"] == "CAMERA_STEERING_WHEEL",
                       "camera wheel mapping or calibration precedence");
                 check(direct.overview(1200000, "clock")["yoke_observation"]["current"].is_null(),
@@ -325,7 +319,7 @@ int main(int argc, char** argv) {
                 check(observed["measurement_state"] == "VALID" &&
                           observed["fresh_for_ms"] == 190 &&
                           observed["current"]["model_joints"]["roll_input_joint"] == -1.2 &&
-                          std::abs(observed["current"]["model_joints"]["pitch_input_joint"].get<double>() + .205) < 1e-9,
+                          std::abs(observed["current"]["model_joints"]["pitch_input_joint"].get<double>() + .200) < 1e-9,
                       "valid received camera motion blocked by display diagnostics");
                 incoming["steering_wheel"]["theta_rad"] = -1.3;
                 live_camera.ingest("camera.detection",

@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
     try {
         if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
             std::cout << "Usage: flight_simulator [--config path] | --list-joysticks\n"
-                      << "Standalone dual RS422 flight simulator; profile aviator-bench-v1.\n";
+                      << "Standalone dual RS422 flight simulator; profile aviator-icd-1120.\n";
             return 0;
         }
         if (argc == 2 && std::string(argv[1]) == "--list-joysticks") {

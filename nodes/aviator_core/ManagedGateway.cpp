@@ -1,3 +1,4 @@
+#include "wheel_units.hpp"
 #include "Logger.hpp"
 #include "ManagedGateway.hpp"
 #include "flight_operation.hpp"
@@ -52,8 +53,8 @@ void ManagedGateway::receiveInput() {
             // only the validated device-check timestamp leases a POSITION_HOLD target.
             read_position_hold(message, effective_sample_, connected, error);
         }
-        roll_ = message.body.at("control").at("roll").get<double>();
-        pitch_ = message.body.at("control").at("pitch").get<double>();
+        roll_ = message.body.at("control").at("roll_deg").get<double>();
+        pitch_ = message.body.at("control").at("pitch_mm").get<double>();
     }
     const bool current = fresh();
     if (current != was_fresh_) {
@@ -145,7 +146,7 @@ void ManagedGateway::drive(Aviator& robot) {
     const auto now = monotonic_us();
     if (robot.GetSystemState() != "CONTROL" || !fresh() || effective_sample_ <= forwarded_ || now < next_servo_)
         return;
-    if (robot.ServoWheel(roll_ * -0.87266, joystickWheelDisplacement(pitch_), 1.0, effective_sample_)) {
+    if (robot.ServoWheel(wheel::angle(roll_), joystickWheelDisplacement(pitch_), 1.0, effective_sample_)) {
         forwarded_ = effective_sample_;
         next_servo_ = now + 20000;
     }

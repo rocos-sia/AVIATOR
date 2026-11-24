@@ -19,7 +19,7 @@ private:
     int server_ = -1, client_ = -1;
     std::string path_, command_id_;
     std::uint64_t checked_ = 0, last_command_ = 0;
-    double angle_ = 0, displacement_ = -.085;
+    double angle_ = 0, displacement_ = -.080;
     nlohmann::json result_ = nullptr;
 };
 } // namespace flight_gateway

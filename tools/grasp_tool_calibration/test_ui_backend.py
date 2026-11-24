@@ -41,7 +41,7 @@ class FakeNative:
         self.grasp, self.events = grasp, events
         self.arms = {s: dict(connected=False, dragging=False, drag_owned=False,
                             operation_state="disconnected") for s in ("left", "right")}
-        self.angle, self.displacement = 0.0, -.085
+        self.angle, self.displacement = 0.0, -.080
         self.sample_count = 0
         self.closed = False
 
@@ -192,11 +192,11 @@ class CalibrationControllerTests(unittest.TestCase):
         status = self.action("drag_start", side="left")
         self.assertTrue(status["arms"]["left"]["dragging"])
         self.assertFalse(status["arms"]["right"]["dragging"] or status["can_sample"])
-        status = self.action("sample", angle_deg=0, displacement_m=-.085)
+        status = self.action("sample", angle_deg=0, displacement_m=-.080)
         self.assertIn("结束双臂拖动", status["error"])
         self.assertEqual(native.sample_count, 0)
         self.action("drag_stop", side="left")
-        status = self.action("sample", angle_deg=0, displacement_m=-.085)
+        status = self.action("sample", angle_deg=0, displacement_m=-.080)
         self.assertEqual(status["phase"], "preview", status["error"])
 
     def test_missing_hands_allow_drag_camera_sampling_and_save(self):
@@ -318,14 +318,14 @@ class CalibrationControllerTests(unittest.TestCase):
     def test_sample_threshold_is_used_recorded_and_retained(self):
         self.prepare()
         self.assertEqual(self.controller.snapshot()["max_wheel_displacement_span_mm"], 3)
-        status = self.action("sample", angle_deg=0, displacement_m=-.085,
+        status = self.action("sample", angle_deg=0, displacement_m=-.080,
                              max_wheel_displacement_span_mm=4)
         self.assertEqual(status["phase"], "preview", status["error"])
         self.assertEqual(status["max_wheel_displacement_span_mm"], 4)
         self.assertEqual(status["result"]["limits"]["max_wheel_displacement_span_m"], .004)
         report = json.loads(next(self.options.log_dir.glob("preview-*.json")).read_text())
         self.assertEqual(report["limits"]["max_wheel_displacement_span_m"], .004)
-        status = self.action("sample", angle_deg=0, displacement_m=-.085)
+        status = self.action("sample", angle_deg=0, displacement_m=-.080)
         self.assertEqual(status["result"]["limits"]["max_wheel_displacement_span_m"], .004)
 
     def test_invalid_sample_threshold_is_rejected_before_device_access(self):
@@ -341,16 +341,16 @@ class CalibrationControllerTests(unittest.TestCase):
     def test_camera_sampling_converts_sign_offset_and_uses_independent_frames(self):
         with patch.object(app, "DemoLink", OffsetDemoLink):
             native = self.prepare("camera")
-        native.angle, native.displacement = -.2, -.1
+        native.angle, native.displacement = -.2, -.095
         self.controller.args.interval_ms = 50
         displayed = self.controller.snapshot()["camera"]
         self.assertAlmostEqual(displayed["angle_rad"], -.2)
-        self.assertAlmostEqual(displayed["displacement_m"], -.1)
+        self.assertAlmostEqual(displayed["displacement_m"], -.095)
         status = self.action("sample")
         self.assertEqual(status["phase"], "preview", status["error"])
         report = status["result"]
         self.assertAlmostEqual(report["wheel"]["mean_angle_rad"], -.2)
-        self.assertAlmostEqual(report["wheel"]["mean_displacement_m"], -.1)
+        self.assertAlmostEqual(report["wheel"]["mean_displacement_m"], -.095)
         self.assertEqual(len({s["camera"]["sequence"] for s in report["samples"]}), 3)
         self.assertTrue(all(s["sync_gap_ms"] <= self.controller.args.max_sync_ms for s in report["samples"]))
 
@@ -379,7 +379,7 @@ class CalibrationControllerTests(unittest.TestCase):
 
     def test_dry_run_write_is_rejected_at_submit_internal_and_http_api(self):
         self.prepare()
-        status = self.action("sample", angle_deg=0, displacement_m=-.085)
+        status = self.action("sample", angle_deg=0, displacement_m=-.080)
         self.assertEqual(status["phase"], "preview", status["error"])
         before = self.grasp_path.read_bytes()
         with self.assertRaises(CalibrationError):
@@ -406,14 +406,14 @@ class CalibrationControllerTests(unittest.TestCase):
         native = self.prepare()
         with self.options.robot_config.open("a") as stream:
             stream.write("\n# changed during session\n")
-        status = self.action("sample", angle_deg=0, displacement_m=-.085)
+        status = self.action("sample", angle_deg=0, displacement_m=-.080)
         self.assertIn("配置发生改变", status["error"])
         self.assertIsNone(status["result"])
         self.assertEqual(native.sample_count, 0)
 
     def test_config_change_prevents_save_before_file_write(self):
         self.prepare()
-        self.action("sample", angle_deg=0, displacement_m=-.085)
+        self.action("sample", angle_deg=0, displacement_m=-.080)
         before = self.grasp_path.read_bytes()
         with self.options.system_config.open("a") as stream:
             stream.write("\n# changed during session\n")
@@ -427,7 +427,7 @@ class CalibrationControllerTests(unittest.TestCase):
 
     def test_cancel_during_final_arm_status_prevents_save(self):
         native = self.prepare()
-        status = self.action("sample", angle_deg=0, displacement_m=-.085)
+        status = self.action("sample", angle_deg=0, displacement_m=-.080)
         self.assertEqual(status["phase"], "preview", status["error"])
         before = self.grasp_path.read_bytes()
         original_request = native.request
@@ -471,7 +471,7 @@ class CalibrationControllerTests(unittest.TestCase):
 
     def test_hand_fault_keeps_session_and_preview(self):
         native = self.prepare()
-        self.action("sample", angle_deg=0, displacement_m=-.085)
+        self.action("sample", angle_deg=0, displacement_m=-.080)
         self.assertIsNotNone(self.controller.snapshot()["result"])
         link = self.controller.link
         original = link.snapshot()

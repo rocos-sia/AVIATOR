@@ -46,28 +46,28 @@ int main(int argc, char** argv) {
             auto keyboard = YAML::Clone(root);
             keyboard["source"] = "joystick";
             keyboard["device"] = "auto";
-            keyboard["keyboard"]["roll_speed"] = 0.5;
-            keyboard["keyboard"]["pitch_speed"] = 2.0;
-            keyboard["keyboard"]["roll_limit"] = 0.75;
+            keyboard["keyboard"]["roll_speed_deg_s"] = 0.5;
+            keyboard["keyboard"]["pitch_speed_mm_s"] = 2.0;
+            keyboard["keyboard"]["roll_limit_deg"] = 0.75;
             write(keyboard);
             const auto parsed = flight_gateway::load_config(file.string());
-            check(parsed.source == "joystick" && parsed.keyboard.roll_speed == 0.5 &&
-                      parsed.keyboard.pitch_speed == 2 && parsed.keyboard.roll_limit == 0.75,
+            check(parsed.source == "joystick" && parsed.keyboard.roll_speed_deg_s == 0.5 &&
+                      parsed.keyboard.pitch_speed_mm_s == 2 && parsed.keyboard.roll_limit_deg == 0.75,
                   "keyboard configuration ignored");
             keyboard.remove("keyboard");
             write(keyboard);
-            check(flight_gateway::load_config(file.string()).keyboard.roll_speed == 1,
+            check(flight_gateway::load_config(file.string()).keyboard.roll_speed_deg_s == 50,
                   "optional keyboard defaults");
-            for (const auto* key : {"roll_speed", "pitch_speed", "roll_limit", "pitch_limit"}) {
+            for (const auto* key : {"roll_speed_deg_s", "pitch_speed_mm_s", "roll_limit_deg", "pitch_max_mm"}) {
                 for (const auto* invalid : {"0", "-1", ".nan", ".inf", "abc"}) {
                     auto bad = YAML::Clone(root);
                     bad["keyboard"][key] = invalid;
                     rejected(bad);
                 }
             }
-            for (const auto* key : {"roll_limit", "pitch_limit"}) {
+            for (const auto* key : {"roll_limit_deg", "pitch_max_mm"}) {
                 auto bad = YAML::Clone(root);
-                bad["keyboard"][key] = 1.01;
+                bad["keyboard"][key] = 80.01;
                 rejected(bad);
             }
             auto bad = YAML::Clone(root);

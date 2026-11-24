@@ -28,7 +28,7 @@ struct Axis {
 // Decoder has no device IO: EV_ABS changes become one snapshot at SYN_REPORT.
 struct JoystickSample {
     Axis roll, pitch;
-    double roll_value = 0, pitch_value = 0;
+    double roll_value = 0, pitch_value = 0; // deg, mm; left/push positive
     std::uint64_t sample_us = 0;
     std::uint64_t checked_us = 0;
     std::uint64_t initial_snapshot_us = 0;
@@ -43,7 +43,7 @@ struct JoystickSample {
     bool fresh(std::uint64_t now_us, std::uint64_t timeout_us) const;
 };
 
-// Keyboard emulates the existing normalized JOYSTICK protocol for Core compatibility.
+// Keyboard integrates absolute physical targets in deg and mm.
 inline constexpr std::array<unsigned, 4> keyboard_arrows{KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN};
 inline constexpr std::array<unsigned, 11> keyboard_buttons{
     KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, 0, KEY_MINUS};

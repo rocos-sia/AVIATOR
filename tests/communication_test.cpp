@@ -20,7 +20,7 @@ Message flight() {
     Message message;
     message.header = {"1.0", 1, 1790121600000000, 1000000,
         "host-boot", "flight_gateway", "11111111-1111-4111-8111-111111111111", true};
-    message.body = {{"source", "JOYSTICK"}, {"control", {{"roll", 0.35}, {"pitch", -0.12}}}};
+    message.body = {{"source", "JOYSTICK"}, {"control", {{"roll_deg", 0.35}, {"pitch_mm", -0.12}}}};
     return message;
 }
 InputPolicy flight_policy() {
@@ -71,9 +71,9 @@ void codec_tests() {
     message.body["valid"] = true;
     check(!encode(message, payload, error), "body shadows header");
     message = flight();
-    message.body["control"]["roll"] = 1.01;
+    message.body["control"]["roll_deg"] = 50.01;
     check(!encode(message, payload, error), "axis range");
-    message.body["control"]["roll"] = std::numeric_limits<double>::quiet_NaN();
+    message.body["control"]["roll_deg"] = std::numeric_limits<double>::quiet_NaN();
     check(!encode(message, payload, error), "NaN cannot silently become null");
     message = flight();
     nlohmann::json deep = 1;
@@ -121,7 +121,7 @@ void consuming_codec_tests() {
     for (const auto& value : {nlohmann::json(1.01), nlohmann::json("bad"),
                             nlohmann::json(std::numeric_limits<double>::infinity()),
                             nlohmann::json(std::numeric_limits<double>::quiet_NaN())}) {
-        auto m = flight(); m.body["control"]["roll"] = value; compare(m);
+        auto m = flight(); m.body["control"]["roll_deg"] = value; compare(m);
     }
     auto m = flight(); m.body["sequence"] = 42; compare(m);
     m = flight(); m.header.sequence = max_json_integer + 1; compare(m);

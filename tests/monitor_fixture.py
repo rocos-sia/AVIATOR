@@ -59,7 +59,7 @@ try:
         except (FileNotFoundError,json.JSONDecodeError):
             control = {}
         send('flight.state','FlightState','aviator_core',dict(system=dict(state='CONTROL',control_source='JOYSTICK',current_error_code=0,last_error_code=0)),sample)
-        send('flight.command','FlightCommand','flight_gateway',dict(source='JOYSTICK',control=dict(roll=.35,pitch=-.12)),sample)
+        send('flight.command','FlightCommand','flight_gateway',dict(source='JOYSTICK',control=dict(roll_deg=control.get("command_roll_deg", -17.5),pitch_mm=control.get("command_pitch_mm", 8.4))),sample)
         side = dict(valid=True,status='ACTIVE',enabled=True,error_code=0,sample_mono_us=sample,
                     joint_position=[0,.2,-.4,0,.2,0,0])
         right = dict(side, joint_position=[-.5,-.8,.6,1,-.3,-.4,-.2])

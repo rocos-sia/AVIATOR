@@ -25,7 +25,7 @@ struct MotionConfig {
 MotionConfig loadMotionConfig(const std::filesystem::path &file);
 struct WheelReference { double angle = 0, displacement = 0; };
 WheelReference loadInitialWheel(const std::filesystem::path& robot_file);
-// Absolute wheel displacement in metres: -1 -> -0.170, 0 -> -0.085, +1 -> 0.
+// ICD pitch in mm to model displacement: -80 -> 0, 0 -> -0.080, +70 -> -0.150 m.
 double joystickWheelDisplacement(double pitch);
 std::filesystem::path defaultSystemConfig();
 Message motionMessage(Topic, const std::string &publisher, const std::string &session, uint64_t sequence,

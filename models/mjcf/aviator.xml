@@ -195,8 +195,8 @@
            small vertical component. Keep inertia/damping and external-force
            response, without a position lock or a return-to-center spring. -->
       <body name="steering_wheel" gravcomp="1" pos="0 0 0" quat="0.500048163397 0.49999999768 -0.499951836603 -0.49999999768">
-        <joint name="roll_input_joint" type="hinge" axis="0 0 1" range="-0.87266 0.87266" damping="0.1" />
-        <joint name="pitch_input_joint" type="slide" axis="0 0 1" range="-0.170 0" damping="1" />
+        <joint name="roll_input_joint" type="hinge" axis="0 0 1" range="-0.8726646259971648 0.8726646259971648" damping="0.1" />
+        <joint name="pitch_input_joint" type="slide" axis="0 0 1" range="-0.150 0" damping="1" />
         <inertial pos="0 0 0" mass="0.5" fullinertia="0.001 0.001 0.001 0.0 0.0 0.0" />
         <!-- Texture overlay on the QR plate in steering_wheel_qr.STL.
              Its front is at local Z=0.32111523 m; a 1 mm outward adjustment
@@ -263,8 +263,8 @@
         <site name="right_handle" pos="0.099968289802 -0.031250388122 0.43824357303" quat="-0.493604596516 0.350445269072 0.445462893102 0.659625216735" size="0.008" rgba="0.2 1 0.2 1" />
       </body>
       <body name="steering_wheel_2" gravcomp="1" pos="0 0.47 0" quat="0.500048163397 0.49999999768 -0.499951836603 -0.49999999768">
-        <joint name="roll_input_joint_2" type="hinge" axis="0 0 1" range="-0.87266 0.87266" damping="0.1" />
-        <joint name="pitch_input_joint_2" type="slide" axis="0 0 1" range="-0.170 0" damping="1" />
+        <joint name="roll_input_joint_2" type="hinge" axis="0 0 1" range="-0.8726646259971648 0.8726646259971648" damping="0.1" />
+        <joint name="pitch_input_joint_2" type="slide" axis="0 0 1" range="-0.150 0" damping="1" />
         <inertial pos="0 0 0" mass="0.5" fullinertia="0.001 0.001 0.001 0 0 0" />
         <geom name="steering_wheel_2_visual_0" class="visual" mesh="steering_wheel_2" material="blue" />
       </body>
@@ -697,6 +697,6 @@
   <keyframe>
     <!-- Matches config/posture.json: both home J2 angles are 102 deg,
          inside the configured 100..104 deg task limits. -->
-    <key name="aviator_home" qpos="0 -0.085 0 -0.085 0.412904691413689 1.78023583703422 -1.81881755433862 2.21576529857688 0.246532716014428 -0.056955343292378 -0.313994005644835 0 0 0 0 0 0 0 0 0 0 0 0 -0.369799332513875 1.78023583703422 1.78530003549256 2.15232258026689 -0.124879610953531 -0.13055601456795 0.188511739431293 0 0 0 0 0 0 0 0 0 0 0 0" />
+    <key name="aviator_home" qpos="0 -0.080 0 -0.080 0.412904691413689 1.78023583703422 -1.81881755433862 2.21576529857688 0.246532716014428 -0.056955343292378 -0.313994005644835 0 0 0 0 0 0 0 0 0 0 0 0 -0.369799332513875 1.78023583703422 1.78530003549256 2.15232258026689 -0.124879610953531 -0.13055601456795 0.188511739431293 0 0 0 0 0 0 0 0 0 0 0 0" />
   </keyframe>
 </mujoco>

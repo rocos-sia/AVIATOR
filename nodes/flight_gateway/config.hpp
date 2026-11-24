@@ -4,13 +4,13 @@
 
 namespace flight_gateway {
 struct KeyboardConfig {
-    // Normalized travel per second and normalized absolute travel limits.
-    double roll_speed = 1.0, pitch_speed = 1.0;
-    double roll_limit = 1.0, pitch_limit = 1.0;
+    double roll_speed_deg_s = 50.0, pitch_speed_mm_s = 75.0;
+    double roll_limit_deg = 50.0, pitch_min_mm = -80.0, pitch_max_mm = 70.0;
 };
 struct Rs422Config {
     std::string profile, channel_a, channel_b;
-    unsigned receive_timeout_ms = 50, recovery_frames = 10, switch_max_step = 100;
+    unsigned receive_timeout_ms = 50, recovery_frames = 10;
+    double switch_max_roll_deg = 5.0, switch_max_pitch_mm = 7.5;
     std::string release_root;
     bool allow_test_identity = false;
     std::string camera_id = "cockpit", camera_publisher = "camera";

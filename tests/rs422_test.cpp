@@ -17,7 +17,7 @@ void checkDualFeedback() {
     camera.topic = aviator::Topic::camera_detection;
     camera.header = {"1.0", 1, t, t, "clock", "camera", "session", true};
     camera.body = {{"camera_id", "cockpit"}, {"steering_wheel", {
-        {"valid", true}, {"theta_rad", 52 * radians}, {"translation_along_axis_m", -.090}}}};
+        {"valid", true}, {"theta_rad", 50 * radians}, {"translation_along_axis_m", -.080}}}};
     CameraTelemetry vision("clock");
     check(vision.accept(camera, t), "camera sample accepted");
     aviator::Message state;
@@ -25,27 +25,27 @@ void checkDualFeedback() {
     state.header.sample_mono_us = t;
     state.body = {{"system", {{"state", "CONTROL"}, {"current_error_code", 0}, {"last_error_code", 0}}},
         {"software_lock", true}, {"wheel_joint_measurement", {{"source", "joint_fk"},
-         {"valid", true}, {"sample_mono_us", t}, {"angle", 52 * radians}, {"displacement", -.175}}}};
+         {"valid", true}, {"sample_mono_us", t}, {"angle", 50 * radians}, {"displacement", -.150}}}};
     Uplink up;
     populateTelemetry(up, state, t);
     vision.populate(up, t);
-    check(up.roll == -1040 && up.pitch == -1059 && up.joint_roll == 1040 && up.joint_pitch == 1059,
+    check(up.roll == -32767 && up.pitch == -32767 && up.joint_roll == 32767 && up.joint_pitch == 32767,
           "independent camera/FK signs and expanded physical ranges");
     auto bytes = encode(up);
-    check(bytes[13] == 0xf0 && bytes[14] == 0xfb && bytes[15] == 0xdd && bytes[16] == 0xfb &&
-          bytes[26] == 0x10 && bytes[27] == 0x04 && bytes[28] == 0x23 && bytes[29] == 0x04,
+    check(bytes[13] == 0x01 && bytes[14] == 0x80 && bytes[15] == 0x01 && bytes[16] == 0x80 &&
+          bytes[26] == 0xff && bytes[27] == 0x7f && bytes[28] == 0xff && bytes[29] == 0x7f,
           "camera and FK feedback exact little-endian offsets");
     Uplink decoded;
-    check(decode(bytes, decoded) && decoded.joint_roll == 1040 && decoded.joint_pitch == 1059,
+    check(decode(bytes, decoded) && decoded.joint_roll == 32767 && decoded.joint_pitch == 32767,
           "expanded FK endpoints decode without saturation");
     for (size_t offset : {13, 15, 26, 28}) {
         auto bad = bytes;
         bad[offset] = 0xff; bad[offset + 1] = 0x7f;
         bad.back() = checksum(bad.data() + 2, bad.size() - 3);
-        check(!decode(bad, decoded), "out-of-range feedback rejected by both decoders");
+        check(decode(bad, decoded), "full scale positive feedback is valid");
     }
     vision.populate(up, t + 100000);
-    check(up.roll == invalid_position && up.joint_roll == 1040, "camera expiry does not overwrite FK");
+    check(up.roll == invalid_position && up.joint_roll == 32767, "camera expiry does not overwrite FK");
     camera.header.sequence++; camera.header.sample_mono_us++;
     camera.body["steering_wheel"]["valid"] = false;
     check(!vision.accept(camera, t + 1), "target lost revokes visual feedback");
@@ -53,13 +53,13 @@ void checkDualFeedback() {
     check(up.roll == invalid_position && up.pitch == invalid_position, "no old visual sample after target loss");
     camera.header.sequence++; camera.header.sample_mono_us++;
     camera.body["steering_wheel"]["valid"] = true;
-    camera.body["steering_wheel"]["theta_rad"] = -51 * radians;
-    camera.body["steering_wheel"]["translation_along_axis_m"] = .086;
+    camera.body["steering_wheel"]["theta_rad"] = -49 * radians;
+    camera.body["steering_wheel"]["translation_along_axis_m"] = .069;
     check(vision.accept(camera, t + 2), "visual recovery");
     vision.populate(up, t + 2);
     state.body["wheel_joint_measurement"]["valid"] = false;
     populateTelemetry(up, state, t + 2);
-    check(up.roll == 1020 && up.pitch == 1012 && up.joint_roll == invalid_position,
+    check(up.roll == encodeRoll(49) && up.pitch == encodePitch(69) && up.joint_roll == invalid_position,
           "invalid FK leaves fresh expanded camera measurement intact");
     state.body["wheel_joint_measurement"]["valid"] = true;
     state.body["software_lock"] = false;
@@ -152,20 +152,44 @@ void checkWireBoundaries() {
         require(!valid(extended));
     }
 }
+void checkPhysicalEncoding() {
+    check(encodeRoll(-50) == -32767 && encodeRoll(50) == 32767, "ICD roll endpoints");
+    check(encodePitch(-80) == -32767 && encodePitch(70) == 32767, "ICD pitch endpoints");
+    check(decodePitch(0) == -5 && encodePitch(0) == 2184, "physical zero differs from raw zero");
+    for (int raw = -32767; raw <= 32767; ++raw) {
+        check(encodeRoll(decodeRoll(raw)) == raw && encodePitch(decodePitch(raw)) == raw,
+              "all valid wire positions survive physical-unit roundtrip");
+    }
+    auto bytes = encode(Downlink{});
+    bytes[4] = 0; bytes[5] = 0x80;
+    bytes.back() = checksum(bytes.data()+2, bytes.size()-3);
+    Downlink ignored;
+    check(!decode(bytes, ignored), "invalid position cannot become a command");
+    for (const auto limits : std::array<std::array<double, 3>, 4>{{
+            {4, 0, 0}, {6, 0, 1}, {0, 7, 0}, {0, 8, 1}}}) {
+        DualReceiver receiver(50000, 1, 5, 7.5);
+        receiver.receive(0, Downlink{1, 0, 0, encodePitch(0)}, 1000000);
+        receiver.update(1000000);
+        check(receiver.valid(1000000), "initial channel admitted");
+        receiver.receive(1, Downlink{2, 0, encodeRoll(limits[0]), encodePitch(limits[1])}, 1050001);
+        receiver.update(1050001);
+        check(receiver.blocked() == bool(limits[2]), "failover compares deg and mm independently");
+    }
+}
 void checkIcdPolarity() {
     constexpr uint64_t t = 1000000;
     constexpr double radians = 3.14159265358979323846 / 180;
     // Fixed physical poses: left/push positive, right/pull negative, then center.
     for (const auto& pose : std::array<std::array<double, 4>, 5>{{
-             {50, -.085, 1000, 0}, {-50, -.085, -1000, 0},
-             {0, -.170, 0, 1000}, {0, 0, 0, -1000}, {0, -.085, 0, 0}}}) {
+             {50, -.080, 32767, 2184}, {-50, -.080, -32767, 2184},
+             {0, -.150, 0, 32767}, {0, 0, 0, -32767}, {0, -.080, 0, 2184}}}) {
         const double angle = pose[0] * radians, displacement = pose[1];
         aviator::Message camera;
         camera.topic = aviator::Topic::camera_detection;
         camera.header = {"1.0", 1, t, t, "clock", "camera", "session", true};
         camera.body = {{"camera_id", "cockpit"}, {"steering_wheel", {
             {"valid", true}, {"theta_rad", -angle},
-            {"translation_along_axis_m", -displacement - .085}}}};
+            {"translation_along_axis_m", -displacement - .080}}}};
         aviator::Message state;
         state.header.valid = true;
         state.header.sample_mono_us = t;
@@ -272,6 +296,7 @@ void checkRingParser() {
     }
 }
 int main() try {
+    checkPhysicalEncoding();
     checkIcdPolarity();
     checkWireBoundaries();
     checkRingParser();
@@ -285,7 +310,8 @@ int main() try {
     Bytes neutral(32, 0);
     neutral[0] = 0xeb;
     neutral[1] = 0x90;
-    neutral[31] = 0x00;
+    neutral[6] = 0x88; neutral[7] = 0x08; // physical pitch zero = raw 2184
+    neutral[31] = 0x90;
     check(encode(Downlink{}) == neutral, "independent downlink vector");
     auto bytes = encode(Downlink{255, 0x30, -1000, 1000});
     Downlink d;
@@ -394,7 +420,7 @@ int main() try {
     check(sender.next() == 0x20, "already emitted idle needs no extra separator");
     sender.reset();
     check(sender.next() == 0 && sender.request(0x10), "reset cancels train without cooldown");
-    DualReceiver dual(50000, 2, 100);
+    DualReceiver dual(50000, 2, 5.0, 7.5);
     uint64_t t = 1000000;
     uint8_t seq = 250;
     auto tick = [&](uint8_t op, bool a = true, bool b = true, int16_t roll = 0) {
@@ -429,7 +455,7 @@ int main() try {
     check(dual.selected() == 1, "recovered primary does not preempt");
     dual.update(t + 100000);
     check(!dual.valid(t + 100000), "both stale revoke input");
-    DualReceiver startup(50000, 10, 100);
+    DualReceiver startup(50000, 10, 5.0, 7.5);
     int startup_events = 0;
     for (unsigned i = 0; i < 40; ++i) {
         const auto clock = 1000000 + i * period_us;
@@ -437,7 +463,7 @@ int main() try {
         startup_events += startup.update(clock) == 0x10;
     }
     check(startup_events == 1, "startup confirms held operation after channel recovery without neutral");
-    DualReceiver burst(50000, 1, 100);
+    DualReceiver burst(50000, 1, 5.0, 7.5);
     t = 2000000;
     for (int i = 0; i < 20; ++i) {
         burst.receive(0, {uint8_t(i), 0, 0, 0}, t);
@@ -447,7 +473,7 @@ int main() try {
     for (int i = 20; i < 25; ++i)
         burst.receive(0, {uint8_t(i), 0x20, 0, 0}, t);
     check(!burst.update(t), "buffered five-frame burst cannot execute");
-    DualReceiver interrupted_batch(50000, 1, 100);
+    DualReceiver interrupted_batch(50000, 1, 5.0, 7.5);
     t = 4000000;
     for (unsigned i = 0; i < 4; ++i) {
         interrupted_batch.receive(0, {uint8_t(i), 0x10, 0, 0}, t);
@@ -465,7 +491,7 @@ int main() try {
     }
     for (unsigned batch_size : {2u, 3u, 4u}) {
         for (unsigned phase = 0; phase < batch_size; ++phase) {
-            DualReceiver batched(batch_size == 4 ? 60000 : 50000, 10, 100);
+            DualReceiver batched(batch_size == 4 ? 60000 : 50000, 10, 5.0, 7.5);
             uint64_t clock = 5000000;
             uint8_t counter = 240;
             std::vector<Downlink> pending;
@@ -504,13 +530,13 @@ int main() try {
             check(operations.empty(), "operation requires real elapsed confirmation time");
         }
     }
-    DualReceiver conflict(50000, 1, 100);
+    DualReceiver conflict(50000, 1, 5.0, 7.5);
     t = 3000000;
     conflict.receive(0, {1, 0, 0, 0}, t);
     conflict.receive(1, {1, 0, 500, 0}, t);
     conflict.update(t);
     check(conflict.blocked() && !conflict.valid(t), "same-counter disagreement blocks");
-    DualReceiver mixed_conflict(50000, 1, 100);
+    DualReceiver mixed_conflict(50000, 1, 5.0, 7.5);
     mixed_conflict.receive(0, {1, 0x20, 0, 0}, t);
     mixed_conflict.receive(1, {1, 0x10, 0, 0}, t);
     mixed_conflict.receive(0, {2, 0, 0, 0}, t);
@@ -531,12 +557,12 @@ int main() try {
          {{"state", "RELEASING"}, {"current_error_code", 28673}, {"last_error_code", 1203}}},
         {"software_lock", true},
         {"wheel_joint_measurement",
-         {{"source", "joint_fk"}, {"valid", true}, {"sample_mono_us", t}, {"angle", 0}, {"displacement", -.085}}},
+         {{"source", "joint_fk"}, {"valid", true}, {"sample_mono_us", t}, {"angle", 0}, {"displacement", -.080}}},
         {"wheel_reference", {{"angle", .8}, {"displacement", 0}}}};
     up = Uplink{};
     populateTelemetry(up, state, t + 1000);
     check(up.state == 0x14 && up.fault == unknown_fault && up.last_fault == 1203 && up.joint_roll == 0 &&
-              up.joint_pitch == 0 && up.roll == invalid_position && up.pitch == invalid_position && up.rear == unknown,
+              up.joint_pitch == 2184 && up.roll == invalid_position && up.pitch == invalid_position && up.rear == unknown,
           "real feedback and unknown mapping");
     up = Uplink{};
     state.body["system"]["state"] = "EMERGENCY_STOP";

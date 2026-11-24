@@ -19,9 +19,9 @@ template <class F> void rejected(F f) {
 int main() {
     try {
         const auto session = new_session_id(), epoch = new_session_id();
-        for (const auto [pitch, expected] : {std::pair<double,double>{-1, -.170}, {0, -.085}, {1, 0}, {-.5, -.1275}, {.5, -.0425}})
+        for (const auto [pitch, expected] : {std::pair<double,double>{-80, 0}, {0, -.080}, {70, -.150}, {-40, -.040}, {35, -.115}})
             check(std::abs(joystickWheelDisplacement(pitch) - expected) < 1e-12, "pitch mapping");
-        rejected([] { joystickWheelDisplacement(1.01); });
+        rejected([] { joystickWheelDisplacement(70.01); });
         rejected([] { joystickWheelDisplacement(std::numeric_limits<double>::quiet_NaN()); });
         const auto robot_file = std::filesystem::temp_directory_path() / ("wheel-initial-" + session + ".yaml");
         struct Cleanup { std::filesystem::path p; ~Cleanup() { std::filesystem::remove(p); } } cleanup{robot_file};

@@ -1,4 +1,5 @@
 #include "test_ui_input.hpp"
+#include "wheel_units.hpp"
 #include <cerrno>
 #include <cmath>
 #include <cstring>
@@ -96,8 +97,8 @@ void TestUiInput::poll(JoystickSample& sample, std::vector<unsigned>& pressed,
                 require(phase == "CONTROL", "Target requires CONTROL");
                 const double angle = message.at("angle").get<double>();
                 const double displacement = message.at("displacement").get<double>();
-                require(std::isfinite(angle) && angle >= -.87266 && angle <= .87266 &&
-                        std::isfinite(displacement) && displacement >= -.170 && displacement <= 0,
+                require(std::isfinite(angle) && angle >= -.8726646259971648 && angle <= .8726646259971648 &&
+                        std::isfinite(displacement) && displacement >= -.150 && displacement <= 0,
                         "Wheel target outside range");
                 angle_ = angle; displacement_ = displacement;
                 result("ACCEPTED", "Target selected; reference tracking is not a measurement");
@@ -114,8 +115,8 @@ void TestUiInput::poll(JoystickSample& sample, std::vector<unsigned>& pressed,
             } else throw std::runtime_error("Unknown UI command");
         } catch (const std::exception& e) { result("REJECTED", e.what()); }
     }
-    sample.roll_value = -angle_ / .87266;
-    sample.pitch_value = displacement_ / .085 + 1;
+    sample.roll_value = aviator::wheel::roll(angle_);
+    sample.pitch_value = aviator::wheel::pitch(displacement_);
     sample.sample_us = sample.checked_us = checked_;
     sample.device_connected = client_ >= 0;
     sample.failed = false;

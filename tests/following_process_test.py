@@ -64,7 +64,7 @@ def main():
                             sample_mono_us=now, clock_id=clock, session_id=session, valid=True)
             roll, pitch = flight_target
             flight = dict(envelope, msg_type="FlightCommand", publisher_id="flight_gateway",
-                          source="JOYSTICK", control=dict(roll=roll, pitch=pitch),
+                          source="JOYSTICK", control=dict(roll_deg=-roll*50, pitch_mm=-pitch*(80 if pitch >= 0 else 70)),
                           input_state=dict(mode="POSITION_HOLD", device_connected=True, checked_mono_us=now))
             pub.send_multipart([b"flight.command", json.dumps(flight).encode()])
             if camera_on.is_set():
@@ -169,7 +169,7 @@ def main():
         # Stiffness completion now preserves the measured wheel rebase instead
         # of replaying the original software reference from Core's cache.
         assert abs(grasped["wheel_reference"]["angle"]) <= .87266, grasped
-        assert -.170 <= grasped["wheel_reference"]["displacement"] <= 0, grasped
+        assert -.150 <= grasped["wheel_reference"]["displacement"] <= 0, grasped
         camera_on.set()
         grasp_target, grasp_reference = held(grasped)
         flight_target = (-.2, .06)

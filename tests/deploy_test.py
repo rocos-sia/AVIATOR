@@ -416,5 +416,41 @@ class DeploymentTest(unittest.TestCase):
         self.assertEqual(remote.current_release(), self.prefix)
 
 
+class Icd1120MigrationTest(unittest.TestCase):
+    def test_field_settings_and_idempotence(self):
+        migration = module('icd1120_migration', ROOT / 'deploy/migrate_icd1120.py')
+        old = {'keyboard': {'roll_speed': .5, 'pitch_speed': 2, 'pitch_limit': .5},
+               'rs422': {'profile': 'aviator-bench-v1', 'channel_a': '/dev/field-a', 'switch_max_step': 100},
+               'wheel_initial': {'angle': .1, 'displacement': -.085}, 'invert_pitch': True}
+        new = migration.migrate(old)
+        self.assertEqual(new['keyboard'], dict(roll_speed_deg_s=25, pitch_speed_mm_s=150,
+                                              roll_limit_deg=50, pitch_min_mm=-40, pitch_max_mm=35))
+        self.assertEqual(new['rs422']['channel_a'], '/dev/field-a')
+        self.assertEqual(new['rs422']['switch_max_roll_deg'], 5)
+        self.assertEqual(new['rs422']['switch_max_pitch_mm'], 7.5)
+        self.assertEqual(new['wheel_initial'], dict(angle=.1, displacement=-.080))
+        self.assertTrue(new['invert_pitch'])
+        self.assertEqual(migration.migrate(new), new)
+        self.assertEqual(old['wheel_initial']['displacement'], -.085)
+        with self.assertRaises(ValueError):
+            migration.migrate({'keyboard': {'roll_speed': 1, 'pitch_speed_mm_s': 75}})
+        with self.assertRaises(ValueError):
+            migration.migrate({'wheel_initial': {'displacement': -.160}})
+
+    def test_offline_missing_dependency_never_calls_apt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / 'share/aviator/deploy/manifest.json'
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps(dict(ubuntu='22.04', architecture='x86_64',
+                                               apt_packages=['missing-library'])))
+            with mock.patch.object(remote.subprocess, 'run', return_value=SimpleNamespace(returncode=1, stdout='')) as query, \
+                 mock.patch.object(remote, 'run') as run:
+                with self.assertRaisesRegex(RuntimeError, 'Offline deployment requires'):
+                    remote.setup_dependencies(root, SimpleNamespace(), skip_apt=True)
+                self.assertEqual(query.call_args.args[0][0], 'dpkg-query')
+                run.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

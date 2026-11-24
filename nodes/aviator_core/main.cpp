@@ -65,10 +65,10 @@ int main(int argc, char **argv) {
                     aviator::Logger::info("robot.lockHandles() done");
                     if (demo) {
                         // 每行依次为：转角 rad、推拉 m、速度倍率 v。
-                        for (const auto target : {std::array<double, 3>{.87266, 0, .8},
-                                                  {-.87266, 0, .8},
+                        for (const auto target : {std::array<double, 3>{.8726646259971648, 0, .8},
+                                                  {-.8726646259971648, 0, .8},
                                                   {0, 0, .8},
-                                                  {0, -.170, .8},
+                                                  {0, -.150, .8},
                                                   {0, 0, .8}}) {
                             if (exit) break;
                             aviator::Logger::info("DEMO target angle={} displacement={}", target[0], target[1]);

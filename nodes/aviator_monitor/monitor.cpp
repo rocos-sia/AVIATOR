@@ -272,7 +272,7 @@ Json State::snapshot(std::uint64_t now, const std::string& clock) {
             {"receive_age_ms", (now - s.received_us) / 1000.0}, {"gaps", s.gaps}, {"duplicates", s.duplicates},
             {"summary", {{"state", field(body, "/system/state")}, {"source", field(body, "/system/control_source")},
                 {"error", field(body, "/system/current_error_code")}, {"last_error", field(body, "/system/last_error_code")},
-                {"roll", field(body, "/control/roll")}, {"pitch", field(body, "/control/pitch")},
+                {"roll_deg", field(body, "/control/roll_deg")}, {"pitch_mm", field(body, "/control/pitch_mm")},
                 {"vision", field(body, "/vision/status")}, {"confidence", field(body, "/confidence")}}}};
         if (s.message.topic == aviator::Topic::flight_command && body.contains("rs422")) {
             row["rs422"] = rs422_snapshot(body.at("rs422"), now, same_clock,

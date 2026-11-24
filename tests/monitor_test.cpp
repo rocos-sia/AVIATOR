@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
         monitor::State serial;
         auto command = message();
         command.topic = aviator::Topic::flight_command;
-        command.body = {{"source", "JOYSTICK"}, {"control", {{"roll", 0}, {"pitch", 0}}}};
+        command.body = {{"source", "JOYSTICK"}, {"control", {{"roll_deg", 0}, {"pitch_mm", 0}}}};
         serial.ingest("flight.command", encoded(command), 1000000);
         check(!serial.snapshot(1000000, "clock")["streams"][0].contains("rs422"),
               "ordinary joystick message requires no serial metadata");

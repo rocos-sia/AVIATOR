@@ -153,21 +153,16 @@ function renderOverview() {
   badge($('yoke-state'),stateOf(yg));
   text('actual-roll',y ? `${signed(y.roll_deg)}°` : '—');
   text('actual-pitch',y ? `${fmt(y.pitch_mm)} mm` : '—');
-  text('actual-roll-percent',y ? `${signed(y.roll_percent)}%` : '—');
-  text('actual-pitch-percent',y ? `${signed(y.pitch_percent)}%` : '—');
-  for (const [id,value] of [['actual-roll-percent',y?.roll_percent],['actual-pitch-percent',y?.pitch_percent]])
-    $(id).className = Number.isFinite(value) && Math.abs(value)>100 ? 'STALE' : 'measured';
   text('yoke-meta',y ? `视觉实测 · 帧 ${y.frame_id} · 标定 ${yg.calibration_id} · 样本 ${fmt(yg.sample_age_ms)} ms` : `${labels[stateOf(yg)]} · ${reasonText(yg)}`);
   const cg = overview?.flight_command, c = live(cg) ? cg.current : null;
-  text('command-source',c?.control_source); text('command-roll',c ? `${signed(c.roll_percent)}%` : '—'); text('command-pitch',c ? `${signed(c.pitch_percent)}%` : '—');
-  text('command-roll-physical',c ? `${signed(c.roll_deg)}°` : '—'); text('command-pitch-physical',c ? `${fmt(c.pitch_mm)} mm` : '—');
-  for (const [id,value] of [['roll-meter',c?.roll_percent],['pitch-meter',c?.pitch_percent]]) {
+  text('command-source',c?.control_source); text('command-roll',c ? `${signed(c.roll_deg)}°` : '—'); text('command-pitch',c ? `${signed(c.pitch_mm)} mm` : '—');
+  for (const [id,value] of [['roll-meter',c?.roll_deg],['pitch-meter',c?.pitch_mm]]) {
     $(id).value = value ?? 0; $(id).hidden = !Number.isFinite(value);
   }
   $('command-marker').toggleAttribute('hidden',!c); $('measured-marker').toggleAttribute('hidden',!y);
   // Driver view: positive roll is left; positive pitch is forward (up on this plot).
-  if (c) $('command-marker').setAttribute('transform',`translate(${140-c.roll_percent},${125-c.pitch_percent})`);
-  if (y) { $('measured-marker').setAttribute('cx',140-y.roll_percent); $('measured-marker').setAttribute('cy',125-y.pitch_percent); }
+  if (c) $('command-marker').setAttribute('transform',`translate(${140-c.roll_deg*2},${125-c.pitch_mm*(c.pitch_mm>=0?100/70:100/80)})`);
+  if (y) { $('measured-marker').setAttribute('cx',140-y.roll_deg*2); $('measured-marker').setAttribute('cy',125-y.pitch_mm*(y.pitch_mm>=0?100/70:100/80)); }
   text('command-meta',c ? `观测指令 · 样本 ${fmt(cg.sample_age_ms)} ms · 消息有效不代表执行到位` : `${labels[stateOf(cg)]} · 无当前有效指令`);
 }
 const streamRows = new Map(), serviceRows = new Map();

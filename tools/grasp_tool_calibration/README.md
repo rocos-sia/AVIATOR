@@ -116,8 +116,8 @@ core_hand:
 拒绝外部控制后断开 SDK 也可能停止那台机械臂。因此准备前仍须退出所有其他控制与示教程序，
 不能把准备按钮当作对其他控制器无影响的状态探测。
 
-相机仍使用下面介绍的转换：`angle = -theta`、`displacement = -translation - 0.085`，
-合法位移范围为 `[-0.170, 0] m`。相机数据超范围时拒绝，不自动限幅。界面采样复用
+相机仍使用下面介绍的转换：`angle = -theta`、`displacement = -translation - 0.080`，
+合法位移范围为 `[-0.150, 0] m`。相机数据超范围时拒绝，不自动限幅。界面采样复用
 原工具的同主机时钟检查、数据时效检查、相机时间配对和静止性检查。手动输入不再转换。
 
 ### 轮盘位移静止检查失败
@@ -209,10 +209,10 @@ Python 入口使用相机的 Conda 环境，需要 NumPy、PyYAML；相机模式
 
 ```text
 angle_rad      = -theta_rad
-displacement_m = -translation_along_axis_m - 0.085
+displacement_m = -translation_along_axis_m - 0.080
 ```
 
-相机轴向平移 `-0.085 / 0 / +0.085 m` 分别对应 Core 位移 `0 / -0.085 / -0.170 m`。
+相机轴向平移 `-0.080 / 0 / +0.070 m` 分别对应 Core 位移 `0 / -0.080 / -0.150 m`。
 相机与工具须运行在同一主机，使用相同的单调时钟。默认连接 `tcp://127.0.0.1:5556`，
 可用 `--endpoint` 覆盖。相机输入会检查有效性、时效、时钟、session 和标定标识连续性，
 并与关节采样按时间配对；采样期间不要重启相机或更新相机标定。
@@ -223,11 +223,11 @@ displacement_m = -translation_along_axis_m - 0.085
 手动模式仍读取真实机械臂关节角，但不需要 Bus 和相机。角度、位移直接使用
 **Core 坐标约定**，不会再次进行上述相机转换。角度可以用 `--angle-deg` 或
 `--angle-rad` 指定，二者只选一个。角度范围为 `[-0.87266, 0.87266] rad`（约 ±50°）；
-位移单位为米，范围为 `[-0.170, 0]`。输入超限会拒绝，不会自动限幅。
+位移单位为米，范围为 `[-0.150, 0]`。输入超限会拒绝，不会自动限幅。
 
 ```bash
 ~/miniconda3/envs/apriltag_realsense/bin/python tools/grasp_tool_calibration/calibrate.py \
-  --wheel-source manual --angle-deg 0 --displacement-m -0.085 \
+  --wheel-source manual --angle-deg 0 --displacement-m -0.080 \
   --report /tmp/grasp-tool-manual.json
 ```
 
@@ -288,7 +288,7 @@ T_flange_tool     = inverse(T_aircraft_flange) × T_aircraft_grasp
 ```bash
 ~/miniconda3/envs/apriltag_realsense/bin/python tools/grasp_tool_calibration/calibrate.py \
   --joints-file /tmp/grasp-joints.json \
-  --wheel-source manual --angle-rad 0 --displacement-m -0.085 \
+  --wheel-source manual --angle-rad 0 --displacement-m -0.080 \
   --report /tmp/grasp-tool-offline.json
 ```
 

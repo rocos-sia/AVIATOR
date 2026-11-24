@@ -112,7 +112,7 @@ def main():
                               timestamp=time.time_ns()//1000, sample_mono_us=sampled,
                               publisher_id='camera', session_id='test-camera', clock_id=clock, valid=camera_valid,
                               camera_id='cockpit', steering_wheel=dict(valid=camera_valid,
-                                  theta_rad=math.radians(52), translation_along_axis_m=-.09))
+                                  theta_rad=math.radians(50), translation_along_axis_m=-.08))
                 status.send_multipart([b'camera.detection', json.dumps(visual).encode()])
             until = time.monotonic()+.004
             while time.monotonic() < until:
@@ -141,13 +141,13 @@ def main():
                 assert last[3:5] == bytes([0, 0]), last.hex()
                 assert last[10] == 7 and last[11:13] == b'\xff\xff', last.hex()
                 assert struct.unpack_from('<hh', last, 6) == (125, -250), 'echo must retain ICD signs'
-                assert struct.unpack_from('<hh', last, 13) == (-1040, -1059), last.hex()
-                assert struct.unpack_from('<hh', last, 26) == (-250, 500), last.hex()
+                assert struct.unpack_from('<hh', last, 13) == (-32767, -32767), last.hex()
+                assert struct.unpack_from('<hh', last, 26) == (-8192, 22937), last.hex()
                 assert last[30:63] == bytes(33)
                 assert struct.unpack_from('<H', last, 24)[0] == 0x9ca1
             valid = [m for m in seen_commands if m['valid']]
             assert valid and valid[-1]['source'] == 'FLIGHT' and 'input_state' not in valid[-1]
-            assert valid[-1]['control'] == {'roll': -.125, 'pitch': .25}
+            assert valid[-1]['control'] == {'roll_deg': 125 * 50 / 32767, 'pitch_mm': -250 * 75 / 32767 - 5}
             observation = valid[-1]['rs422']
             assert observation['selected_channel'] == 'A'
             for channel in observation['channels']:
@@ -193,16 +193,16 @@ def main():
             last = received[0][-1]
             assert all(channel[-1][10] == 0xfe for channel in received)
             assert struct.unpack_from('<hh', last, 26) == (-32768, -32768)
-            assert struct.unpack_from('<hh', last, 13) == (-1040, -1059)
+            assert struct.unpack_from('<hh', last, 13) == (-32767, -32767)
             for _ in range(18): cycle(camera=False)
             last = received[0][-1]
             assert struct.unpack_from('<hh', last, 13) == (-32768, -32768)
-            assert struct.unpack_from('<hh', last, 26) == (-250, 500)
+            assert struct.unpack_from('<hh', last, 26) == (-8192, 22937)
             for _ in range(4): cycle()
             for _ in range(4): cycle(camera_valid=False)
             assert struct.unpack_from('<hh', received[0][-1], 13) == (-32768, -32768)
             for _ in range(4): cycle(fk_valid=False)
-            assert struct.unpack_from('<hh', received[0][-1], 13) == (-1040, -1059)
+            assert struct.unpack_from('<hh', received[0][-1], 13) == (-32767, -32767)
             assert struct.unpack_from('<hh', received[0][-1], 26) == (-32768, -32768)
             # New samples recover; no old operation is replayed.
             for _ in range(25): cycle()
@@ -230,7 +230,7 @@ def main():
             for roll, pitch in ((1000, 0), (-1000, 0), (0, 1000), (0, -1000), (0, 0)):
                 for _ in range(10): cycle(roll=roll, pitch=pitch)
                 assert seen_commands[-1]['valid']
-                assert seen_commands[-1]['control'] == {'roll': -roll / 1000, 'pitch': -pitch / 1000}
+                assert seen_commands[-1]['control'] == {'roll_deg': roll * 50 / 32767, 'pitch_mm': pitch * 75 / 32767 - 5}
                 for channel in received:
                     assert struct.unpack_from('<hh', channel[-1], 6) == (roll, pitch)
             print('PASS: real dual-PTY robot, 80 Hz uplinks, FLIGHT input, direct operation change without neutral, single execution, failover, CRC loss, stale Core, recovery')

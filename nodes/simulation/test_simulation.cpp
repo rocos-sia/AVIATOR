@@ -151,7 +151,7 @@ void model_test(const std::string& path) {
     const auto moved = readonly.detection(now,true,true);
     const auto wheel = moved.body["steering_wheel"];
     check(wheel["valid"] && std::abs(wheel["theta_rad"].get<double>() + .4) < 1e-12 &&
-          std::abs(wheel["translation_along_axis_m"].get<double>() - .035) < 1e-12,
+          std::abs(wheel["translation_along_axis_m"].get<double>() - .040) < 1e-12,
           "Monitor physical roll/pitch maps back to measured simulation joints");
     const auto invalid_wheel = readonly.detection(now,true,false).body["steering_wheel"];
     check(!invalid_wheel["valid"].get<bool>() && invalid_wheel["theta_rad"].is_null() &&

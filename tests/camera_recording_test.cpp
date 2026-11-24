@@ -212,7 +212,7 @@ void transport(const std::filesystem::path& dir, const std::string& mode, const 
         message.topic = aviator::Topic::flight_command;
         message.header = {"1.0", 1, 1790121600000000, 1000000, "boot", "producer",
                           "11111111-1111-4111-8111-111111111111", true};
-        message.body = {{"source", "JOYSTICK"}, {"control", {{"roll", 0.2}, {"pitch", 0.1}}}};
+        message.body = {{"source", "JOYSTICK"}, {"control", {{"roll_deg", 0.2}, {"pitch_mm", 0.1}}}};
         std::string bus_payload, error;
         check(aviator::encode(message, bus_payload, error), "encode business fixture");
         pub.send(zmq::buffer(std::string("flight.command")), zmq::send_flags::sndmore);

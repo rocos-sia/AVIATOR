@@ -53,8 +53,8 @@ Config load_config(const std::string& path) {
         const auto root = YAML::LoadFile(path);
         keys(root, {"profile", "device", "roll_axis", "pitch_axis", "invert_roll", "invert_pitch",
                     "input_timeout_ms", "buttons", "keyboard", "rs422", "simulator"});
-        require(root["profile"].as<std::string>() == "aviator-bench-v1",
-                "profile must be aviator-bench-v1");
+        require(root["profile"].as<std::string>() == "aviator-icd-1120",
+                "profile must be aviator-icd-1120");
         Config c;
         if (root["device"])
             c.device = root["device"].as<std::string>();
@@ -79,19 +79,27 @@ Config load_config(const std::string& path) {
                 c.buttons[i] = op == "none" ? "" : op;
             }
         }
-        if (auto k = root["keyboard"]) {
-            keys(k, {"roll_speed", "pitch_speed", "roll_limit", "pitch_limit"});
-            for (auto pair : {std::pair<const char*, double*>{"roll_speed", &c.keyboard.roll_speed},
-                              {"pitch_speed", &c.keyboard.pitch_speed},
-                              {"roll_limit", &c.keyboard.roll_limit},
-                              {"pitch_limit", &c.keyboard.pitch_limit}}) {
-                if (k[pair.first])
-                    *pair.second = k[pair.first].as<double>();
-                require(std::isfinite(*pair.second) && *pair.second > 0,
-                        "keyboard values must be finite and positive");
+        if (const auto keyboard = root["keyboard"]) {
+            require(keyboard.IsMap(), "keyboard must be a mapping");
+            std::set<std::string> seen;
+            for (const auto& item : keyboard) {
+                const auto key = item.first.as<std::string>();
+                require(seen.insert(key).second, "duplicate keyboard key");
+                const double v = item.second.as<double>();
+                require(std::isfinite(v), "keyboard value must be finite");
+                if (key == "roll_speed_deg_s") c.keyboard.roll_speed_deg_s = v;
+                else if (key == "pitch_speed_mm_s") c.keyboard.pitch_speed_mm_s = v;
+                else if (key == "roll_limit_deg") c.keyboard.roll_limit_deg = v;
+                else if (key == "pitch_min_mm") c.keyboard.pitch_min_mm = v;
+                else if (key == "pitch_max_mm") c.keyboard.pitch_max_mm = v;
+                else require(false, "unknown keyboard key (ICD 1120 physical units required): " + key);
             }
-            require(c.keyboard.roll_limit <= 1 && c.keyboard.pitch_limit <= 1,
-                    "keyboard limit must be <=1");
+            require(c.keyboard.roll_speed_deg_s > 0 && c.keyboard.pitch_speed_mm_s > 0,
+                    "keyboard speeds must be finite and positive");
+            require(c.keyboard.roll_limit_deg > 0 && c.keyboard.roll_limit_deg <= 50 &&
+                    c.keyboard.pitch_min_mm >= -80 && c.keyboard.pitch_min_mm < 0 &&
+                    c.keyboard.pitch_max_mm > 0 && c.keyboard.pitch_max_mm <= 70,
+                    "keyboard limits must be within roll +/-50 deg and pitch [-80,70] mm");
         }
         const auto rs = root["rs422"];
         keys(rs, {"channel_a", "channel_b", "receive_timeout_ms"});

@@ -75,7 +75,7 @@ def main():
             msg = dict(msg_type="FlightCommand", version="1.0", sequence=sequence,
                        timestamp=time.time_ns() // 1000, sample_mono_us=sampled,
                        clock_id=clock, publisher_id="flight_gateway", session_id=gateway_session,
-                       valid=True, source="JOYSTICK", control=dict(roll=roll, pitch=pitch),
+                       valid=True, source="JOYSTICK", control=dict(roll_deg=-roll*50, pitch_mm=-pitch*(80 if pitch >= 0 else 70)),
                        input_state=dict(mode="POSITION_HOLD", device_connected=True,
                                         checked_mono_us=checked))
             if flight_source == "FLIGHT":
@@ -219,7 +219,7 @@ def main():
         drain_control_logs.set()
         print("PASS: blocked stdout does not stall Core/simulation initialization or heartbeat", flush=True)
         assert initial_state["wheel_joint_measurement"]["valid"] is False, initial_state
-        assert abs(initial_state["wheel_reference"]["displacement"] + .085) < 1e-9, initial_state
+        assert abs(initial_state["wheel_reference"]["displacement"] + .080) < 1e-9, initial_state
         assert call(request("enter_standby"), "REJECTED")["result"]["reason"] == "GATEWAY_NOT_BOUND"
         transmitting.set()
         # Gateway enables button submission only after fresh Core binding confirmation.
@@ -229,7 +229,7 @@ def main():
         call(request("enter_standby"), "ACCEPTED")
         state("HOMING", 3)
         homed = state("STANDBY", 120)
-        assert abs(homed["wheel_reference"]["displacement"] + .085) < 1e-9, homed
+        assert abs(homed["wheel_reference"]["displacement"] + .080) < 1e-9, homed
         call(request("enter_standby"), "COMPLETED")
         if flight_source == "JOYSTICK":
             req = request("enter_standby")
@@ -277,7 +277,7 @@ def main():
         assert math.isfinite(wheel["angle"]) and math.isfinite(wheel["displacement"]), measured
         # FOLLOWING uses the measured hold reference; the next CONTROL command
         # must independently return to the fixed midpoint (verified below).
-        assert -.170 <= grasped["wheel_reference"]["displacement"] <= 0, grasped
+        assert -.150 <= grasped["wheel_reference"]["displacement"] <= 0, grasped
         assert call(grasp, "ACCEPTED") == accepted  # Cached even beyond the original deadline.
         transmitting.clear()
         time.sleep(.15)
@@ -288,13 +288,13 @@ def main():
         state("CONTROL")
         wait_for(lambda m: m["system"]["state"] == "CONTROL" and
                  m["system"]["control_source"] == flight_source and
-                 abs(m["wheel_reference"]["displacement"] + .085) < .0004, 10)
+                 abs(m["wheel_reference"]["displacement"] + .080) < .0004, 10)
         flight_target = (.04, -.01)
         # A static hardware sample must reach the target using only fresh device checks.
         wait_for(lambda m: m["system"]["state"] == "CONTROL" and
                  m["system"]["control_source"] == flight_source and
                  abs(m["wheel_reference"]["angle"] + .04 * .87266) < .002 and
-                 abs(m["wheel_reference"]["displacement"] + .08585) < .0004, 20)
+                 abs(m["wheel_reference"]["displacement"] + .0807) < .0004, 20)
         check_monitor_control()
         # One request leaves CONTROL while Servo is active; no EXIT_CONTROL needed.
         call(request("leave_wheel"), "ACCEPTED")

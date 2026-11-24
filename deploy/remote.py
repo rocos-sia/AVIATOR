@@ -295,6 +295,16 @@ def setup_dependencies(root, account, skip_apt=False):
     # Normalize older manifests too so a retained archive can be retried.
     packages = sorted({'python3.10-venv' if p.split(':')[0] == 'python3-venv' else p
                        for p in packages})
+    if skip_apt:
+        missing = []
+        for package in packages:
+            status = subprocess.run(['dpkg-query', '-W', '-f=${Status}', package],
+                                    text=True, capture_output=True)
+            if status.returncode or status.stdout.strip() != 'install ok installed':
+                missing.append(package)
+        if missing or not shutil.which('google-chrome-stable'):
+            raise RuntimeError('Offline deployment requires installed system dependencies: ' +
+                               ', '.join(missing + ([] if shutil.which('google-chrome-stable') else ['google-chrome-stable'])))
     if not skip_apt:
         run(['apt-get', 'update'])
         # PackageKit/automatic updates may temporarily own the dpkg frontend lock.
@@ -349,6 +359,9 @@ def check_runtime(root, account):
     for script in ('start_aviator.sh', 'start_camera_servo.sh', 'start_wheel_bandwidth.sh'):
         user_run(account, ['bash', resource / 'scripts' / script, '--dry-run'], env=env,
                  stdout=subprocess.DEVNULL)
+    for name in ('flight.yaml', 'flight-rs422.yaml', 'flight-simulator.yaml'):
+        user_run(account, [root / 'bin/flight_gateway', '--config', resource / 'config' / name,
+                           '--check-config'], env=env, stdout=subprocess.DEVNULL)
     # Validate the field RS422 config and bundled Python without touching serial ports.
     user_run(account, [python, resource / 'scripts/test_rs422_loss.py', '--dry-run'], env=env,
              stdout=subprocess.DEVNULL)
@@ -402,7 +415,10 @@ def install(args):
         module.verify(new)
         # Verify the shipped defaults first, then validate using the retained field settings.
         preserve_configuration(previous, new)
-        setup_dependencies(new, account)
+        setup_dependencies(new, account, skip_apt=getattr(args, 'offline', False))
+        migration = new / 'share/aviator/deploy/migrate_icd1120.py'
+        if migration.is_file():
+            user_run(account, [new / 'cache/python/bin/python', migration, new])
         check_runtime(new, account)
         record = {'format': 2, 'layout': 'fixed-directory', 'user': args.user,
                   'configuration_policy': 'preserve-existing',
@@ -424,6 +440,7 @@ def install(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', type=Path)
+    parser.add_argument('--offline', action='store_true', help='Never run APT; require installed system dependencies')
     parser.add_argument('--sha256')
     parser.add_argument('--user')
     parser.add_argument('--refresh-checksums', action='store_true', help='Record intentional configuration edits')

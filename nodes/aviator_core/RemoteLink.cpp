@@ -222,8 +222,8 @@ void RemoteLink::setImpedanceProfile(bool following) {
         const auto target = result.at("target").get<Joints>();
         const double angle = result.at("angle").get<double>();
         const double displacement = result.at("displacement").get<double>();
-        if (!std::isfinite(angle) || std::abs(angle) > .87266 ||
-            !std::isfinite(displacement) || displacement < -.170 || displacement > 0)
+        if (!std::isfinite(angle) || std::abs(angle) > .8726646259971648 ||
+            !std::isfinite(displacement) || displacement < -.150 || displacement > 0)
             throw std::runtime_error("Invalid impedance hold wheel reference");
         latest_mode_ = false;
         streaming_ = false;

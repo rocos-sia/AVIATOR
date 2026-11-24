@@ -89,13 +89,13 @@ class CoreClient {
         const bool valid = !shutdown && input.valid(now);
         m.header = {"1.0",  ++sequence_,      aviator::utc_us(), valid ? input.sampleTime() : now,
                     clock_, "flight_gateway", session_,          valid};
-        // ICD 1107: left/push are positive. Core retains its existing input coordinates.
+        // ICD 1120: decode physical degrees/mm; left/push remain positive end to end.
         m.body = {
             {"source", "FLIGHT"},
             {"control",
-             {{"roll", -input.target().roll / 1000.0}, {"pitch", -input.target().pitch / 1000.0}}}};
+             {{"roll_deg", rs422::decodeRoll(input.target().roll)}, {"pitch_mm", rs422::decodePitch(input.target().pitch)}}}};
         // Optional observation only. Preserve received bytes (including reserved bytes),
-        // never reconstruct a frame from the normalized control values.
+        // never reconstruct a frame from the decoded physical values.
         auto& observation = m.body["rs422"];
         observation = {{"format", "aviator-downlink-32-v1"},
                        {"selected_channel", input.selected() < 0 ? nlohmann::json(nullptr)
@@ -153,14 +153,14 @@ class CoreClient {
     uint64_t sequence_ = 0;
     std::map<std::string, nlohmann::json> pending_;
 };
-std::string position(int16_t v) {
-    return v == invalid_position ? "unknown" : std::to_string(v / 10.0) + "%";
+std::string position(int16_t v, bool pitch = false) {
+    return v == invalid_position ? "unknown" : std::to_string(pitch ? rs422::decodePitch(v) : rs422::decodeRoll(v)) + (pitch ? " mm" : " deg");
 }
 } // namespace
 void runRs422(const Config& config, int signals_fd) {
-    if (config.rs422.profile != "aviator-bench-v1")
+    if (config.rs422.profile != "aviator-icd-1120")
         throw std::runtime_error(
-            "RS422 requires explicit rs422.profile: aviator-bench-v1 and two serial paths");
+            "RS422 requires explicit rs422.profile: aviator-icd-1120 and two serial paths");
     const bool simulator = config.role == "flight_simulator";
     std::unique_ptr<SdlInput> input;
     std::unique_ptr<CoreClient> core;
@@ -180,7 +180,7 @@ void runRs422(const Config& config, int signals_fd) {
     std::array<uint8_t, 2> observed_operations{};
     std::array<Uplink, 2> replies{};
     const uint64_t timeout = config.rs422.receive_timeout_ms * 1000ULL;
-    DualReceiver receiver(timeout, config.rs422.recovery_frames, config.rs422.switch_max_step);
+    DualReceiver receiver(timeout, config.rs422.recovery_frames, config.rs422.switch_max_roll_deg, config.rs422.switch_max_pitch_mm);
     CommandSender sender;
     JoystickSample sample{{config.roll_axis, -32768, 32767, 0, config.invert_roll},
                           {config.pitch_axis, -32768, 32767, 0, config.invert_pitch}};
@@ -333,9 +333,9 @@ void runRs422(const Config& config, int signals_fd) {
             ++ticks;
             if (simulator) {
                 if (sample.fresh(now, config.input_timeout_ms * 1000ULL)) {
-                    // Match the standalone simulator: local inputs -> ICD 1107 wire polarity.
-                    const Downlink down{counter, sender.next(), quantize(-sample.roll_value),
-                                        quantize(-sample.pitch_value)};
+                    // Match the standalone simulator: physical targets -> ICD 1120 encoding.
+                    const Downlink down{counter, sender.next(), encodeRoll(sample.roll_value),
+                                        encodePitch(sample.pitch_value)};
                     auto bytes = encode(down);
                     if (config.simulator.send_b)
                         ports[1].send(bytes, now);
@@ -382,8 +382,8 @@ void runRs422(const Config& config, int signals_fd) {
                         "port={} rx_bytes={} tx_frames={} dropped={}",
                         i ? "B" : "A", fresh ? "LIVE" : "STALE", f.counter, f.selected,
                         f.communication, stateName(f.state), f.operation, position(f.roll_echo),
-                        position(f.pitch_echo), position(f.roll), position(f.pitch),
-                        position(f.joint_roll), position(f.joint_pitch), f.rear,
+                        position(f.pitch_echo, true), position(f.roll), position(f.pitch, true),
+                        position(f.joint_roll), position(f.joint_pitch, true), f.rear,
                         f.brake, f.fault, f.last_fault, f.severity, f.version, f.checksum,
                         parsers[i].rejected, ports[i].fd() >= 0 ? "open" : "closed",
                         ports[i].rx_bytes, ports[i].tx_frames, ports[i].dropped);

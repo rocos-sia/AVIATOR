@@ -48,7 +48,7 @@ class CameraTrackerTests(unittest.TestCase):
         tracker = self.tracker()
         result = tracker.accept(frame(), 1_120_000)
         self.assertAlmostEqual(result["angle_rad"], -.2)
-        self.assertAlmostEqual(result["displacement_m"], -.095)
+        self.assertAlmostEqual(result["displacement_m"], -.090)
         self.assertEqual(result["sample_mono_us"], 1_100_000)
         self.assertEqual(result["sequence"], 1)
         self.assertEqual(tracker.session, "test-session")
@@ -351,7 +351,7 @@ class CollectionTests(unittest.TestCase):
             self.assertGreaterEqual(len({s["camera"]["sequence"] for s in samples}), 3)
             for sample in samples:
                 self.assertAlmostEqual(sample["angle_rad"], -.2)
-                self.assertAlmostEqual(sample["displacement_m"], -.095)
+                self.assertAlmostEqual(sample["displacement_m"], -.090)
                 self.assertLessEqual(sample["sync_gap_ms"], args.max_sync_ms)
             self.assert_reaped(helper)
         finally:

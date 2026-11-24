@@ -40,7 +40,7 @@ aviator::Message sample(int topic = 0) {
                       "producer",
                       "11111111-1111-4111-8111-111111111111",
                       true};
-    message.body = {{"source", "JOYSTICK"}, {"control", {{"roll", 0.2}, {"pitch", 0.1}}}};
+    message.body = {{"source", "JOYSTICK"}, {"control", {{"roll_deg", 0.2}, {"pitch_mm", 0.1}}}};
     if (topic == 2 || topic == 4) {
         message.body["mode"] = "JOINT_POSITION";
         message.body["control_epoch"] = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

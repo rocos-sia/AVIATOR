@@ -104,23 +104,25 @@ Config load_config(const std::string& path) {
         c.service_timeout_ms = number(root["service_timeout_ms"], 10000);
         if (const auto keyboard = root["keyboard"]) {
             require(keyboard.IsMap(), "keyboard must be a mapping");
-            std::set<std::string> keyboard_seen;
+            std::set<std::string> seen;
             for (const auto& item : keyboard) {
-                const auto key = string(item.first);
-                require((key == "roll_speed" || key == "pitch_speed" ||
-                         key == "roll_limit" || key == "pitch_limit") &&
-                            keyboard_seen.insert(key).second,
-                        "unknown or duplicate keyboard key: " + key);
-                require(item.second.IsScalar(), "keyboard." + key + " must be a number");
-                const auto value = item.second.as<double>();
-                const bool limit = key == "roll_limit" || key == "pitch_limit";
-                require(std::isfinite(value) && value > 0 && (!limit || value <= 1),
-                        "keyboard." + key + (limit ? " must be in (0, 1]" : " must be finite and positive"));
-                if (key == "roll_speed") c.keyboard.roll_speed = value;
-                if (key == "pitch_speed") c.keyboard.pitch_speed = value;
-                if (key == "roll_limit") c.keyboard.roll_limit = value;
-                if (key == "pitch_limit") c.keyboard.pitch_limit = value;
+                const auto key = item.first.as<std::string>();
+                require(seen.insert(key).second, "duplicate keyboard key");
+                const double v = item.second.as<double>();
+                require(std::isfinite(v), "keyboard value must be finite");
+                if (key == "roll_speed_deg_s") c.keyboard.roll_speed_deg_s = v;
+                else if (key == "pitch_speed_mm_s") c.keyboard.pitch_speed_mm_s = v;
+                else if (key == "roll_limit_deg") c.keyboard.roll_limit_deg = v;
+                else if (key == "pitch_min_mm") c.keyboard.pitch_min_mm = v;
+                else if (key == "pitch_max_mm") c.keyboard.pitch_max_mm = v;
+                else require(false, "unknown keyboard key (ICD 1120 physical units required): " + key);
             }
+            require(c.keyboard.roll_speed_deg_s > 0 && c.keyboard.pitch_speed_mm_s > 0,
+                    "keyboard speeds must be finite and positive");
+            require(c.keyboard.roll_limit_deg > 0 && c.keyboard.roll_limit_deg <= 50 &&
+                    c.keyboard.pitch_min_mm >= -80 && c.keyboard.pitch_min_mm < 0 &&
+                    c.keyboard.pitch_max_mm > 0 && c.keyboard.pitch_max_mm <= 70,
+                    "keyboard limits must be within roll +/-50 deg and pitch [-80,70] mm");
         }
         const auto buttons = root["buttons"];
         require(buttons.IsSequence() && buttons.size() == c.buttons.size(),
@@ -142,14 +144,20 @@ Config load_config(const std::string& path) {
                 else if(key == "channel_b") c.rs422.channel_b = string(item.second);
                 else if(key == "receive_timeout_ms") c.rs422.receive_timeout_ms = number(item.second,100);
                 else if(key == "recovery_frames") c.rs422.recovery_frames = number(item.second,100);
-                else if(key == "switch_max_step") c.rs422.switch_max_step = number(item.second,2000,true);
+                else if(key == "switch_max_roll_deg" || key == "switch_max_pitch_mm") {
+                    const double v = item.second.as<double>();
+                    require(std::isfinite(v) && v >= 0 && v <= (key == "switch_max_roll_deg" ? 100 : 150),
+                            "invalid physical switch threshold");
+                    if (key == "switch_max_roll_deg") c.rs422.switch_max_roll_deg = v;
+                    else c.rs422.switch_max_pitch_mm = v;
+                }
                 else if(key == "release_root") c.rs422.release_root = string(item.second);
                 else if(key == "allow_test_identity") c.rs422.allow_test_identity = boolean(item.second);
                 else if(key == "camera_id") c.rs422.camera_id = string(item.second);
                 else if(key == "camera_publisher") c.rs422.camera_publisher = string(item.second);
                 else require(false, "unknown rs422 key: " + key);
             }
-            require(c.rs422.profile == "aviator-bench-v1", "rs422.profile must be aviator-bench-v1");
+            require(c.rs422.profile == "aviator-icd-1120", "rs422.profile must be aviator-icd-1120");
             require(!c.rs422.camera_id.empty() && !c.rs422.camera_publisher.empty(), "RS422 camera identity must not be empty");
             require(c.rs422.receive_timeout_ms >= 25, "RS422 timeout must be 25..100 ms");
             require(std::filesystem::path(c.rs422.channel_a).is_absolute() &&

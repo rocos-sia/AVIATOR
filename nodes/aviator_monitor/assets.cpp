@@ -46,9 +46,9 @@ Assets::Assets(const fs::path& web, const fs::path& models, const Json& config) 
         const auto& display = calibration.at("model");
         const double rsign = display.at("roll_sign"), roffset = display.at("roll_offset_rad");
         const double psign = display.at("pitch_sign"), poffset = display.at("pitch_offset_m");
-        const double r1 = rsign * -52 * 3.14159265358979323846 / 180 + roffset;
-        const double r2 = rsign * 52 * 3.14159265358979323846 / 180 + roffset;
-        const double p1 = psign * -.005 + poffset, p2 = psign * .175 + poffset;
+        const double r1 = rsign * -50 * 3.14159265358979323846 / 180 + roffset;
+        const double r2 = rsign * 50 * 3.14159265358979323846 / 180 + roffset;
+        const double p1 = psign * -.080 + poffset, p2 = psign * .070 + poffset;
         manifest["yoke_display_limits"] = {
             {"roll_input_joint", {{"lower", std::min(r1, r2)}, {"upper", std::max(r1, r2)}}},
             {"pitch_input_joint", {{"lower", std::min(p1, p2)}, {"upper", std::max(p1, p2)}}}};

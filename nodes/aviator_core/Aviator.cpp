@@ -331,8 +331,8 @@ class Aviator::Impl {
                     grasp_wheel_.freshness_us, grasp_wheel_.wait_us, [this] { checkMotionState(); });
                 wheel0.angle = observed[0];
                 wheel0.displacement = observed[1];
-                require(std::isfinite(wheel0.angle) && std::abs(wheel0.angle) <= .87266 &&
-                        std::isfinite(wheel0.displacement) && wheel0.displacement >= -.170 &&
+                require(std::isfinite(wheel0.angle) && std::abs(wheel0.angle) <= .8726646259971648 &&
+                        std::isfinite(wheel0.displacement) && wheel0.displacement >= -.150 &&
                         wheel0.displacement <= 0, "Invalid camera grasp wheel pose");
                 aviator::Logger::info("Grasp camera={} angle={} rad displacement={} m",
                     grasp_wheel_.camera_id, wheel0.angle, wheel0.displacement);
@@ -624,8 +624,8 @@ class Aviator::Impl {
     };
 
     static void validateWheelInput(double angle, double displacement, double v) {
-        require(std::isfinite(angle) && angle >= -0.87266 && angle <= 0.87266 &&
-                std::isfinite(displacement) && displacement >= -0.170 && displacement <= 0 &&
+        require(std::isfinite(angle) && angle >= -0.8726646259971648 && angle <= 0.8726646259971648 &&
+                std::isfinite(displacement) && displacement >= -0.150 && displacement <= 0 &&
                 std::isfinite(v) && v > 0 && v <= 1,
                 "Wheel target out of range or speed ratio v not in (0, 1]");
     }

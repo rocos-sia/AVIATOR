@@ -37,8 +37,8 @@ def main():
                     seq+=1
                     up=bytearray(64); up[:2]=b'\xeb\x90';up[2]=seq%256
                     up[10]=7;up[11]=up[12]=255;up[22:26]=bytes.fromhex('01 02 cd ab')
-                    struct.pack_into('<hh', up, 13, -1040, -1059)
-                    struct.pack_into('<hh', up, 26, 1040, 1059)
+                    struct.pack_into('<hh', up, 13, -32767, -32767)
+                    struct.pack_into('<hh', up, 26, 32767, 32767)
                     up[63]=sum(up[2:63]) & 255
                     for i,(m,_) in enumerate(pairs):
                         os.write(m,up)
@@ -53,14 +53,14 @@ def main():
                     operations=[f for _,f in collection if f[3]==0x10]
                     assert len(operations)==10, len(operations)
                     axes = {struct.unpack_from('<hh', f, 4) for _, f in collection}
-                    assert {(0, 0), (-500, 500), (500, -500)} <= axes, axes
+                    assert {(0, 2184), (-16384, 17476), (16384, -15292)} <= axes, axes
                     assert max(t for t,_ in collection)<1.95, 'joystick disconnect must stop sending'
                 # Both channels carry the same logical frames and counters.
                 assert [f for _,f in received[0]] == [f for _,f in received[1]]
                 log.flush();log.seek(0);text=log.read()
                 assert 'FOLLOWING' in text and 'checksum=ABCD' in text, text
-                assert 'camera=(-104' in text and 'joint_fk=(104' in text, text
-                assert '105.9' in text and '-105.9' in text, text
+                assert 'camera=(-50.000000 deg' in text and 'joint_fk=(50.000000 deg' in text, text
+                assert '70.000000 mm' in text and '-80.000000 mm' in text, text
                 print('PASS: production flight simulator, virtual joystick axes/button, dual identical frames, ten-cycle operation, uplink display, disconnect stops TX')
             except Exception:
                 log.flush();log.seek(0);print(log.read(),file=sys.stderr);raise

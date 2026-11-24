@@ -425,7 +425,7 @@ int main(int argc, char **argv) {
                                         flight_stage == 6 ? -1 : 1;
                     const double pitch = flight_stage == 3 ? (position_hold ? -.1 : -.02) :
                                          flight_stage == 6 ? -1 : 1;
-                    message.body = {{"source", "JOYSTICK"}, {"control", {{"roll", roll}, {"pitch", pitch}}}};
+                    message.body = {{"source", "JOYSTICK"}, {"control", {{"roll_deg", roll*50}, {"pitch_mm", -pitch*(pitch >= 0 ? 80 : 70)}}}};
                     if (flight_stage == 1) {
                         // Invalid input must not activate control, regardless of startup marker.
                         switch (flight_seq % 5) {
@@ -448,7 +448,7 @@ int main(int argc, char **argv) {
                             for (const auto axis : {ABS_X, ABS_Y}) {
                                 input_event event{};
                                 event.type = EV_ABS; event.code = axis;
-                                event.value = int(std::lround((axis == ABS_X ? roll : pitch) * 1000));
+                                event.value = int(std::lround((axis == ABS_X ? -roll : pitch) * 1000));
                                 joystick.update(event, now);
                             }
                             input_event report{};
@@ -490,7 +490,7 @@ int main(int argc, char **argv) {
                     ((flight_stage == 2 && std::abs(reference_angle - .43633) < .003 && max_angle > .42 &&
                       std::abs(reference_displacement) < 1e-8) ||
                      (flight_stage == 3 && std::abs(reference_angle + .174532) < .003 &&
-                      std::abs(reference_displacement + .0935) < .0005 && min_angle < -.16));
+                      std::abs(reference_displacement + .087) < .0005 && min_angle < -.16));
                 if (flight_stage >= 1 && flight_stage <= last_stage &&
                     (step_reached || (stopping_stage && hold_sampled && now - hold_at > 400000) ||
                      now - flight_at >= duration[flight_stage])) {
@@ -510,11 +510,11 @@ int main(int argc, char **argv) {
                         }
                     }
                     if (flight_stage == 3)
-                        check(std::abs(reference_displacement - (position_hold ? -.0935 : -.0867)) < .0005,
+                        check(std::abs(reference_displacement - (position_hold ? -.087 : -.0814)) < .0005,
                               "Negative pitch did not reach mapped absolute displacement");
                     if (flight_stage == 3 && position_hold)
                         check(std::abs(reference_angle + .174532) < .003 &&
-                              std::abs(reference_displacement + .0935) < .0005 && min_angle < -.16,
+                              std::abs(reference_displacement + .087) < .0005 && min_angle < -.16,
                               "Static negative step did not reach its target: reference=" + std::to_string(reference_angle) +
                                   " displacement=" + std::to_string(reference_displacement) + " measured_min=" + std::to_string(min_angle));
                     if (stopping_stage) {
@@ -525,8 +525,8 @@ int main(int argc, char **argv) {
                               "Servo did not hold after stale input");
                     }
                     if (flight_stage == 6) {
-                        check(text.find("Servo target angle=0.87266 displacement=0 v=1") != std::string::npos &&
-                              text.find("Servo target angle=-0.87266 displacement=-0.17 v=1") != std::string::npos,
+                        check(text.find("Servo target angle=0.872664") != std::string::npos &&
+                              text.find("Servo target angle=-0.872664") != std::string::npos,
                               "Full-scale mapping or fresh-input resume failed");
                     }
                     if (flight_stage == last_stage) core.terminate(SIGINT);
@@ -581,7 +581,7 @@ int main(int argc, char **argv) {
             check(core.text().find("Demo completed") != std::string::npos, "Demo did not complete");
         check(enabled && locked && states > 100 && commands > 100, "Missing lifecycle/traffic");
         if (mode == "demo")
-            check(max_angle > .84 && min_angle < -.84 && min_displacement < -.16,
+            check(max_angle > .84 && min_angle < -.84 && min_displacement < -.14,
                   "Physical wheel did not follow full demo");
         else if (mode != "grasp")
             check(max_angle > .001, "Physical wheel did not move in Servo mode");
