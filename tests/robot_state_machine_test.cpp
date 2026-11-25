@@ -61,9 +61,10 @@ int main() try {
     m.fault("second"); check(!m.takeStop() && m.lastError() == "second", "fault repeat");
     s.fault_cleared = false;
     check(m.request(Operation::reset_error, s, 13) == Reply::invalid_state, "uncleared reset");
-    s = healthy(); m.request(Operation::reset_error, s, 14); state(m, "READY");
+    s = healthy(); check(m.request(Operation::reset_error, s, 14) == Reply::accepted, "reset not async");
+    state(m, "RELEASING"); finish(m); state(m, "STANDBY");
     check(m.currentError().empty() && m.lastError() == "second", "error history");
-    m.request(Operation::enter_standby, s, 15); state(m, "HOMING"); finish(m); state(m, "STANDBY");
+    check(m.request(Operation::enter_standby, s, 15) == Reply::completed, "reset did not reach standby");
     RobotStateMachine failure; failure.boot(s, 1); auto old = failure.takeTask(); failure.failed(old->generation, "submit failed");
     failure.done(old->generation, s); state(failure, "ERROR");
     RobotStateMachine timeout({10,10,10}); timeout.boot(s, 1); auto stale = timeout.takeTask();
@@ -94,13 +95,32 @@ int main() try {
     s.input_timed_out = true; input_lost.supervise(s, 6); state(input_lost, "ERROR");
     check(!input_lost.acceptsControl(), "expired input left execution enabled");
     s = healthy(); s.clear_of_wheel = false;
-    check(input_lost.request(Operation::reset_error, s, 7) == Reply::completed, "grasped reset rejected");
-    state(input_lost, "READY");
-    check(input_lost.currentError().empty() && !input_lost.lastError().empty(), "recovery error history");
-    check(input_lost.request(Operation::enter_standby, s, 8) == Reply::invalid_state, "home while grasped");
-    check(input_lost.request(Operation::start_control, s, 8) == Reply::invalid_state, "reset resumed control");
-    check(input_lost.request(Operation::leave_wheel, s, 9) == Reply::accepted, "READY release rejected");
+    check(input_lost.request(Operation::reset_error, s, 7) == Reply::accepted, "grasped reset rejected");
+    state(input_lost, "RELEASING");
+    check(!input_lost.currentError().empty(), "error cleared before home");
+    check(input_lost.request(Operation::reset_error, s, 8) == Reply::busy, "duplicate recovery accepted");
+    check(input_lost.request(Operation::start_control, s, 8) == Reply::busy, "reset resumed control");
     finish(input_lost); state(input_lost, "STANDBY");
+    check(input_lost.currentError().empty() && !input_lost.lastError().empty(), "recovery error history");
+    // Faults, timeout and emergency cancel recovery; late completion cannot escape.
+    for (const std::string outcome : {"hand", "arm", "timeout", "emergency"}) {
+        RobotStateMachine recovery; following(recovery); recovery.fault("original");
+        recovery.takeStop(); s = healthy();
+        s.fault = "device cannot move";
+        check(recovery.request(Operation::reset_error, s, 4) != Reply::accepted,
+              "device fault started recovery");
+        check(!recovery.takeTask(), "fault dispatched motion");
+        s = healthy();
+        check(recovery.request(Operation::reset_error, s, 5) == Reply::accepted, "healthy reset rejected");
+        auto task = recovery.takeTask(); check(task && task->job == Job::recover, "wrong recovery task");
+        if (outcome == "timeout") recovery.supervise(s, task->deadline);
+        else if (outcome == "emergency") recovery.emergency("emergency during reset");
+        else recovery.failed(task->generation, outcome + " failed during recovery");
+        check(recovery.takeStop(), "recovery failure missed stop");
+        recovery.done(task->generation, s, 6);
+        state(recovery, outcome == "emergency" ? "EMERGENCY_STOP" : "ERROR");
+        check(!recovery.currentError().empty(), "recovery failure lost error");
+    }
     // Both operations accept one-step leave from FOLLOWING/CONTROL, including motion.
     for (bool control : {false, true}) for (auto op : {Operation::leave_wheel, Operation::enter_standby}) {
         RobotStateMachine leave; following(leave); s = healthy();

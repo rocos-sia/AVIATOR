@@ -25,6 +25,9 @@ pinocchio::SE3 frame(const YAML::Node& n) {
 }
 } // namespace
 int main(int argc, char** argv) try {
+    // waitTick() logs on the executor that refreshes arm feedback. Disk/pipe
+    // backpressure must not stall that executor and expire Core's watchdog.
+    Logger::configureControl();
     auto file = defaultSystemConfig();
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];

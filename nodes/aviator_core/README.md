@@ -87,8 +87,8 @@ quit
 
 例如 GRASPING 中输入 `advance 180000` 触发抓握任务超时；INITIALIZING 与 RELEASING 的预算分别为
 30000 / 180000 ms，独立回 home 任务也是 180000 ms。CONTROL 中 `set input_ready 0` 模拟短暂输入失效，保持 CONTROL；`advance 100` 后仍失效则进入 ERROR，恢复为 1 不自动退出 ERROR。
-`fail` 进入 ERROR 后可用 RESET_ERROR 到 READY；若仍未脱离方向盘，ENTER_STANDBY 会拒绝，
-可模拟获准的 LEAVE_WHEEL，再 done 返回 STANDBY。
+`fail` 进入 ERROR 后可用 RESET_ERROR 启动松手回 home，完成后进入 STANDBY。
+输入 done 模拟复位动作完成并返回 STANDBY。
 
 输出包含事件、转换前后状态、请求前守卫快照、接纳/拒绝结果和模拟动作。
 模拟 stop 立即确认稳定，不模拟实际制动时间。时间仅由指令推进，交互等待不会触发真实输入时效；
@@ -122,7 +122,7 @@ ctest --test-dir build -R '^(robot_state_machine|core_sml_demo|core_sml_cli)$' -
 | `StartControl()` | START_CONTROL；直接进入 CONTROL，恢复默认刚度期间暂不接收运动目标，恢复后使用新鲜输入 |
 | `ExitControl()` | EXIT_CONTROL；关闭接纳并非阻塞减速，重启操控须等 settled；直接释放请求会接管并等待停稳 |
 | `LeaveWheel()` | LEAVE_WHEEL；FOLLOWING/CONTROL 可直接请求；READY 仅仍握盘且获准时可请求；停稳后 releaseHandles 张开撤离 → moveHome，实际回 home 并停稳后 STANDBY |
-| `ResetError()` | RESET_ERROR；故障已排除后确认本地错误，ERROR → READY，不调用会隐式解锁/失能的 resetFault |
+| `ResetError()` | RESET_ERROR；故障已排除且可恢复时，ERROR → RELEASING，必要时松手撤离再回 home，完成后进入 STANDBY；失败回 ERROR |
 | `ServoWheel(a,d,v,sample_mono_us)` | 目标接口，不是第七个操作；仅 CONTROL 接受本次操控后的有效时间戳，拒绝过期、未来、重复/倒退目标 |
 | `Update()` | 拥有线程每约 5 ms 调用，刷新证据/心跳，监督、收取任务结果和执行转换 |
 | `EmergencyStop(reason)` | 内部急停输入，锁存 EMERGENCY_STOP、撤销输出并异步请求双臂紧急下使能，不是普通六操作 |
@@ -219,7 +219,7 @@ Core 仍以新鲜有效的 X1=1 作为初始化条件，脚本的启动间隔不
 
 FOLLOWING 保持抓握结束时的关节指令目标与 wheel 参考；从 CONTROL 返回时，先按既有 Servo 流程减速，保持停止后的最后指令，不回到抓握位置。Managed Core 不订阅相机目标，仅 CONTROL 使用手柄调用 `ServoWheel`（rad/m）。进入 FOLLOWING 后异步切换到 `rokae.following_joint_stiffness`（缺省沿用 `rokae.joint_stiffness`）；进入 CONTROL 或释放前恢复 `rokae.joint_stiffness`。切换期间 `task_phase=STIFFNESS`、`settled=false`，停止轨迹执行，保留最后关节指令和 wheel 参考。真机依次 stopLoop、stopMove、停止独立反馈线程并 stopReceiveRobotState、设置刚度，再 startReceiveRobotState、startMove、恢复最新状态接收线程及 startLoop。重新注册的回调使用 `useStateDataInLoop=false`，SDK 控制器、连接和保持目标不重新初始化；FOLLOWING 即使数值相同也执行完整切换，default 数值相同则不暂停。恢复后的首个回调检查实时线程优先级。独立 `change_stiffness` 和 `aviator_core_camera_servo` 示例不受影响。
 
-`start_control` 恢复返回 COMPLETED 并直接进入 CONTROL；COMPLETED 表示状态转换完成。默认刚度在已有执行器线程槽异步恢复，期间 `settled=false`、控制接纳关闭，主线程继续处理输入、服务和保护。默认刚度恢复且新反馈到达后放行原有 Servo 流程，只接受恢复后的新鲜输入；后续手柄输入不再触发阻抗切换。恢复期间 EXIT_CONTROL 立即进入 FOLLOWING，取消恢复并等待执行器退出后应用 Following 刚度；急停、输入失效或恢复失败不会被迟到结果解除。阻抗服务期限为 20 秒，覆盖最多 5 秒停稳等待及 SDK 暂停、恢复过程；反馈切换宽限为 20.5 秒，期间状态心跳仍有效，旧 RT 样本保留原时间戳，不作为新反馈。任一臂切换失败会停止双臂并进入 ERROR。可恢复输入/资源问题不取消任务，超过恢复窗口直接 ERROR。ERROR／急停撤销运动授权，不为改刚度重启运动；故障复位到 READY 后，由显式回零或释放请求恢复默认刚度。
+`start_control` 恢复返回 COMPLETED 并直接进入 CONTROL；COMPLETED 表示状态转换完成。默认刚度在已有执行器线程槽异步恢复，期间 `settled=false`、控制接纳关闭，主线程继续处理输入、服务和保护。默认刚度恢复且新反馈到达后放行原有 Servo 流程，只接受恢复后的新鲜输入；后续手柄输入不再触发阻抗切换。恢复期间 EXIT_CONTROL 立即进入 FOLLOWING，取消恢复并等待执行器退出后应用 Following 刚度；急停、输入失效或恢复失败不会被迟到结果解除。阻抗服务期限为 20 秒，覆盖最多 5 秒停稳等待及 SDK 暂停、恢复过程；反馈切换宽限为 20.5 秒，期间状态心跳仍有效，旧 RT 样本保留原时间戳，不作为新反馈。任一臂切换失败会停止双臂并进入 ERROR。可恢复输入/资源问题不取消任务，超过恢复窗口直接 ERROR。ERROR／急停撤销运动授权，不为改刚度重启运动；错误复位任务恢复默认刚度，必要时松手撤离并回 home，完成后进入 STANDBY。
 
 保持流程回归测试：`ctest --test-dir build -R '^following_hold_process$' --output-on-failure`，使用独立端口和 MuJoCo。
 
@@ -307,10 +307,10 @@ Gateway 会用首次成功设备查询建立初始位置，摇杆静止也可提
 | 操控 | 3 / start_control | COMPLETED；输入有效且守卫满足时直接进入 CONTROL，默认刚度恢复后连续轴值驱动机器人 |
 | 退出操控 | 4 / exit_control | FOLLOWING；等待 `system.settled=true` |
 | 释放撤离 | 5 / leave_wheel | ACCEPTED，RELEASING 内完成松手、撤离及回 home → STANDBY |
-| 故障确认 | 6 / reset_error | 仅 ERROR 且故障已消除、设备可用和位置关系明确等条件满足时 → READY，不自动回操控 |
+| 故障确认 | 6 / reset_error | 仅 ERROR 且故障已消除、设备可用和位置关系明确等条件满足时，松手回 home → STANDBY |
 
 CONTROL 和 FOLLOWING 中按钮 1/5 均直接受理释放、撤离及回 home，无需先按按钮 4；内部先完成减速和必要的刚度切换。
-短暂输入失效保持原状态；新鲜输入恢复不会自动退出 ERROR，须故障确认到 READY 后按是否握盘选择撤离或回 home。
+短暂输入失效保持原状态；新鲜输入恢复不会自动退出 ERROR，须错误复位完成松手撤离和回 home 后进入 STANDBY。
 **异常处理**：资源或授权短暂失效保持原状态，默认 100 ms 恢复窗口到期转 ERROR；控制目标租约满 100 ms 或明确设备故障直接 ERROR 并撤销普通输出；
 手节点仍可能因目标超时执行默认张开 safe_pose。它不同于按钮 4 的正常减速保持，实际测试前须理解此行为。
 
@@ -330,7 +330,7 @@ Manipulator 的 arm.state 新增 `status_mono_us`，仅代表设备状态发布�
 Gateway 按钮请求和连续轴值走不同通道，首次按钮可能先于首个有效轴值抵达。
 先看到 `Received valid flight_gateway input` 和 `system.state=READY`，按按钮 1 回 home；等 `system.state=STANDBY` 再按按钮 2 抓握，输入有效后按按钮 3 操控。
 请求拒绝的 result.reason 包括 GATEWAY_NOT_BOUND（尚无通过校验的输入）、CLOCK_DOMAIN_MISMATCH（时钟域不符）和 INVALID_PARAMETERS；应答保留 expected_clock_id。已取消 Gateway/Core 会话匹配及 server_session_id 必填要求，旧客户端提供此参数时忽略。
-ERROR 状态不会因摇杆输入恢复而自动退出；故障排除后按 RESET_ERROR → READY，仍握盘时 LEAVE_WHEEL，已脱离时 ENTER_STANDBY。
+ERROR 状态不会因摇杆输入恢复而自动退出；故障排除后按 RESET_ERROR，自动完成必要的松手撤离和回 home，成功进入 STANDBY。
 
 ### 隔离联调
 

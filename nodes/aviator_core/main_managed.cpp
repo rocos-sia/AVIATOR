@@ -7,7 +7,7 @@ void interrupt(int) { interrupted = 1; }
 int main(int argc, char** argv) try {
     // stdout may be a disk file or a backpressured pipe. Keep its writes off
     // the owner/servo threads that refresh the 100/200 ms watchdogs.
-    aviator::Logger::configure(true);
+    aviator::Logger::configureControl();
     auto config = aviator::defaultSystemConfig();
     aviator::ManagedGatewayOptions gateway;
     gateway.enabled = true;

@@ -335,11 +335,10 @@ def main():
         assert dealer.poll(2000)
         response = dealer.recv_json()
         assert response["request_id"] == req["request_id"]
-        assert response["status"] == "COMPLETED", response
-        state("READY", 5, allow_error=True)
-        call(request("leave_wheel"), "ACCEPTED")
+        assert response["status"] == "ACCEPTED", response
+        state("RELEASING", 5, allow_error=True)
         state("STANDBY", 120)
-        print("PASS: moving ERROR stop, stable enabled hold beyond 1 s, no auto-resume, explicit release", flush=True)
+        print("PASS: moving ERROR stop, stable enabled hold beyond 1 s, no auto-resume, reset releases and homes", flush=True)
     finally:
         drain_control_logs.set()
         stopped.set()

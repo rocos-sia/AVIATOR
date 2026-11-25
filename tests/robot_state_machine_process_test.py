@@ -143,7 +143,7 @@ def main():
             fault(False)
             hold_state('ERROR', .5)  # Recovery cannot silently resume operation.
             command('RESET_ERROR')
-            wait_state('READY', 5, resetting=True)
+            wait_state('STANDBY', 120, resetting=True)
             command('quit')
             assert process.wait(timeout=10) == 0
             print(f'PASS: online hand recovery timeout enters ERROR after {elapsed:.3f}s, requires recovery/reset', flush=True)

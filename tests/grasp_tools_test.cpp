@@ -289,10 +289,90 @@ void managedReleaseFailure(const fs::path& config, bool camera = false, bool dur
         check(core.ResetError() == fsm::Reply::invalid_state, "Uncertain contact pose reset to READY");
         check(core.GetSystemState() == "ERROR", "Interrupted retreat escaped ERROR");
     } else {
-        check(core.ResetError() == fsm::Reply::completed, "Known pose fault reset rejected");
-        check(core.GetSystemState() == "READY" && !allowed, "Reset moved/re-enabled execution");
-        check(core.LeaveWheel() == fsm::Reply::accepted, "READY could not release");
+        check(raw_device->enabled[0] && raw_device->enabled[1], "ERROR disabled arms");
+        const auto before = raw_device->trajectories.size();
+        check(core.ResetError() == fsm::Reply::accepted, "Known pose fault reset rejected");
+        check(core.GetSystemState() == "RELEASING", "Reset skipped recovery");
         wait("STANDBY");
+        check(raw_device->locked == 0 && raw_device->trajectories.size() > before, "Reset did not release/home");
+        check(core.GetSystemStatus().current_error.empty(), "Recovery left current error");
+    }
+}
+// Exercise the actual recovery worker, including physical-action ordering.
+void managedErrorRecovery(const fs::path& config) {
+    struct RecoveryDevice : Device {
+        bool recovering = false, fail_open = false;
+        uint64_t sendGraspCommand(GraspCommand command) override {
+            if (fail_open && command == GraspCommand::Unlock)
+                throw std::runtime_error("Injected hand opening failure");
+            return Device::sendGraspCommand(command);
+        }
+        void runTrajectory(const std::vector<JointFrame>& frames, const std::atomic<bool>& cancel) override {
+            if (recovering) check(locked == 0, "Recovery moved before opening hands");
+            Device::runTrajectory(frames, cancel);
+        }
+    };
+    for (const std::string mode : {"open", "grasped", "hand_failure", "home_failure", "device_fault"}) {
+        auto device = std::make_unique<RecoveryDevice>();
+        auto* observed = device.get();
+        device->initializeHome(YAML::LoadFile(config.string()));
+        const auto home = observed->q;
+        std::string fault;
+        Aviator* instance = nullptr;
+        ManagedOptions options;
+        options.snapshot = [&] {
+            fsm::Snapshot s;
+            s.ready = s.settled = s.following_authorized = s.release_authorized = true;
+            s.source_authorized = s.input_ready = s.emergency_known = true;
+            s.fault = fault; s.fault_cleared = fault.empty();
+            s.clear_of_wheel = instance && instance->GetState() == "ENABLED";
+            return s;
+        };
+        options.allow_motion = [](bool) {};
+        options.heartbeat = [] {};
+        options.request_brake = [] {};
+        Aviator core(std::move(device), std::make_unique<RecordingIk>(), nullptr, config.string(), options);
+        instance = &core;
+        const auto wait = [&](const char* expected) {
+            const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+            do {
+                core.Update();
+                const auto status = core.GetSystemStatus();
+                if (status.state == expected && status.conditions.executor_idle) return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            } while (std::chrono::steady_clock::now() < until);
+            throw std::runtime_error("Recovery worker did not reach " + std::string(expected) + " in " + mode);
+        };
+        core.Init(); wait("READY");
+        core.EnterStandby(); wait("STANDBY");
+        if (mode == "grasped" || mode == "hand_failure") {
+            core.GraspWheel(); wait("FOLLOWING");
+        }
+        fault = "Injected fault"; core.Update(); wait("ERROR");
+        check(observed->enabled[0] && observed->enabled[1], "Error disabled arms");
+        const auto before = observed->trajectories.size();
+        if (mode == "device_fault") {
+            check(core.ResetError() != fsm::Reply::accepted, "Faulty device started recovery");
+            check(observed->trajectories.size() == before, "Faulty device moved");
+            continue;
+        }
+        fault.clear();
+        observed->recovering = true;
+        observed->fail_open = mode == "hand_failure";
+        observed->fail_trajectory = mode == "home_failure";
+        check(core.ResetError() == fsm::Reply::accepted, "Recovery task rejected");
+        if (mode == "hand_failure" || mode == "home_failure") {
+            wait("ERROR");
+            check(observed->trajectories.size() == before, "Failed recovery continued moving");
+            check(!core.GetSystemStatus().current_error.empty(), "Recovery lost failure");
+        } else {
+            wait("STANDBY");
+            check(observed->locked == 0, "Recovery did not open hands");
+            for (size_t j = 0; j < home.size(); ++j)
+                check(std::abs(observed->q[j] - home[j]) < 1e-9, "Recovery did not reach home");
+            check(observed->trajectories.size() > before, "Recovery skipped home");
+            check(core.GetSystemStatus().current_error.empty(), "Successful recovery retained error");
+        }
     }
 }
 // Hold a profile RPC open to exercise CONTROL entry independently of SDK/hardware.
@@ -555,6 +635,7 @@ int main(int argc, char **argv) try {
     runCore(split); runCore(legacy);
     cameraGrasp(dir, config, legacy);
     releaseFromCurrentPose(dir, config, legacy);
+    managedErrorRecovery(dir / "robot.yaml");
     managedReleaseFailure(dir / "robot.yaml");
     managedReleaseFailure(dir / "robot.yaml", false, true);
     auto camera_config = YAML::Clone(config);

@@ -1213,7 +1213,7 @@ Managed 入口的 Rokae 待机就绪判据使用 arm.state 的 `status_mono_us`�
 
 Managed 服务默认 ROUTER bind 5559，检查发布者、同机时钟、请求期限和六操作白名单，拒绝记录副本。JOYSTICK 参数为 source/button，兼容并忽略旧 server_session_id；FLIGHT 参数为 source/operation_code。会话文本不作为授权凭据，Core/Gateway 的旧 session 固定参数仅为兼容；新鲜度和序号检查仍保留。每个 Core 进程最多缓存 1024 条原始应答，不淘汰已执行身份；ACCEPTED 不等同于动作完成，最终结果看 flight.state，尚无 get_result/异步最终应答。
 
-仅 CONTROL 调用 ServoWheel；内部滚转为 `roll_deg*π/180` rad，俯仰为 `-(pitch_mm+80)/1000` m。JOYSTICK 的 POSITION_HOLD 使用经校验的设备检查时间；FLIGHT 使用串口接收样本时间。短暂输入失效保持原状态，恢复窗口或控制输入租约到期直接 ERROR；输入恢复不会自动退出 ERROR，RESET_ERROR 成功后到 READY。设备轨迹仍使用 Core 的 local.task，尚未把 flight.command 原始 origin 完整贯穿至 Manipulator。其他本地入口的行为以 Core README 为准。
+仅 CONTROL 调用 ServoWheel；内部滚转为 `roll_deg*π/180` rad，俯仰为 `-(pitch_mm+80)/1000` m。JOYSTICK 的 POSITION_HOLD 使用经校验的设备检查时间；FLIGHT 使用串口接收样本时间。短暂输入失效保持原状态，恢复窗口或控制输入租约到期直接 ERROR；输入恢复不会自动退出 ERROR，RESET_ERROR 接受后进入 RELEASING，必要时松手撤离并回 home，成功后到 STANDBY。设备轨迹仍使用 Core 的 local.task，尚未把 flight.command 原始 origin 完整贯穿至 Manipulator。其他本地入口的行为以 Core README 为准。
 
 
 Core 已通过同机 hand.command / hand.state 接入真实手开合，软件 lock 不表示抓握已验证；尚未实现视觉闭环或跨主机控制。离散服务与短轨迹能力只对明确支持本节约定的节点开放，既有 simulation 节点不能直接消费此轨迹模式。

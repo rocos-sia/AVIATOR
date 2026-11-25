@@ -54,6 +54,7 @@ class RemoteLink final : public DataLink {
     void emergencyIo();
     void trimStreamHistory(); // Caller holds mutex_; retain four samples behind feedback cursor.
     void handTarget(bool close);
+    std::string servoFeedbackFailure(const char* context, uint64_t now) const; // Caller holds mutex_.
     MotionConfig config_;
     HandLink hand_;
     zmq::context_t context_{1};

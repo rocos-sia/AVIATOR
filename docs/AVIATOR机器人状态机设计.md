@@ -43,7 +43,7 @@ stateDiagram-v2
     CONTROL --> RELEASING: LEAVE_WHEEL / ENTER_STANDBY
     READY --> RELEASING: LEAVE_WHEEL / 允许撤离
     RELEASING --> STANDBY: 撤离并回 home 完成
-    ERROR --> READY: RESET_ERROR / 故障清除且可恢复
+    ERROR --> RELEASING: RESET_ERROR / 故障清除且可恢复
     note right of ERROR
         执行失败、阻断故障或超时直接进入
         输入恢复不自动退出 ERROR
@@ -66,7 +66,7 @@ stateDiagram-v2
 | FOLLOWING | EXIT_CONTROL | 空闲时幂等完成；已有刚度任务时返回 BUSY。 |
 | FOLLOWING / CONTROL | LEAVE_WHEEL / ENTER_STANDBY | 资源就绪且释放获授权，直接进入 RELEASING；一次请求包含减速、撤离和回 home。 |
 | READY | LEAVE_WHEEL | 仍在握盘、资源就绪、停稳、执行器空闲且释放获授权，进入 RELEASING。 |
-| ERROR | RESET_ERROR | 原因已排除、资源可用、已停稳、执行器空闲且无急停锁存，进入 READY；清当前错误，保留历史错误。 |
+| ERROR | RESET_ERROR | 原因已排除、资源可用、已停稳、执行器空闲、恢复姿态已知且无急停锁存，进入 RELEASING；必要时松手撤离，再回 home。到位停稳后进入 STANDBY 并清当前错误，保留历史错误；失败原地停止并返回 ERROR。 |
 
 FOLLOWING / CONTROL 的直接撤离不要求调用方先发 EXIT_CONTROL，也不要求请求时 Servo 已停稳。
 正在进行的跟随刚度或 CONTROL 默认刚度恢复可以被撤离请求接管：取消旧任务代号，等待旧工作线程退出，
@@ -135,7 +135,7 @@ Gateway、状态播报、操作提示及测试使用这十一个整机状态。�
 离线状态机覆盖正常流程、两种状态直接撤离、刚度切换接管、复位 READY、恢复守卫、
 短暂失效恢复、持续失效超时、任务完成等待、迟到结果和急停无出口。
 Managed 测试覆盖真实工作线程与模拟设备、阻抗切换期间撤离、输入失效、失败原始诊断和恢复。
-隔离 MuJoCo 进程测试覆盖运动中 CONTROL 直接释放、输入超时停稳、ERROR 显式复位及 READY 撤离。
+隔离 MuJoCo 进程测试覆盖运动中 CONTROL 直接释放、输入超时停稳、ERROR 显式复位松手回 home。
 具体命令见 [Core 说明](../nodes/aviator_core/README.md) 和 [测试说明](../tests/README.md)。
 
 当前本地运行适配授权跟随和释放，按设备反馈及软件阶段判断就绪、停稳和脱离。

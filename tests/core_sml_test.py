@@ -25,8 +25,8 @@ run('done\nENTER_STANDBY\ndone\nSTART_CONTROL\nset following_authorized 0\nGRASP
 run('done\nENTER_STANDBY\ndone\nGRASP_WHEEL\nfail\nlate_done\nset fault_cleared 0\nRESET_ERROR\n'
     'set fault_cleared 1\nRESET_ERROR\nENTER_STANDBY\nLEAVE_WHEEL\ndone\n',
     '[event] fail: GRASPING -> ERROR', '[event] late_done: ERROR -> ERROR',
-    '[reply] RESET_ERROR INVALID_STATE', '[event] RESET_ERROR: ERROR -> READY',
-    '[reply] ENTER_STANDBY INVALID_STATE', '[event] LEAVE_WHEEL: READY -> RELEASING',
+    '[reply] RESET_ERROR INVALID_STATE', '[event] RESET_ERROR: ERROR -> RELEASING',
+    '[reply] ENTER_STANDBY BUSY', '[reply] LEAVE_WHEEL BUSY',
     '[event] done: RELEASING -> STANDBY')
 
 for commands, transition in [
@@ -46,8 +46,8 @@ run('emergency\nlate_done\nRESET_ERROR\nENTER_STANDBY\nGRASP_WHEEL\n',
     '[event] late_done: EMERGENCY_STOP -> EMERGENCY_STOP', '[reply] RESET_ERROR INVALID_STATE')
 run('set emergency_known 0\n', 'INITIALIZING -> EMERGENCY_STOP')
 run('fault\nRESET_ERROR\nENTER_STANDBY\ndone\n',
-    '[event] RESET_ERROR: ERROR -> READY', '[event] ENTER_STANDBY: READY -> HOMING',
-    '[event] done: HOMING -> STANDBY')
+    '[event] RESET_ERROR: ERROR -> RELEASING', '[reply] ENTER_STANDBY BUSY',
+    '[event] done: RELEASING -> STANDBY')
 for args in (['--config', 'config/system.yaml'], ['--safety-file', '/tmp/unused'], ['--fsm-simulation']):
     result = subprocess.run([exe, *args], capture_output=True, text=True, timeout=3)
     assert result.returncode == 1 and 'offline only' in result.stderr

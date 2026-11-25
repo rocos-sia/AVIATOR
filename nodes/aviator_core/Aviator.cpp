@@ -527,12 +527,31 @@ class Aviator::Impl {
         require(lock.owns_lock() && !servo_active_, "Executor has not stopped");
         const auto feedback = grasp();
         require(!feedback.fault, "Device fault is still present");
+        // Only retire the local latch after fresh, healthy device evidence.
+        backend_stop_requested_ = false;
+        last_target_ = datalink_->jointTargets();
         setMotionError("");
         if (GetState() == "FAULT") {
             const bool enabled = datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right);
             setState(enabled ? (feedback.locked == 3 ? "LOCKED" : "ENABLED") : "DISABLED");
         }
         // The Core owns subsequent motion authorization; do not restart a trajectory here.
+    }
+
+    // Called only by the managed worker after the original task has stopped.
+    void recoverError(const std::atomic<bool>& cancelled) {
+        const auto check = [&] { require(!cancelled, "Error recovery cancelled"); };
+        check();
+        require(recoveryPoseKnown(), "Recovery pose is unknown");
+        require(datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right),
+                "Error recovery requires both arms enabled");
+        acknowledgeFault();
+        check();
+        const bool release = grasp().locked || GetState() == "APPROACHED";
+        setImpedanceProfile(false, cancelled);
+        check();
+        if (release) { releaseHandles(); check(); }
+        moveHome();
     }
 
     void setImpedanceProfile(bool following, const std::atomic<bool>& cancelled) {
@@ -1111,7 +1130,7 @@ public:
         if (phase == "FAULT") {
             // ERROR may acknowledge a local fault only after device recovery and
             // a known clear/fully grasped pose. Interrupted contact tasks stay ERROR.
-            if (std::string(machine_.state()) != "ERROR") {
+            if (std::string(machine_.state()) != "ERROR" && machine_.job() != fsm::Job::recover) {
                 s.ready = false;
                 s.fault = executor_.GetStatus().motion_error;
                 if (s.fault.empty()) s.fault = "Executor entered FAULT without a diagnostic";
@@ -1204,10 +1223,6 @@ public:
                 machine_.fault(e.what());
             }
         }
-        if (reply == fsm::Reply::completed && operation == fsm::Operation::reset_error) {
-            try { executor_.acknowledgeFault(); }
-            catch (const std::exception& e) { machine_.fault(e.what()); }
-        }
         effects();
         if ((reply == fsm::Reply::accepted ||
              (reply == fsm::Reply::completed && (operation == fsm::Operation::reset_error ||
@@ -1298,6 +1313,8 @@ private:
                         executor_.lockHandles();
                     } else if (job == fsm::Job::following_impedance) {
                         executor_.setImpedanceProfile(true, cancelled_);
+                    } else if (job == fsm::Job::recover) {
+                        executor_.recoverError(cancelled_);
                     } else if (job == fsm::Job::release) {
                         executor_.setImpedanceProfile(false, cancelled_); check();
                         executor_.releaseHandles(); check();

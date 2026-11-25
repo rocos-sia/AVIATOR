@@ -285,8 +285,11 @@ int main(int argc, char** argv) try {
         for (int i = 0; i < 200; ++i) {
             link.heartbeat();
             bool fresh; const auto state = link.snapshot(fresh);
-            if (state.fault && !state.enabled[0] && !state.enabled[1]) break;
-            check(i < 199, "failed update did not disable both arms");
+            if (state.fault && !state.stopping) {
+                check(state.enabled[0] && state.enabled[1], "Successful fault stop disabled healthy arms");
+                break;
+            }
+            check(i < 199, "failed update did not stop and latch fault");
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     }

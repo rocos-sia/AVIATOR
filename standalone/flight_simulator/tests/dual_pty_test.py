@@ -35,13 +35,23 @@ def main():
             try:
                 while child.poll() is None and time.monotonic()-start<8:
                     seq+=1
+                    elapsed = time.monotonic() - start
                     up=bytearray(64); up[:2]=b'\xeb\x90';up[2]=seq%256
                     up[10]=7;up[11]=up[12]=255;up[22:26]=bytes.fromhex('01 02 cd ab')
                     struct.pack_into('<hh', up, 13, -32767, -32767)
                     struct.pack_into('<hh', up, 26, 32767, 32767)
-                    up[63]=sum(up[2:63]) & 255
                     for i,(m,_) in enumerate(pairs):
-                        os.write(m,up)
+                        reply = bytearray(up)
+                        # Current gateway uses FF for emergency stop and FE for unknown.
+                        # On B, a checksum-correct legacy state 00 must not keep data LIVE.
+                        if i == 0:
+                            reply[10] = 7 if elapsed < .6 else (0xff if elapsed < 1.6 else 0xfe)
+                            if elapsed >= 1.6:
+                                struct.pack_into('<h', reply, 15, -32768)
+                        elif elapsed >= 1.6:
+                            reply[10] = 0
+                        reply[63] = sum(reply[2:63]) & 255
+                        os.write(m,reply)
                         try: data=os.read(m,4096)
                         except BlockingIOError: continue
                         buffers[i].extend(data)
@@ -61,7 +71,12 @@ def main():
                 assert 'FOLLOWING' in text and 'checksum=ABCD' in text, text
                 assert 'camera=(-50.000000 deg' in text and 'joint_fk=(50.000000 deg' in text, text
                 assert '70.000000 mm' in text and '-80.000000 mm' in text, text
-                print('PASS: production flight simulator, virtual joystick axes/button, dual identical frames, ten-cycle operation, uplink display, disconnect stops TX')
+                lines = text.splitlines()
+                assert any('SIM A LIVE' in line and 'state=EMERGENCY_STOP' in line for line in lines), text
+                assert any('SIM A LIVE' in line and 'state=UNKNOWN' in line
+                           and 'camera=(-50.000000 deg, unknown)' in line for line in lines), text
+                assert any('SIM B STALE' in line and 'state=FOLLOWING' in line for line in lines), text
+                print('PASS: production flight simulator, virtual joystick axes/button, dual identical frames, ten-cycle operation, emergency/unknown feedback, legacy state rejected, disconnect stops TX')
             except Exception:
                 log.flush();log.seek(0);print(log.read(),file=sys.stderr);raise
             finally:

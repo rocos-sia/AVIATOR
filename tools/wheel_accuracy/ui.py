@@ -191,7 +191,7 @@ class Controller:
                 self.message = f"{pending['label']}：正在运动…"
         elif pending["stage"] == "operation":
             destination = dict(enter_standby="STANDBY", grasp_wheel="FOLLOWING", leave_wheel="STANDBY",
-                               exit_control="FOLLOWING", reset_error="READY")[pending["operation"]]
+                               exit_control="FOLLOWING", reset_error="STANDBY")[pending["operation"]]
             if self.phase == destination and self.state.get("system", {}).get("settled", False):
                 self.message = f"操作完成：{destination}"
                 self.pending = None

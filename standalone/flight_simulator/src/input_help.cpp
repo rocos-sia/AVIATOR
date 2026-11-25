@@ -24,7 +24,7 @@ const char* operationName(const std::string& op) {
     if (op == "leave_wheel")
         return "松盘 / 撤离";
     if (op == "reset_error")
-        return "故障确认（ERROR → READY）";
+        return "错误复位（松手回 home）";
     return "未分配";
 }
 std::string keyFor(const Config& config, const std::string& operation) {
@@ -129,8 +129,8 @@ InputHelp::InputHelp(const Config& config) {
                   amber, 22);
         font.text(surface, 40, 161, "操作连续发送 10 拍；回绕不等于完成。反馈详情见终端。", white);
         font.text(surface, 28, 215, "方向键操作", green, 21);
-        font.text(surface, 28, 246, "左 / 右：roll + / −       上 / 下：pitch + / −");
-        font.text(surface, 28, 274, "按住累加，松开或到限位后保持；[0] 回到初始原点。", muted);
+        font.text(surface, 28, 246, "左 / 右：roll + / −（deg）    上 / 下：pitch + / −（mm）");
+        font.text(surface, 28, 274, "按住累加，松开或到限位后保持；[0] 目标归零到 0° / 0 mm。", muted);
         font.text(surface, 28, 302,
                   "反向键同时按下停止累加；移动摇杆对应轴可接管。速度 / 限位按配置生效。", muted,
                   18);
@@ -139,23 +139,19 @@ InputHelp::InputHelp(const Config& config) {
         for (unsigned i = 0; i < config.buttons.size(); ++i) {
             const auto text =
                 std::string("[") + key_names[i] + "]  " +
-                (i == 9 ? "目标回原点（roll / pitch = 0）" : operationName(config.buttons[i]));
+                (i == 9 ? "目标归零（0° / 0 mm）" : operationName(config.buttons[i]));
             font.text(surface, i < 6 ? 28 : 475, 372 + (i % 6) * 27, text,
                       i != 9 && config.buttons[i].empty() ? muted : white, 18);
         }
         box({24, 528, 832, 152}, 29, 45, 62);
         font.text(surface, 40, 558, "ERROR 恢复：每一步都要等待状态完成", green, 21);
-        font.text(surface, 40, 588, "故障排除、设备停稳后，按 " + keyFor(config, "reset_error") + " 复位 → READY。", white, 18);
-        font.text(surface, 40, 615,
-                  "仍在握盘：" + keyFor(config, "leave_wheel") +
-                      " 松盘撤离 → STANDBY；已脱离可用 " + keyFor(config, "enter_standby") +
-                      " 回 home。",
-                  white, 18);
+        font.text(surface, 40, 588, "故障排除、设备停稳后，按 " + keyFor(config, "reset_error") + " 复位，等待松手并回 home。", white, 18);
+        font.text(surface, 40, 615, "复位中显示 RELEASING；到达 home 并停稳后进入 STANDBY。", white, 18);
         font.text(surface, 40, 642,
                   "再按 " + keyFor(config, "grasp_wheel") + " 握盘 → FOLLOWING，再按 " +
                       keyFor(config, "start_control") + " 开始控制 → CONTROL。",
                   white, 18);
-        font.text(surface, 40, 668, "ERROR 不能直接开始控制；故障确认键只用于 ERROR → READY。", muted,
+        font.text(surface, 40, 668, "复位成功进入 STANDBY；手或机械臂无法运动时保持 ERROR。", muted,
                   17);
         font.text(surface, 28, 718, "长按不会重复请求。关注串口回传状态；关闭此窗口会退出模拟器。",
                   muted, 18);

@@ -1,11 +1,40 @@
 #include "rs422.hpp"
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 using namespace flight_simulator::rs422;
 void check(bool ok) {
     if (!ok)
         throw std::runtime_error("protocol assertion failed");
+}
+void checkPhysicalPositions() {
+    // Fixed ICD vectors, independent of either production codec.
+    struct Target { double roll, pitch; Bytes prefix; uint8_t sum; };
+    const Target targets[] = {
+        {-50, -80, {0xeb, 0x90, 0, 0, 0x01, 0x80, 0x01, 0x80}, 0x02},
+        {50, 70, {0xeb, 0x90, 0, 0, 0xff, 0x7f, 0xff, 0x7f}, 0xfc},
+        {0, -5, {0xeb, 0x90, 0, 0, 0, 0, 0, 0}, 0},
+        {0, 0, {0xeb, 0x90, 0, 0, 0, 0, 0x88, 0x08}, 0x90},
+    };
+    for (const auto& target : targets) {
+        auto expected = target.prefix;
+        expected.resize(32, 0);
+        expected.back() = target.sum;
+        check(encode(Downlink{0, 0, encodeRoll(target.roll), encodePitch(target.pitch)}) == expected);
+        Downlink decoded;
+        check(decode(expected, decoded));
+        check(std::abs(decodeRoll(decoded.roll) - target.roll) <= 25.0 / 32767);
+        check(std::abs(decodePitch(decoded.pitch) - target.pitch) <= 37.5 / 32767);
+    }
+    // Unknown camera/FK axes remain independent; they must not become physical zero.
+    Uplink up;
+    up.roll = -32767;
+    up.joint_pitch = 32767;
+    Uplink decoded;
+    check(decode(encode(up), decoded));
+    check(decoded.roll == -32767 && decoded.pitch == invalid_position);
+    check(decoded.joint_roll == invalid_position && decoded.joint_pitch == 32767);
 }
 void checkWireBoundaries() {
     auto require = [](bool ok) {
@@ -163,6 +192,7 @@ void checkRingParser() {
     }
 }
 int main() try {
+    checkPhysicalPositions();
     checkWireBoundaries();
     checkRingParser();
     check(stateCode("SAFE") == unknown_state && std::string(stateName(0x09)) == "UNKNOWN");

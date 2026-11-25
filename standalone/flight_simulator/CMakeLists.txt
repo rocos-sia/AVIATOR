@@ -29,6 +29,18 @@ if(BUILD_TESTING)
   add_executable(protocol_test tests/protocol_test.cpp)
   target_link_libraries(protocol_test PRIVATE simulator_lib)
   add_test(NAME protocol COMMAND protocol_test)
+  # In-repository builds also check the separately maintained gateway codec.
+  # A copied source package remains fully standalone.
+  set(AVIATOR_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+  if(EXISTS "${AVIATOR_SOURCE_ROOT}/nodes/flight_gateway/rs422.cpp" AND
+     EXISTS "${AVIATOR_SOURCE_ROOT}/common/wheel_units.hpp")
+    add_library(gateway_protocol_peer STATIC "${AVIATOR_SOURCE_ROOT}/nodes/flight_gateway/rs422.cpp")
+    target_include_directories(gateway_protocol_peer PRIVATE "${AVIATOR_SOURCE_ROOT}/common")
+    add_executable(gateway_compatibility_test tests/gateway_compatibility_test.cpp)
+    target_include_directories(gateway_compatibility_test PRIVATE "${AVIATOR_SOURCE_ROOT}")
+    target_link_libraries(gateway_compatibility_test PRIVATE simulator_lib gateway_protocol_peer)
+    add_test(NAME gateway_compatibility COMMAND gateway_compatibility_test)
+  endif()
   add_executable(serial_test tests/serial_test.cpp)
   target_link_libraries(serial_test PRIVATE simulator_lib)
   target_link_options(serial_test PRIVATE "-Wl,--wrap=tcsetattr")

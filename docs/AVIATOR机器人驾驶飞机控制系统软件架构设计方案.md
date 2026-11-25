@@ -272,7 +272,7 @@ FlightState 是内部详细快照，不直接序列化成串口。上行所需�
 
 ### 运行状态与错误码
 
-运行状态保留 STANDBY（待机）、GRASPING（抓握中）、FOLLOWING（随动）、CONTROL（主动执行飞控目标）、ERROR（故障），另有 INIT、INITIALIZING、READY、HOMING、RELEASING 和 EMERGENCY_STOP；整机 SAFE 已取消，可恢复问题保持原状态，超时或阻断故障进入 ERROR，复位到 READY。FOLLOWING 表示经授权的柔顺或目标随动，不执行主动飞控操纵量，具体控制律由算法设计规定。
+运行状态保留 STANDBY（待机）、GRASPING（抓握中）、FOLLOWING（随动）、CONTROL（主动执行飞控目标）、ERROR（故障），另有 INIT、INITIALIZING、READY、HOMING、RELEASING 和 EMERGENCY_STOP；整机 SAFE 已取消，可恢复问题保持原状态，超时或阻断故障进入 ERROR，复位执行松手回 home，完成进入 STANDBY。FOLLOWING 表示经授权的柔顺或目标随动，不执行主动飞控操纵量，具体控制律由算法设计规定。
 
 正常转换为 INIT → STANDBY → GRASPING → FOLLOWING → CONTROL；允许的反向转换须显式定义。进入 CONTROL 要求设备就绪、抓握验证通过、输入源授权有效、必要反馈新鲜、标定有效且无阻断故障。安全条件优先于操作请求，故障恢复不得直接返回 CONTROL。
 

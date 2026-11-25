@@ -24,7 +24,7 @@ ALSA null 设备与可控播放器验证缓存原子更新、文案失配/损坏
 `control_nodes_servo_window` 使用独立端口和 MuJoCo，验证 42 ms 补窗间隔后的连续恢复、
 显式 stop 后超过 1 s 的使能保位、从停止目标重启，以及持续断流仍触发 50 ms watchdog。
 `managed_gateway_process_test.py` 验证运动期间输入失效后进入 ERROR、稳定保位、无自动恢复，
-以及复位到 READY 后显式释放回到 STANDBY；预期故障注入之外的 ERROR 都会失败。`core_hand_process_test.py` 的 revoke
+以及复位自动松手回 home 到 STANDBY；预期故障注入之外的 ERROR 都会失败。`core_hand_process_test.py` 的 revoke
 场景还检查没有运动任务时撤销授权也会请求本地 stop。
 
 `grasp_tools`（完整机器人构建）验证不同左右工具变换、直接抓握目标、70/40 mm 独立触发与

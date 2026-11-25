@@ -593,14 +593,17 @@ void executor(Shared& shared, DataLink& device, const MotionConfig& config, cons
             state.impedance_switching = false;
             state.fault = true;
             state.error = e.what();
+            // A software fault that can stop locally holds its final target with
+            // power retained. Failed braking/SDK feedback still requires protection.
             try {
                 stop();
-            } catch (...) {
-            }
-            try {
-                if (shared.emergency) emergency(); else disable();
             } catch (const std::exception& stop_error) {
-                state.error += "; " + std::string(stop_error.what());
+                state.error += "; stop failed: " + std::string(stop_error.what());
+                try {
+                    if (shared.emergency) emergency(); else disable();
+                } catch (const std::exception& disable_error) {
+                    state.error += "; " + std::string(disable_error.what());
+                }
             }
             Logger::error("manipulator: {}", state.error);
             if (!key.empty()) {

@@ -36,6 +36,7 @@ const char* jobName(fsm::Job job) {
     case fsm::Job::home: return "home";
     case fsm::Job::grasp: return "grasp";
     case fsm::Job::release: return "release";
+    case fsm::Job::recover: return "recover";
     case fsm::Job::following_impedance: return "following_impedance";
     default: return "none";
     }
@@ -125,7 +126,7 @@ public:
                 if (command == "fail") machine_.failed(task.generation, "Injected mock task failure");
                 else {
                     // This executor simulates completed retreat; other evidence remains editable.
-                    if (task.job == fsm::Job::release) snapshot_.clear_of_wheel = true;
+                    if (task.job == fsm::Job::release || task.job == fsm::Job::recover) snapshot_.clear_of_wheel = true;
                     if (!machine_.done(task.generation, snapshot_, now_)) completion_ = task;
                 }
             }

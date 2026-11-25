@@ -28,13 +28,13 @@ digraph Aviator {
   CONTROL -> RELEASING [label="LEAVE_WHEEL / ENTER_STANDBY\n无需先 EXIT_CONTROL"];
   RELEASING -> STANDBY [label="撤离并回 home 完成", constraint=false];
   READY -> RELEASING [label="LEAVE_WHEEL\n仍握盘、就绪、停稳、释放授权", constraint=false];
-  ERROR -> READY [label="RESET_ERROR\n故障已清除、设备可用、停稳\n位置关系可确认", color="#ba6936", constraint=false];
+  ERROR -> RELEASING [label="RESET_ERROR\n故障已清除、设备可用、停稳\n位置关系可确认", color="#ba6936", constraint=false];
   operating [shape=note, fillcolor="#f5f7fa", color="#95a1b2",
              label="任一运行状态\n可恢复问题：保留状态和任务\n持续失效满 100 ms 或任务超时：ERROR\n控制目标租约满 100 ms：ERROR\n明确阻断故障 / 执行失败：立即 ERROR"];
   operating -> ERROR [label="超时 / Fault"];
   all_states [shape=note, fillcolor="#f5f7fa", color="#95a1b2", label="任意非急停状态"];
   all_states -> EMERGENCY_STOP [label="Emergency"];
   note [shape=note, fillcolor="#f5f7fa", color="#95a1b2",
-        label="完成事件均校验任务代号与反馈；未满足条件时保留完成结果并受原任务期限约束。\n复位不启动运动；输入恢复不自动退出 ERROR。\n软件急停仅当前进程锁存，物理手刹尚未接入。\n整机 SAFE 已取消；设备停止状态及本地 watchdog 保留。"];
+        label="完成事件均校验任务代号与反馈；未满足条件时保留完成结果并受原任务期限约束。\n复位松手回 home，完成进入 STANDBY；输入恢复不自动退出 ERROR。\n软件急停仅当前进程锁存，物理手刹尚未接入。\n整机 SAFE 已取消；设备停止状态及本地 watchdog 保留。"];
   {rank=same; INIT; operating; all_states; note;}
 }

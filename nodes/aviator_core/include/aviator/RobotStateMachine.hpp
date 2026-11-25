@@ -14,7 +14,7 @@ struct ENTER_STANDBY {}; struct GRASP_WHEEL {}; struct START_CONTROL {};
 struct EXIT_CONTROL {}; struct LEAVE_WHEEL {}; struct RESET_ERROR {};
 struct Done { std::uint64_t generation; };
 struct Fault {}; struct Emergency {};
-enum class Job { none, initialize, home, grasp, release, following_impedance };
+enum class Job { none, initialize, home, grasp, release, following_impedance, recover };
 struct Context {
   bool ready{}, following_authorized{}, source_authorized{}, input_ready{};
   bool settled{}, clear_of_wheel{}, fault_cleared{}, emergency_latched{};
@@ -52,7 +52,7 @@ struct RobotMachine {
       return c.ready && c.settled && c.clear_of_wheel && c.job == Job::none && c.executor_idle;
     };
     const auto reset_ok = [](const Context& c) {
-      return c.ready && c.fault_cleared && c.settled && c.executor_idle && !c.emergency_latched;
+      return c.ready && c.fault_cleared && c.release_authorized && c.settled && c.executor_idle && !c.emergency_latched;
     };
     const auto init_done = [](const Done& e, const Context& c) {
       return e.generation == c.generation && c.job == Job::initialize &&
@@ -67,7 +67,7 @@ struct RobotMachine {
              c.ready && c.following_authorized && c.executor_idle;
     };
     const auto release_done = [](const Done& e, const Context& c) {
-      return e.generation == c.generation && c.job == Job::release &&
+      return e.generation == c.generation && (c.job == Job::release || c.job == Job::recover) &&
              c.ready && c.settled && c.clear_of_wheel && c.executor_idle;
     };
     const auto following_done = [](const Done& e, const Context& c) {
@@ -82,7 +82,7 @@ struct RobotMachine {
     const auto leave = [](Context& c) {
       c.begin(Job::release); c.settled = false; c.stop_requested = true;
     };
-    const auto reset = [](Context& c) { c.cancel(); };
+    const auto reset = [](Context& c) { c.begin(Job::recover); };
     const auto finished = [](Context& c) { c.job = Job::none; };
     const auto enable = [](Context& c) { c.job = Job::none; c.accepts_control = true; };
     const auto disable = [](Context& c) {
@@ -114,7 +114,7 @@ struct RobotMachine {
       state<CONTROL> + event<ENTER_STANDBY>[leave_ok] / leave = state<RELEASING>,
       state<READY> + event<LEAVE_WHEEL>[release_ok] / release = state<RELEASING>,
       state<RELEASING> + event<Done>[release_done] / finished = state<STANDBY>,
-      state<ERROR> + event<RESET_ERROR>[reset_ok] / reset = state<READY>,
+      state<ERROR> + event<RESET_ERROR>[reset_ok] / reset = state<RELEASING>,
       state<INIT> + event<Fault> / stop = state<ERROR>,
       state<INITIALIZING> + event<Fault> / stop = state<ERROR>,
       state<STANDBY> + event<Fault> / stop = state<ERROR>,

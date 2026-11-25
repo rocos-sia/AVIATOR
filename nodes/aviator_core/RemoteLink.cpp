@@ -348,13 +348,23 @@ uint64_t RemoteLink::sendGraspCommand(GraspCommand c) {
 void RemoteLink::setJointPositions(const Joints &) {
     throw std::runtime_error("Core must stream a planned trajectory");
 }
+std::string RemoteLink::servoFeedbackFailure(const char* context, uint64_t now) const {
+    const auto age = [now](uint64_t stamp) {
+        return !stamp ? std::string("missing") : now < stamp ? std::string("future")
+                                                            : std::to_string(now - stamp);
+    };
+    return fmt::format("{}: latest_supported={} enabled={} fault={} feedback_valid={} "
+                       "receive_age_us={} sample_age_us={} timeout_us={} device_error=[{}] link_error=[{}]",
+                       context, latest_supported_, enabled_, state_.fault, feedback_valid_,
+                       age(received_), age(sample_), config_.timeout_us, state_.error, error_);
+}
 bool RemoteLink::latestServo(const ServoGoal& goal) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!motion_allowed_) throw MotionCancelled();
     const auto now = monotonic_us();
     if (!latest_supported_ || !enabled_ || state_.fault || !error_.empty() || !feedback_valid_ ||
         now - received_ >= config_.timeout_us || now - sample_ >= config_.timeout_us)
-        throw std::runtime_error("Latest servo feedback unavailable: " + state_.error + error_);
+        throw std::runtime_error(servoFeedbackFailure("Latest servo feedback unavailable", now));
     if (latest_mode_ && !latest_finished_ && state_.id == trajectory_id_ && state_.servo_stopped && !state_.servo_active)
         return false; // The device timed out first; let Core finish this run before accepting another.
     if (!latest_mode_ || latest_finished_) {
@@ -380,7 +390,7 @@ void RemoteLink::finishLatestServo() {
         const auto now = monotonic_us();
         if (state_.fault || !error_.empty() || !feedback_valid_ ||
             now - received_ >= config_.timeout_us || now - sample_ >= config_.timeout_us)
-            throw std::runtime_error("Latest servo stop failed: " + state_.error + error_);
+            throw std::runtime_error(servoFeedbackFailure("Latest servo stop failed", now));
         if (std::chrono::steady_clock::now() >= until) throw std::runtime_error("Latest servo stop timeout");
         changed_.wait_for(lock, std::chrono::milliseconds(2));
     }

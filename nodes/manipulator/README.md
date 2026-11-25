@@ -6,6 +6,8 @@
 
 Rokae 双臂硬件执行节点。仿真由独立 `simulation` 节点提供，二者共享设备服务与轨迹执行协议。后台执行线程管理设备生命周期；有限动作消费轨迹窗口，连续 Servo 只保留最新轮盘目标并执行 1 ms Ruckig + 双臂 IK；ZMQ 和 JSON 位于非实时域。Rokae SDK 自己的两条周期回调只读写数值状态与指令，保持 SCHED_FIFO 80 和关节阻抗模式，保留实际调度及回调耗时诊断。
 
+Manipulator 和 Managed Core 使用独立后台线程输出日志，队列上限为 8192 条；磁盘或管道阻塞、队列满时丢弃最旧日志，控制线程不等待输出恢复。持续阻塞可能导致日志缺失，故障状态仍由设备/Core 独立保存。反馈超时保护保持原门限；`Latest servo feedback unavailable` 和 `Latest servo stop failed` 会记录反馈接收年龄、采样年龄、有效标志及门限，用于区分反馈过期与设备故障。
+
 ```bash
 ./build/bin/manipulator --config config/system.yaml
 ```

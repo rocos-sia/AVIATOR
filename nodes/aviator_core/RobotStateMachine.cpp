@@ -44,7 +44,7 @@ void RobotStateMachine::snapshot(const Snapshot& s) {
     context_.following_authorized = s.following_authorized;
     context_.source_authorized = s.source_authorized;
     context_.input_ready = s.input_ready;
-    context_.fault_cleared = s.fault_cleared;
+    context_.fault_cleared = s.fault_cleared && s.fault.empty();
     context_.executor_idle = s.executor_idle;
     context_.release_authorized = s.release_authorized;
 }
@@ -156,7 +156,7 @@ bool RobotStateMachine::done(std::uint64_t generation, const Snapshot& s, std::u
     // Keep the completion pending while recoverable postconditions settle. The
     // original task deadline remains in force; never resubmit the physical action.
     if (!machine_.process_event(Done{generation})) return false;
-    if (completed == Job::initialize || completed == Job::home || completed == Job::release) error_.clear();
+    if (completed == Job::initialize || completed == Job::home || completed == Job::release || completed == Job::recover) error_.clear();
     if (context_.job != Job::none) deadline(now);
     return true;
 }

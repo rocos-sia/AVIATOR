@@ -31,11 +31,12 @@ class Logger {
     struct Backend {
         std::shared_ptr<spdlog::details::thread_pool> pool;
         std::shared_ptr<spdlog::logger> logger;
-        explicit Backend(bool async, spdlog::sink_ptr sink) {
+        explicit Backend(bool async, spdlog::sink_ptr sink,
+                         spdlog::async_overflow_policy overflow = spdlog::async_overflow_policy::block) {
             if (async) {
                 pool = std::make_shared<spdlog::details::thread_pool>(8192, 1);
                 logger = std::make_shared<spdlog::async_logger>("aviator", sink, pool,
-                    spdlog::async_overflow_policy::block);
+                    overflow);
             } else {
                 logger = std::make_shared<spdlog::logger>("aviator", sink);
             }
@@ -50,10 +51,17 @@ class Logger {
     }
 public:
     static void configure(bool async = false, spdlog::level::level_enum level = spdlog::level::info,
-                          spdlog::sink_ptr sink = nullptr) {
-        auto next = std::make_shared<Backend>(async, sink ? std::move(sink) : std::make_shared<ConsoleSink>());
+                          spdlog::sink_ptr sink = nullptr,
+                          spdlog::async_overflow_policy overflow = spdlog::async_overflow_policy::block) {
+        auto next = std::make_shared<Backend>(async, sink ? std::move(sink) : std::make_shared<ConsoleSink>(), overflow);
         next->logger->set_level(level);
         std::atomic_store(&backend(), std::move(next));
+    }
+    // Control/watchdog threads must not wait for console IO, even when its queue
+    // fills. Keep the newest diagnostics; fault state is retained independently.
+    static void configureControl(spdlog::sink_ptr sink = nullptr) {
+        configure(true, spdlog::level::info, std::move(sink),
+                  spdlog::async_overflow_policy::overrun_oldest);
     }
     static void set_level(spdlog::level::level_enum level) {
         std::atomic_load(&backend())->logger->set_level(level);
