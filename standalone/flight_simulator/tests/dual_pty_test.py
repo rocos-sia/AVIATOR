@@ -50,6 +50,8 @@ def main():
                                 struct.pack_into('<h', reply, 15, -32768)
                         elif elapsed >= 1.6:
                             reply[10] = 0
+                        # A received reserved byte must survive the monitor/log capture.
+                        reply[30] = 0xa5
                         reply[63] = sum(reply[2:63]) & 255
                         os.write(m,reply)
                         try: data=os.read(m,4096)
@@ -72,6 +74,8 @@ def main():
                 assert 'camera=(-50.000000 deg' in text and 'joint_fk=(50.000000 deg' in text, text
                 assert '70.000000 mm' in text and '-80.000000 mm' in text, text
                 lines = text.splitlines()
+                captures = [bytes.fromhex(line.split('HEX=', 1)[1]) for line in lines if ' 64B HEX=' in line]
+                assert captures and all(len(f) == 64 and f[30] == 0xa5 for f in captures), text
                 assert any('SIM A LIVE' in line and 'state=EMERGENCY_STOP' in line for line in lines), text
                 assert any('SIM A LIVE' in line and 'state=UNKNOWN' in line
                            and 'camera=(-50.000000 deg, unknown)' in line for line in lines), text

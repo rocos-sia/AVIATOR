@@ -21,16 +21,32 @@ int main(int argc, char** argv) try {
         return 2;
     std::thread script([&] {
         using namespace std::chrono_literals;
-        std::this_thread::sleep_for(600ms);
+        // Exercise the monitor during live 80 Hz transmission, including the
+        // ten-frame operation below. A page switch must not consume controls.
+        const auto page = [](SDL_Scancode key) {
+            SDL_Event focus{};
+            focus.type = SDL_WINDOWEVENT;
+            focus.window.event = SDL_WINDOWEVENT_FOCUS_GAINED;
+            SDL_PushEvent(&focus);
+            SDL_Event event{};
+            event.type = SDL_KEYDOWN;
+            event.key.keysym.scancode = key;
+            SDL_PushEvent(&event);
+        };
+        std::this_thread::sleep_for(300ms);
+        page(SDL_SCANCODE_F2);
+        std::this_thread::sleep_for(300ms);
         SDL_JoystickSetVirtualAxis(joystick, 0, 16384);
         SDL_JoystickSetVirtualAxis(joystick, 1, -16384);
         std::this_thread::sleep_for(400ms);
         SDL_JoystickSetVirtualButton(joystick, 0, 1);
         std::this_thread::sleep_for(180ms);
         SDL_JoystickSetVirtualButton(joystick, 0, 0);
+        page(SDL_SCANCODE_F4);
         std::this_thread::sleep_for(200ms);
         SDL_JoystickSetVirtualAxis(joystick, 0, -16384);
         SDL_JoystickSetVirtualAxis(joystick, 1, 16384);
+        page(SDL_SCANCODE_F3);
         std::this_thread::sleep_for(220ms);
         SDL_JoystickDetachVirtual(index);
         std::this_thread::sleep_for(500ms);

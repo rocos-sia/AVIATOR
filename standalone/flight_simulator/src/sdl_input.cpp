@@ -177,6 +177,10 @@ bool SdlInput::poll(JoystickSample& output, std::vector<unsigned>& pressed) {
             const bool down = event.type == SDL_KEYDOWN;
             if (event.key.repeat || (down && !recent))
                 continue;
+            if (down && help_->viewKey(event.key.keysym.scancode)) {
+                repaint = true;
+                continue;
+            }
             for (unsigned i = 0; i < arrows.size(); ++i) {
                 if (event.key.keysym.scancode != arrows[i])
                     continue;

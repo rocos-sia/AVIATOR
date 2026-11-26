@@ -20,6 +20,7 @@ void run(const Config& config, int stop_fd) {
     std::array<Parser, 2> parsers{{Parser(true), Parser(true)}};
     std::array<uint64_t, 2> connections{}, received{};
     std::array<Uplink, 2> replies{};
+    std::array<ReceptionSnapshot, 2> snapshots{};
     JoystickSample sample{{config.roll_axis, -32768, 32767, 0, config.invert_roll},
                           {config.pitch_axis, -32768, 32767, 0, config.invert_pitch}};
     CommandSender sender;
@@ -63,14 +64,27 @@ void run(const Config& config, int stop_fd) {
                     if (!decode(frame, up))
                         continue;
                     const uint8_t delta = up.counter - replies[i].counter;
-                    if (received[i] && now - received[i] < timeout && (delta == 0 || delta >= 128))
+                    if (received[i] && now - received[i] < timeout && (delta == 0 || delta >= 128)) {
+                        ++snapshots[i].ignored_frames;
                         continue;
+                    }
                     replies[i] = up;
                     received[i] = now;
+                    snapshots[i].frame = frame;
+                    snapshots[i].received_us = now;
+                    ++snapshots[i].accepted_frames;
                 }
             }
             ports[i].flush(now);
         }
+        for (unsigned i = 0; i < 2; ++i) {
+            snapshots[i].connected = ports[i].fd() >= 0;
+            snapshots[i].current = received[i] != 0;
+            snapshots[i].rejected_bytes = parsers[i].rejected;
+            snapshots[i].rx_bytes = ports[i].rx_bytes;
+            snapshots[i].tx_frames = ports[i].tx_frames;
+        }
+        input.feedback(snapshots);
         std::vector<unsigned> pressed;
         if (!input.poll(sample, pressed))
             break;
@@ -143,6 +157,9 @@ void run(const Config& config, int stop_fd) {
                      << " tx_frames=" << ports[i].tx_frames
                      << " dropped=" << ports[i].dropped;
                 std::clog << line.str() << "\n";
+                if (!snapshots[i].frame.empty())
+                    std::clog << "SIM RX " << (i ? "B" : "A") << " " << (fresh ? "LIVE" : "STALE")
+                              << " 64B HEX=" << hexBytes(snapshots[i].frame) << "\n";
             }
             input.title(title);
         }

@@ -1,8 +1,13 @@
 #include "input_help.hpp"
+#include "clock.hpp"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <algorithm>
+#include <iomanip>
+#include <iostream>
+#include <map>
+#include <sstream>
 #include <stdexcept>
 #include <string_view>
 
@@ -36,6 +41,14 @@ std::string keyFor(const Config& config, const std::string& operation) {
 struct Font {
     FT_Library library = nullptr;
     FT_Face face = nullptr;
+    struct Glyph {
+        unsigned width = 0, rows = 0;
+        int left = 0, top = 0, advance = 0;
+        std::vector<unsigned char> pixels;
+    };
+    // Reuse rasterized glyphs when refreshing telemetry; font rasterization must
+    // not run for every character at the 80 Hz control rate.
+    std::map<std::pair<unsigned, unsigned>, Glyph> glyphs;
     Font() {
         if (FT_Init_FreeType(&library))
             throw std::runtime_error("Cannot initialize input help font");
@@ -71,20 +84,31 @@ struct Font {
             }
             while (extra-- && i < value.size())
                 point = (point << 6) | (value[i++] & 63);
-            if (FT_Load_Char(face, point, FT_LOAD_RENDER))
-                continue;
-            const auto& glyph = *face->glyph;
-            for (unsigned row = 0; row < glyph.bitmap.rows; ++row) {
-                const int y = baseline - glyph.bitmap_top + row;
+            const auto key = std::make_pair(size, point);
+            auto found = glyphs.find(key);
+            if (found == glyphs.end()) {
+                if (FT_Load_Char(face, point, FT_LOAD_RENDER)) continue;
+                const auto& source = *face->glyph;
+                Glyph glyph{source.bitmap.width, source.bitmap.rows, source.bitmap_left,
+                            source.bitmap_top, int(source.advance.x >> 6), {}};
+                for (unsigned row = 0; row < glyph.rows; ++row) {
+                    const auto* p = source.bitmap.buffer + row * source.bitmap.pitch;
+                    glyph.pixels.insert(glyph.pixels.end(), p, p + glyph.width);
+                }
+                found = glyphs.emplace(key, std::move(glyph)).first;
+            }
+            const auto& glyph = found->second;
+            for (unsigned row = 0; row < glyph.rows; ++row) {
+                const int y = baseline - glyph.top + row;
                 if (y < 0 || y >= target->h)
                     continue;
                 auto* pixels = reinterpret_cast<Uint32*>(static_cast<Uint8*>(target->pixels) +
                                                          y * target->pitch);
-                for (unsigned col = 0; col < glyph.bitmap.width; ++col) {
-                    const int px = x + glyph.bitmap_left + col;
+                for (unsigned col = 0; col < glyph.width; ++col) {
+                    const int px = x + glyph.left + col;
                     if (px < 0 || px >= target->w)
                         continue;
-                    const auto alpha = glyph.bitmap.buffer[row * glyph.bitmap.pitch + col];
+                    const auto alpha = glyph.pixels[row * glyph.width + col];
                     Uint8 r, g, b;
                     SDL_GetRGB(pixels[px], target->format, &r, &g, &b);
                     const auto blend = [alpha](Uint8 bg, Uint8 fg) {
@@ -94,12 +118,80 @@ struct Font {
                                             blend(b, color.b));
                 }
             }
-            x += glyph.advance.x >> 6;
+            x += glyph.advance;
         }
     }
 };
 } // namespace
-InputHelp::InputHelp(const Config& config) {
+struct InputHelp::Monitor {
+    Font font;
+    std::array<ReceptionSnapshot, 2> live{}, saved{};
+    ReceptionSnapshot displayed;
+    uint64_t frozen_at = 0, rendered_at = 0, timeout;
+    int page = 0;
+    bool paused = false, dirty = true;
+    std::string notice;
+    Surface surface{nullptr, SDL_FreeSurface};
+    explicit Monitor(uint64_t timeout_us) : timeout(timeout_us) {
+        surface.reset(SDL_CreateRGBSurfaceWithFormat(0, width, height, 32, SDL_PIXELFORMAT_ARGB8888));
+        if (!surface) throw std::runtime_error("Cannot create RS422 display surface");
+    }
+    void show(SDL_Window* window, bool focused, bool attached, bool repaint) {
+        const auto now = monotonic_us();
+        if (!dirty && !repaint && now - rendered_at < 200000) return;
+        rendered_at = now;
+        dirty = false;
+        const auto& s = (paused ? saved : live).at(page - 1);
+        displayed = s;
+        auto* canvas = surface.get();
+        SDL_FillRect(canvas, nullptr, SDL_MapRGB(canvas->format, 19, 28, 41));
+        font.text(canvas, 20, 33, "F1 操作指南   F2 报文 A   F3 报文 B   F4 暂停/恢复   F5 复制 HEX", white, 19);
+        const auto time = paused ? frozen_at : now;
+        const std::string status = receptionStatus(s, time, timeout);
+        const auto color = paused ? amber : status == "LIVE" ? green : amber;
+        std::string heading = std::string("64 字节上行 · 通道 ") + (page == 1 ? "A" : "B") + " · ";
+        heading += paused ? "暂停快照（历史数据）" : status;
+        if (!s.frame.empty() && time >= s.received_us)
+            heading += " · " + std::to_string((time - s.received_us) / 1000) + " ms 前收到";
+        font.text(canvas, 20, 66, heading, color, 21);
+        std::ostringstream meta;
+        meta << "串口 " << (s.connected ? "open" : "closed") << "  RX " << s.rx_bytes << " B  接纳 " << s.accepted_frames
+             << " 帧  旧序号 " << s.ignored_frames << " 帧  丢弃 " << s.rejected_bytes << " B";
+        font.text(canvas, 20, 92, meta.str(), muted, 16);
+        if (s.frame.empty()) {
+            font.text(canvas, 40, 160, "尚未收到有效的 64 字节上行报文", amber, 24);
+            font.text(canvas, 40, 199, "检查串口路径、接线、115200 / 8E1 及双方协议版本。", muted, 18);
+        } else {
+            for (size_t row = 0; row < 4; ++row) {
+                std::ostringstream line;
+                line << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << row * 16
+                     << "  " << hexBytes(s.frame, row * 16, 16);
+                font.text(canvas, 20, 118 + int(row) * 20, line.str(), white, 18);
+            }
+            font.text(canvas, 20, 205, "偏移", green, 17);
+            font.text(canvas, 100, 205, "字段", green, 17);
+            font.text(canvas, 298, 205, "原始 HEX", green, 17);
+            font.text(canvas, 440, 205, "解析值 / 含义", green, 17);
+            int y = 229;
+            for (const auto& field : describeUplink(s.frame)) {
+                font.text(canvas, 20, y, field.offset, muted, 16);
+                font.text(canvas, 100, y, field.name, white, 16);
+                font.text(canvas, 298, y, field.hex, muted, 16);
+                font.text(canvas, 440, y, field.value, white, 16);
+                y += 20;
+            }
+        }
+        font.text(canvas, 20, 661, "roll = raw×50/32767 deg；pitch = raw×75/32767−5 mm；−32768 无效。", muted, 16);
+        font.text(canvas, 20, 687, notice.empty() ? "显示最近接纳帧；坏帧不更新。STALE / 暂停只供查看；操作回绕不代表完成。" : notice, amber, 16);
+        font.text(canvas, 20, 718, std::string(focused ? "键盘已聚焦" : "键盘未聚焦") +
+                  (attached ? " · 摇杆已连接" : " · 摇杆未连接") + " · 切页和暂停不改变收发及操作按键", muted, 16);
+        auto* target = SDL_GetWindowSurface(window);
+        if (!target || SDL_BlitSurface(canvas, nullptr, target, nullptr) != 0 || SDL_UpdateWindowSurface(window) != 0)
+            throw std::runtime_error("Cannot display RS422 feedback: " + std::string(SDL_GetError()));
+    }
+};
+InputHelp::InputHelp(const Config& config)
+    : monitor_(std::make_unique<Monitor>(config.rs422.receive_timeout_ms * 1000ULL)) {
     Font font;
     for (int state = 0; state < 5; ++state) {
         const bool focused = state & 1, attached = state & 2;
@@ -127,7 +219,7 @@ InputHelp::InputHelp(const Config& config) {
                   config.simulator.require_joystick ? "飞控模拟：手柄断开即停止两路下行发送"
                                                     : "飞控模拟：无手柄且窗口失焦即停止发送",
                   amber, 22);
-        font.text(surface, 40, 161, "操作连续发送 10 拍；回绕不等于完成。反馈详情见终端。", white);
+        font.text(surface, 40, 161, "操作连续发送 10 拍；回绕不等于完成。F2 / F3 查看上行报文。", white);
         font.text(surface, 28, 215, "方向键操作", green, 21);
         font.text(surface, 28, 246, "左 / 右：roll + / −（deg）    上 / 下：pitch + / −（mm）");
         font.text(surface, 28, 274, "按住累加，松开或到限位后保持；[0] 目标归零到 0° / 0 mm。", muted);
@@ -153,12 +245,49 @@ InputHelp::InputHelp(const Config& config) {
                   white, 18);
         font.text(surface, 40, 668, "复位成功进入 STANDBY；手或机械臂无法运动时保持 ERROR。", muted,
                   17);
-        font.text(surface, 28, 718, "长按不会重复请求。关注串口回传状态；关闭此窗口会退出模拟器。",
+        font.text(surface, 28, 718, "F1 操作指南 · F2 报文 A · F3 报文 B · F4 暂停/恢复 · F5 复制 HEX",
                   muted, 18);
     }
 }
+InputHelp::~InputHelp() = default;
+void InputHelp::feedback(const std::array<ReceptionSnapshot, 2>& snapshots) {
+    monitor_->live = snapshots;
+}
+bool InputHelp::viewKey(SDL_Scancode key) {
+    auto& m = *monitor_;
+    if (key >= SDL_SCANCODE_F1 && key <= SDL_SCANCODE_F3) {
+        m.page = key - SDL_SCANCODE_F1;
+        m.dirty = true;
+        m.notice.clear();
+        visible_ = -1;
+        return true;
+    }
+    if (!m.page) return false;
+    if (key == SDL_SCANCODE_F4) {
+        m.paused = !m.paused;
+        if (m.paused) {
+            m.saved = m.live;
+            m.frozen_at = monotonic_us();
+        }
+        m.notice.clear();
+        m.dirty = true;
+        return true;
+    }
+    if (key == SDL_SCANCODE_F5) {
+        m.notice = m.displayed.frame.empty() ? "尚无可复制报文"
+            : SDL_SetClipboardText(hexBytes(m.displayed.frame).c_str()) == 0 ? "已复制当前显示的 64 字节 HEX"
+            : "复制失败：" + std::string(SDL_GetError());
+        m.dirty = true;
+        return true;
+    }
+    return false;
+}
 void InputHelp::show(SDL_Window* window, bool focused, bool attached, bool repaint,
                      bool focus_expired) {
+    if (monitor_->page) {
+        monitor_->show(window, focused, attached, repaint);
+        return;
+    }
     const int state = focus_expired && !attached ? 4 : int(focused) | (int(attached) << 1);
     if (!repaint && visible_ == state)
         return;

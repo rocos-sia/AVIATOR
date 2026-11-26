@@ -16,6 +16,7 @@ class SdlInput {
     SdlInput& operator=(const SdlInput&) = delete;
     bool poll(JoystickSample& output, std::vector<unsigned>& pressed);
     void title(const std::string& value) { SDL_SetWindowTitle(window_, value.c_str()); }
+    void feedback(const std::array<ReceptionSnapshot, 2>& snapshots) { help_->feedback(snapshots); }
 
   private:
     void openJoystick();
