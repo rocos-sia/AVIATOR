@@ -215,6 +215,8 @@ core_hand:
                             and not (mode == 'synchronized_drop' and trajectory_at and now - trajectory_at > .1)):
                         m = header('HandState', 'inspire_hand', node)
                         owned = dict(ack)
+                        if mode == 'cancel_wait' and close_seen and not unlock_seen:
+                            owned['sequence'] = 0
                         if mode == 'foreign': owned.update(publisher_id='manual', session_id=str(uuid.uuid4()))
                         m.update(feedback_only=mode == 'readonly', command_valid=first_open,
                                  accepted_command=owned,
@@ -249,6 +251,9 @@ core_hand:
                 if not event_hand: assert len(stalled_targets) >= 5
                 assert all(v == stalled_targets[0] for v in stalled_targets), 'hand advanced while arm cursor was frozen'
                 assert operations == ['describe','authorize','enable','lock','unlock','disable'], operations
+            elif mode == 'cancel_wait':
+                assert close_seen and unlock_seen
+                assert operations == ['describe', 'authorize', 'enable', 'unlock', 'disable'], operations
             elif mode in ('normal', 'isolation', 'invalid_recovery'):
                 assert first_open and close_seen and unlock_seen and aggregate_seen
                 assert operations == ['describe','authorize','enable','lock','stop','unlock','disable'], operations
@@ -323,5 +328,5 @@ if __name__ == '__main__':
         for scenario in ('normal', 'synchronized'):
             run(sys.argv[1], sys.argv[2], scenario, fake_node=sys.argv[3])
         sys.exit(0)
-    for scenario in ('synchronized', 'normal', 'missing', 'readonly', 'foreign', 'invalid', 'invalid_recovery', 'stale', 'stuck_open', 'bad_config', 'no_close', 'synchronized_drop', 'dropped', 'revoke', 'isolation', 'heartbeat', 'arm_failure', 'no_arm'):
+    for scenario in ('cancel_wait', 'synchronized', 'normal', 'missing', 'readonly', 'foreign', 'invalid', 'invalid_recovery', 'stale', 'stuck_open', 'bad_config', 'no_close', 'synchronized_drop', 'dropped', 'revoke', 'isolation', 'heartbeat', 'arm_failure', 'no_arm'):
         run(*sys.argv[1:], scenario)

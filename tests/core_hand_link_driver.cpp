@@ -1,6 +1,7 @@
 #include "RemoteLink.hpp"
 #include <atomic>
 #include <iostream>
+#include <future>
 using namespace aviator;
 namespace aviator {
 struct RemoteLinkTestAccess {
@@ -35,6 +36,23 @@ int main(int argc, char** argv) {
                 if (mode == "synchronized_drop" &&
                     std::chrono::steady_clock::now() - lock_began > std::chrono::milliseconds(300))
                     throw std::runtime_error("Lock repeated the failed synchronized hand completion wait");
+                link.sendGraspCommand(GraspCommand::Unlock);
+                link.disable(Side::Left);
+                cleanup();
+            } else if (mode == "cancel_wait") {
+                link.enable(Side::Left);
+                std::atomic<bool> cancel{false};
+                auto stopper = std::async(std::launch::async, [&] {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(75));
+                    cancel = true;
+                });
+                bool cancelled = false;
+                const auto began = std::chrono::steady_clock::now();
+                try { link.sendGraspCommand(GraspCommand::Lock, &cancel); }
+                catch (const MotionCancelled&) { cancelled = true; }
+                stopper.get();
+                if (!cancelled || std::chrono::steady_clock::now() - began > std::chrono::milliseconds(500))
+                    throw std::runtime_error("Hand ACK wait did not cancel promptly");
                 link.sendGraspCommand(GraspCommand::Unlock);
                 link.disable(Side::Left);
                 cleanup();

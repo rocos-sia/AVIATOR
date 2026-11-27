@@ -117,11 +117,11 @@ ctest --test-dir build -R '^(robot_state_machine|core_sml_demo|core_sml_cli)$' -
 | Managed API | 事件 / 行为 |
 | --- | --- |
 | `Init()` | 内部 Boot → initialize 任务；初始化资源、双臂使能及阻抗配置完成后 READY，保持当前位置，不自动回 home |
-| `EnterStandby()` | ENTER_STANDBY；已脱离的 READY → HOMING，实际到 home 并停稳 → STANDBY；STANDBY 幂等；FOLLOWING/CONTROL 直接释放撤离再回 home |
+| `EnterStandby()` | ENTER_STANDBY；除 ERROR / EMERGENCY_STOP 外均可请求回待机，初始化中记住请求，抓握中可中止；HOMING / RELEASING 继续原任务，STANDBY 幂等 |
 | `GraspWheel()` | GRASP_WHEEL；确认手张开 → approachHandles(from_home=true) → lockHandles；不重复使能或回 home |
 | `StartControl()` | START_CONTROL；直接进入 CONTROL，恢复默认刚度期间暂不接收运动目标，恢复后使用新鲜输入 |
 | `ExitControl()` | EXIT_CONTROL；关闭接纳并非阻塞减速，重启操控须等 settled；直接释放请求会接管并等待停稳 |
-| `LeaveWheel()` | LEAVE_WHEEL；FOLLOWING/CONTROL 可直接请求；READY 仅仍握盘且获准时可请求；停稳后 releaseHandles 张开撤离 → moveHome，实际回 home 并停稳后 STANDBY |
+| `LeaveWheel()` | LEAVE_WHEEL；与 ENTER_STANDBY 共用回待机流程，根据实际进度决定松手撤离或直接回 home；到位停稳后才进入 STANDBY |
 | `ResetError()` | RESET_ERROR；故障已排除且可恢复时，ERROR → RELEASING，必要时松手撤离再回 home，完成后进入 STANDBY；失败回 ERROR |
 | `ServoWheel(a,d,v,sample_mono_us)` | 目标接口，不是第七个操作；仅 CONTROL 接受本次操控后的有效时间戳，拒绝过期、未来、重复/倒退目标 |
 | `Update()` | 拥有线程每约 5 ms 调用，刷新证据/心跳，监督、收取任务结果和执行转换 |

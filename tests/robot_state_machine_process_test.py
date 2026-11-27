@@ -22,6 +22,7 @@ def port():
 
 def main():
     bus, manipulator, core, root = sys.argv[1:5]
+    standby_interrupt = '--standby-interrupt' in sys.argv[5:]
     hand_timeout = '--hand-timeout' in sys.argv[5:]
     hand_unavailable = '--hand-unavailable' in sys.argv[5:]
     hand_persistent = '--hand-persistent-error' in sys.argv[5:]
@@ -66,6 +67,8 @@ def main():
     hand = FakeRH56FTPHand(context, endpoints, config['core_hand'], directory, latched_error) if hand_fault or hand_recovery else None
     sub = context.socket(zmq.SUB)
     sub.subscribe(b"flight.state")
+    if standby_interrupt:
+        sub.subscribe(b"arm.state")
     sub.connect(endpoints[1])
 
     def start(name, args):
@@ -118,6 +121,45 @@ def main():
             print("PASS: missing hand messages cause managed FSM ERROR", flush=True)
             return
         wait_state("READY", 30)  # Init/enable completed; no automatic home.
+        if standby_interrupt:
+            command("LEAVE_WHEEL")  # Clear READY accepts 0x50, too.
+            homing = wait_state("HOMING", 3)
+            command("ENTER_STANDBY\nLEAVE_WHEEL")
+            assert wait_state("HOMING", 3)['generation'] == homing['generation']
+            wait_state("STANDBY", 120)
+            for operation, cursor in (("ENTER_STANDBY", 250), ("LEAVE_WHEEL", 1500)):
+                # Record the held trajectory ID, then interrupt real approach motion.
+                while True:
+                    topic, payload = sub.recv_multipart()
+                    if topic == b'arm.state':
+                        previous_id = json.loads(payload)['execution']['trajectory_id']
+                        break
+                command("GRASP_WHEEL")
+                wait_state("GRASPING", 3)
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline:
+                    if not sub.poll(100):
+                        continue
+                    topic, payload = sub.recv_multipart()
+                    data = json.loads(payload)
+                    if topic == b'flight.state':
+                        assert data['system']['state'] == 'GRASPING', data['system']
+                    elif data['execution']['trajectory_id'] != previous_id and data['execution']['tick'] >= cursor:
+                        break
+                else:
+                    raise AssertionError('Approach did not make progress')
+                command(operation)
+                releasing = wait_state("RELEASING", 3)
+                command("LEAVE_WHEEL\nENTER_STANDBY")
+                assert wait_state("RELEASING", 3)['generation'] == releasing['generation']
+                standby = wait_state("STANDBY", 120)
+                assert not standby['current_error'], standby
+                command("LEAVE_WHEEL\nENTER_STANDBY")
+                assert wait_state("STANDBY", 3)['generation'] == standby['generation']
+            command("quit")
+            assert process.wait(timeout=10) == 0
+            print('PASS: both standby commands interrupt moving approach; home/release/standby requests are idempotent', flush=True)
+            return
         if hand_recovery:
             def fault(on):
                 hand.set_unavailable(on and hand_unavailable, 4 if on and hand_persistent else 0)

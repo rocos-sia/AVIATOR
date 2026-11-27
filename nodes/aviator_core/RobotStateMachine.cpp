@@ -107,18 +107,23 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
     };
     supervise(s, now); // Protection always precedes ordinary requests.
     if (machine_.is(sml::state<EMERGENCY_STOP>)) return reply(Reply::invalid_state);
-    const bool leaving = (op == Operation::leave_wheel || op == Operation::enter_standby) &&
-        (machine_.is(sml::state<CONTROL>) || machine_.is(sml::state<FOLLOWING>) ||
-         (machine_.is(sml::state<GRASPING>) && context_.job == Job::following_impedance));
-    if (context_.job != Job::none && !(leaving && context_.job == Job::following_impedance))
-        return reply(Reply::busy);
+    const bool leaving = op == Operation::leave_wheel || op == Operation::enter_standby;
+    if (leaving) {
+        if (machine_.is(sml::state<ERROR>)) return reply(Reply::invalid_state);
+        const auto generation = context_.generation;
+        if (!machine_.process_event(RETURN_STANDBY{})) return reply(Reply::capability_unavailable);
+        // Repeated requests acknowledge the existing job without extending its deadline.
+        if (context_.generation != generation) deadline(now);
+        return reply(context_.job == Job::none ? Reply::completed : Reply::accepted);
+    }
+    if (context_.job != Job::none) return reply(Reply::busy);
     bool accepted = false;
     switch (op) {
-    case Operation::enter_standby: accepted = machine_.process_event(ENTER_STANDBY{}); break;
+    case Operation::enter_standby: break;
     case Operation::grasp_wheel: accepted = machine_.process_event(GRASP_WHEEL{}); break;
     case Operation::start_control: accepted = machine_.process_event(START_CONTROL{}); break;
     case Operation::exit_control: accepted = machine_.process_event(EXIT_CONTROL{}); break;
-    case Operation::leave_wheel: accepted = machine_.process_event(LEAVE_WHEEL{}); break;
+    case Operation::leave_wheel: break;
     case Operation::reset_error: accepted = machine_.process_event(RESET_ERROR{}); break;
     }
     if (accepted) {
@@ -128,18 +133,12 @@ Reply RobotStateMachine::request(Operation op, const Snapshot& s, std::uint64_t 
         return reply(Reply::completed);
     }
     const bool permitted =
-        (machine_.is(sml::state<READY>) && (op == Operation::enter_standby || op == Operation::leave_wheel)) ||
         (machine_.is(sml::state<STANDBY>) && op == Operation::grasp_wheel) ||
-        (machine_.is(sml::state<FOLLOWING>) && (op == Operation::start_control ||
-            op == Operation::leave_wheel || op == Operation::enter_standby)) ||
-        (machine_.is(sml::state<CONTROL>) && leaving) ||
-        (machine_.is(sml::state<GRASPING>) && leaving) ||
+        (machine_.is(sml::state<FOLLOWING>) && op == Operation::start_control) ||
         (machine_.is(sml::state<ERROR>) && op == Operation::reset_error);
     if (!permitted) return reply(Reply::invalid_state);
     if (!s.executor_idle || !s.settled) return reply(Reply::busy);
-    if ((machine_.is(sml::state<READY>) && op == Operation::enter_standby && !s.clear_of_wheel) ||
-        (machine_.is(sml::state<READY>) && op == Operation::leave_wheel && s.clear_of_wheel) ||
-        (op == Operation::reset_error && !s.fault_cleared)) return reply(Reply::invalid_state);
+    if (op == Operation::reset_error && !s.fault_cleared) return reply(Reply::invalid_state);
     return reply(Reply::capability_unavailable);
 }
 bool RobotStateMachine::done(std::uint64_t generation, const Snapshot& s, std::uint64_t now) {

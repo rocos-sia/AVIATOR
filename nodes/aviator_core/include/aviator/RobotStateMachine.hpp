@@ -12,6 +12,7 @@ struct EMERGENCY_STOP {};
 struct Boot {};
 struct ENTER_STANDBY {}; struct GRASP_WHEEL {}; struct START_CONTROL {};
 struct EXIT_CONTROL {}; struct LEAVE_WHEEL {}; struct RESET_ERROR {};
+struct RETURN_STANDBY {};
 struct Done { std::uint64_t generation; };
 struct Fault {}; struct Emergency {};
 enum class Job { none, initialize, home, grasp, release, following_impedance, recover };
@@ -19,10 +20,10 @@ struct Context {
   bool ready{}, following_authorized{}, source_authorized{}, input_ready{};
   bool settled{}, clear_of_wheel{}, fault_cleared{}, emergency_latched{};
   bool executor_idle{}, release_authorized{}, pending_job{}, stop_requested{};
-  bool accepts_control{}, brake_requested{};
+  bool accepts_control{}, brake_requested{}, standby_requested{};
   Job job{Job::none};
   std::uint64_t generation{};
-  void cancel() { accepts_control = false; job = Job::none; pending_job = false; ++generation; }
+  void cancel() { standby_requested = false; accepts_control = false; job = Job::none; pending_job = false; ++generation; }
   void begin(Job value) { cancel(); job = value; pending_job = true; }
 };
 struct RobotMachine {
@@ -36,20 +37,11 @@ struct RobotMachine {
       return c.ready && c.settled && c.following_authorized &&
              c.source_authorized && c.input_ready && c.job == Job::none && c.executor_idle;
     };
-    const auto release_ok = [](const Context& c) {
-      return c.ready && c.settled && !c.clear_of_wheel && c.release_authorized &&
-             c.job == Job::none && c.executor_idle;
-    };
-    // A leave request owns deceleration; callers need not wait for Servo/impedance.
     const auto leave_ok = [](const Context& c) {
-      return c.ready && c.release_authorized && !c.emergency_latched &&
-             (c.job == Job::none || c.job == Job::following_impedance);
+      return c.ready && c.release_authorized && !c.emergency_latched;
     };
-    const auto grasp_leave_ok = [leave_ok](const Context& c) {
-      return c.job == Job::following_impedance && leave_ok(c);
-    };
-    const auto recover_ok = [](const Context& c) {
-      return c.ready && c.settled && c.clear_of_wheel && c.job == Job::none && c.executor_idle;
+    const auto home_ok = [](const Context& c) {
+      return c.ready && c.settled && c.clear_of_wheel && c.executor_idle;
     };
     const auto reset_ok = [](const Context& c) {
       return c.ready && c.fault_cleared && c.release_authorized && c.settled && c.executor_idle && !c.emergency_latched;
@@ -78,7 +70,6 @@ struct RobotMachine {
     const auto initialize = [](Context& c) { c.begin(Job::initialize); };
     const auto home = [](Context& c) { c.begin(Job::home); };
     const auto grasp = [](Context& c) { c.begin(Job::grasp); };
-    const auto release = [](Context& c) { c.begin(Job::release); };
     const auto leave = [](Context& c) {
       c.begin(Job::release); c.settled = false; c.stop_requested = true;
     };
@@ -94,25 +85,31 @@ struct RobotMachine {
     };
     return make_transition_table(
       *state<INIT> + event<Boot>[free] / initialize = state<INITIALIZING>,
+      state<INIT> + event<RETURN_STANDBY>[free] / [](Context& c) {
+        c.begin(Job::initialize); c.standby_requested = true;
+      } = state<INITIALIZING>,
+      state<INITIALIZING> + event<RETURN_STANDBY> / [](Context& c) { c.standby_requested = true; },
+      state<INITIALIZING> + event<Done>[([init_done](const Done& e, const Context& c) {
+        return init_done(e, c) && c.standby_requested;
+      })] / home = state<HOMING>,
       state<INITIALIZING> + event<Done>[init_done] / finished = state<READY>,
-      state<READY> + event<ENTER_STANDBY>[recover_ok] / home = state<HOMING>,
+      state<READY> + event<RETURN_STANDBY>[home_ok] / home = state<HOMING>,
+      state<READY> + event<RETURN_STANDBY>[leave_ok] / leave = state<RELEASING>,
+      state<GRASPING> + event<RETURN_STANDBY>[leave_ok] / leave = state<RELEASING>,
+      state<FOLLOWING> + event<RETURN_STANDBY>[leave_ok] / leave = state<RELEASING>,
+      state<CONTROL> + event<RETURN_STANDBY>[leave_ok] / leave = state<RELEASING>,
+      state<HOMING> + event<RETURN_STANDBY> / [] {},
+      state<RELEASING> + event<RETURN_STANDBY> / [] {},
+      state<STANDBY> + event<RETURN_STANDBY> / [] {},
       state<HOMING> + event<Done>[home_done] / finished = state<STANDBY>,
-      state<STANDBY> + event<ENTER_STANDBY> / [] {},
       state<STANDBY> + event<GRASP_WHEEL>[grasp_ok] / grasp = state<GRASPING>,
       // FOLLOWING means its impedance task has completed and the executor is settled.
       state<GRASPING> + event<Done>[grasp_done] / following,
       state<GRASPING> + event<Done>[following_done] / finished = state<FOLLOWING>,
-      state<GRASPING> + event<LEAVE_WHEEL>[grasp_leave_ok] / leave = state<RELEASING>,
-      state<GRASPING> + event<ENTER_STANDBY>[grasp_leave_ok] / leave = state<RELEASING>,
       state<FOLLOWING> + event<START_CONTROL>[control_ok] / enable = state<CONTROL>,
       state<CONTROL> + event<EXIT_CONTROL>[([](const Context& c) { return c.following_authorized; })] / disable,
       state<CONTROL> + event<Done>[following_done] / finished = state<FOLLOWING>,
       state<FOLLOWING> + event<EXIT_CONTROL> / [] {},
-      state<FOLLOWING> + event<LEAVE_WHEEL>[leave_ok] / leave = state<RELEASING>,
-      state<FOLLOWING> + event<ENTER_STANDBY>[leave_ok] / leave = state<RELEASING>,
-      state<CONTROL> + event<LEAVE_WHEEL>[leave_ok] / leave = state<RELEASING>,
-      state<CONTROL> + event<ENTER_STANDBY>[leave_ok] / leave = state<RELEASING>,
-      state<READY> + event<LEAVE_WHEEL>[release_ok] / release = state<RELEASING>,
       state<RELEASING> + event<Done>[release_done] / finished = state<STANDBY>,
       state<ERROR> + event<RESET_ERROR>[reset_ok] / reset = state<RELEASING>,
       state<INIT> + event<Fault> / stop = state<ERROR>,

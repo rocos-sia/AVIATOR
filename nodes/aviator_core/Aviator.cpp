@@ -244,7 +244,7 @@ class Aviator::Impl {
         bool stopped = false;
         while (datalink_->time() < deadline) {
             datalink_->waitTick();
-            require(!cancel_, "Motion stopped");
+            checkCancelled();
             requireBackend(!grasp().fault, "Backend grasp fault while homing");
             require(datalink_->isEnabled(Side::Left) && datalink_->isEnabled(Side::Right),
                     "A drive is no longer enabled");
@@ -305,7 +305,7 @@ class Aviator::Impl {
         } catch (...) { stopSafely(); setState("FAULT"); throw; }
     }
 
-    void approachHandles(bool from_home = false) {
+    void approachHandles(bool from_home = false, const std::atomic<bool>* cancelled = nullptr) {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         auto f = grasp();
@@ -315,11 +315,15 @@ class Aviator::Impl {
                 "Enable both arms and unlock before approach");
 
         cancel_ = false;
+        approach_complete_ = false;
         setState("APPROACHING");
 
+        std::optional<Joints> approach_goal;
         const char *phase = "open hands";
         try {
-            command(GraspCommand::Unlock); // Also reopen after an unlatched/aborted approach.
+            if (cancelled && *cancelled) throw MotionCancelled();
+            checkCancelled();
+            command(GraspCommand::Unlock, &cancel_); // Also reopen after an unlatched/aborted approach.
             phase = "home trajectory";
             if (!from_home) homeMotion(false); // Preserve the Direct demo home stage.
 
@@ -328,7 +332,7 @@ class Aviator::Impl {
             if (grasp_wheel_.camera) {
                 phase = "camera wheel acquisition";
                 const auto observed = datalink_->readCameraWheel(grasp_wheel_.camera_id,
-                    grasp_wheel_.freshness_us, grasp_wheel_.wait_us, [this] { checkMotionState(); });
+                    grasp_wheel_.freshness_us, grasp_wheel_.wait_us, [this] { checkMotionState(); checkCancelled(); });
                 wheel0.angle = observed[0];
                 wheel0.displacement = observed[1];
                 require(std::isfinite(wheel0.angle) && std::abs(wheel0.angle) <= .8726646259971648 &&
@@ -342,6 +346,7 @@ class Aviator::Impl {
                                      target(1, wheel0.angle, wheel0.displacement)}, approach_seed_);
             // Freeze this pose for IK, collision checks, hand closure and every wire frame.
             // Executing those frames also rebases the device's wheel reference.
+            approach_goal = goal;
             recovery_pose_known_ = false; // An interrupted approach has no confirmed retreat start.
             moveJoints(goal, approach_speed_, true, &wheel0);
             phase = "approach complete";
@@ -350,7 +355,21 @@ class Aviator::Impl {
             wheel_angle_ = wheel0.angle;
             wheel_displacement_ = wheel0.displacement;
 
+            approach_complete_ = true;
             setState("APPROACHED");
+        } catch (const MotionCancelled&) {
+            // A requested stop is not a device fault. Preserve the stopped command
+            // as the next planning start; never pretend the grasp endpoint was reached.
+            hold();
+            checkMotionState();
+            // Arm motion can finish before the physical hand ACK. If cancellation
+            // lands in that wait, the full endpoint still requires normal retreat.
+            approach_complete_ = approach_goal.has_value();
+            if (approach_goal)
+                for (size_t j = 0; j < last_target_.size(); ++j)
+                    approach_complete_ = approach_complete_ && std::abs(last_target_[j] - (*approach_goal)[j]) < 1e-6;
+            setState("ENABLED");
+            throw;
         } catch (const std::exception &e) {
             const std::string error = std::string("ApproachHandles [") + phase + "]: " + e.what();
             setMotionError(error);
@@ -376,11 +395,11 @@ class Aviator::Impl {
         }
     }
 
-    void lockHandles() {
+    void lockHandles(const std::atomic<bool>* cancelled = nullptr) {
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Another control operation is running");
         require(GetState() == "APPROACHED" || GetState() == "LOCKED", "Approach before locking");
-        command(GraspCommand::Lock); // RemoteLink also waits for physical hand command acceptance when configured.
+        command(GraspCommand::Lock, cancelled); // RemoteLink also waits for physical hand command acceptance when configured.
         recovery_pose_known_ = true;
         setState("LOCKED");
     }
@@ -479,7 +498,7 @@ class Aviator::Impl {
                 phase = "retreat inverse kinematics";
                 const auto steps = static_cast<size_t>(std::ceil(final_approach_duration_ / planning_period_));
                 for (size_t k = 0; k <= steps; ++k) {
-                    require(!cancel_, "Release cancelled");
+                    checkCancelled();
                     std::array<pinocchio::SE3, 2> targets;
                     for (int side = 0; side < 2; ++side)
                         targets[side] = interpolatePose(from[side], to[side], smooth(double(k) / steps));
@@ -489,13 +508,14 @@ class Aviator::Impl {
                 phase = "retreat validation";
                 validate(path, final_approach_duration_);
             }
-            require(!cancel_, "Release cancelled");
+            checkCancelled();
             phase = "open hands";
             recovery_pose_known_ = false;
             command(GraspCommand::Unlock);
             phase = "retreat execution";
             if (!path.empty()) execute(path, final_approach_duration_, false);
             recovery_pose_known_ = true;
+            approach_complete_ = false;
             setState("ENABLED");
         } catch (const std::exception& e) {
             const auto error = std::string("ReleaseHandles [") + phase + "]: " + e.what();
@@ -507,6 +527,30 @@ class Aviator::Impl {
             setMotionError(std::string("ReleaseHandles [") + phase + "]: unknown exception");
             stopSafely(); setState("FAULT"); throw;
         }
+    }
+
+    // Serialized after the interrupted worker has drained. A partial synchronized
+    // approach has no Cartesian retreat endpoint: open first, then validate a new
+    // joint trajectory from the acknowledged stop target to home.
+    void returnStandby(const std::atomic<bool>& cancelled) {
+        const auto check = [&] { if (cancelled) throw MotionCancelled(); };
+        check();
+        while (GetState() == "SERVO") {
+            check();
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        checkMotionState();
+        cancel_ = false;
+        const bool release = approach_complete_ || grasp().locked;
+        // APPROACHED is a valid stable phase, but impedance expects ENABLED/LOCKED.
+        if (GetState() == "APPROACHED") setState("ENABLED");
+        setImpedanceProfile(false, cancelled);
+        check();
+        if (release) releaseHandles();
+        else command(GraspCommand::Unlock); // Also cancels partial hand closure.
+        check();
+        moveHome();
+        recovery_pose_known_ = true;
     }
 
     void resetFault() {
@@ -558,13 +602,13 @@ class Aviator::Impl {
         // EXIT_CONTROL / direct release already requested the normal Servo deceleration. Wait for it
         // without blocking the Managed owner, which continues protection/heartbeats.
         while (GetState() == "SERVO") {
-            require(!cancelled, "Impedance task cancelled while waiting for Servo stop");
+            if (cancelled) throw MotionCancelled();
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
         if (!following && default_impedance_confirmed_) return;
         std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
         require(lock.owns_lock() && !servo_active_, "Executor busy during impedance update");
-        require(!cancelled, "Impedance task cancelled");
+        if (cancelled) throw MotionCancelled();
         const auto previous = GetState();
         require(previous == "LOCKED" || previous == "ENABLED", "Impedance update requires stable enabled executor");
         setState("STIFFNESS");
@@ -823,6 +867,12 @@ class Aviator::Impl {
         return q;
     }
 
+    void checkCancelled() {
+        if (!cancel_) return;
+        checkMotionState(); // A real device fault wins over ordinary cancellation.
+        throw MotionCancelled();
+    }
+
     void checkMotionState() {
         try {
             require(!backend_stop_requested_, "Backend stop required after an earlier fault");
@@ -871,10 +921,11 @@ class Aviator::Impl {
         }
     }
 
-    void command(GraspCommand cmd) {
-        uint64_t seq = datalink_->sendGraspCommand(cmd);
+    void command(GraspCommand cmd, const std::atomic<bool>* cancelled = nullptr) {
+        uint64_t seq = datalink_->sendGraspCommand(cmd, cancelled);
         double until = datalink_->time() + 2;
         while (datalink_->time() < until) {
+            if (cancelled && *cancelled) throw MotionCancelled();
             auto g = grasp();
             if (g.ack == seq) {
                 require(g.result == GraspResult::Ok, "Backend rejected grasp command");
@@ -900,7 +951,7 @@ class Aviator::Impl {
     Joints solve(const std::array<pinocchio::SE3, 2> &targets, const Joints &seed) {
         Joints result{};
         for (int side = 0; side < 2; ++side) {
-            require(!cancel_, "Motion cancelled while solving IK");
+            checkCancelled();
             std::array<double, 7> initial{}, output{};
             for (int axis = 0; axis < 7; ++axis)
                 initial[axis] = seed[side * 7 + axis];
@@ -927,7 +978,7 @@ class Aviator::Impl {
         require(path.size() >= 2, "Empty trajectory");
         double dt = duration / (path.size() - 1);
         for (size_t k = 0; k < path.size(); ++k) {
-            require(!cancel_, "Motion cancelled while planning");
+            checkCancelled();
             check(path[k].q, path[k].angle, path[k].translation);
             if (k == 0)
                 continue;
@@ -975,7 +1026,7 @@ class Aviator::Impl {
         const size_t checks = std::max<size_t>(1, std::ceil(duration / (planning_period_ * 0.5)));
         Joints q{}, velocity{}, acceleration{};
         for (size_t k = 0; k <= checks; ++k) {
-            require(!cancel_, "Motion cancelled while planning");
+            checkCancelled();
             trajectory.at_time(duration * double(k) / checks, q, velocity, acceleration);
             check(q, w.angle, w.displacement);
         }
@@ -990,7 +1041,7 @@ class Aviator::Impl {
         if (close_hands) {
             const auto wheel_pose = wheel(w.angle, w.displacement);
             planHandClosure(frames, hand_closing_distance_, [&](int side, const JointFrame& frame) {
-                require(!cancel_, "Motion cancelled while planning hand closure");
+                checkCancelled();
                 std::array<double, 7> joints{};
                 std::copy_n(frame.q.begin() + side * 7, 7, joints.begin());
                 pinocchio::SE3 flange;
@@ -1035,7 +1086,7 @@ class Aviator::Impl {
         double until = datalink_->time() + seconds;
         while (datalink_->time() < until) {
             datalink_->waitTick();
-            require(!cancel_, "Motion stopped");
+            checkCancelled();
             auto g = grasp();
             requireBackend(!g.fault, "Grasp fault while settling");
             checkElbows(measured());
@@ -1045,6 +1096,7 @@ class Aviator::Impl {
     std::unique_ptr<DataLink> datalink_;
     std::unique_ptr<Kinematics> kinematics_;
     std::unique_ptr<CollisionChecker> collision_checker_;
+    bool approach_complete_ = false; // Serialized executor: full approach needs Cartesian retreat.
     bool default_impedance_confirmed_ = true; // Accessed only by the serialized executor worker.
     bool collision_check_enabled_ = true;
 
@@ -1177,16 +1229,29 @@ public:
                         control_ready_at_ = managedNow();
                         input_at_ = 0;
                     }
-                } catch (const std::exception& e) {
+                } catch (const MotionCancelled& e) {
                     if (restore_generation_ == machine_.generation()) machine_.fault(e.what());
+                } catch (const std::exception& e) {
+                    if (restore_generation_ == machine_.generation() || machine_.job() == fsm::Job::release)
+                        machine_.fault(e.what());
                 } catch (...) {
-                    if (restore_generation_ == machine_.generation()) machine_.fault("Default impedance restoration failed");
+                    if (restore_generation_ == machine_.generation() || machine_.job() == fsm::Job::release)
+                        machine_.fault("Default impedance restoration failed");
                 }
                 restoring_default_ = false;
             } else {
                 try { worker_.get(); completion_ = active_; }
-                catch (const std::exception& e) { machine_.failed(active_->generation, e.what()); }
-                catch (...) { machine_.failed(active_->generation, "Unknown executor failure"); }
+                catch (const MotionCancelled& e) { machine_.failed(active_->generation, e.what()); }
+                catch (const std::exception& e) {
+                    // An old task may be superseded by a standby request, but a
+                    // genuine failure while it drains must still stop the return.
+                    if (active_->generation == machine_.generation() || machine_.job() == fsm::Job::release)
+                        machine_.fault(e.what());
+                }
+                catch (...) {
+                    if (active_->generation == machine_.generation() || machine_.job() == fsm::Job::release)
+                        machine_.fault("Unknown executor failure");
+                }
                 active_.reset();
             }
         }
@@ -1295,7 +1360,7 @@ private:
             try {
                 options_.allow_motion(true);
                 worker_ = std::async(std::launch::async, [this, job = task->job] {
-                    const auto check = [&] { require(!cancelled_, "Managed task cancelled"); };
+                    const auto check = [&] { if (cancelled_) throw MotionCancelled(); };
                     check();
                     if (job == fsm::Job::initialize) {
                         if (executor_.GetState() == "UNINITIALIZED") executor_.init();
@@ -1309,16 +1374,14 @@ private:
                         executor_.moveHome();
                     } else if (job == fsm::Job::grasp) {
                         executor_.prepareGrasp(); check();
-                        executor_.approachHandles(true); check();
-                        executor_.lockHandles();
+                        executor_.approachHandles(true, &cancelled_); check();
+                        executor_.lockHandles(&cancelled_);
                     } else if (job == fsm::Job::following_impedance) {
                         executor_.setImpedanceProfile(true, cancelled_);
                     } else if (job == fsm::Job::recover) {
                         executor_.recoverError(cancelled_);
                     } else if (job == fsm::Job::release) {
-                        executor_.setImpedanceProfile(false, cancelled_); check();
-                        executor_.releaseHandles(); check();
-                        executor_.moveHome(); // STANDBY always means home has been reached.
+                        executor_.returnStandby(cancelled_);
                     }
                 });
             } catch (const std::exception& e) {

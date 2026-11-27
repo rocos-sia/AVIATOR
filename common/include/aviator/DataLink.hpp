@@ -129,6 +129,11 @@ class DataLink {
     // 仅在错误路径调用；不能在实时回调中进行格式化/打印。
     virtual std::string diagnostics() const { return {}; }
     virtual uint64_t sendGraspCommand(GraspCommand command) = 0; // 返回请求序号
+    // Core adapters may interrupt a hand ACK wait without treating it as a fault.
+    virtual uint64_t sendGraspCommand(GraspCommand command, const std::atomic<bool>* cancel) {
+        if (cancel && *cancel) throw MotionCancelled();
+        return sendGraspCommand(command);
+    }
 
     // 周期同步
     // Update the wheel reference alongside joint targets; simulations keep reading the physical wheel.

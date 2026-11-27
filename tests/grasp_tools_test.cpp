@@ -375,6 +375,77 @@ void managedErrorRecovery(const fs::path& config) {
         }
     }
 }
+// A cancelled approach may stop partway, at the endpoint waiting for hand ACK,
+// or fail for a real reason while the old worker drains. Exercise the actual worker.
+void managedStandbyInterrupt(const fs::path& config) {
+    struct InterruptedDevice : Device {
+        std::atomic<bool> waiting{false};
+        bool endpoint = false, fail = false;
+        void runTrajectory(const std::vector<JointFrame>& frames, const std::atomic<bool>& cancel) override {
+            if (frames.front().hand_closure[0] >= 0) {
+                q = frames[endpoint ? frames.size() - 1 : frames.size() / 2].q;
+                waiting = true;
+                const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+                while (!cancel && std::chrono::steady_clock::now() < until)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                if (fail) throw std::runtime_error("Real failure during cancelled approach");
+                if (!cancel) throw std::runtime_error("Test failed to cancel approach");
+                throw MotionCancelled();
+            }
+            Device::runTrajectory(frames, cancel);
+        }
+    };
+    for (const std::string mode : {"partial", "endpoint", "failure"}) for (bool leave : {false, true}) {
+        auto device = std::make_unique<InterruptedDevice>();
+        auto* observed = device.get();
+        device->initializeHome(YAML::LoadFile(config.string()));
+        const auto home = device->q;
+        device->endpoint = mode == "endpoint";
+        device->fail = mode == "failure";
+        ManagedOptions options;
+        options.snapshot = [] {
+            fsm::Snapshot s;
+            s.ready = s.settled = s.clear_of_wheel = s.following_authorized = true;
+            s.release_authorized = s.source_authorized = s.input_ready = s.fault_cleared = s.emergency_known = true;
+            return s;
+        };
+        options.allow_motion = [](bool) {};
+        options.heartbeat = [] {};
+        options.request_brake = [] {};
+        Aviator core(std::move(device), std::make_unique<RecordingIk>(), nullptr, config.string(), options);
+        const auto wait = [&](auto predicate) {
+            const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+            while (!predicate() && std::chrono::steady_clock::now() < until) {
+                core.Update();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            check(predicate(), "Interrupted approach did not finish");
+        };
+        const auto settled = [&](const char* state) {
+            return core.GetSystemState() == state && core.GetSystemStatus().conditions.executor_idle;
+        };
+        core.Init(); wait([&] { return settled("READY"); });
+        core.EnterStandby(); wait([&] { return settled("STANDBY"); });
+        const auto before = observed->trajectories.size();
+        core.GraspWheel(); wait([&] { return observed->waiting.load(); });
+        check((leave ? core.LeaveWheel() : core.EnterStandby()) == fsm::Reply::accepted,
+              "Moving approach rejected standby");
+        wait([&] { return settled(mode == "failure" ? "ERROR" : "STANDBY"); });
+        if (mode == "failure") {
+            check(core.GetSystemStatus().current_error.find("Real failure") != std::string::npos,
+                  "Superseded worker hid real failure");
+            check(observed->trajectories.size() == before, "Failure started return motion");
+        } else {
+            check(observed->trajectories.size() == before + (mode == "endpoint" ? 2 : 1),
+                  "Wrong retreat path for interrupted approach progress");
+            check(observed->locked == 0, "Interrupted approach left hands locked");
+            for (size_t j = 0; j < home.size(); ++j)
+                check(std::abs(observed->q[j] - home[j]) < 1e-9, "Interrupted approach did not reach home");
+            check(core.GetSystemStatus().current_error.empty(), "Ordinary cancel became ERROR");
+        }
+    }
+}
+
 // Hold a profile RPC open to exercise CONTROL entry independently of SDK/hardware.
 struct ProfileDevice : Device {
     std::atomic<int> following_calls{0}, following_completed{0}, default_calls{0};
@@ -636,6 +707,7 @@ int main(int argc, char **argv) try {
     cameraGrasp(dir, config, legacy);
     releaseFromCurrentPose(dir, config, legacy);
     managedErrorRecovery(dir / "robot.yaml");
+    managedStandbyInterrupt(dir / "robot.yaml");
     managedReleaseFailure(dir / "robot.yaml");
     managedReleaseFailure(dir / "robot.yaml", false, true);
     auto camera_config = YAML::Clone(config);

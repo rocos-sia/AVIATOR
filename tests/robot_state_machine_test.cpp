@@ -31,11 +31,10 @@ void following(RobotStateMachine& m) {
 int main() try {
     auto s = healthy(); RobotStateMachine m;
     state(m, "INIT"); m.boot(s, 1); state(m, "INITIALIZING"); check(m.stateCode() == 10, "init code");
-    check(m.request(Operation::enter_standby, s, 2) == Reply::busy, "transition not busy");
+    check(m.request(Operation::grasp_wheel, s, 2) == Reply::busy, "transition not busy");
     auto job = m.takeTask(); m.done(job->generation + 1, s); state(m, "INITIALIZING");
     m.done(job->generation, s); state(m, "READY");
     check(!m.takeTask(), "initialization automatically started home");
-    check(m.request(Operation::leave_wheel, s, 2) == Reply::invalid_state, "release from clear READY accepted");
     check(m.request(Operation::grasp_wheel, s, 2) == Reply::invalid_state, "grasp before home accepted");
     check(m.request(Operation::enter_standby, s, 2) == Reply::accepted, "external home rejected");
     state(m, "HOMING"); check(m.stateCode() == 12, "home state code");
@@ -130,7 +129,7 @@ int main() try {
         s.release_authorized = true;
         check(leave.request(op, s, 5) == Reply::accepted, "direct moving release rejected");
         state(leave, "RELEASING"); check(leave.takeStop() && !leave.acceptsControl(), "leave missed stop/gate");
-        check(leave.request(op, s, 6) == Reply::busy, "duplicate release restarted task");
+        check(leave.request(op, s, 6) == Reply::accepted, "duplicate release rejected");
         finish(leave); state(leave, "STANDBY");
     }
     RobotStateMachine switching; following(switching); s = healthy();
@@ -199,6 +198,57 @@ int main() try {
     working.fault("device"); s = healthy(); s.ready = false;
     check(working.request(Operation::reset_error, s, 4) != Reply::completed, "reset without resources");
     state(working, "ERROR");
+    // 0x10 and 0x50 cover every ordinary state, including active grasp and init.
+    for (auto op : {Operation::enter_standby, Operation::leave_wheel}) {
+        for (const std::string wanted : {"INIT", "INITIALIZING", "READY", "HOMING", "STANDBY",
+                                         "GRASPING", "FOLLOWING", "CONTROL", "RELEASING", "ERROR"}) {
+            RobotStateMachine r; s = healthy();
+            if (wanted != "INIT") r.boot(s, 1);
+            if (wanted != "INIT" && wanted != "INITIALIZING") finish(r);
+            if (wanted != "INIT" && wanted != "INITIALIZING" && wanted != "READY") {
+                r.request(Operation::enter_standby, s, 2);
+                if (wanted != "HOMING") finish(r);
+            }
+            if (wanted == "GRASPING" || wanted == "FOLLOWING" || wanted == "CONTROL" || wanted == "RELEASING") {
+                r.request(Operation::grasp_wheel, s, 3);
+                if (wanted != "GRASPING") finish(r);
+            }
+            if (wanted == "CONTROL") r.request(Operation::start_control, s, 4);
+            if (wanted == "RELEASING") r.request(Operation::leave_wheel, s, 4);
+            if (wanted == "ERROR") r.fault("blocked");
+            state(r, wanted.c_str());
+            const auto old_generation = r.generation();
+            if (wanted == "GRASPING") s.executor_idle = s.settled = false;
+            const auto result = r.request(op, s, 5);
+            if (wanted == "ERROR") {
+                check(result == Reply::invalid_state, "ERROR accepted ordinary standby");
+                continue;
+            }
+            check(result == (wanted == "STANDBY" ? Reply::completed : Reply::accepted), "standby request rejected");
+            if (wanted == "STANDBY") { check(!r.takeTask(), "standby restarted motion"); continue; }
+            if (wanted == "GRASPING") {
+                check(r.generation() != old_generation && r.takeStop(), "active grasp not cancelled");
+                r.done(old_generation, healthy(), 6);
+                r.failed(old_generation, "stale completion");
+                state(r, "RELEASING");
+            }
+            const auto generation = r.generation();
+            auto task = r.takeTask(); check(bool(task), "return task missing");
+            check(r.request(Operation::enter_standby, s, 7) == Reply::accepted &&
+                  r.request(Operation::leave_wheel, s, 8) == Reply::accepted, "duplicate return rejected");
+            check(r.generation() == generation && !r.takeTask(), "duplicate return restarted task");
+            r.done(task->generation, healthy(), 9);
+            if (wanted == "INIT" || wanted == "INITIALIZING") { state(r, "HOMING"); finish(r); }
+            state(r, "STANDBY");
+        }
+        RobotStateMachine timed({10, 10, 10, 10}); timed.boot(healthy(), 1);
+        check(timed.request(op, healthy(), 9) == Reply::accepted, "init standby rejected");
+        timed.request(op, healthy(), 10);
+        timed.supervise(healthy(), 11); state(timed, "ERROR"); // No deadline renewal.
+        RobotStateMachine faulty; following(faulty); s = healthy(); s.fault = "real fault";
+        check(faulty.request(op, s, 5) == Reply::invalid_state, "standby beat fault");
+        state(faulty, "ERROR");
+    }
     // Every non-emergency state has an emergency edge and no normal exit afterwards.
     for (const std::string wanted : {"INIT", "INITIALIZING", "READY", "HOMING", "STANDBY", "GRASPING", "FOLLOWING", "CONTROL", "RELEASING", "ERROR"}) {
         RobotStateMachine e; s = healthy();

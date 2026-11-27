@@ -204,6 +204,11 @@ if(TARGET aviator_core_servo AND TARGET simulation)
         ${CMAKE_CURRENT_SOURCE_DIR}/robot_state_machine_process_test.py
         $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR})
       set_tests_properties(robot_state_machine_process PROPERTIES TIMEOUT 220)
+      add_test(NAME robot_state_machine_standby_interrupt COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/robot_state_machine_process_test.py
+        $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR}
+        --standby-interrupt)
+      set_tests_properties(robot_state_machine_standby_interrupt PROPERTIES TIMEOUT 220)
       add_test(NAME robot_state_machine_hand_timeout COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/robot_state_machine_process_test.py
         $<TARGET_FILE:aviator_bus> $<TARGET_FILE:simulation> $<TARGET_FILE:aviator_core_managed> ${PROJECT_SOURCE_DIR}

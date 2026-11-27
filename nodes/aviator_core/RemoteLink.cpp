@@ -297,7 +297,7 @@ std::array<double, 2> RemoteLink::readCameraWheel(const std::string& camera_id,
         check();
     }, grasp_camera_publisher_);
 }
-void RemoteLink::handTarget(bool close) {
+void RemoteLink::handTarget(bool close, const std::atomic<bool>* cancel) {
     if (!hand_.enabled()) return;
     uint64_t version;
     {
@@ -311,16 +311,21 @@ void RemoteLink::handTarget(bool close) {
         }
     }
     // Do not hold the arm mutex while waiting for physical hand feedback.
-    hand_.wait(version);
+    hand_.wait(version, cancel);
 }
 
 uint64_t RemoteLink::sendGraspCommand(GraspCommand c) {
+    return sendGraspCommand(c, nullptr);
+}
+uint64_t RemoteLink::sendGraspCommand(GraspCommand c, const std::atomic<bool>* cancel) {
+    if (cancel && *cancel) throw MotionCancelled();
     if (c == GraspCommand::Lock) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!motion_allowed_) throw std::runtime_error("Core motion authorization revoked before lock");
     }
     // ResetFault used to implicitly unlock the arm backend; open the fingers first too.
-    handTarget(c == GraspCommand::Lock);
+    handTarget(c == GraspCommand::Lock, cancel);
+    if (cancel && *cancel) throw MotionCancelled();
     try {
         operation(c == GraspCommand::Lock ? "lock" : c == GraspCommand::Unlock ? "unlock" : "reset_fault");
     } catch (...) {
@@ -499,11 +504,6 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
     const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(data->size() * 4 + 10000);
     while (true) {
         if (!motion_allowed_) throw std::runtime_error("Core motion authorization revoked");
-        if (cancel) {
-            lock.unlock();
-            stopTrajectory();
-            throw std::runtime_error("Motion stopped");
-        }
         if (!error_.empty() || state_.fault)
             throw std::runtime_error(error_.empty() ? state_.error : error_);
         const auto now = monotonic_us();
@@ -511,6 +511,11 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
             throw std::runtime_error(
                 "arm.state feedback timeout: receive_age_us=" + std::to_string(now - received_) +
                 " sample_age_us=" + std::to_string(now - sample_));
+        if (cancel) {
+            lock.unlock();
+            stopTrajectory();
+            throw MotionCancelled();
+        }
         if (hand_version && state_.id == id)
             hand_.approachProgress(hand_version, data->at(std::min<uint64_t>(state_.cursor, data->size() - 1)).hand_closure);
         if (state_.id == id && state_.cursor >= data->size() - 1)
@@ -523,7 +528,7 @@ void RemoteLink::runTrajectory(const std::vector<JointFrame> &frames, const std:
         lock.unlock();
         hand_.wait(hand_version, &cancel); // ACK only, not physical grasp evidence.
         lock.lock();
-        if (!motion_allowed_ || cancel) throw std::runtime_error("Motion stopped during hand completion");
+        if (!motion_allowed_ || cancel) throw MotionCancelled();
         // Lock reuses this endpoint request even if its bounded wait failed.
         // Starting a second close request here would add another full timeout.
         synchronized_hand_version_ = hand_version;

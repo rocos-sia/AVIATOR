@@ -31,6 +31,7 @@ class RemoteLink final : public DataLink {
     std::array<double, 2> readCameraWheel(const std::string&, uint64_t, uint64_t,
                                         const std::function<void()>&) override;
     uint64_t sendGraspCommand(GraspCommand) override;
+    uint64_t sendGraspCommand(GraspCommand, const std::atomic<bool>*) override;
     void setJointPositions(const Joints &) override;
     void runTrajectory(const std::vector<JointFrame> &, const std::atomic<bool> &) override;
     void stopTrajectory() override;
@@ -53,7 +54,7 @@ class RemoteLink final : public DataLink {
     void io();
     void emergencyIo();
     void trimStreamHistory(); // Caller holds mutex_; retain four samples behind feedback cursor.
-    void handTarget(bool close);
+    void handTarget(bool close, const std::atomic<bool>* cancel = nullptr);
     std::string servoFeedbackFailure(const char* context, uint64_t now) const; // Caller holds mutex_.
     MotionConfig config_;
     HandLink hand_;

@@ -33,7 +33,8 @@ stateDiagram-v2
     [*] --> INIT
     INIT --> INITIALIZING: Boot
     INITIALIZING --> READY: 初始化完成
-    READY --> HOMING: ENTER_STANDBY / 已脱离
+    INITIALIZING --> HOMING: 已收到回待机请求且初始化完成
+    READY --> HOMING: ENTER_STANDBY 或 LEAVE_WHEEL / 已脱离
     HOMING --> STANDBY: 到位停稳
     STANDBY --> GRASPING: GRASP_WHEEL
     GRASPING --> FOLLOWING: 抓握完成
@@ -41,7 +42,8 @@ stateDiagram-v2
     CONTROL --> FOLLOWING: EXIT_CONTROL
     FOLLOWING --> RELEASING: LEAVE_WHEEL / ENTER_STANDBY
     CONTROL --> RELEASING: LEAVE_WHEEL / ENTER_STANDBY
-    READY --> RELEASING: LEAVE_WHEEL / 允许撤离
+    READY --> RELEASING: ENTER_STANDBY 或 LEAVE_WHEEL / 允许撤离
+    GRASPING --> RELEASING: ENTER_STANDBY 或 LEAVE_WHEEL / 停止接近或抓握
     RELEASING --> STANDBY: 撤离并回 home 完成
     ERROR --> RELEASING: RESET_ERROR / 故障清除且可恢复
     note right of ERROR
@@ -58,28 +60,30 @@ stateDiagram-v2
 
 | 当前状态 | 操作 | 条件及结果 |
 | --- | --- | --- |
-| READY | ENTER_STANDBY | 资源就绪、停稳、执行器空闲且已脱离方向盘，登记 home 任务，进入 HOMING。 |
-| STANDBY | ENTER_STANDBY | 幂等完成，不重复回 home。 |
+| READY | ENTER_STANDBY / LEAVE_WHEEL | 资源就绪、停稳、执行器空闲且已脱离方向盘，登记 home 任务，进入 HOMING。 |
+| STANDBY | ENTER_STANDBY / LEAVE_WHEEL | 幂等完成，不重复回 home。 |
 | STANDBY | GRASP_WHEEL | 资源就绪、停稳、跟随授权及执行器空闲，进入 GRASPING。 |
 | FOLLOWING | START_CONTROL | 资源就绪、停稳、任务空闲、跟随/输入来源授权及输入有效，直接进入 CONTROL。 |
 | CONTROL | EXIT_CONTROL | 跟随获授权，关闭主动目标接纳，进入 FOLLOWING 并登记跟随刚度任务。 |
 | FOLLOWING | EXIT_CONTROL | 空闲时幂等完成；已有刚度任务时返回 BUSY。 |
-| FOLLOWING / CONTROL | LEAVE_WHEEL / ENTER_STANDBY | 资源就绪且释放获授权，直接进入 RELEASING；一次请求包含减速、撤离和回 home。 |
-| READY | LEAVE_WHEEL | 仍在握盘、资源就绪、停稳、执行器空闲且释放获授权，进入 RELEASING。 |
+| GRASPING / FOLLOWING / CONTROL | LEAVE_WHEEL / ENTER_STANDBY | 资源就绪且释放获授权，直接进入 RELEASING；一次请求包含减速、撤离和回 home。 |
+| READY | ENTER_STANDBY / LEAVE_WHEEL | 不满足直接回 home 条件时，资源就绪且释放获授权则进入 RELEASING，由执行器按实际阶段回待机。 |
+| INIT / INITIALIZING | ENTER_STANDBY / LEAVE_WHEEL | 启动或保留初始化，记住回待机请求；初始化完成后进入 HOMING。 |
+| HOMING / RELEASING | ENTER_STANDBY / LEAVE_WHEEL | 返回 ACCEPTED，继续原任务，不改变代号、不重新派发、不延长超时。 |
+| ERROR / EMERGENCY_STOP | ENTER_STANDBY / LEAVE_WHEEL | 拒绝，普通回待机请求不能清故障或解除急停。 |
 | ERROR | RESET_ERROR | 原因已排除、资源可用、已停稳、执行器空闲、恢复姿态已知且无急停锁存，进入 RELEASING；必要时松手撤离，再回 home。到位停稳后进入 STANDBY 并清当前错误，保留历史错误；失败原地停止并返回 ERROR。 |
 
 FOLLOWING / CONTROL 的直接撤离不要求调用方先发 EXIT_CONTROL，也不要求请求时 Servo 已停稳。
 正在进行的跟随刚度或 CONTROL 默认刚度恢复可以被撤离请求接管：取消旧任务代号，等待旧工作线程退出，
 再执行新的释放任务。不会同时使用两个工作槽，也不会先重新进入 FOLLOWING。
-RELEASING 中重复操作返回 BUSY。实际张开、撤离前必须确认 Servo 已退出，不能把逻辑切换当成物理停稳。
-释放完成包含 `releaseHandles()` 和 `moveHome()`；仅张开手或仅撤离不报告 STANDBY。
+HOMING / RELEASING 中重复收到这两条回待机指令返回 ACCEPTED。实际张开、撤离前必须确认 Servo 已退出，不能把逻辑切换当成物理停稳。
+完整接近或已抓握时，释放包含 `releaseHandles()` 和 `moveHome()`；接近未完成时，正常取消先确认停止并同步保持目标，张开手后从停止位置重新规划并检查回 home 轨迹，不套用完整撤离距离。取消与设备故障分别处理；旧任务退出时的真实失败仍中止回待机。仅张开手或仅撤离不报告 STANDBY。
 
 START_CONTROL 的 COMPLETED 表示业务模式已切换；默认刚度恢复期间仍关闭运动目标接纳。
 恢复后只接纳本次 CONTROL 和刚度恢复完成之后的新鲜输入，不能回放旧目标。
 EXIT_CONTROL 保持当前参考并减速，不回到抓握起点，不自动回 home。
 
-复位本身不启动运动、不松手、不重新抓握、不恢复 CONTROL。READY 下仍握盘时用 LEAVE_WHEEL；
-已脱离时用 ENTER_STANDBY。Managed 执行器保留“可恢复位置关系”的证据：使能完成、完整抓握、
+复位执行必要的松手、撤离和回 home，不恢复 CONTROL。READY 下两条回待机指令均按当前阶段选择路径。Managed 执行器保留“可恢复位置关系”的证据：使能完成、完整抓握、
 撤离完成后可恢复；接近或张开撤离中途失败且位置关系尚不明确时拒绝复位。
 初始化未完成或设备仍不可用也不能仅清除错误后宣告 READY；须先排除原因并完成必要维护。
 软件阶段/锁只作为程序证据，不代表物理接触传感确认。
@@ -108,11 +112,11 @@ CONTROL 默认刚度恢复期间不启动“首个目标”租约，但输入/�
 
 ## 4. 执行与取消
 
-任务类型为 initialize、home、grasp、release、following_impedance。每个任务持有 generation 和单调时钟 deadline，
+任务类型为 initialize、home、grasp、release、following_impedance、recover。每个任务持有 generation 和单调时钟 deadline，
 动作只登记一次，耗时函数不在 SML action 内阻塞执行。其他互斥任务返回 BUSY。
 拥有线程每轮先监督急停、阻断故障及超时，再消费工作线程结果和普通请求。
 
-取消时关闭控制接纳并推进 generation，旧完成/失败结果不得改变新状态。ERROR/急停撤销运动授权；
+取消时关闭控制接纳并推进 generation，忽略旧完成与预期取消结果；旧任务退出时的真实执行故障仍会中止正在进行的回待机流程。ERROR/急停撤销运动授权；
 正常 EXIT_CONTROL 和直接撤离由既有 Servo 流程减速，保留授权以便执行后续获准动作。
 工作线程未退出前不提交新任务，设备和执行器未停稳前不执行释放轨迹。
 
