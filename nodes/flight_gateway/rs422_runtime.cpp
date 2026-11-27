@@ -20,12 +20,14 @@ class CoreClient {
   public:
     explicit CoreClient(const Config& c)
         : config_(c), session_(aviator::new_instance_id()), clock_(aviator::local_clock_id()),
-          feedback_("", clock_), camera_(clock_, c.rs422.camera_id, c.rs422.camera_publisher) {
+          feedback_("", clock_), camera_(clock_, c.rs422.camera_id, c.rs422.camera_publisher),
+          photoelectric_(clock_, c.rs422.photoelectric_publisher) {
         aviator::configure(pub_);
         aviator::configure(sub_);
         aviator::configure(service_, {16, 16, 0});
         aviator::subscribe(sub_, "flight.state");
         aviator::subscribe(sub_, "camera.detection");
+        aviator::subscribe(sub_, "photoelectric.state");
         pub_.connect(c.publish);
         sub_.connect(c.subscribe);
         service_.set(zmq::sockopt::immediate, 1);
@@ -44,6 +46,8 @@ class CoreClient {
                 aviator::decode(wire.topic, wire.payload, candidate, error)) {
                 if (candidate.topic == aviator::Topic::camera_detection)
                     camera_.accept(candidate, now);
+                else if (candidate.topic == aviator::Topic::photoelectric_state)
+                    photoelectric_.accept(candidate, now);
                 else if (feedback_.accept(candidate, now, error))
                     state_ = std::move(candidate);
             }
@@ -138,6 +142,7 @@ class CoreClient {
         if (!feedback_.expired(now))
             populateTelemetry(up, state_, now);
         camera_.populate(up, now);
+        photoelectric_.populate(up, now);
     }
 
   private:
@@ -145,6 +150,7 @@ class CoreClient {
     std::string session_, clock_;
     CoreFeedback feedback_;
     CameraTelemetry camera_;
+    PhotoelectricTelemetry photoelectric_;
     aviator::Message state_;
     zmq::context_t context_{1};
     zmq::socket_t pub_{context_, zmq::socket_type::pub}, sub_{context_, zmq::socket_type::sub},

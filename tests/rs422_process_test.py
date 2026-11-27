@@ -71,7 +71,8 @@ def main():
         last_request_count = 0
 
         def cycle(operation=0, a=True, b=True, roll=125, pitch=-250, malformed=False, core=True,
-                  prefix_operation=0, camera=True, camera_valid=True, fk_valid=True, core_state='FOLLOWING'):
+                  prefix_operation=0, camera=True, camera_valid=True, fk_valid=True, core_state='FOLLOWING',
+                  x1=None, x1_valid=True):
             nonlocal tick, sequence, next_tick
             now = time.monotonic()
             if next_tick > now:
@@ -114,6 +115,12 @@ def main():
                               camera_id='cockpit', steering_wheel=dict(valid=camera_valid,
                                   theta_rad=math.radians(50), translation_along_axis_m=-.08))
                 status.send_multipart([b'camera.detection', json.dumps(visual).encode()])
+            if x1 is not None:
+                signal = dict(msg_type='PhotoelectricState', version='1.0', sequence=sequence,
+                              timestamp=time.time_ns()//1000, sample_mono_us=sampled,
+                              publisher_id='aviator_photoelectric', session_id='test-x1', clock_id=clock,
+                              valid=x1_valid, channel='X1', value=x1)
+                status.send_multipart([b'photoelectric.state', json.dumps(signal).encode()])
             until = time.monotonic()+.004
             while time.monotonic() < until:
                 for i, (master, _) in enumerate(pairs):
@@ -233,7 +240,22 @@ def main():
                 assert seen_commands[-1]['control'] == {'roll_deg': roll * 50 / 32767, 'pitch_mm': pitch * 75 / 32767 - 5}
                 for channel in received:
                     assert struct.unpack_from('<hh', channel[-1], 6) == (roll, pitch)
-            print('PASS: real dual-PTY robot, 80 Hz uplinks, FLIGHT input, direct operation change without neutral, single execution, failover, CRC loss, stale Core, recovery')
+            # Direct photoelectric feedback is independent of Core summaries and
+            # uses logical trigger values at byte 12, leaving byte 11 untouched.
+            for value, expected in ((1, 0), (0, 1)):
+                for _ in range(12): cycle(core=False, x1=value)
+                for channel in received:
+                    assert channel[-1][11:13] == bytes([0xff, expected]), channel[-1].hex()
+            for _ in range(12): cycle(core_state='EMERGENCY_STOP', x1=1)
+            for channel in received:
+                assert channel[-1][10] == 0xff and channel[-1][12] == 0, channel[-1].hex()
+            for _ in range(8): cycle(x1=0, x1_valid=False)
+            assert all(channel[-1][12] == 0xff for channel in received)
+            for _ in range(8): cycle(x1=0)
+            assert all(channel[-1][12] == 1 for channel in received)
+            for _ in range(12): cycle()  # Sensor stops; Core remains fresh.
+            assert all(channel[-1][12] == 0xff for channel in received)
+            print('PASS: real dual-PTY robot, operations, failover, stale Core, X1 high/low/invalid/stale handbrake feedback')
         except Exception:
             log.flush();log.seek(0);print(log.read(), file=sys.stderr)
             raise

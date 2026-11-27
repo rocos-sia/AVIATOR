@@ -19,4 +19,17 @@ class CameraTelemetry {
     uint64_t sample_ = 0;
     int16_t roll_ = rs422::invalid_position, pitch_ = rs422::invalid_position;
 };
+// Live X1 measurement, independent of Core freshness and its sticky emergency state.
+class PhotoelectricTelemetry {
+  public:
+    explicit PhotoelectricTelemetry(std::string clock, std::string publisher = "aviator_photoelectric");
+    bool accept(const aviator::Message&, uint64_t now);
+    void populate(rs422::Uplink&, uint64_t now) const;
+  private:
+    std::string publisher_;
+    aviator::InputGuard guard_;
+    uint64_t sample_ = 0;
+    int value_ = -1;
+    uint8_t brake_ = rs422::unknown;
+};
 } // namespace flight_gateway

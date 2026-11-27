@@ -18,7 +18,42 @@ aviator::InputPolicy cameraPolicy(std::string clock, const std::string& publishe
     p.timeout_us = 100000;
     return p;
 }
+aviator::InputPolicy photoelectricPolicy(std::string clock, const std::string& publisher) {
+    aviator::InputPolicy p;
+    p.topic = aviator::Topic::photoelectric_state;
+    p.publisher_id = publisher;
+    p.clock_id = std::move(clock);
+    p.timeout_us = 100000;
+    return p;
+}
 } // namespace
+PhotoelectricTelemetry::PhotoelectricTelemetry(std::string clock, std::string publisher)
+    : publisher_(std::move(publisher)), guard_(photoelectricPolicy(std::move(clock), publisher_)) {}
+bool PhotoelectricTelemetry::accept(const aviator::Message& message, uint64_t now) {
+    if (message.topic != aviator::Topic::photoelectric_state || message.header.publisher_id != publisher_ ||
+        !message.body.is_object() || !message.body.contains("channel") || message.body["channel"] != "X1")
+        return false;
+    // A bad observation from this source must not preserve an older healthy handbrake value.
+    brake_ = rs422::unknown;
+    std::string error;
+    if (!guard_.accept(message, now, error) || !message.header.sample_mono_us ||
+        message.header.sample_mono_us < sample_)
+        return false;
+    const auto value = message.body.find("value");
+    if (value == message.body.end() || !value->is_number_integer() || (*value != 0 && *value != 1))
+        return false;
+    const int current = value->get<int>();
+    if (message.header.sample_mono_us == sample_ && current != value_)
+        return false;
+    sample_ = message.header.sample_mono_us;
+    value_ = current;
+    // Wire byte 12 is the logical trigger, not the raw electrical level.
+    brake_ = current == 0 ? 0x01 : 0x00;
+    return true;
+}
+void PhotoelectricTelemetry::populate(rs422::Uplink& up, uint64_t now) const {
+    up.brake = guard_.expired(now) ? rs422::unknown : brake_;
+}
 CameraTelemetry::CameraTelemetry(std::string clock, std::string camera_id, std::string publisher)
     : camera_id_(std::move(camera_id)), publisher_(std::move(publisher)),
       guard_(cameraPolicy(std::move(clock), publisher_)) {}
@@ -89,8 +124,6 @@ void populateTelemetry(rs422::Uplink& up, const aviator::Message& state, uint64_
             if (fresh(inputs)) {
                 if (inputs.contains("rear_arrived") && inputs["rear_arrived"].is_boolean())
                     up.rear = inputs["rear_arrived"].get<bool>();
-                if (inputs.contains("emergency_brake") && inputs["emergency_brake"].is_boolean())
-                    up.brake = inputs["emergency_brake"].get<bool>();
             }
         }
     } catch (const nlohmann::json::exception&) {

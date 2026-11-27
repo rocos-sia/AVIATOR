@@ -16,7 +16,8 @@ void put(Bytes& b, size_t p, uint16_t v) {
 }
 const std::array<const char*, 7> operations{{"", "enter_standby", "grasp_wheel", "start_control",
                                              "exit_control", "leave_wheel", "reset_error"}};
-const std::array<std::pair<uint8_t, const char*>, 11> states{{{0xff, "EMERGENCY_STOP"},
+const std::array<std::pair<uint8_t, const char*>, 12> states{{{not_started, "NOT_STARTED"},
+                                                              {0xff, "EMERGENCY_STOP"},
                                                               {1, "INIT"},
                                                               {3, "READY"},
                                                               {5, "STANDBY"},
@@ -50,7 +51,7 @@ uint8_t stateCode(const std::string& s) {
     for (auto [v, n] : states)
         if (s == n)
             return v;
-    return unknown_state;
+    throw std::invalid_argument("unsupported RS422 state: " + s);
 }
 const char* stateName(uint8_t c) {
     for (auto [v, n] : states)
@@ -66,9 +67,21 @@ bool knownFault(uint16_t c) {
            ((cat == 3 || cat == 4) &&
             (tail == 101 || (tail >= 201 && tail <= 203) || tail == 301)) ||
            (cat == 5 && (tail == 101 || tail == 102 || tail == 301)) ||
-           (cat == 6 && tail >= 301 && tail <= 303) || (cat == 7 && tail >= 101 && tail <= 108) ||
+           (cat == 6 && tail >= 301 && tail <= 303) ||
+           (cat == 7 && ((tail >= 101 && tail <= 108) || (tail >= 202 && tail <= 206))) ||
            (cat == 8 &&
-            (tail == 1 || tail == 2 || (tail >= 201 && tail <= 208) || tail == 210 || tail == 211));
+            (tail == 1 || tail == 2 || (tail >= 201 && tail <= 208) || (tail >= 210 && tail <= 212)));
+}
+const char* faultName(uint16_t c) {
+    switch (c) {
+    case 7202: return "Core 状态反馈超时";
+    case 7203: return "Core 状态数据明确无效";
+    case 7204: return "Core 状态报文格式错误";
+    case 7205: return "Core 运行状态值不支持";
+    case 7206: return "Core 状态时间基准异常";
+    case 8212: return "Core 诊断编码异常";
+    default: return "";
+    }
 }
 bool samePayload(const Downlink& a, const Downlink& b) {
     return a.operation == b.operation && a.roll == b.roll && a.pitch == b.pitch;
@@ -126,14 +139,18 @@ bool decode(const Bytes& b, Uplink& f) {
     if (!envelope(b, uplink_size))
         return false;
     if ((b[3] > 1 && b[3] != unknown) || b[4] > 3 || (b[5] && !*operationName(b[5])) ||
-        (b[10] != unknown_state && stateCode(stateName(b[10])) != b[10]) ||
+        std::none_of(states.begin(), states.end(), [&](const auto& state) { return state.first == b[10]; }) ||
         (b[11] > 1 && b[11] != unknown) || (b[12] > 1 && b[12] != unknown) ||
-        (b[21] != unknown && (b[21] > 0x40 || b[21] % 16)))
+        b[21] > 0x40 || b[21] % 16)
         return false;
     // Every int16 position is representable; -32768 is the explicit invalid sentinel.
     for (size_t p : {size_t(17), size_t(19)})
-        if (!knownFault(u16(b, p)) && u16(b, p) != unknown_fault)
+        if (!knownFault(u16(b, p)))
             return false;
+    const auto fault = u16(b, 17);
+    const auto severity = fault ? uint8_t(((fault / 100) % 10 + 1) * 16) : uint8_t(0);
+    if (b[21] != severity || (b[10] == not_started && fault != 0))
+        return false;
     f = {b[2],  b[3],       b[4],       b[5],       i16(b, 6),  i16(b, 8), b[10],      b[11],
          b[12], i16(b, 13), i16(b, 15), u16(b, 17), u16(b, 19), b[21],     u16(b, 22), u16(b, 24), i16(b, 26), i16(b, 28)};
     return true;

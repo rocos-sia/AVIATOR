@@ -10,6 +10,78 @@ void check(bool b, const char* reason) {
     if (!b)
         throw std::runtime_error(reason);
 }
+void checkPhotoelectricTelemetry() {
+    constexpr uint64_t t = 1000000;
+    PhotoelectricTelemetry input("clock");
+    Uplink up;
+    input.populate(up, t);
+    check(up.brake == 0xff, "no X1 sample must not claim untriggered");
+    aviator::Message m;
+    m.topic = aviator::Topic::photoelectric_state;
+    m.header = {"1.0", 1, t, t, "clock", "aviator_photoelectric", "sensor", true};
+    m.body = {{"channel", "X1"}, {"value", 1}};
+    check(input.accept(m, t), "X1 high accepted");
+    input.populate(up, t);
+    check(encode(up)[12] == 0x00 && up.rear == 0xff, "X1=1 means untriggered at offset12 only");
+    auto wrong = m;
+    wrong.header.publisher_id = "untrusted";
+    check(!input.accept(wrong, t), "wrong X1 source rejected");
+    wrong = m; wrong.body["channel"] = "X2";
+    check(!input.accept(wrong, t), "wrong input channel rejected");
+    input.populate(up, t);
+    check(up.brake == 0, "unrelated source must not replace X1");
+    ++m.header.sequence; // Re-published unchanged sample must retain its original age.
+    check(input.accept(m, t + 50000), "unchanged X1 sample allowed");
+    input.populate(up, t + 99999);
+    check(up.brake == 0, "X1 fresh below timeout");
+    input.populate(up, t + 100000);
+    check(up.brake == 0xff, "republication cannot extend X1 sample lifetime");
+    ++m.header.sequence; m.header.sample_mono_us = t + 100001; m.body["value"] = 0;
+    check(input.accept(m, t + 100001), "X1 low accepted");
+    input.populate(up, t + 100001);
+    check(encode(up)[12] == 0x01, "X1=0 means triggered");
+    // Invalid notification with an old timestamp still revokes the displayed measurement.
+    ++m.header.sequence; m.header.valid = false;
+    check(!input.accept(m, t + 100002), "invalid X1 notification rejected");
+    input.populate(up, t + 100002);
+    check(up.brake == 0xff, "invalid X1 clears old trigger measurement");
+    m.header.valid = true;
+    for (const auto& value : {nlohmann::json(true), nlohmann::json(2), nlohmann::json("0"), nlohmann::json(0.0)}) {
+        ++m.header.sequence; ++m.header.sample_mono_us; m.body["value"] = value;
+        check(!input.accept(m, m.header.sample_mono_us), "X1 requires integer zero or one");
+        input.populate(up, m.header.sample_mono_us);
+        check(up.brake == 0xff, "malformed X1 must not fabricate signal");
+    }
+    ++m.header.sequence; ++m.header.sample_mono_us; m.body["value"] = 1;
+    check(input.accept(m, m.header.sample_mono_us), "X1 recovery accepted");
+    const auto now = m.header.sample_mono_us;
+    aviator::Message state;
+    state.header.valid = true; state.header.sample_mono_us = now;
+    state.body = {{"system", {{"state", "EMERGENCY_STOP"}, {"current_error_code", 0}, {"last_error_code", 0}}},
+                  {"discrete_inputs", {{"valid", true}, {"sample_mono_us", now}, {"emergency_brake", true}}}};
+    populateTelemetry(up, state, now);
+    input.populate(up, now);
+    check(up.state == 0xff && up.brake == 0, "live X1 high must not clear Core emergency or use legacy brake flag");
+    up = Uplink{}; state.header.valid = false;
+    populateTelemetry(up, state, now);
+    input.populate(up, now);
+    check(up.brake == 0, "X1 measurement must be independent of Core availability");
+    ++m.header.sequence; m.header.clock_id = "foreign";
+    check(!input.accept(m, now), "X1 clock mismatch rejected");
+    input.populate(up, now); check(up.brake == 0xff, "wrong clock does not preserve old signal");
+    m.header.clock_id = "clock"; ++m.header.sequence; m.header.sample_mono_us = now + 1;
+    check(!input.accept(m, now), "future X1 sample rejected");
+    m.header.sample_mono_us = now - 1;
+    check(!input.accept(m, now), "regressing X1 sample rejected");
+    ++m.header.sequence; m.header.sample_mono_us = now + 2;
+    check(input.accept(m, now + 2), "fresh X1 recovers after rejected evidence");
+    check(!input.accept(m, now + 3), "duplicate X1 sequence rejected");
+    input.populate(up, now + 3); check(up.brake == 0xff, "rejected observation cannot renew X1");
+    PhotoelectricTelemetry configured("clock", "custom_sensor");
+    check(!configured.accept(m, now + 3), "configured publisher enforced");
+    m.header.publisher_id = "custom_sensor";
+    check(configured.accept(m, now + 3), "custom X1 publisher accepted");
+}
 void checkDualFeedback() {
     constexpr uint64_t t = 1000000;
     constexpr double radians = 3.14159265358979323846 / 180;
@@ -581,6 +653,7 @@ int main() try {
     populateTelemetry(up, state, t);
     check(up.roll == invalid_position && up.joint_roll == invalid_position, "reference is not measurement");
     checkDualFeedback();
+    checkPhotoelectricTelemetry();
     std::cout << "RS422 codec, gate, redundancy, telemetry and Core parameters passed\n";
     return 0;
 } catch (const std::exception& e) {

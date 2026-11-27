@@ -14,6 +14,7 @@ struct Rs422Config {
     std::string release_root;
     bool allow_test_identity = false;
     std::string camera_id = "cockpit", camera_publisher = "camera";
+    std::string photoelectric_publisher = "aviator_photoelectric";
 };
 struct SimulatorConfig {
     bool require_joystick = true;

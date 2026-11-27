@@ -110,6 +110,18 @@ int main(int argc, char** argv) {
         bad["source"] = "rs422";
         write(bad);
         check(flight_gateway::load_config(file.string()).source == "rs422", "RS422 selection rejected");
+        auto rs = YAML::Clone(bad);
+        rs["rs422"]["profile"] = "aviator-icd-1120";
+        rs["rs422"]["channel_a"] = "/dev/aviator-test-a";
+        rs["rs422"]["channel_b"] = "/dev/aviator-test-b";
+        rs["rs422"]["photoelectric_publisher"] = "custom_sensor";
+        write(rs);
+        check(flight_gateway::load_config(file.string()).rs422.photoelectric_publisher == "custom_sensor",
+              "photoelectric publisher not loaded");
+        rs["rs422"]["photoelectric_publisher"] = "";
+        rejected(rs);
+        rs["rs422"]["photoelectric_publisher"] = std::string(129, 'x');
+        rejected(rs);
         bad["source"] = "keyboard";
         rejected(bad);
         for (const auto* device : {"auto", "0", "12"}) {

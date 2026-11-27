@@ -14,7 +14,10 @@ void check(bool ok, const char* message) {
 
 int main() try {
     check(sim::encode(sim::Downlink{}) == peer::encode(peer::Downlink{}), "neutral target differs");
-    check(sim::encode(sim::Uplink{}) == peer::encode(peer::Uplink{}), "unknown feedback differs");
+    // The gateway still implements the older unknown-fault telemetry semantics.
+    // Test shared wire layout without pretending that default telemetry is compatible.
+    sim::Uplink legacy;
+    check(!sim::decode(peer::encode(peer::Uplink{}), legacy), "legacy unknown fault must be rejected");
 
     // Simulator commands must be accepted by the actual gateway and dispatched once.
     for (uint8_t operation : {0x10, 0x20, 0x30, 0x40, 0x50, 0x60}) {
@@ -36,7 +39,7 @@ int main() try {
     }
 
     // Independently built gateway frames exercise every feedback field, including
-    // emergency stop and unknown state, without using the simulator's encoder.
+    // emergency stop, without using the simulator's encoder.
     peer::Uplink feedback;
     feedback.counter = 255;
     feedback.selected = 1;
@@ -56,10 +59,11 @@ int main() try {
     feedback.version = 0x0201;
     feedback.checksum = 0xabcd;
     for (unsigned state = 0; state < 256; ++state) {
-        check(sim::stateCode(peer::stateName(state)) == peer::stateCode(peer::stateName(state)),
-              "state mapping differs");
-        check(std::string(sim::stateName(state)) == peer::stateName(state), "state label differs");
+        if (state != 0xfe)
+            check(std::string(sim::stateName(state)) == peer::stateName(state), "shared state label differs");
         feedback.state = uint8_t(state);
+        feedback.fault = state == 0xfe ? 0 : 8201;
+        feedback.severity = state == 0xfe ? 0 : 0x30;
         const auto wire = peer::encode(feedback);
         sim::Uplink decoded;
         peer::Uplink peer_decoded;
@@ -69,15 +73,24 @@ int main() try {
             check(sim::encode(decoded) == wire, "uplink fields differ");
     }
 
-    // A code dictionary mismatch would make a whole otherwise healthy frame STALE.
+    // Exactly six additions are intentional; all previous business codes remain valid.
+    const auto added = [](unsigned code) { return (code >= 7202 && code <= 7206) || code == 8212; };
     for (unsigned code = 0; code <= 0xffff; ++code)
-        check(sim::knownFault(code) == peer::knownFault(code), "fault dictionary differs");
+        check(sim::knownFault(code) == (peer::knownFault(code) || added(code)), "unexpected dictionary difference");
+    for (uint16_t code : {7202, 7203, 7204, 7205, 7206, 8212}) {
+        feedback.state = 0x10; feedback.fault = code; feedback.last_fault = code; feedback.severity = 0x30;
+        const auto wire = peer::encode(feedback);
+        sim::Uplink decoded;
+        check(sim::decode(wire, decoded) && sim::encode(decoded) == wire, "new alarm wire layout differs");
+    }
 
-    // Compare receive validation over every value of each byte, including reserved
-    // bytes. Re-seal each frame so validation reaches the fields under test.
+    // Compare unchanged fields, including every reserved byte. Status/fault rules
+    // deliberately differ and are covered above and by independent 1127 vectors.
+    feedback.state = 7; feedback.fault = feedback.last_fault = 0; feedback.severity = 0;
     for (bool uplink : {false, true}) {
-        const auto baseline = uplink ? peer::encode(peer::Uplink{}) : sim::encode(sim::Downlink{});
+        const auto baseline = uplink ? peer::encode(feedback) : sim::encode(sim::Downlink{});
         for (size_t offset = 2; offset < baseline.size() - 1; ++offset) {
+            if (uplink && (offset == 10 || (offset >= 17 && offset <= 21))) continue;
             for (unsigned value = 0; value < 256; ++value) {
                 auto wire = baseline;
                 wire[offset] = uint8_t(value);
@@ -96,7 +109,7 @@ int main() try {
             }
         }
     }
-    std::cout << "PASS: current gateway wire format, state/fault dictionary, command confirmation\n";
+    std::cout << "PASS: shared gateway layout/commands; ICD 1127 dictionary additions and legacy telemetry rejection\n";
     return 0;
 } catch (const std::exception& e) {
     std::cerr << e.what() << '\n';

@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import pty
+import re
 import struct
 import subprocess
 import sys
@@ -25,7 +26,12 @@ def main():
         config = config_template.read_text()
         pairs = [pty.openpty(), pty.openpty()]
         for m, _ in pairs: os.set_blocking(m, False)
-        config = config.replace('/dev/serial/by-id/REPLACE_CHANNEL_A', os.ttyname(pairs[0][1])).replace('/dev/serial/by-id/REPLACE_CHANNEL_B', os.ttyname(pairs[1][1]))
+        # Always isolate tests from locally configured hardware and fault injection.
+        for key, value in [('channel_a', os.ttyname(pairs[0][1])),
+                           ('channel_b', os.ttyname(pairs[1][1])),
+                           ('send_a', 'true'), ('send_b', 'true'),
+                           ('require_joystick', 'true'), ('corrupt_every', '0')]:
+            config = re.sub(rf'(?m)^(\s*{key}:)[^\n]*', rf'\g<1> {value}', config)
         path = Path(temp)/'simulator.yaml'; path.write_text(config)
         with (Path(temp)/'log').open('w+') as log:
             child = subprocess.Popen([str(driver), str(path)], stdout=log, stderr=log,
@@ -42,14 +48,19 @@ def main():
                     struct.pack_into('<hh', up, 26, 32767, 32767)
                     for i,(m,_) in enumerate(pairs):
                         reply = bytearray(up)
-                        # Current gateway uses FF for emergency stop and FE for unknown.
-                        # On B, a checksum-correct legacy state 00 must not keep data LIVE.
+                        # ICD 1127: FF emergency, FE healthy startup.
+                        # B reports a new alarm, then legacy unknown faults must go STALE.
                         if i == 0:
                             reply[10] = 7 if elapsed < .6 else (0xff if elapsed < 1.6 else 0xfe)
                             if elapsed >= 1.6:
                                 struct.pack_into('<h', reply, 15, -32768)
-                        elif elapsed >= 1.6:
-                            reply[10] = 0
+                        elif elapsed >= .6:
+                            reply[10] = 0x10
+                            struct.pack_into('<H', reply, 17, 7202)
+                            reply[21] = 0x30
+                            if elapsed >= 1.6:
+                                struct.pack_into('<H', reply, 17, 0xffff)
+                                reply[21] = 0xff
                         # A received reserved byte must survive the monitor/log capture.
                         reply[30] = 0xa5
                         reply[63] = sum(reply[2:63]) & 255
@@ -70,17 +81,23 @@ def main():
                 # Both channels carry the same logical frames and counters.
                 assert [f for _,f in received[0]] == [f for _,f in received[1]]
                 log.flush();log.seek(0);text=log.read()
-                assert 'FOLLOWING' in text and 'checksum=ABCD' in text, text
+                # The first one-second sample may still be WAITING; intermediate
+                # FOLLOWING frames need not appear in the sampled terminal log.
+                assert 'checksum=ABCD' in text, text
                 assert 'camera=(-50.000000 deg' in text and 'joint_fk=(50.000000 deg' in text, text
                 assert '70.000000 mm' in text and '-80.000000 mm' in text, text
                 lines = text.splitlines()
                 captures = [bytes.fromhex(line.split('HEX=', 1)[1]) for line in lines if ' 64B HEX=' in line]
                 assert captures and all(len(f) == 64 and f[30] == 0xa5 for f in captures), text
                 assert any('SIM A LIVE' in line and 'state=EMERGENCY_STOP' in line for line in lines), text
-                assert any('SIM A LIVE' in line and 'state=UNKNOWN' in line
-                           and 'camera=(-50.000000 deg, unknown)' in line for line in lines), text
-                assert any('SIM B STALE' in line and 'state=FOLLOWING' in line for line in lines), text
-                print('PASS: production flight simulator, virtual joystick axes/button, dual identical frames, ten-cycle operation, emergency/unknown feedback, legacy state rejected, disconnect stops TX')
+                assert any('SIM A LIVE' in line and 'state=NOT_STARTED' in line
+                           and 'camera=(-50.000000 deg, unknown)' in line
+                           and 'fault=0 previous=0 severity=0' in line for line in lines), text
+                assert any('SIM B LIVE' in line and 'fault=7202' in line and 'severity=48' in line for line in lines), text
+                assert any('SIM B STALE' in line and 'state=ERROR' in line and 'fault=7202' in line for line in lines), text
+                waiting = [line for line in lines if ' WAITING ' in line]
+                assert waiting and all('state=' not in line for line in waiting), text
+                print('PASS: production flight simulator, virtual joystick axes/button, dual identical frames, ten-cycle operation, emergency/healthy startup/alarm feedback, legacy unknown faults rejected, disconnect stops TX')
             except Exception:
                 log.flush();log.seek(0);print(log.read(),file=sys.stderr);raise
             finally:

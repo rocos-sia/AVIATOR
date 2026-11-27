@@ -1,6 +1,6 @@
 # 配置
 
-`photoelectric.yaml` 配置 X1 光电开关采集节点的串口、Modbus 站号、采集/发布频率及超时。
+`photoelectric.yaml` 配置 X1 光电开关采集节点的串口、Modbus 站号、采集/发布频率及超时。手刹约定为 X1=1 未触发、X1=0 已触发，保持 `invert: false` 发布原始电平。RS422 网关由 `flight-rs422.yaml` 的 `rs422.photoelectric_publisher` 选择发布者，转换为偏移 12 的逻辑触发位。
 默认 `/dev/ttyUSB0`、38400 波特率、8N1、站号 1，以 20 Hz 发布 `photoelectric.state`。
 详见 [aviator_photoelectric](../nodes/aviator_photoelectric/README.md)。
 

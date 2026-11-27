@@ -1,12 +1,20 @@
 """Reject invalid configuration before SDL/tty startup; Python standard library only."""
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
 
 binary, template = map(Path, sys.argv[1:3])
 base = template.read_text()
+# Invalid-config checks must never open the user's physical serial ports.
+for key, value in [('channel_a', '/dev/serial/by-id/REPLACE_CHANNEL_A'),
+                   ('channel_b', '/dev/serial/by-id/REPLACE_CHANNEL_B'),
+                   ('send_a', 'true')]:
+    base = re.sub(rf'(?m)^(\s*{key}:)[^\n]*', rf'\g<1> {value}', base)
 cases = [
+    (base.replace('aviator-icd-1120', 'aviator-bench-v1'), 'profile must'),
+    (base.replace('roll_speed_deg_s:', 'roll_speed:'), 'physical units required'),
     (base.replace('aviator-icd-1120', 'unknown'), 'profile must'),
     (base.replace('REPLACE_CHANNEL_B', 'REPLACE_CHANNEL_A'), 'distinct absolute'),
     (base + '\nunknown_option: true\n', 'unknown or duplicate'),

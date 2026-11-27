@@ -14,8 +14,7 @@ inline constexpr size_t downlink_checksum_offset = downlink_size - 1;
 inline constexpr size_t uplink_checksum_offset = uplink_size - 1;
 inline constexpr int16_t invalid_position = -32768;
 inline constexpr uint8_t unknown = 0xff;
-inline constexpr uint8_t unknown_state = 0xfe; // Byte 10: 0xff is EMERGENCY_STOP.
-inline constexpr uint16_t unknown_fault = 0xffff;
+inline constexpr uint8_t not_started = 0xfe; // ICD 1127: normal startup waiting; 0xff remains emergency stop.
 struct Downlink {
     uint8_t counter = 0, operation = 0;
     int16_t roll = 0, pitch = aviator::wheel::encodePitch(0);
@@ -23,10 +22,10 @@ struct Downlink {
 struct Uplink {
     uint8_t counter = 0, selected = unknown, communication = 3, operation = 0;
     int16_t roll_echo = invalid_position, pitch_echo = invalid_position;
-    uint8_t state = unknown_state, rear = unknown, brake = unknown;
+    uint8_t state = not_started, rear = unknown, brake = unknown;
     int16_t roll = invalid_position, pitch = invalid_position; // Camera feedback, bytes 13..16.
-    uint16_t fault = unknown_fault, last_fault = unknown_fault;
-    uint8_t severity = unknown;
+    uint16_t fault = 0, last_fault = 0;
+    uint8_t severity = 0;
     uint16_t version = 0, checksum = 0;
     int16_t joint_roll = invalid_position, joint_pitch = invalid_position; // Joint FK, bytes 26..29.
 };
@@ -39,9 +38,10 @@ bool decode(const Bytes&, Downlink&);
 bool decode(const Bytes&, Uplink&);
 uint8_t operationCode(const std::string&);
 const char* operationName(uint8_t);
-uint8_t stateCode(const std::string&);
+uint8_t stateCode(const std::string&); // Throws for an unsupported name; never fabricates NOT_STARTED.
 const char* stateName(uint8_t);
 bool knownFault(uint16_t);
+const char* faultName(uint16_t); // Description of the ICD 1127 additions; empty for existing codes.
 using aviator::wheel::encodeRoll;
 using aviator::wheel::encodePitch;
 using aviator::wheel::decodeRoll;

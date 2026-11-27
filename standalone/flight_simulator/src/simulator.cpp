@@ -28,7 +28,7 @@ void run(const Config& config, int stop_fd) {
     uint8_t counter = 0;
     bool was_valid = false, input_logged = false;
     const uint64_t timeout = config.rs422.receive_timeout_ms * 1000ULL;
-    std::clog << "flight_simulator: aviator-icd-1120, 115200 8E1, 80 Hz\n";
+    std::clog << "flight_simulator: aviator-icd-1120 layout / ICD 1127 status, 115200 8E1, 80 Hz\n";
     if (!config.simulator.send_a || !config.simulator.send_b || config.simulator.corrupt_every)
         std::clog << "Fault injection enabled: send A=" << config.simulator.send_a
                   << " B=" << config.simulator.send_b
@@ -137,8 +137,16 @@ void run(const Config& config, int stop_fd) {
             for (unsigned i = 0; i < 2; ++i) {
                 const bool fresh = received[i] && now - received[i] < timeout;
                 const auto& f = replies[i];
+                const bool waiting = snapshots[i].frame.empty();
                 title +=
-                    std::string(i ? " | B:" : " | A:") + (fresh ? stateName(f.state) : "STALE");
+                    std::string(i ? " | B:" : " | A:") + (waiting ? "WAITING" : fresh ? stateName(f.state) : "STALE");
+                if (waiting) {
+                    std::clog << "SIM " << (i ? "B" : "A") << " WAITING"
+                              << " port=" << (ports[i].fd() >= 0 ? "open" : "closed")
+                              << " rx_bytes=" << ports[i].rx_bytes << " bad_bytes=" << parsers[i].rejected
+                              << " tx_frames=" << ports[i].tx_frames << " dropped=" << ports[i].dropped << '\n';
+                    continue; // No received frame: do not display synthetic healthy startup values.
+                }
                 std::ostringstream line;
                 line << "SIM " << (i ? "B" : "A") << " " << (fresh ? "LIVE" : "STALE")
                      << " seq=" << unsigned(f.counter) << " selected=" << unsigned(f.selected)
@@ -149,6 +157,7 @@ void run(const Config& config, int stop_fd) {
                      << position(f.joint_pitch, true) << ") rear=" << unsigned(f.rear)
                      << " brake=" << unsigned(f.brake) << " fault=" << f.fault
                      << " previous=" << f.last_fault << " severity=" << unsigned(f.severity)
+                     << " fault_detail=" << (f.fault ? faultName(f.fault) : "无故障")
                      << " version=" << std::hex << std::uppercase << std::setfill('0')
                      << std::setw(4) << f.version << " checksum=" << std::setw(4) << f.checksum
                      << std::dec << " bad_bytes=" << parsers[i].rejected

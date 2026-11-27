@@ -84,7 +84,7 @@ cmake --build build --parallel 2
 
 ### 上行反馈的实际边界
 
-`flight.state.wheel_measurement` 仅在设备提供实际测量时上报；当前 MuJoCo 设备具备此字段，未提供测量的硬件节点返回未知位置 `00 80`。后退到位、手刹物理输入尚未接入，使用 `FF`。现有 Core 通用错误 28673 发送未知故障 `FFFF`，不伪装成某个 ICD 业务错误；已分配的 50 个故障码可正常透传。详见协议第 10 节。
+`flight.state.wheel_measurement` 仅在设备提供实际测量时上报；当前 MuJoCo 设备具备此字段，未提供测量的硬件节点返回未知位置 `00 80`。后退到位未接入时使用 `FF`。应急手刹直接订阅 `photoelectric.state`，只接收 `channel=X1` 和配置的发布者 `rs422.photoelectric_publisher`（默认 `aviator_photoelectric`）。X1 原始电平 1 转为上行偏移 12 的 `00`（未触发），0 转为 `01`（已触发）；无效、非法或原始采样达到 100 ms 时为 `FF`。该字段独立于 Core 状态新鲜度，不使用旧 `discrete_inputs.emergency_brake`。X1 恢复后可上报未触发，但不会解除 Core 急停锁存。现有 Core 通用错误 28673 发送未知故障 `FFFF`，不伪装成某个 ICD 业务错误；已分配的 50 个故障码可正常透传。详见协议第 10 节。
 
 启动身份验证调用 `scripts/aviator_release.py identity`，实际校验成功后才使用发布短码，并核对编译版本。台架测试身份在终端明确显示 bench-test，短码 `9CA1`。安装包内的配置也参与发布校验：修改交付配置后需重新生成合法发布清单，不能让校验失败退回测试身份。校验不在 80 Hz 主循环中重复执行。
 

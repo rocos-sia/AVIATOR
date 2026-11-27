@@ -38,9 +38,10 @@ std::vector<UplinkField> describeUplink(const rs422::Bytes& frame) {
               << (pitch ? rs422::decodePitch(raw) : rs422::decodeRoll(raw)) << (pitch ? " mm" : " deg");
         return value.str();
     };
-    const auto fault = [](uint16_t code) {
-        return code == rs422::unknown_fault ? std::string("65535 → 未知 / unknown")
-             : code == 0 ? std::string("0 → 无故障") : std::to_string(code);
+    const auto fault = [](uint16_t code, bool history = false) {
+        if (!code) return std::string(history ? "0 → 本次网关运行尚无上一条记录" : "0 → 无故障");
+        const auto* name = rs422::faultName(code);
+        return std::to_string(code) + (*name ? std::string(" → ") + name : "");
     };
     add(0, 2, "帧头", "EB 90 · 匹配");
     add(2, 1, "帧计数器", std::to_string(f.counter) + " · 0–255 循环");
@@ -50,15 +51,16 @@ std::vector<UplinkField> describeUplink(const rs422::Bytes& frame) {
     add(5, 1, "操作回绕", f.operation ? rs422::operationName(f.operation) : "空闲 / 无新操作");
     add(6, 2, "滚转目标回绕", position(f.roll_echo, false));
     add(8, 2, "俯仰目标回绕", position(f.pitch_echo, true));
-    add(10, 1, "机器人运行状态", rs422::stateName(f.state));
+    add(10, 1, "机器人运行状态", f.state == rs422::not_started ? "未启动 / NOT_STARTED" : rs422::stateName(f.state));
     add(11, 1, "后退到位", f.rear == 0 ? "未到位" : f.rear == 1 ? "到位" : "未知 / unknown");
-    add(12, 1, "应急手刹", f.brake == 0 ? "未触发" : f.brake == 1 ? "已触发" : "未知 / unknown");
+    add(12, 1, "应急手刹（X1）", f.brake == 0 ? "未触发（X1=1）" : f.brake == 1 ? "已触发（X1=0）"
+                                                                                 : "X1 信号无效 / 未接收 / 过期");
     add(13, 2, "相机滚转反馈", position(f.roll, false));
     add(15, 2, "相机俯仰反馈", position(f.pitch, true));
     add(17, 2, "当前故障码", fault(f.fault));
-    add(19, 2, "历史故障码", fault(f.last_fault));
+    add(19, 2, "历史故障码", fault(f.last_fault, true));
     const char* severity = f.severity == 0 ? "正常" : f.severity == 0x10 ? "注意" : f.severity == 0x20 ? "提示"
-                           : f.severity == 0x30 ? "告警" : f.severity == 0x40 ? "危险" : "未知 / unknown";
+                           : f.severity == 0x30 ? "告警" : "危险";
     add(21, 1, "故障等级", severity);
     add(22, 2, "软件版本", std::to_string(f.version >> 8) + "." + std::to_string(f.version & 255) + " · PATCH 不上串口");
     add(24, 2, "软件短校验码", "0x" + hexBytes({uint8_t(f.checksum >> 8)}, 0, 1) + hexBytes({uint8_t(f.checksum)}, 0, 1));

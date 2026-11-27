@@ -191,13 +191,74 @@ void checkRingParser() {
         require(reset.feed(frame.data(), length) == std::vector<Bytes>{frame});
     }
 }
+void checkIcd1127() {
+    // Independently assembled startup frame: FE / fault 0000 / severity 00.
+    Bytes startup(64, 0);
+    startup[0] = 0xeb; startup[1] = 0x90; startup[10] = 0xfe;
+    const auto seal = [](Bytes& frame) {
+        unsigned sum = 0;
+        for (size_t i = 2; i < 63; ++i) sum += frame[i];
+        frame[63] = uint8_t(sum);
+    };
+    seal(startup);
+    Uplink decoded;
+    check(decode(startup, decoded) && decoded.fault == 0 && decoded.severity == 0);
+    for (const uint8_t trigger : {0, 1, 0xff, 2}) {
+        auto frame = startup;
+        frame[12] = trigger; seal(frame);
+        check(decode(frame, decoded) == (trigger != 2));
+        if (trigger != 2) check(decoded.brake == trigger && decoded.rear == 0);
+    }
+    // Fixed fault bytes independently specify all six additions, including history.
+    struct Alarm { uint16_t code; uint8_t low, high; };
+    for (const auto alarm : {Alarm{7202, 0x22, 0x1c}, {7203, 0x23, 0x1c},
+                            {7204, 0x24, 0x1c}, {7205, 0x25, 0x1c},
+                            {7206, 0x26, 0x1c}, {8212, 0x14, 0x20}}) {
+        auto frame = startup;
+        frame[10] = 0x10; frame[17] = frame[19] = alarm.low;
+        frame[18] = frame[20] = alarm.high; frame[21] = 0x30;
+        seal(frame);
+        check(decode(frame, decoded) && decoded.fault == alarm.code && decoded.last_fault == alarm.code);
+        frame[10] = 0xff; seal(frame);
+        check(decode(frame, decoded) && decoded.state == 0xff); // Alarm must not hide emergency stop.
+        frame[10] = 0xfe; seal(frame);
+        check(!decode(frame, decoded)); // Startup cannot carry an active alarm.
+        frame[10] = 0x10; frame[21] = 0x20; seal(frame);
+        check(!decode(frame, decoded)); // Alarm grade must agree with CSNN.
+    }
+    for (const size_t offset : {size_t(17), size_t(19)}) {
+        for (const uint16_t code : {uint16_t(7201), uint16_t(7207), uint16_t(8213), uint16_t(65535)}) {
+            auto frame = startup;
+            frame[10] = 0x10; frame[offset] = uint8_t(code); frame[offset + 1] = uint8_t(code >> 8);
+            frame[21] = offset == 17 ? 0x30 : 0;
+            seal(frame);
+            check(!decode(frame, decoded));
+            Parser parser(true);
+            auto stream = frame;
+            stream.insert(stream.end(), startup.begin(), startup.end());
+            check(parser.feed(stream.data(), stream.size()) == std::vector<Bytes>{startup});
+        }
+    }
+    auto legacy = startup;
+    legacy[21] = 0xff; seal(legacy);
+    check(!decode(legacy, decoded));
+    unsigned faults = 0;
+    for (unsigned code = 1; code <= 65535; ++code) faults += knownFault(uint16_t(code));
+    check(faults == 56);
+}
 int main() try {
     checkPhysicalPositions();
     checkWireBoundaries();
     checkRingParser();
-    check(stateCode("SAFE") == unknown_state && std::string(stateName(0x09)) == "UNKNOWN");
+    checkIcd1127();
+    for (const auto* name : {"SAFE", "UNKNOWN", "TYPO"}) {
+        bool rejected = false;
+        try { stateCode(name); } catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected);
+    }
+    check(std::string(stateName(0x09)) == "UNKNOWN");
     check(stateCode("EMERGENCY_STOP") == 0xff && std::string(stateName(0xff)) == "EMERGENCY_STOP");
-    check(stateCode("UNKNOWN") == 0xfe && std::string(stateName(0xfe)) == "UNKNOWN");
+    check(stateCode("NOT_STARTED") == 0xfe && std::string(stateName(0xfe)) == "NOT_STARTED");
     check(stateCode("ERROR") == 0x10 && stateCode("READY") == 0x03);
     Bytes neutral(32, 0);
     neutral[0] = 0xeb;
@@ -244,10 +305,10 @@ int main() try {
     check(decode(up, reply));
     check(reply.version == 0x0201 && reply.checksum == 0xabcd && reply.state == 7);
     check(encode(reply) == up);
-    Uplink unknown_reply;
-    check(decode(encode(unknown_reply), reply));
-    check(reply.state == 0xfe && reply.roll == invalid_position && reply.fault == unknown_fault);
-    check(reply.selected == 0xff && reply.rear == 0xff && reply.brake == 0xff && reply.severity == 0xff);
+    Uplink startup_reply;
+    check(decode(encode(startup_reply), reply));
+    check(reply.state == 0xfe && reply.roll == invalid_position && reply.fault == 0 && reply.last_fault == 0);
+    check(reply.selected == 0xff && reply.rear == 0xff && reply.brake == 0xff && reply.severity == 0);
     for (uint8_t state : {0xff, 0xfe, 0x00}) {
         auto frame = up;
         frame[10] = state;

@@ -39,6 +39,7 @@ int main(int argc, char** argv) try {
     check(fields[5].value == "-32767 → -50.000000 deg", "roll echo units");
     check(fields[6].hex == "88 08" && fields[6].value == "2184 → -0.001068 mm", "pitch zero offset");
     check(fields[7].value == "EMERGENCY_STOP", "FF emergency stop");
+    check(fields[9].value == "X1 信号无效 / 未接收 / 过期", "invalid X1 is not an asserted trigger");
     check(fields[10].value == "32767 → 50.000000 deg", "camera roll");
     check(fields[11].value == "-32767 → -80.000000 mm", "camera pitch");
     check(fields[12].value == "8201" && fields[13].value == "1301", "fault endianness");
@@ -47,6 +48,28 @@ int main(int argc, char** argv) try {
     check(fields[18].value == "32767 → 70.000000 mm", "FK pitch");
     check(fields[19].offset == "30–62" && fields[19].hex == "A5 00 00 00 …", "preserve reserved bytes");
     check(fields[20].offset == "63" && fields[20].value.find("通过") == 0, "frame checksum");
+    rs422::Uplink startup;
+    const auto startup_fields = describeUplink(rs422::encode(startup));
+    check(startup_fields[7].value == "未启动 / NOT_STARTED", "FE is normal startup waiting");
+    check(startup_fields[12].value == "0 → 无故障" && startup_fields[14].value == "正常", "startup must be healthy");
+    check(startup_fields[13].value == "0 → 本次网关运行尚无上一条记录", "history zero is no previous record");
+    for (const uint8_t trigger : {0, 1}) {
+        auto feedback = startup;
+        feedback.brake = trigger;
+        feedback.state = 0xff; // Current switch position is independent of sticky emergency state.
+        const auto bytes = rs422::encode(feedback);
+        check(bytes[12] == trigger && bytes[11] == 0xff, "handbrake byte offset");
+        const auto described = describeUplink(bytes);
+        check(described[9].offset == "12" && described[9].value ==
+                  (trigger ? "已触发（X1=0）" : "未触发（X1=1）"), "X1 polarity must not be inverted twice");
+    }
+    for (const uint16_t code : {7202, 7203, 7204, 7205, 7206, 8212}) {
+        auto alarm = startup;
+        alarm.state = 0x10; alarm.fault = alarm.last_fault = code; alarm.severity = 0x30;
+        const auto described = describeUplink(rs422::encode(alarm));
+        check(described[12].value.find(std::to_string(code) + " → Core ") == 0, "alarm description missing");
+        check(described[13].value == described[12].value && described[14].value == "告警", "alarm history/severity");
+    }
     for (auto invalid : {rs422::Bytes(32, 0), raw}) {
         invalid.back() ^= 1;
         bool rejected = false;
@@ -92,6 +115,22 @@ int main(int argc, char** argv) try {
         check(ui.viewKey(SDL_SCANCODE_F4), "resume");
         ui.show(window, true, true, true);
         check(copied() == hexBytes(snapshots[0].frame), "resume did not show latest frame");
+        for (bool alarm : {false, true}) {
+            auto feedback = startup;
+            feedback.brake = alarm ? 1 : 0;
+            if (alarm) {
+                feedback.state = 0xff; feedback.fault = 8212; feedback.last_fault = 7202; feedback.severity = 0x30;
+            }
+            snapshots[0].frame = rs422::encode(feedback);
+            snapshots[0].received_us = monotonic_us();
+            ui.feedback(snapshots);
+            ui.show(window, true, true, true);
+            check(copied() == hexBytes(snapshots[0].frame), "1127 monitor frame differs");
+            if (argc == 2) {
+                const auto path = std::string(argv[1]) + (alarm ? ".alarm.bmp" : ".startup.bmp");
+                check(SDL_SaveBMP(SDL_GetWindowSurface(window), path.c_str()) == 0, "save 1127 preview");
+            }
+        }
         check(ui.viewKey(SDL_SCANCODE_F3), "select waiting channel B");
         ui.show(window, true, false, true);
         check(ui.viewKey(SDL_SCANCODE_F1), "return to input guide");

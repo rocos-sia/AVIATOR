@@ -48,6 +48,8 @@ buttons:
   - none          # 11
 
 rs422:
+  # 上行偏移12：X1=1 -> 0x00未触发，X1=0 -> 0x01已触发；无效/过期 -> 0xFF。
+  photoelectric_publisher: aviator_photoelectric
   # 上行 13..16 来自 camera.detection；26..29 来自双臂实际关节 FK。
   camera_id: cockpit
   camera_publisher: camera # 独立运行仿真时设 simulation；一键 --simulation --rs422 自动选择。
